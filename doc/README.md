@@ -1993,6 +1993,22 @@ git add -A禁止。
 - **not_changed**: Scheduler / env / Secret / SMTP credential / WP write / X live post / SNS は未変更。git push は repo lock により未実施。
 - **do_not_touch**: `.env`、secret values、Cloud Scheduler、Cloud Run env、既存 WP posts、X live post、`RUN_DRAFT_ONLY`、unrelated frontend/plugin files。
 
+### 403-INSIGHT-period-window-game-count-switch
+
+- **alias**: -
+- **status**: DRAFT (user GO 待ち、 audit 便 fire 前) / **priority**: high
+- **owner**: Claude / **lane**: Claude
+- **doc_path**: `doc/active/403-INSIGHT-period-window-game-count-switch.md`
+- **stage**: Phase 1 stage 1 / 段階式 (404 / 405 は follow-up)
+- **背景**: 2026-05-20 logs で 12:00 / 15:00 / 17:00 publish 0 件、 主因は 356 quality gate `insufficient_sample` (浦田俊輔 / 平山功太 / マルティネス の last_7d sample 不足)。 日付 window が試合のない日に潰れる構造問題。
+- **方針**: 期間 cut を日付 base (last_7d / last_30d) から **試合数 / 打席 / 登板数 / 投球回 base に全面切替**。 同 stage で ファン視点 cut (打順別 / 本拠地 / vs 球団別) を 既存 schema のまま追加。
+- **新 scope**: 打者 3/5/10試合 + 30/50/100打席、 投手 3/5/10登板 + 5/10/20投球回。 `last_7d` / `last_30d` 全廃止、 `season` は維持。
+- **追加 cut**: 打順別 (`batting_logs.slot_order`) / 本拠地 (`games.home_away`) / vs 球団別 (`games.opponent`)。
+- **whitelist 据え置き**: counting + 標準率 + 投手 /9 系率 + WAR + UZR + 得点圏打率 + 球団 ranking + record/milestone は [[348]] のまま、 サバメ NG line (WHIP / BABIP / wOBA / FIP / xFIP / ISO) 維持。
+- **affected files** (grep 67 ref / 8 file): `src/analysis/ranking_article_publisher.py` / `insight_anomaly_detector.py` / `insight_nightly.py` / `insight_title_guard.py` / `insight_etl.py` / `anomaly_article_publisher.py` / `team_ranking_publisher.py` / `src/insight_quality_gate.py` / `src/x_post_mail_lane.py`
+- **不可触**: DB schema 変更なし (advanced_metric_snapshots.scope は TEXT 文字列値拡張のみ) / env / Secret / Scheduler / RUN_DRAFT_ONLY / WP既存記事 / X / publish-notice / frontend / 348 whitelist / 349 cooldown 日数 / 356 quality gate の他 check / title format case A-D 構造
+- **follow-up**: 404 (Stage 2、 Phase 2 ETL: デーゲーム / vs 左右 / 登板 inning) / 405 (Stage 3、 PARKED: 打席内カウント / 走者状況詳細)
+
 ### 362-INSIGHT-queue-cleanup-and-metric-run-cap
 
 - **alias**: -

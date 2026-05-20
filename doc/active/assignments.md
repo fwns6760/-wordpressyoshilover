@@ -27,6 +27,14 @@ user 方針「受け入れ NG はまた起票」+「一人開発で Active 多�
 
 ## 2026-05-20 session update
 
+### 403 — INSIGHT 期間 cut を日付 base から 試合数 / PA / 登板数 / IP base に全面切替 (段階式 Stage 1、 DRAFT user GO 待ち)
+
+| ticket | status | 内容 |
+|---|---|---|
+| `doc/active/403-INSIGHT-period-window-game-count-switch.md` | DRAFT (user GO 待ち) | 5/20 logs で 12:00 / 15:00 / 17:00 publish 0 件、 主因は 356 quality gate `insufficient_sample` (last_7d sample 不足)。 user lock spec で **日付 cut (last_7d / last_30d) 全廃止**、 打者 3/5/10試合 + 30/50/100打席、 投手 3/5/10登板 + 5/10/20投球回 base へ切替。 同 stage でファン視点 cut (打順別 / 本拠地 / vs 球団別) を既存 schema のまま追加。 サバメ NG line 維持、 whitelist [[348]] 据え置き。 affected: 8 file / 67 reference、 DB schema 変更なし。 follow-up: 404 (Phase 2 ETL: デーゲーム / vs 左右 / 登板 inning) / 405 (Phase 3 PARKED)。 next action: GO 後 audit 便 fire (read-only、 DB 実分布 + min_sample 詰め)。 |
+
+
+
 ### 400 — 本文抜粋を「全文恒久」 clean (share UI + photo credit + copyright + lead heading、user 指摘「全文恒久対応でないの?」「アプリ以外も対応」「引用文をよみやすく」 2026-05-20、同日 LIVE_DEPLOYED_VERIFIED)
 
 | ticket | status | 内容 |

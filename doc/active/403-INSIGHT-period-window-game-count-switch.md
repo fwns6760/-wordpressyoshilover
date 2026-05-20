@@ -1,0 +1,134 @@
+# 403-INSIGHT-period-window-game-count-switch
+
+## 1. ticket header
+
+- **status**: DRAFT (user GO 待ち、 audit 便 fire 前)
+- **priority**: high (5/20 12:00/15:00/17:00 publish 0 件の主因、 サンプル不足を構造的に直す)
+- **owner**: Claude (実装) / user (GO 判断、 受け入れ試験)
+- **lane**: Claude
+- **stage**: Phase 1 stage 1 / 段階式 (404 / 405 は follow-up)
+- **依存**: [[project_data_insight_period_scope_2026_05_20]] memory (新 scope spec lock)
+- **関連**: 348 (whitelist 実装、 CLOSED) / 349 (dedup cooldown、 LIVE_OBSERVE) / 356 (data quality gate、 LIVE_OBSERVE) / 357 (mail human period labels、 LIVE_OBSERVE)
+
+## 2. 目的 / 背景
+
+2026-05-20 user lock。 data-insight 期間 cut を **日付 base (last_7d / last_30d) から 試合数 / 打席 / 登板数 / 投球回 base に全面切替**。 ファン視点 cut (打順別 / 本拠地 / vs 球団別) を同 stage で同梱。
+
+### 現状の問題 (5/20 logs)
+
+- 12:00 / 15:00 / 17:00 JST の 3 便で publish 0 件
+- 主因: 356 quality gate `insufficient_sample`
+  - 浦田俊輔 OPS/AVG/OBP last_7d sample=13 / min=20
+  - 平山功太 SLG last_7d sample=13 / min=20
+  - マルティネス ERA/K_per_9 last_7d sample=3 / min=10
+- 日付 window が試合のない日に sample 不足で潰れる構造問題
+
+### 切替方針
+
+固定 sample 数 (試合数 / 打席 / 登板数 / 投球回) で切れば「最近の活躍」 が常に同じ粒度で出せる。
+
+## 3. 新 scope spec (lock、 user 確定 2026-05-20)
+
+### 期間 cut (4 軸、 日付 cut 全廃)
+
+| 対象 | scope vocabulary | counting base |
+|---|---|---|
+| 打者 試合 base | `last_3_games` / `last_5_games` / `last_10_games` | 巨人試合数 cnt (出場有無関係なし、 ベンチ含む) |
+| 打者 打席 base | `last_30_pa` / `last_50_pa` / `last_100_pa` | 当該選手 PA cumsum |
+| 投手 登板 base | `last_3_appearances` / `last_5_appearances` / `last_10_appearances` | 当該投手 appearance cnt |
+| 投手 IP base | `last_5_ip` / `last_10_ip` / `last_20_ip` | IP cumsum |
+
+`last_7d` / `last_30d` 等日付 window は **全廃止** (`season` scope は維持)。
+
+### ファン視点 追加 cut (3 軸、 既存 schema で実装可能)
+
+| cut | 使う field | 例 |
+|---|---|---|
+| 打順別 | `batting_logs.slot_order` + `is_sub=0` | 「3 番打者として last_5_games で .380」 |
+| 本拠地 / ビジター | `games.home_away` | 「東京ドーム OPS .920 / ビジター .750」 |
+| vs 球団別 | `games.opponent` | 「対阪神 last_5_games .400」 |
+
+### サバメ NG line 維持
+
+WHIP / BABIP / wOBA / FIP / xFIP / ISO は引き続き NG。 [[project_data_insight_final_whitelist_2026_05_15]] の whitelist (counting + 標準率 + 投手 /9 系率 + WAR + UZR + 得点圏打率 + 球団 ranking + record/milestone) は据え置き、 scope vocabulary だけ入れ替え。
+
+### title 表記
+
+| 旧 | 新 |
+|---|---|
+| `(直近1週間)` | `(直近5試合)` / `(直近30打席)` 等 |
+| `(直近1ヶ月)` | `(直近10試合)` / `(直近50打席)` 等 |
+| `(直近5試合)` (既存 348 case) | 維持 (新 scope vocabulary に統一) |
+
+case A-D title format ([[project_data_insight_final_whitelist_2026_05_15]] 定義) は据え置き、 期間 label だけ入れ替え。
+
+### min_sample (仮置き、 audit で詰める)
+
+| scope | min_sample (仮) |
+|---|---|
+| 打者 `last_3_games` | 12 打数 |
+| 打者 `last_5_games` | 20 打数 |
+| 打者 `last_10_games` | 35 打数 |
+| 打者 `last_30_pa` / `last_50_pa` / `last_100_pa` | PA 自体を threshold (30/50/100) |
+| 投手 `last_3_appearances` / `last_5_appearances` / `last_10_appearances` | appearance cnt 自体 |
+| 投手 `last_5_ip` / `last_10_ip` / `last_20_ip` | IP 自体を threshold |
+
+audit 便で DB 実分布見て詰める。
+
+## 4. 実装 scope
+
+### 4.1. affected files (grep 結果、 67 reference)
+
+- `src/analysis/ranking_article_publisher.py`
+- `src/analysis/insight_anomaly_detector.py`
+- `src/analysis/insight_nightly.py`
+- `src/analysis/insight_title_guard.py`
+- `src/x_post_mail_lane.py`
+- `src/analysis/insight_etl.py`
+- `src/analysis/anomaly_article_publisher.py`
+- `src/analysis/team_ranking_publisher.py`
+- `src/insight_quality_gate.py` (356 で追加された min_sample 判定)
+- `data/insight/schema.sql` (advanced_metric_snapshots.scope の comment 更新、 schema 変更なし)
+
+### 4.2. 段階
+
+1. **audit 便** (read-only): 上記 8 file の `last_7d` / `last_30d` 使用箇所を list 化、 DB 実分布で min_sample 仮置きを詰める
+2. **scope vocabulary 切替**: `last_Nd` 名称を新 vocabulary に置換、 advanced_metric_snapshots へ insert 時の scope 文字列も更新
+3. **counting logic 実装**: 試合数 / PA / 登板 / IP の cumsum で window 切り出す関数追加 (insight_etl.py)
+4. **min_sample 再算出**: insight_quality_gate.py の `min_sample` table を新 scope に対応
+5. **dedup scope_family 更新**: 349 の `metric_all_periods` family を新 scope set 対応
+6. **追加 cut publisher**: 打順別 / 本拠地 / 球団別 で既存 metric を cross product
+7. **title 表記**: insight_title_guard.py の期間 label 一覧更新
+
+### 4.3. 不可触
+
+- DB schema 変更なし (advanced_metric_snapshots.scope は TEXT、 文字列値だけ拡張)
+- env / Secret / Scheduler / RUN_DRAFT_ONLY / WP既存記事 / X / publish-notice / x-post-mail-lane の wiring / frontend
+- 348 whitelist (metric 一覧) / 349 cooldown 日数 (7 日) / 356 quality gate の他 check (stale snapshot / ranking coverage)
+- title format case A-D (期間 label だけ入替、 構造変更なし)
+- 既存 published 記事の retroactive cleanup (新規分だけ新 scope、 既存はそのまま)
+
+## 5. 成功条件
+
+- audit 便: `last_7d` / `last_30d` 使用箇所 list + DB 実分布 + min_sample 仮置き決定
+- 実装便: 上記 8 file 改修、 targeted pytest green、 既存 regression 0
+- deploy 後 verify: 1 nightly で新 scope の publish が出る、 サンプル不足 skip が 5/20 比で減る、 dedup cooldown が新 scope_family で blocked
+
+## 6. 動作確認
+
+- ローカル: `pytest tests/test_insight_*` 全 green
+- production DB copy: 新 scope vocabulary で SELECT が走る、 sample 分布が想定範囲
+- live deploy 後: `gcloud run jobs execute insight-nightly` 手動 trigger は **追加 publish/mail 回避のため未実行**、 翌朝 (07:00 JST) の自然 fire 観察待ち
+- post 観察: 新 scope 表記 (`(直近5試合)` 等) が title に出る、 打順別 / 本拠地 / 球団別 cut の post が新規に出る
+
+## 7. 段階式 follow-up (別 ticket)
+
+- **404** (Stage 2、 DRAFT): Phase 2 ETL 改修 (デーゲーム / vs 左右 / 登板 inning) — 403 完了 + 観察後
+- **405** (Stage 3、 PARKED): Phase 3 (打席内カウント / 走者状況詳細) — pitch-by-pitch source 検討から
+
+## 8. open question (user 判断不要、 audit 便で詰める)
+
+- 打者 last_3_games の min 打数 12 は妥当か (DB 実分布で判定)
+- 投手 last_3_appearances の min は 0 (登板したら全部 OK) で良いか
+- 打順別の slot_order の集約単位: 1番 / 2番 / 3番 を個別か、 「先頭打者 (1-2)」 「中軸 (3-5)」 「下位 (6-9)」 で band 化するか
+- vs 球団別 の min 試合数 (今 last_7d で `insufficient_games` 出ているので、 last_5_games なら必ず 1 球団 1 試合以下になる可能性、 last_10_games に拡張要)

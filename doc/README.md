@@ -2038,9 +2038,11 @@ git add -A禁止。
 ### 406-INSIGHT-hr-split-sql-bug-fix
 
 - **alias**: -
-- **status**: READY (Claude 自律進行可能、 403 と独立) / **priority**: P1
+- **status**: CLOSED (LIVE_DEPLOYED_VERIFIED 2026-05-20 20:00 JST) / **priority**: P1
 - **owner**: Claude / **lane**: Claude
-- **doc_path**: `doc/active/406-INSIGHT-hr-split-sql-bug-fix.md`
+- **doc_path**: `doc/done/2026-05/406-INSIGHT-hr-split-sql-bug-fix.md`
+- **github_issue**: https://github.com/fwns6760/-wordpressyoshilover/issues/78 (CLOSED 候補)
+- **verify (2026-05-20 20:00 JST fire)**: bl.HR error 過去 5 日 175 件 → 20:00 fire で 0 件、 完全消失
 - **背景**: 2026-05-20 12:00 JST `insight-nightly-ndtvf` logs に `OperationalError:no such column: bl.HR` × 7 split (opponent=t/s/c/db/d + home_away=home/away)、 warn `player_counting_split_publish_failed`。 HR opponent / home_away split publish が deploy 後ずっと壊れていた可能性。
 - **原因 (audit 済)**: `src/analysis/ranking_article_publisher.py` L937 `aggregate_player_counting_stat_split` に L278 と同じ HR dispatch が無い。 `batting_logs` schema に HR 列が存在せず (HR は `atbats_json` 内の per-PA marker)、 `SUM(bl.HR)` で OperationalError。
 - **fix 方針 (narrow)**: split 版にも HR dispatch 追加 + split 対応 helper `aggregate_player_hr_from_atbats_split` 新規追加。 `batting_logs` schema 変更なし、 他 metric / scope / caller 不変。

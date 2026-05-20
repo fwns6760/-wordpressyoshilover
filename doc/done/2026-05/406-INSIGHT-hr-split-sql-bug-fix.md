@@ -2,7 +2,7 @@
 
 ## 1. ticket header
 
-- **status**: READY (Claude 自律進行可能、 403 と独立)
+- **status**: CLOSED (LIVE_DEPLOYED_VERIFIED 2026-05-20 20:00 JST、 bl.HR error 過去 5 日 175 件 → 0 件 verified)
 - **priority**: P1 (5/20 logs で確認された既存機能の壊れ、 publish が落ちている)
 - **owner**: Claude / **lane**: Claude
 - **依存**: なし ([[403]] と並走可能、 narrow fix)

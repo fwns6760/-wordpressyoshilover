@@ -54,11 +54,11 @@ user 方針「受け入れ NG はまた起票」+「一人開発で Active 多�
 |---|---|---|
 | `doc/waiting/405-INSIGHT-period-window-phase3-parked.md` | PARKED | pitch-by-pitch source が必要な cut の shadow ticket。 打席内カウント別 (初球打ち / 2 ストライク後) / 走者状況別 (満塁 / 二塁単独 / 一三塁 等) / 球場別 (本拠地以外)。 NPB box は per-PA result の text marker のみで pitch-by-pitch なし、 別 source 必要 (有料 API or NPB BIS feed)。 議論された案を忘れないため shadow 保管、 user 再指定 or source 確保で再開。 |
 
-### 406 — HR opponent / home_away split SQL bug fix (P1 narrow、 LIVE_DEPLOYED_OBSERVE)
+### 406 — HR opponent / home_away split SQL bug fix (P1 narrow、 CLOSED 2026-05-20 PM)
 
 | ticket | status | 内容 |
 |---|---|---|
-| `doc/active/406-INSIGHT-hr-split-sql-bug-fix.md` | LIVE_DEPLOYED_OBSERVE | 5/20 12:00 JST `insight-nightly-ndtvf` logs に `OperationalError:no such column: bl.HR` × 7 split (opponent=t/s/c/db/d + home_away=home/away)、 warn `player_counting_split_publish_failed`、 過去 5 日で 175 件再発。 原因 (audit 済): `src/analysis/ranking_article_publisher.py` L937 `aggregate_player_counting_stat_split` に L278 と同じ HR dispatch 無く、 `batting_logs` schema に HR 列が存在しない (`atbats_json` 内 marker 集計が必要) のに `SUM(bl.HR)` を発行。 narrow fix: split 版に dispatch 追加 + split 対応 helper `aggregate_player_hr_from_atbats_split` 新規。 tests 3 件追加 / targeted 6 passed / regression check 74 passed / `batting_logs` schema 変更なし。 commit `5d72191` / Cloud Build `fd780627` SUCCESS / image `insight-nightly:406-hr-split-5d72191` / Job generation 72 Ready=True。 next: 20:00 JST scheduler 自然 fire で `bl.HR` error 消失 verify (+ HR split publish の cooldown 経路観察)。 |
+| `doc/done/2026-05/406-INSIGHT-hr-split-sql-bug-fix.md` (GH #78) | CLOSED (LIVE_DEPLOYED_VERIFIED) | 5/20 12:00 JST `insight-nightly-ndtvf` logs に `OperationalError:no such column: bl.HR` × 7 split。 原因 (audit 済): split 経路に HR dispatch 無く `SUM(bl.HR)` で OperationalError。 narrow fix: split 版に dispatch 追加 + split 対応 helper `aggregate_player_hr_from_atbats_split` 新規。 commit `5d72191` / Cloud Build `fd780627` / image `insight-nightly:406-hr-split-5d72191` / Job gen 72。 **verify (2026-05-20 20:00 JST fire)**: bl.HR error 過去 5 日 175 件 → 20:00 fire で **0 件** (完全消失)。 |
 
 
 

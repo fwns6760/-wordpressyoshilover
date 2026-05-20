@@ -216,6 +216,35 @@ _BOILERPLATE_LINES = {
     "通知OFF",
     "野球スコア速報",
     "編集者のオススメ記事",
+    # Share / SNS UI button labels that React-rendered news sites
+    # (e.g. news.ntv.co.jp) emit as separate sibling <p>/<button>
+    # nodes inside the article container. Each label only ever
+    # appears alone on its own line in the chrome; real article
+    # prose never reduces to a single one of these words.
+    "スポーツ",
+    "ポスト",
+    "ツイート",
+    "送る",
+    "シェア",
+    "ブックマーク",
+    "コピー",
+    "URLをコピー",
+    "リンクをコピー",
+    "クリップボードにコピー",
+    "クリップボードにコピーしました",
+    "シェアする",
+    "保存",
+    "保存する",
+    "もっと見る",
+    "いいね",
+    "メール",
+    "印刷",
+    "LINEで送る",
+    "Facebookでシェア",
+    "Xでシェア",
+    "Twitterでシェア",
+    "はてブ",
+    "Pocket",
 }
 
 

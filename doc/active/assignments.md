@@ -4,6 +4,12 @@
 
 ## 2026-05-20 session update
 
+### 400 — 本文抜粋から share / SNS UI ボタン文字列を恒久 strip (user 指摘「ポスト・送る・シェア・ブックマーク等が引用に入ってる、日テレ以外も」 2026-05-20)
+
+| ticket | status | 内容 |
+|---|---|---|
+| `doc/active/400-QA-source-body-excerpt-share-ui-strip.md` | READY_FOR_IMPL | post 69888 (`https://yoshilover.com/69888`) の `nomotoke-source-excerpt__body` 内に `<p>スポーツ</p><p>(title repeat)</p><p>ポスト</p><p>送る</p><p>シェア</p><p>ブックマーク</p><p>URLをコピー</p>` が連続流入。原因 = `src/source_article_body_extractor.py` L204-219 `_BOILERPLATE_LINES` set に share UI label が無く、React-rendered NTV / 他媒体が sibling `<p>` で emit するボタン label が exact-line match を抜けて本文として通過していた。narrow fix: set に 23 ラベル (スポーツ / ポスト / ツイート / 送る / シェア / ブックマーク / コピー / URLをコピー / リンクをコピー / クリップボードにコピー / クリップボードにコピーしました / シェアする / 保存 / 保存する / もっと見る / いいね / メール / 印刷 / LINEで送る / Facebookでシェア / Xでシェア / Twitterでシェア / はてブ / Pocket) 追加、ロジック改変なし、exact-line match なので prose 内 substring (ポストシーズン / メールマガジン / シェアを伸ばす) は誤剥離しない。tests に NTV 風 + false-positive 防止の 2 case 追加、pytest 46 + manual_intake 93 = 計 139 passed (regression 0)。post 69888 は retroactive cleanup しない、本 fix は今後生成のみに効く。env / Secret / Scheduler / WP既存記事 / X / publish-notice / x-post-mail-lane / frontend / 自動 RSS / tag scrape path 全部不可触。次 step: commit + Cloud Build (manual-intake-service + yoshilover-fetcher 両方、同 extractor 共用) + revision flip + NTV URL を draft 再投入 + 本文抜粋に share UI が残らないことを grep verify → README/assignments に build/revision evidence 反映。 |
+
 ### 399 — manual-intake が NTV React Helmet 記事を `missing_title_or_summary` で蹴る件 (user 報告 2026-05-20、同日 LIVE_DEPLOYED_VERIFIED)
 
 | ticket | status | 内容 |
@@ -14,7 +20,7 @@
 
 | ticket | status | 内容 |
 |---|---|---|
-| `doc/active/317-QA-ob-youtube-review-only-intake.md` (GH #76) | REVIEW_NEEDED | user 判断「下書きで作ってもらうでよい。公開は私が判断する」。巨人OB YouTube source を RSS 本線へ draft-only 接続。`giants_ob` source は weak title でも候補化し、`OB・解説者` category + `social_video_notice` body / YouTube embed で draft 作成。publish skip reason は `draft_only,youtube_review_source_draft_only`。非巨人OBは従来 title relevance gate 維持、公式YouTube 395 は別扱いで既存挙動維持。対象 unittest 77 OK / targeted pytest 77 passed / full pytest baseline 5388 passed, 1 xfailed, 3 xpassed / py_compile・compileall・AST OK。env / Secret / Scheduler / YouTube Data API / WP既存記事 / X / Cloud Run live は未変更、fire/log diff は未実施 N/A。 |
+| `doc/waiting/317-QA-ob-youtube-review-only-intake.md` (GH #76) | READY_FOR_AUTH_EXECUTOR | user 判断「下書きで作ってもらうでよい。公開は私が判断する」→「デプロイ前まで」。巨人OB YouTube source を RSS 本線へ draft-only 接続。`giants_ob` source は weak title でも候補化し、`OB・解説者` category + `social_video_notice` body / YouTube embed で draft 作成。publish skip reason は `draft_only,youtube_review_source_draft_only`。非巨人OBは従来 title relevance gate 維持、公式YouTube 395 は別扱いで既存挙動維持。実装 commit `021c85c`。対象 unittest 77 OK / targeted pytest 77 passed / full pytest baseline 5388 passed, 1 xfailed, 3 xpassed / py_compile・compileall・AST OK。pre-deploy read-only check: current fetcher rev `yoshilover-fetcher-00452-glk`, image `398-media-quote-default-6969375`, traffic 100%, `RUN_DRAFT_ONLY=True`, `AUTO_TWEET_ENABLED=0`。env / Secret / Scheduler / YouTube Data API / WP既存記事 / X / Cloud Run deploy/fire は未変更。 |
 
 ### 398 — media_quote_evaluation 未初期化エラーの再発防止
 

@@ -168,6 +168,69 @@ class SiteSelectorPathTests(unittest.TestCase):
         self.assertNotIn("通知ON", out)
         self.assertNotIn("通知OFF", out)
 
+    def test_share_ui_buttons_dropped_from_react_helmet_body(self):
+        # news.ntv.co.jp / 他 React-rendered ニュースサイトは記事
+        # container 内に share UI を sibling <p>/<button> として
+        # emit する。post 69888 で実際に excerpt に流入していた
+        # 「スポーツ / ポスト / 送る / シェア / ブックマーク /
+        # URLをコピー」の 6 ラベルを 1 つも残さないことを担保する
+        # regression test。本文の prose は維持する。
+        html = (
+            "<article>"
+            "<p>スポーツ</p>"
+            "<h1>ナショナルズのウッドが激走で満塁ホームラン</h1>"
+            "<p>ポスト</p>"
+            "<p>送る</p>"
+            "<p>シェア</p>"
+            "<p>ブックマーク</p>"
+            "<p>URLをコピー</p>"
+            "<p>2026年5月20日 12:59</p>"
+            "<p>◇MLB ナショナルズ9-6メッツ(日本時間20日、ナショナルズ・パーク)</p>"
+            "<p>ナショナルズのジェームズ・ウッド選手が2回にランニング満塁ホームランを記録しました。</p>"
+            "</article>"
+        )
+        out = extract_article_body_excerpt(
+            html,
+            "https://news.ntv.co.jp/category/sports/5b63a75714734548999c19fbf038d767",
+            title="ナショナルズのウッドが激走で満塁ホームラン",
+            max_chars=600,
+        )
+        # 本文は維持
+        self.assertIn("ナショナルズ9-6メッツ", out)
+        self.assertIn("ウッド選手", out)
+        # share UI と breadcrumb は全部剥がれる
+        self.assertNotIn("ポスト", out)
+        self.assertNotIn("送る", out)
+        self.assertNotIn("シェア", out)
+        self.assertNotIn("ブックマーク", out)
+        self.assertNotIn("URLをコピー", out)
+        # title 単独行と breadcrumb も剥がれる
+        self.assertNotIn("スポーツ", out)
+        self.assertNotIn("ナショナルズのウッドが激走で満塁ホームラン\n", out)
+        self.assertNotIn("2026年5月20日", out)
+
+    def test_share_ui_substring_in_prose_preserved(self):
+        # share UI labels は exact-line match で剥がす実装なので、
+        # 「ポストシーズン」「メールマガジン」「シェアを伸ばす」
+        # のような prose 内 substring は本文として残らなければ
+        # ならない (false positive を出さないことの担保)。
+        html = (
+            "<article>"
+            "<p>巨人はポストシーズン進出を目指す。</p>"
+            "<p>メールマガジンの読者が増えた。</p>"
+            "<p>市場シェアを伸ばす戦略を採用した。</p>"
+            "</article>"
+        )
+        out = extract_article_body_excerpt(
+            html,
+            "https://example.com/news/123",
+            title="巨人の戦略",
+            max_chars=600,
+        )
+        self.assertIn("ポストシーズン", out)
+        self.assertIn("メールマガジン", out)
+        self.assertIn("シェアを伸ばす", out)
+
 
 class FallbackChainTests(unittest.TestCase):
     def test_article_tag_used_when_site_selector_misses(self):

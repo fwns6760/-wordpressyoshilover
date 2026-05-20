@@ -1677,6 +1677,28 @@ def _maybe_insert_source_body_excerpt(
             source_url,
         )
         excerpt = ""
+    # NOMOTOKE-INTAKE-PREVIEW-FALLBACK-001: paywall / "続きを読む" preview-only
+    # サイト (AERA Digital / 日経 (有料) / WEDGE Infinity / 文春オンライン
+    # 抜粋版 等) は article-body 要素が「リード 1-2 文 + 続きを読む」しか
+    # 持たないため、本文 extractor が短い (< 40 字) / 空を返す。これらの
+    # 媒体でも og:description / og:summary に preview 1-2 文 (本文の
+    # 先頭部分そのもの) が露出しているので、それを fallback として本文抜粋
+    # block の中身に流す。出典 link は維持され、preview 以上の本文を取って
+    # こない (主従関係 / fair use 維持)。
+    _PREVIEW_FALLBACK_MIN_CHARS = 40
+    used_meta_fallback = False
+    if (not excerpt) or len(excerpt) < _PREVIEW_FALLBACK_MIN_CHARS:
+        meta_text = (summary or "").strip()
+        if len(meta_text) >= _PREVIEW_FALLBACK_MIN_CHARS:
+            _log.info(
+                "source_body_excerpt_meta_fallback "
+                "extractor_len=%d meta_len=%d url=%s",
+                len(excerpt or ""),
+                len(meta_text),
+                source_url,
+            )
+            excerpt = meta_text
+            used_meta_fallback = True
     if not excerpt:
         _log.info(
             "source_body_excerpt_skip reason=extractor_empty url=%s raw_html_len=%d",
@@ -1684,7 +1706,7 @@ def _maybe_insert_source_body_excerpt(
             len(raw_html),
         )
         return rendered_html
-    if not _source_excerpt_matches_context(
+    if not used_meta_fallback and not _source_excerpt_matches_context(
         excerpt,
         title=title,
         summary=summary,

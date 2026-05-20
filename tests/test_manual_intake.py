@@ -2063,6 +2063,82 @@ class SourceBodyExcerptExpansionTests(_IntakeBaseTest):
         self.assertNotIn("大城卓三", content)
 
 
+class PreviewOnlySourceFallbackTests(unittest.TestCase):
+    """402: AERA Digital / 日経 (有料) / WEDGE 等の "続きを読む" 型 preview-
+    only サイトで article-body が短すぎる場合に og:description (summary) を
+    本文抜粋 block の fallback として注入する path の regression test。"""
+
+    _RENDERED_PRE_INJECT = (
+        '<p class="nomotoke-lead">lead text</p>\n'
+        "<h3>🔗 出典記事</h3>\n"
+        '<p>記事全文は <a href="https://example.com/x">元記事</a></p>'
+    )
+
+    def test_meta_fallback_injects_excerpt_block_when_body_too_short(self):
+        # body extractor returns < 40 chars (AERA preview "...続きを読む" の
+        # 内側 1 fragment しか取れない)、og:description (summary) は 120+ 字
+        # の preview 段落を持つケース。fallback で excerpt block が入る。
+        raw_html = (
+            "<html><body>"
+            '<div class="article-body">投手は「消耗品」</div>'
+            "</body></html>"
+        )
+        long_summary = (
+            "プロ野球界における先週最大のニュースと言えば、やはりDeNAと"
+            "ソフトバンクのトレードになるだろう。DeNAからは山本祐大、"
+            "ソフトバンクからは尾形崇斗と井上朋也が移籍することになった。"
+        )
+        out = mi._maybe_insert_source_body_excerpt(
+            self._RENDERED_PRE_INJECT,
+            raw_html=raw_html,
+            source_url="https://dot.asahi.com/articles/-/282931",
+            title="巨人は野手に余剰戦力 トレード候補を考える",
+            source_name="dot.asahi.com",
+            summary=long_summary,
+        )
+        self.assertIn("nomotoke-source-excerpt__body", out)
+        self.assertIn("DeNAとソフトバンクのトレード", out)
+
+    def test_no_fallback_when_extractor_returns_normal_body(self):
+        # extractor が普通に取れる場合 (報知 / スポニチ等の long body) は
+        # 通常経路で excerpt が入り、fallback path は通らない (= summary
+        # を使わない)。回帰防止。
+        raw_html = (
+            "<html><body>"
+            '<div class="article-body">'
+            "<p>巨人の戸郷翔征投手が7回無失点と好投。"
+            "今シーズン最長の7回115球で5安打無失点、今季初勝利を挙げた。"
+            "二軍生活での苦労が報われた瞬間だった。</p>"
+            "</div>"
+            "</body></html>"
+        )
+        out = mi._maybe_insert_source_body_excerpt(
+            self._RENDERED_PRE_INJECT,
+            raw_html=raw_html,
+            source_url="https://hochi.news/articles/foo.html",
+            title="巨人 戸郷 7回無失点で初勝利",
+            source_name="hochi.news",
+            summary="まったく違う要約 (ignored)",
+        )
+        self.assertIn("nomotoke-source-excerpt__body", out)
+        self.assertIn("戸郷翔征", out)
+        # body の方が入ってる (summary は使われない)
+        self.assertNotIn("まったく違う要約", out)
+
+    def test_skip_when_both_extractor_and_summary_too_short(self):
+        # extractor も summary も短すぎる場合は何も注入しない (回帰防止)。
+        raw_html = "<html><body><p>短い</p></body></html>"
+        out = mi._maybe_insert_source_body_excerpt(
+            self._RENDERED_PRE_INJECT,
+            raw_html=raw_html,
+            source_url="https://example.com/x",
+            title="短い記事",
+            source_name="example.com",
+            summary="短い",
+        )
+        self.assertNotIn("nomotoke-source-excerpt__body", out)
+
+
 class RssPipelineForceEnrichmentTests(unittest.TestCase):
     """332-QA: ENABLE_RSS_PIPELINE_FORCE_ENRICHMENT で nomotoke-card-
     marker が無い RSS Gemini body にも enrichment が走るか。"""

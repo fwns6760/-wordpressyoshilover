@@ -1,7 +1,7 @@
 # 317-QA OB YouTube Review-Only Intake
 
 作成日: 2026-05-10
-状態: READY_FOR_AUTH_EXECUTOR
+状態: LIVE_DEPLOYED_OBSERVE
 GitHub Issue: #76
 
 ## 1. 今回の目的
@@ -35,7 +35,7 @@ GitHub Issue: #76
 - `config/rss_sources.json`
 - `tests/test_rss_fetcher_youtube_integration.py`
 - `tests/test_youtube_ob_source_registry.py`
-- `doc/waiting/317-QA-ob-youtube-review-only-intake.md`
+- `doc/active/317-QA-ob-youtube-review-only-intake.md`
 - `doc/README.md`
 - `doc/active/assignments.md`
 
@@ -157,6 +157,7 @@ GO後に実装する場合の予定:
 - 2026-05-20: user が巨人OB YouTubeを差別化記事として後で扱う方針を再確認。GitHub Issue #76 を作成し、本 ticket を PARKED / later backlog として記録。コード、deploy、env、scheduler、Secret、WP、X は未変更。
 - 2026-05-20: user が「下書きで作ってもらうでよい。公開は私が判断する」と明示。`giants_ob` source role を追加し、巨人OB YouTube は title が弱くても候補化、RSS 本線では `social_video_notice` body + YouTube embed で draft 作成、publish skip reason `draft_only,youtube_review_source_draft_only` で必ず下書き維持する実装に変更。公式 YouTube は `official_video_source` として既存 395 挙動を維持。非巨人OBは従来 title filter を維持。env / Secret / Scheduler / Cloud Run / WP既存記事 / X は未変更。
 - 2026-05-20: user 指示「デプロイ前まで進めて」。status を `READY_FOR_AUTH_EXECUTOR` に正規化し、folder policy に従って `doc/waiting/` へ移動。read-only `gcloud run services describe yoshilover-fetcher --project baseballsite --region asia-northeast1 --format=json` で現行本番を確認: revision `yoshilover-fetcher-00452-glk`、image `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/yoshilover-fetcher:398-media-quote-default-6969375`、traffic 100%、service generation `594`、`RUN_DRAFT_ONLY=True`、`AUTO_TWEET_ENABLED=0`。deploy / build / env / Secret / Scheduler / WP / X / fire は未実行。
+- 2026-05-20: user 指示「ならデプロイ」。実装 commit `021c85c` の clean archive から Cloud Build `6a0c0d80-84ad-42fa-9c75-5c547e819b3f` を実行し、image `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/yoshilover-fetcher:317-ob-youtube-021c85c` / digest `sha256:2f1479043bb99ab88f4a1821e7d8df63dfa5d0f705a72036269084ecb5fc3f09` を作成。Cloud Run service `yoshilover-fetcher` へ deploy し、revision `yoshilover-fetcher-00454-ntj`、traffic 100%、`/health` OK、新 revision ERROR log 0 を確認。manual `/run` fire、env / Secret / Scheduler / RUN_DRAFT_ONLY flip / WP既存記事 / X は未変更。
 
 ## 10. Regression Memo欄
 
@@ -179,7 +180,7 @@ GO後に実装する場合の予定:
 - `src/tools/run_social_video_notice_dry_run.py`
 - `tests/test_youtube_ob_source_registry.py`
 - `tests/test_rss_fetcher_youtube_integration.py`
-- `doc/waiting/317-QA-ob-youtube-review-only-intake.md`
+- `doc/active/317-QA-ob-youtube-review-only-intake.md`
 - `doc/README.md`
 - `doc/active/assignments.md`
 
@@ -234,13 +235,13 @@ GO後に実装する場合の予定:
 - 2026-05-20 sandbox baseline: `5377 passed, 11 failed, 1 xfailed, 3 xpassed`。失敗11件は `127.0.0.1` socket 作成が sandbox で `PermissionError: [Errno 1] Operation not permitted` になった LiveServerSmokeTest 起点、およびその env bleed による x-post endpoint 403。
 - 2026-05-20 sandbox外切り分け: PASS (`14 passed, 3 warnings`)。
 - 2026-05-20 full pytest baseline sandbox外: PASS (`5388 passed, 1 xfailed, 3 xpassed, 4 warnings`)。
-- 2026-05-20 live fire / deploy / log 数値 diff: N/A。この便では env / Scheduler / Cloud Run / WP live fire を触らず、repo 実装 + tests + commit まで。
+- 2026-05-20 deploy / log 数値 diff: PASS。fetcher revision `yoshilover-fetcher-00452-glk` -> `yoshilover-fetcher-00454-ntj`、image `398-media-quote-default-6969375` -> `317-ob-youtube-021c85c`、generation / observedGeneration `594/594` -> `596/596`、traffic latest 100% 維持、`RUN_DRAFT_ONLY=True` 維持、`AUTO_TWEET_ENABLED=0` 維持、`/health` OK、新 revision ERROR log 0。
 - 2026-05-20 pre-deploy read-only Cloud Run check: PASS。current service `yoshilover-fetcher` は Ready、latest ready revision `yoshilover-fetcher-00452-glk`、current image `yoshilover-fetcher:398-media-quote-default-6969375`、traffic 100%。
 
 ## 15. 残った懸念
 
-- RSS 本線への接続は実装済み。ただし live deploy / fire は未実施。
-- pre-deploy handoff 済み。ただし Cloud Build / Cloud Run deploy は未実行。
+- RSS 本線への接続と live deploy は完了。ただし natural fire で実 OB YouTube draft が作られる観察は未実施。
+- deploy は clean archive `021c85c` から実施。manual `/run` fire は追加していない。
 - OBチャンネルの `channel_handle` は未確認のため空欄が多い。source表示はチャンネル名fallbackになる。
 - `giants_ob` source は title が弱くても draft になるため、無関係動画が混じる可能性は残る。公開は user 判断で止める。
 - 動画内発言内容は取得していないため、発言詳細を本文に出すには人間確認が必要。
@@ -280,15 +281,15 @@ GO後に実装する場合の予定:
 - 動画・画像の保存、再アップロード、加工
 - 公式 YouTube 395 の titleless intake 挙動。
 
-## 19. Pre-Deploy Handoff
+## 19. Deploy Evidence
 
-状態: `READY_FOR_AUTH_EXECUTOR`
+状態: `LIVE_DEPLOYED_OBSERVE`
 
 実装 commit:
 
 - `021c85c 317: draft-only OB YouTube intake`
 
-現行本番 baseline(read-only 確認):
+deploy 前 baseline(read-only 確認):
 
 - service: `yoshilover-fetcher`
 - project / region: `baseballsite` / `asia-northeast1`
@@ -298,13 +299,25 @@ GO後に実装する場合の予定:
 - service generation: `594`
 - key invariant: `RUN_DRAFT_ONLY=True`, `AUTO_TWEET_ENABLED=0`
 
-認証済み executor 用 deploy 候補(このセッションでは実行しない):
+deploy 実績:
+
+- Cloud Build: `6a0c0d80-84ad-42fa-9c75-5c547e819b3f` / SUCCESS / duration `2M10S`
+- image: `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/yoshilover-fetcher:317-ob-youtube-021c85c`
+- digest: `sha256:2f1479043bb99ab88f4a1821e7d8df63dfa5d0f705a72036269084ecb5fc3f09`
+- deployed revision: `yoshilover-fetcher-00454-ntj`
+- traffic: latest revision 100%
+- service generation / observedGeneration: `596` / `596`
+- `/health`: `OK`
+- new revision ERROR log: `0`
+- invariants: `RUN_DRAFT_ONLY=True`、`AUTO_TWEET_ENABLED=0`
+
+実行した deploy command:
 
 ```bash
-gcloud builds submit \
+gcloud builds submit /tmp/yoshilover-317-build.W6ekyK \
   --project baseballsite \
   --region asia-northeast1 \
-  --tag asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/yoshilover-fetcher:317-ob-youtube-021c85c .
+  --tag asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/yoshilover-fetcher:317-ob-youtube-021c85c
 
 gcloud run deploy yoshilover-fetcher \
   --image asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/yoshilover-fetcher:317-ob-youtube-021c85c \
@@ -313,10 +326,10 @@ gcloud run deploy yoshilover-fetcher \
   --quiet
 ```
 
-deploy 時の禁止:
+deploy 時に触っていない範囲:
 
-- `--set-env-vars` / `--update-env-vars` / Secret / Scheduler / RUN_DRAFT_ONLY flip は不要かつ禁止。
-- WP 既存記事編集、X投稿、YouTube Data API 追加、manual fire はこの deploy 手順には含めない。
+- `--set-env-vars` / `--update-env-vars` / Secret / Scheduler / RUN_DRAFT_ONLY flip。
+- WP 既存記事編集、X投稿、YouTube Data API 追加、manual `/run` fire。
 
 rollback 候補:
 
@@ -327,11 +340,14 @@ gcloud run services update yoshilover-fetcher \
   --image asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/yoshilover-fetcher:398-media-quote-default-6969375
 ```
 
-post-deploy verify 候補:
+post-deploy verify:
 
-- `GET /health` が 200。
-- latest ready revision が新 image を向き、traffic 100%。
+- `GET /health` が 200 / `OK`。
+- latest ready revision が new image `317-ob-youtube-021c85c` を向き、traffic 100%。
 - Cloud Logging で新 revision ERROR 0。
+- X API POST / publish 自動化 / Secret / Scheduler / env 変更 0。
+
+残 acceptance:
+
 - 次 natural fire 後に `youtube_review_category_override` が出ても ERROR なし。
 - OB YouTube draft が作られる場合、status は draft、category は `OB・解説者`、content に `wp-block-embed-youtube` が入る。
-- X API POST / publish 自動化 / Secret / Scheduler 変更が 0。

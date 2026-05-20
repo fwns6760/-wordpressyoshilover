@@ -2249,6 +2249,28 @@ def pick_candidates(
                      combo.metric, combo.period_label, result.get("reason"))
             continue
         rows = filter_central_league(result.get("rows") or [])
+        # 414 axis C8 (2026-05-20): 巨人 rows のうち 1軍 active でない player を排除
+        # (user 報告 「山瀬 (2軍中心) が 1軍 ranking に出る」 fix)。 直近 14 日で 3 試合
+        # 未満出場の player は filter out。 db_path 不在 / 例外時は silent fallback で
+        # filter で消さない (既存挙動維持)。
+        if db_path:
+            try:
+                from src.analysis.active_roster_filter import is_first_team_active
+                _active_filtered: list[dict] = []
+                for _r in rows:
+                    _team_name = str(_r.get("team_name") or "").strip()
+                    _player = str(_r.get("player_canonical") or "").strip()
+                    if _team_name == "巨人" and _player:
+                        if not is_first_team_active(_player, db_path, now_jst=now):
+                            LOG.info(
+                                "active_roster_filter_skip player=%s metric=%s period=%s",
+                                _player, combo.metric, combo.period_label,
+                            )
+                            continue
+                    _active_filtered.append(_r)
+                rows = _active_filtered
+            except Exception as _exc:  # noqa: BLE001
+                LOG.info("active_roster_filter_skip_exception err=%r", _exc)
         min_rows_required = min_central_rows
         if len(rows) < min_rows_required:
             LOG.info("Too few rows (%d < %d) for %s/%s (position=%s) — skip",

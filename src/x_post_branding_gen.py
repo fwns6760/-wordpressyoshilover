@@ -1297,9 +1297,23 @@ def build_gemma_branding_candidate(
     else:
         resolved_post_type = post_type
     post_type_guidance = _POST_TYPE_GUIDANCE.get(resolved_post_type, "")
+    # 414 axis E: 試合前 (試合日 + 17時以前) のみ 7 テーマを prompt に注入
+    pregame_section = ""
+    if db_path and 5 <= now_jst.hour < 17:
+        try:
+            from src.analysis.pregame_themes import (
+                build_pregame_themes,
+                format_pregame_themes_for_prompt,
+            )
+            themes = build_pregame_themes(db_path, now_jst=now_jst)
+            pregame_section = format_pregame_themes_for_prompt(themes)
+        except Exception as exc:  # noqa: BLE001 - silent fallback
+            log.info("pregame_themes_skip reason=%r", exc)
     prompt_parts = [system_prompt]
     if post_type_guidance:
         prompt_parts.extend(["", post_type_guidance])
+    if pregame_section:
+        prompt_parts.extend(["", pregame_section])
     prompt_parts.extend([
         "",
         f"対象選手: {player}",

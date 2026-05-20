@@ -23,11 +23,21 @@
   - `yoshilover_063_get_top_player_tags()` の cap を 100 → 30
   - `yoshilover_063_sanitize_dense_nav_items()` の slice 上限を 150 → 50
   - plugin version 0.16.1 → 0.16.2
-- `src/custom.css`:
-  - `@media (max-width: 600px)` block を追加し、 `.yoshi-dense-nav__item:nth-child(n+16)` を `display: none` で隠す
-  - mobile 可視 = 固定 8 + player 7 = 15 chip (3 段で収まる)
-  - mobile は横スクロールではなく折り返し: `__scroll { overflow-x: visible }` + `__list { flex-wrap: wrap }` (user 判断 2026-05-20 追記)
-  - user 判断 2026-05-20 (再追記): mobile は **3 段** に収まる量 (chip 18 → 15 へ削減)
+- `src/custom.css` (CSS-only gating approach):
+  - `@media (min-width: 601px)` で `__item:nth-child(n+39)` を hide → PC 38 chip 可視
+  - `@media (max-width: 600px)` で `__item:nth-child(n+16)` を hide → mobile 15 chip 可視 (3 段)
+  - mobile は横スクロールではなく折り返し: `__scroll { overflow-x: visible }` + `__list { flex-wrap: wrap }`
+  - **plugin php 側の cap 100→30 変更は live 反映 NG** (XSERVER WAF が PHP body POST を 501 で block)。 CSS 側で gating することで対応。
+
+## deploy 履歴
+
+- 2026-05-20: `bin/push_custom_css.sh` で custom.css push (http 200、 length 273595、 contains_marker=true)
+- 2026-05-20: plugin php push を試行したが XSERVER WAF が 501 を返す → CSS-only approach に切替
+- plugin php の v0.16.2 (cap 30) は repo 上にのみ存在、 live は v16 (cap 100) のまま、 CSS で表示制御
+
+## 残課題
+
+- plugin php update 経路の確立 (SFTP / WP 管理画面手動 / WAF 設定変更 / endpoint 側で base64 受け付け追加 等、 別 ticket)
 
 ## user intent (2026-05-19 chat lock)
 

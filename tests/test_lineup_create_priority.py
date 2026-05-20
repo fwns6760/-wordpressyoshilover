@@ -79,6 +79,46 @@ class LineupCreatePriorityTests(unittest.TestCase):
         self.assertIn(lineup_entry["title"], limited_titles)
         self.assertNotIn(general_entries[-1]["title"], limited_titles)
 
+    def test_prioritize_prepared_entries_moves_official_youtube_after_lineup(self):
+        general_entry = {
+            "source_type": "news",
+            "category": "選手情報",
+            "title": "【巨人】一般記事",
+            "summary": "一般記事の概要。",
+            "entry_has_game": False,
+            "entry_index": 0,
+        }
+        official_youtube_entry = {
+            "source_type": "tag_scrape",
+            "source_roles": ["media_quote_only", "official_video_source", "postgame_video_source"],
+            "category": "試合速報",
+            "title": "みんなが待ってた！戸郷翔征投手の今季初勝利に球団カメラが密着！",
+            "summary": "",
+            "entry_has_game": True,
+            "entry_index": 1,
+        }
+        lineup_entry = {
+            "source_type": "news",
+            "category": "試合速報",
+            "title": "【巨人】今日のスタメン発表 1番丸、4番岡本和",
+            "summary": "巨人が阪神戦のスタメンを発表した。",
+            "entry_has_game": True,
+            "entry_index": 2,
+        }
+
+        prioritized = rss_fetcher._prioritize_prepared_entries_for_creation(
+            [general_entry, official_youtube_entry, lineup_entry]
+        )
+
+        self.assertEqual(
+            [item["title"] for item in prioritized],
+            [
+                lineup_entry["title"],
+                official_youtube_entry["title"],
+                general_entry["title"],
+            ],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

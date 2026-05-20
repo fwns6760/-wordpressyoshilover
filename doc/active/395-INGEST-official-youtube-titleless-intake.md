@@ -70,6 +70,10 @@ Official Giants YouTube source intake only.
 - Added regression tests:
   - official Giants YouTube source passes with `小林の肩 vs 朝井の声`
   - non-official YouTube source still skips unrelated `メジャー大谷総決算`
+- Follow-up after live manual run:
+  - official YouTube entries are now prioritized just after lineup / farm-lineup
+    candidates when draft creation starts, so YouTube drafts are less likely to
+    be starved by earlier general-news candidates if the run approaches timeout.
 
 ## validation evidence
 
@@ -87,10 +91,27 @@ Official Giants YouTube source intake only.
 - Cloud Run service `yoshilover-fetcher` deployed to revision `yoshilover-fetcher-00448-5zr`, latest revision 100% traffic.
 - `/health` returned `OK`.
 - Cloud Run log: startup TCP probe succeeded; new revision ERROR log count 0.
+- Manual scheduler run `giants-weekday-daytime` after deploy observed:
+  - `読売ジャイアンツYouTube公式` fetched 10 entries.
+  - latest title `みんなが待ってた！戸郷翔征投手の今季初勝利に球団カメラが密着！`
+    reached `[HIT]`.
+  - `小林の肩 vs 朝井の声` no longer stopped at `youtube_title_filter_skip`; it
+    reached source/subtype processing and then skipped as `stale_rss_entry`
+    because Cloud Run estimated `source_age_hours=120.0`.
+  - non-official unrelated YouTube sources still emitted `youtube_title_filter_skip`.
+  - the manual full-source run timed out at Cloud Run / Scheduler request level
+    after 285s (`504`), after creating / updating several other drafts; this is
+    a separate timeout/starvation risk, not a YouTube title-filter failure.
+- Follow-up local validation after creation-priority change:
+  - `python3 -m unittest tests.test_lineup_create_priority tests.test_rss_fetcher_youtube_integration tests.test_youtube_title_filter tests.test_rss_fetcher_youtube_caption_section tests.test_youtube_caption_fetcher` passed: 62 tests.
+  - `python3 -m compileall src/rss_fetcher.py tests/test_lineup_create_priority.py tests/test_rss_fetcher_youtube_integration.py` passed.
+  - AST parse passed for `src/rss_fetcher.py` and `tests/test_lineup_create_priority.py`.
+  - `git diff --check -- src/rss_fetcher.py tests/test_lineup_create_priority.py` passed.
 
 ## live evidence
 
-Deploy verified. Natural fire observation is still pending.
+Deploy verified. Manual run verified official YouTube source intake and title-filter
+behavior; draft creation for YouTube needs the follow-up priority change deploy.
 
 Expected evidence:
 
@@ -101,5 +122,6 @@ Expected evidence:
 
 ## next action
 
-Observe the next natural fire and verify that official Giants YouTube weak-title
-videos no longer stop at `youtube_title_filter_skip reason=no_match`.
+Deploy the official YouTube creation-priority follow-up, then observe the next
+run and verify a fresh official YouTube item reaches draft creation before the
+run timeout window.

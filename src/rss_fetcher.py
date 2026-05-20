@@ -21947,16 +21947,21 @@ def _aggregate_lineup_candidates(candidates: list[dict]) -> list[dict]:
 
 
 def _prioritize_prepared_entries_for_creation(candidates: list[dict]) -> list[dict]:
-    def _is_priority_candidate(candidate: dict) -> bool:
+    def _priority_rank(candidate: dict) -> int:
         subtype = _detect_article_subtype(
             candidate.get("title", ""),
             candidate.get("summary", ""),
             candidate.get("category", ""),
             candidate.get("entry_has_game", True),
         )
-        return candidate.get("source_type") in {"news", "social_news"} and subtype in {"lineup", "farm_lineup"}
+        if candidate.get("source_type") in {"news", "social_news"} and subtype in {"lineup", "farm_lineup"}:
+            return 0
+        source_roles = set(candidate.get("source_roles") or [])
+        if "official_video_source" in source_roles:
+            return 1
+        return 2
 
-    return sorted(candidates, key=lambda item: 0 if _is_priority_candidate(item) else 1)
+    return sorted(candidates, key=_priority_rank)
 
 
 def _has_primary_lineup_candidate(candidates: list[dict]) -> bool:

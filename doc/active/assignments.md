@@ -27,6 +27,12 @@ user 方針「受け入れ NG はまた起票」+「一人開発で Active 多�
 
 ## 2026-05-20 session update
 
+### 414 — X-POST hallucination 防止 9-axis pack (順位 captcha + 数値 whitelist + 1軍 filter + 当日 only)
+
+| ticket | status | 内容 |
+|---|---|---|
+| `doc/active/414-X-POST-HALLUCINATION-PREVENTION-9AXIS.md` | DRAFT (user GO 受領、 実装着手中) | user 報告 2026-05-20 chat hallucination 事例 3 件 (岸田 28位 / 山瀬 2軍混入 / 試合中古い data) を 9 axis で fix。 `_GEMMA_BRANDING_FORBIDDEN_PATTERNS` に `\d+位` `\d+\.\d{3}` `防御率\s*\d+\.\d{1,2}` 追加、 数値 whitelist helper (verified set 外 drop)、 prompt bad example 強化、 temperature 0.6→0.4、 published_date 7日超 drop strict、 drop log 構造化、 `src/analysis/active_roster_filter.py` 新規 (`is_first_team_active(player, db, window_days=14, min_games=3)`)、 persona=kandume で `same_day_only=True` + `streak_window=0` (当日 only)。 並走 agent (403 chain) と `ranking_article_publisher.py` 衝突 risk、 commit 直列。 cost ¥0/post 維持。 GH Issue 別途。 |
+
 ### 411 — X-POST branding voice persona (Tavily whitelist 拡張 + フーガ/缶詰 2 persona + 試合日/18時 gate)
 
 | ticket | status | 内容 |

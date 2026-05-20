@@ -422,5 +422,193 @@ class BuildDbFactLineTests(unittest.TestCase):
         self.assertEqual(xbg.build_db_fact_line("", "/tmp/x.db"), "")
 
 
+class TavilyWhitelistTests411(unittest.TestCase):
+    """411 (2026-05-20): user 仕様 = 公式 / NPB / 球団 / 主要スポーツ紙優先."""
+
+    def test_whitelist_covers_official_and_papers(self) -> None:
+        domains = set(xbg._TAVILY_INCLUDE_DOMAINS)
+        # 公式 / 球団
+        self.assertIn("giants.jp", domains)
+        self.assertIn("npb.or.jp", domains)
+        # 主要スポーツ紙
+        self.assertIn("hochi.news", domains)
+        self.assertIn("sponichi.co.jp", domains)
+        self.assertIn("nikkansports.com", domains)
+        self.assertIn("sanspo.com", domains)
+        self.assertIn("daily.co.jp", domains)
+        self.assertIn("chunichi.co.jp", domains)
+        # ポータル (既存)
+        self.assertIn("sports.yahoo.co.jp", domains)
+        self.assertGreaterEqual(len(domains), 9)
+
+    def test_tavily_search_request_explicitly_disables_answer(self) -> None:
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"results": []}
+        with patch("requests.post", return_value=mock_resp) as mock_post:
+            xbg._tavily_search("巨人 戸郷", "tvly-fake")
+        args, kwargs = mock_post.call_args
+        body = kwargs.get("json") or {}
+        # spec lock: answer 使わない、 URL 本文 / 媒体名 / 日付のみ
+        self.assertIn("include_answer", body)
+        self.assertFalse(body["include_answer"])
+
+
+class FormatTavilyContextTests411(unittest.TestCase):
+    """411: published_date + 媒体名 を Gemma context に注入."""
+
+    def test_includes_published_date_and_source_label(self) -> None:
+        results = [
+            {
+                "title": "戸郷快投",
+                "content": "戸郷翔征が7回1失点で勝利投手...",
+                "url": "https://hochi.news/articles/12345.html",
+                "published_date": "Tue, 19 May 2026 13:30:00 GMT",
+            },
+        ]
+        ctx = xbg._format_tavily_context(results)
+        self.assertIn("[2026-05-19]", ctx)
+        self.assertIn("[スポーツ報知]", ctx)
+        self.assertIn("戸郷快投", ctx)
+
+    def test_unknown_date_falls_back_to_label(self) -> None:
+        results = [
+            {
+                "title": "記事タイトル",
+                "content": "本文",
+                "url": "https://sponichi.co.jp/x.html",
+                "published_date": "garbage-not-a-date",
+            },
+        ]
+        ctx = xbg._format_tavily_context(results)
+        self.assertIn("[日付不明]", ctx)
+        self.assertIn("[スポニチ]", ctx)
+
+    def test_unknown_source_label_falls_back_to_host(self) -> None:
+        results = [
+            {
+                "title": "記事",
+                "content": "本文",
+                "url": "https://example.invalid/x.html",
+                "published_date": "Tue, 19 May 2026 13:30:00 GMT",
+            },
+        ]
+        ctx = xbg._format_tavily_context(results)
+        self.assertIn("[example.invalid]", ctx)
+
+
+class IsGiantsGameDayTests411(unittest.TestCase):
+    """411: insight.db games table 経由の試合日判定."""
+
+    def _seed_db(self, db_path: str, date_str: str = "") -> None:
+        import sqlite3
+        con = sqlite3.connect(db_path)
+        try:
+            cur = con.cursor()
+            cur.execute(
+                "CREATE TABLE IF NOT EXISTS games ("
+                "game_id TEXT, game_date TEXT, opponent TEXT, "
+                "giants_score INTEGER, opp_score INTEGER, result TEXT, "
+                "ingested_at TEXT)"
+            )
+            if date_str:
+                cur.execute(
+                    "INSERT INTO games VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    ("g1", date_str, "ヤクルト", 5, 4, "win", "2026-05-20T22:00:00Z"),
+                )
+            con.commit()
+        finally:
+            con.close()
+
+    def test_returns_true_when_games_row_exists(self) -> None:
+        import os
+        import tempfile
+        from datetime import datetime, timezone, timedelta
+        jst = timezone(timedelta(hours=9))
+        now = datetime(2026, 5, 20, 19, 0, tzinfo=jst)
+        with tempfile.TemporaryDirectory() as tmp:
+            db = os.path.join(tmp, "insight.db")
+            self._seed_db(db, date_str="2026-05-20")
+            self.assertTrue(xbg.is_giants_game_day(now, db))
+
+    def test_returns_false_when_no_games_row(self) -> None:
+        import os
+        import tempfile
+        from datetime import datetime, timezone, timedelta
+        jst = timezone(timedelta(hours=9))
+        now = datetime(2026, 5, 20, 19, 0, tzinfo=jst)
+        with tempfile.TemporaryDirectory() as tmp:
+            db = os.path.join(tmp, "insight.db")
+            self._seed_db(db)  # empty
+            self.assertFalse(xbg.is_giants_game_day(now, db))
+
+    def test_returns_false_when_db_path_empty(self) -> None:
+        from datetime import datetime, timezone, timedelta
+        jst = timezone(timedelta(hours=9))
+        now = datetime(2026, 5, 20, 19, 0, tzinfo=jst)
+        self.assertFalse(xbg.is_giants_game_day(now, ""))
+
+    def test_returns_false_when_db_open_fails(self) -> None:
+        from datetime import datetime, timezone, timedelta
+        jst = timezone(timedelta(hours=9))
+        now = datetime(2026, 5, 20, 19, 0, tzinfo=jst)
+        self.assertFalse(xbg.is_giants_game_day(now, "/nonexistent/path/x.db"))
+
+
+class SelectBrandingPersonaTests411(unittest.TestCase):
+    """411: persona 自動選択 (試合日 18-21時 = 缶詰、 他 = フーガ)."""
+
+    def _now_at(self, hour: int):
+        from datetime import datetime, timezone, timedelta
+        jst = timezone(timedelta(hours=9))
+        return datetime(2026, 5, 20, hour, 0, tzinfo=jst)
+
+    def test_kandume_on_game_day_evening_18(self) -> None:
+        self.assertEqual(xbg.select_branding_persona(self._now_at(18), True), "kandume")
+
+    def test_kandume_on_game_day_evening_20(self) -> None:
+        self.assertEqual(xbg.select_branding_persona(self._now_at(20), True), "kandume")
+
+    def test_kandume_on_game_day_evening_21(self) -> None:
+        self.assertEqual(xbg.select_branding_persona(self._now_at(21), True), "kandume")
+
+    def test_fuuga_on_game_day_morning_11(self) -> None:
+        self.assertEqual(xbg.select_branding_persona(self._now_at(11), True), "fuuga")
+
+    def test_fuuga_on_game_day_afternoon_17(self) -> None:
+        # 17時は試合直前だが 18-21 範囲外なので フーガ
+        self.assertEqual(xbg.select_branding_persona(self._now_at(17), True), "fuuga")
+
+    def test_fuuga_on_game_day_late_night_22(self) -> None:
+        # 22時は試合後余韻、 缶詰 範囲外
+        self.assertEqual(xbg.select_branding_persona(self._now_at(22), True), "fuuga")
+
+    def test_fuuga_on_non_game_day_evening(self) -> None:
+        # 非試合日は 18-21 時でもフーガ
+        self.assertEqual(xbg.select_branding_persona(self._now_at(19), False), "fuuga")
+
+
+class BuildSystemPromptPersonaTests411(unittest.TestCase):
+    """411: _build_system_prompt が persona 引数で フーガ / 缶詰 を切替."""
+
+    def test_default_persona_uses_fuuga_prompt(self) -> None:
+        prompt = xbg._build_system_prompt(19, "2026-05-20")
+        # フーガ system prompt の few-shot 例の「完勝！」 が含まれる
+        self.assertIn("完勝！", prompt)
+        # 缶詰 voice 用の few-shot ヘッダーが含まれない
+        self.assertNotIn("試合中実況 X 投稿 voice (缶詰系)", prompt)
+
+    def test_kandume_persona_uses_kandume_prompt(self) -> None:
+        prompt = xbg._build_system_prompt(19, "2026-05-20", persona="kandume")
+        # 缶詰 system prompt の few-shot ヘッダー が含まれる
+        self.assertIn("試合中実況 X 投稿 voice (缶詰系)", prompt)
+        # フーガ few-shot 例の literal は含まれない (voice 切替済)
+        self.assertNotIn("完勝！ 7連勝！！", prompt)
+
+    def test_unknown_persona_falls_back_to_fuuga(self) -> None:
+        prompt = xbg._build_system_prompt(19, "2026-05-20", persona="unknown_voice")
+        self.assertIn("完勝！", prompt)
+
+
 if __name__ == "__main__":
     unittest.main()

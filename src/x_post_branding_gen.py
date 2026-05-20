@@ -48,7 +48,11 @@ _GEMMA_BRANDING_FORBIDDEN_PATTERNS = (
 )
 
 
-_SYSTEM_PROMPT_BASE = """あなたは熱心な巨人ファンとして X 投稿案を書きます。
+# 411 (2026-05-20): 本 prompt は フーガ (@EH87EazmV9D2eSw、 巨人ファン長文分析)
+# voice の few-shot prompt。 缶詰 (@kandume92、 巨人ファン試合中実況) voice は
+# _SYSTEM_PROMPT_KANDUME 側で定義し、 試合日 18-21時のみ select_branding_persona
+# で切替える。
+_SYSTEM_PROMPT_FUUGA = """あなたは熱心な巨人ファンとして X 投稿案を書きます。
 編集者ぶった俯瞰や煽りではなく、 実際に試合を見て一喜一憂しているファンの
 voice で、 巨人の今を語ってください。 Tavily で巨人関連トピックを web 検索し、
 X 投稿案を 1 件生成してください。
@@ -137,12 +141,114 @@ voice の特徴だけ学んで今日の事実で書く。
 """
 
 
-def _build_system_prompt(now_jst_hour: int, today_jst: str) -> str:
+_SYSTEM_PROMPT_KANDUME = """あなたは熱心な巨人ファンとして X 投稿案を書きます。
+試合中の実況視点で、 短文を改行で連投する形で書きます。 一喜一憂しながら、
+今この瞬間の試合状況を共有する感覚で投稿してください。 Tavily で巨人関連の
+直近トピックを web 検索し、 試合中の臨場感ある投稿案を 1 件生成してください。
+
+制約 (hard rule、 違反したら出力しないこと):
+- 媒体名・記事 URL・hashtag・「ヨシラバーで整理しました」を含めない
+- 未検証の数字・引用・順位・打率・防御率・OPS・本塁打数・打点・回数を含めない
+- DB 照合できない数字は generalize する (例: 「打率.160」→「打率の数字」)
+- 記事タイトルのコピー禁止、 ファンらしい独自の言い回しで書く
+- **長さ目安: 180-280 文字** (短文連投が缶詰 voice の核、 1 行 1 観点で改行を多用)
+- **140 字未満の薄い post は禁止** (試合状況 + 選手反応 + 次への期待 を最低 3 観点)
+- 巨人以外の球団選手の話題は除外
+- 公開済み MLB の元巨人 OB (菅野・岡本等) は OK、 非元巨人 MLB は NG
+
+トーン (重要):
+- **試合中実況の voice**: 「◯回終わって◯-◯」「次の打席◯◯」「この回しのげれば」「来た！」「ここでこの場面!」 のような実況・実感の voice
+- **短文連投・改行多用**: 1 文を短く、 改行で並べる。 長い分析文 1 個より、 短い反応 4-5 個を改行で並べる方が缶詰 voice らしい
+- 編集者ぶった俯瞰・「客観中立」 は NG。 試合を見ながら呟いている感じ
+- 媒体煽り定型語 (「ついに」「我が軍」「連覇のピース」「待ち望んでいた」「物語がここから始まる」「その時が来た」「いよいよ」) は使わない
+- 試合中なので 「勝った」「連勝確定」 を完了形で言わない (まだ続行中)。 「この回踏ん張れば」「次のイニング次第」 等、 流動的な書き方
+- 数字は DB fact のみ (今日の試合進行 / 選手 stat) を使う
+
+【参考: 本物の巨人ファン試合中実況 X 投稿 voice (缶詰系)】
+これらの語彙・改行・短文リズムを参考にしてください。 内容は今日の DB fact /
+Tavily 直近情報に合わせて書き換えること (literal copy 禁止)。
+
+例1 (試合中・接戦):
+```
+4回終わって 2-2
+
+戸郷さんようやくリズム掴んできた
+3回までは球が高かったけど
+4回はギア入ったわ
+
+問題は打線
+あの場面で1点取れないのは痛い
+6番までで残塁8
+
+次の回頭からクリーンアップ
+ここで一発欲しい
+```
+
+例2 (試合中・リード時):
+```
+7回終わって 4-1
+
+中川-瑛斗の継投完璧
+バックも固い
+
+打線は3回の集中打が効いてる
+門脇のセーフティが起点
+これが繋がる野球やね
+
+あと2回
+大勢に繋げたい
+ここからの2イニング集中
+```
+
+例3 (試合中・劣勢時):
+```
+6回終わって 1-4
+
+ピッチャーが捕まりだしたな
+連打されるとキツい
+
+打線も合ってない感じ
+相手先発のキレが落ちる時を待つしか
+
+残り3イニング
+1点ずつでも返したい
+諦めるには早い
+```
+
+voice の特徴 (例から学ぶべきもの):
+- 試合進行 (◯回終わって ◯-◯) を冒頭に置く
+- 短文を改行で並べる (1 行 1 観点)
+- 投手・打線・守備 を分けてコメント
+- 次の展開への期待・不安を最後に置く
+- 「ようやくリズム掴んできた」「合ってない感じ」 のリアルタイム観察
+- 「ここで」「次の回」「あと◯回」 の即時性
+- 280 字以内で短文連投の臨場感
+
+時系列制約 (重要):
+- 試合中前提。 試合中の DB fact (今日の試合進行) があれば積極的に使う
+- Tavily snippet が古い場合は時系列を曖昧にせず、 試合中の臨場感だけに focus
+- まだ試合終了確定前なので「勝った」「連勝」 を完了形で言わない
+- 季節 / 開幕 / 復帰 等の文脈は今 ({today_jst}) との時間差を踏まえる
+
+時間帯トーン ({hour_jst} 時 JST):
+{time_tone_hint}
+
+出力形式: post 本文のみ。 説明や前置きは書かない。 例の literal コピー禁止、
+voice の特徴だけ学んで今日の事実で書く。
+"""
+
+
+def _build_system_prompt(now_jst_hour: int, today_jst: str, *, persona: str = "fuuga") -> str:
     """時間帯 hint を生成する。
 
-    重要: voice (上記 few-shot 例の語彙 / リズム / 改行 / 感嘆詞) はどの
-    時間帯でも変わらない。 hint は **content** (何を書くか) と
-    **熱量の出し方** だけを時間帯に合わせて変える。
+    411 (2026-05-20): persona 引数で フーガ (長文分析) / 缶詰 (試合中実況) を切替。
+    persona "fuuga" (default) = _SYSTEM_PROMPT_FUUGA、
+    persona "kandume" = _SYSTEM_PROMPT_KANDUME。
+    unknown persona は fuuga にフォールバック (silent fallback、 安全側)。
+
+    重要: voice (few-shot 例の語彙 / リズム / 改行 / 感嘆詞) は persona ごとに
+    固定。 hint は **content** (何を書くか) と **熱量の出し方** だけを時間帯に
+    合わせて変える。
     """
     if 5 <= now_jst_hour < 11:
         hint = (
@@ -172,14 +278,80 @@ def _build_system_prompt(now_jst_hour: int, today_jst: str) -> str:
             "- 熱量: 例示そのままの祝杯 / 悔しさ voice 全開。 「完勝！」「ガチ凄い」「噛み締めましょう」「とんでもない」 OK\n"
             "- DB fact line の今日 stat (6回1失点 8K 等) を堂々と使う。 verified 数字"
         )
-    return _SYSTEM_PROMPT_BASE.format(
+    template = _SYSTEM_PROMPT_KANDUME if persona == "kandume" else _SYSTEM_PROMPT_FUUGA
+    return template.format(
         hour_jst=now_jst_hour,
         today_jst=today_jst,
         time_tone_hint=hint,
     )
 
 
-_TAVILY_INCLUDE_DOMAINS = ("sports.yahoo.co.jp", "hochi.news")
+def is_giants_game_day(now_jst, db_path: str) -> bool:
+    """411 (2026-05-20): 今日 (now_jst の JST 日付) に巨人試合があるか.
+
+    insight.db の `games` テーブルを `SELECT 1 FROM games WHERE game_date = ?` で
+    判定。 row が 1 つ以上あれば True、 0 なら False。
+    db_path 不正 / sqlite open 失敗 / SELECT 例外時は False (silent fallback、
+    安全側 = 試合無いと見なし 缶詰 persona を発火させない)。
+    """
+    if not db_path:
+        return False
+    try:
+        today = now_jst.strftime("%Y-%m-%d")
+    except Exception:
+        return False
+    try:
+        import sqlite3
+        con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        try:
+            cur = con.cursor()
+            cur.execute(
+                "SELECT 1 FROM games WHERE game_date = ? LIMIT 1",
+                (today,),
+            )
+            row = cur.fetchone()
+        finally:
+            con.close()
+        return row is not None
+    except Exception:
+        return False
+
+
+def select_branding_persona(now_jst, is_game_day: bool) -> str:
+    """411 (2026-05-20): persona 自動選択.
+
+    user 仕様 lock:
+    - 試合日 + 18-21 時 JST = 缶詰 (試合中実況 voice)
+    - それ以外 (非試合日 / 試合日でも時間外) = フーガ (長文分析 voice)
+
+    Returns 'kandume' or 'fuuga'.
+    """
+    try:
+        hour = int(now_jst.hour)
+    except Exception:
+        return "fuuga"
+    if is_game_day and 18 <= hour <= 21:
+        return "kandume"
+    return "fuuga"
+
+
+# 411 (2026-05-20): user 仕様 = 公式 / NPB / 球団 / 主要スポーツ紙を優先。
+# include_domains で Tavily 側の取得を whitelist 内に絞る。 paid credit / cost は
+# domain 数によらず 1 query = 1 credit (free tier 1000/月 内で運用)。
+_TAVILY_INCLUDE_DOMAINS = (
+    # 公式 / 球団
+    "giants.jp",
+    "npb.or.jp",
+    # 主要スポーツ紙
+    "hochi.news",
+    "sponichi.co.jp",
+    "nikkansports.com",
+    "sanspo.com",
+    "daily.co.jp",
+    "chunichi.co.jp",
+    # ポータル (既存)
+    "sports.yahoo.co.jp",
+)
 
 
 def _tavily_search(
@@ -204,6 +376,9 @@ def _tavily_search(
         return []
     try:
         import requests
+        # 411 (2026-05-20): user 仕様 = Tavily の `answer` は使わない、
+        # `results[].url` / `title` / `content` / `published_date` だけを見る。
+        # include_answer=False を明示 (default も False だが spec lock として明示)。
         resp = requests.post(
             "https://api.tavily.com/search",
             json={
@@ -214,6 +389,7 @@ def _tavily_search(
                 "topic": "news",
                 "days": 2,
                 "include_domains": list(_TAVILY_INCLUDE_DOMAINS),
+                "include_answer": False,
             },
             timeout=timeout_seconds,
         )
@@ -720,14 +896,82 @@ def today_str(now_jst) -> str:
     return now_jst.strftime("%Y-%m-%d")
 
 
+def _extract_published_date_label(raw: object) -> str:
+    """411 (2026-05-20): published_date を YYYY-MM-DD label に正規化。
+
+    Tavily news topic は RFC 1123 (例: "Tue, 19 May 2026 13:30:00 GMT") を
+    返すことが多いが、 ISO 8601 / unparseable も来うる。 parse 失敗時は
+    「日付不明」 とし、 Gemma に古さの注意 hint を与える (hallucination 抑制)。
+    """
+    raw_str = str(raw or "").strip()
+    if not raw_str:
+        return "日付不明"
+    try:
+        from email.utils import parsedate_to_datetime
+        dt = parsedate_to_datetime(raw_str)
+        return dt.strftime("%Y-%m-%d")
+    except (TypeError, ValueError, IndexError):
+        pass
+    try:
+        from datetime import datetime as _dt
+        return _dt.fromisoformat(raw_str.replace("Z", "+00:00")).strftime("%Y-%m-%d")
+    except (TypeError, ValueError):
+        pass
+    # 最終 fallback: 先頭 10 文字が YYYY-MM-DD パターン
+    if len(raw_str) >= 10 and raw_str[4] == "-" and raw_str[7] == "-":
+        return raw_str[:10]
+    return "日付不明"
+
+
+def _extract_source_label(result: dict) -> str:
+    """411 (2026-05-20): result から媒体名を抽出。
+
+    Tavily は domain (例: "hochi.news") を返さない時があるが、 `url` から
+    domain を取って media label に変換する。 unknown domain は 「不明媒体」。
+    """
+    url = str(result.get("url") or "").strip()
+    if not url:
+        return "不明媒体"
+    try:
+        from urllib.parse import urlparse
+        host = urlparse(url).netloc.lower().lstrip("www.")
+    except Exception:
+        return "不明媒体"
+    label_map = {
+        "giants.jp": "巨人公式",
+        "npb.or.jp": "NPB公式",
+        "hochi.news": "スポーツ報知",
+        "sponichi.co.jp": "スポニチ",
+        "nikkansports.com": "日刊スポーツ",
+        "sanspo.com": "サンスポ",
+        "daily.co.jp": "デイリースポーツ",
+        "chunichi.co.jp": "中日スポーツ",
+        "sports.yahoo.co.jp": "Yahoo!スポーツ",
+    }
+    for domain_key, label in label_map.items():
+        if host == domain_key or host.endswith("." + domain_key):
+            return label
+    return host or "不明媒体"
+
+
 def _format_tavily_context(results: list[dict], *, snippet_len: int = 300) -> str:
+    """411 (2026-05-20): 各 result に `[YYYY-MM-DD] [媒体名] <タイトル> — <抜粋>` 形式で整形.
+
+    user 仕様: Tavily の answer は使わず、 URL 本文・媒体名・日付を見る。
+    Gemma に「いつの記事か」「どの媒体か」 を明示し、 古い snippet で現在形を
+    生成しないよう context で hint。
+    """
     lines = []
     for r in results:
         title = str(r.get("title") or "").strip()
         content = str(r.get("content") or "").strip()
         if not title and not content:
             continue
-        lines.append(f"- {title}: {content[:snippet_len]}")
+        date_label = _extract_published_date_label(r.get("published_date"))
+        source_label = _extract_source_label(r)
+        lines.append(
+            f"- [{date_label}] [{source_label}] {title} — {content[:snippet_len]}"
+        )
     return "\n".join(lines)
 
 
@@ -742,6 +986,8 @@ def build_gemma_branding_candidate(
     model_id: str = _GEMMA_BRANDING_MODEL,
     temperature: float = 0.6,
     logger: Optional[_logging.Logger] = None,
+    db_path: str = "",
+    persona: Optional[str] = None,
 ) -> Optional[Candidate]:
     """Tavily REST 検索 + Gemma 4 31B 生成で 1 件の Candidate を返す。
 
@@ -789,9 +1035,17 @@ def build_gemma_branding_candidate(
     from datetime import datetime, timezone, timedelta
     jst = timezone(timedelta(hours=9))
     now_jst = datetime.now(jst)
+    # 411 (2026-05-20): persona 自動選択 (試合日 18-21時 = 缶詰、 他 = フーガ)。
+    # caller が persona kwarg で明示指定すれば自動選択を override。
+    if persona is None:
+        is_game_day = is_giants_game_day(now_jst, db_path) if db_path else False
+        resolved_persona = select_branding_persona(now_jst, is_game_day)
+    else:
+        resolved_persona = persona
     system_prompt = _build_system_prompt(
         now_jst_hour=now_jst.hour,
         today_jst=now_jst.strftime("%Y-%m-%d"),
+        persona=resolved_persona,
     )
     prompt = (
         f"{system_prompt}\n\n"

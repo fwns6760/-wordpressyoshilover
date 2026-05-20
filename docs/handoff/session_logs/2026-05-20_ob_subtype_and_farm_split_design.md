@@ -234,6 +234,7 @@ GO 後のコード編集便で実行する予定の test。本便(markdown 作�
 - D13 回避: ob は CONTROLLED_SUBTYPES (title_validator) に**追加しない**。 既存 subtype の title validation に影響しない設計 (Phase 2 で必要なら追加検討)
 - pytest 5404 → 5431 で **既存 5404 件は変動なし** (collect 数 +27、 fail 増加 0、 既存 pass 数不変)
 - title_style_validator.SPECULATIVE_PHRASES_BY_SUBTYPE に ob 追加時、 既存 `test_prompt_lines_cover_all_editorial_subtypes` が TITLE_STYLE_CONTRACTS をループするだけで SPECULATIVE_PHRASES_BY_SUBTYPE を直接 enumerate していないため regression なし
+- **D-PARALLEL (410 Phase 1)**: 410 file 用に 私が `git add` した直後、 並走 agent の commit `b46ffaa 403 Stage A4 (prep)` が `git add -A` 相当で私の untracked 3 file (`src/subtype_display_format.py` / `tests/test_subtype_display_format.py` / 本 design doc の 410 行追加) を sweep。 私の commit attempt は "no changes added to commit" で空打ち。 ファイル内容は intact (133 + 166 + 4 行)、 work 損失なし。 ただし commit attribution は 403 Stage A4 commit に紛れ込んだ。 教訓 ([[feedback_parallel_commit_silent_edit_loss]] 再確認): 並走 agent との同 repo work では `git add -A` を避ける合意が必要 / Claude 側は明示 path commit のみ
 - **D-NEW (409 Phase 1)**: `_maybe_apply_farm_2gun_3gun_split` を flag 無し常時 ON で導入したところ既存 4 件が fail
   - `test_third_team_result_routes_to_third_team_result_short` (contract skeleton)
   - `test_development_player_note_routes_to_development_player_short` (contract skeleton)

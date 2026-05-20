@@ -4,6 +4,12 @@
 
 ## 2026-05-20 session update
 
+### 399 — manual-intake が NTV React Helmet 記事を `missing_title_or_summary` で蹴る件 (user 報告 2026-05-20)
+
+| ticket | status | 内容 |
+|---|---|---|
+| `doc/active/399-INGEST-manual-intake-react-helmet-meta-extract.md` | READY_FOR_IMPL | user 報告「`https://manual-intake-service-487178857517.asia-northeast1.run.app/` で `https://news.ntv.co.jp/category/sports/5b63a75714734548999c19fbf038d767` が記事化できない」。dry-run POST で `{"ok": false, "reason": "missing_title_or_summary"}` HTTP 400 を確認。原因は `src/tools/manual_intake.py` L187-198 の `_META_PATTERNS` regex が `<meta\s+property=` を前提にしており、NTV の React Helmet 出力 `<meta data-react-helmet="true" property="og:title" content="..."/>` にマッチしないこと。`<title data-react-helmet="true">...</title>` も fallback regex (L399 `<title>([^<]+)</title>`) に不発。`_parse_og_meta(open('/tmp/ntv.html').read())` で `{'title': '', 'summary': '', 'image': ''}` を再現済。narrow fix: regex を属性順非依存 `<meta\b[^>]*\sproperty=...[^>]*\scontent=...` 形に書き換え + title fallback を `<title\b[^>]*>` に拡張。tests/test_manual_intake.py に react-helmet + 既存 plain HTML regression の 3 case 追加。env / Secret / Scheduler / RUN_DRAFT_ONLY / WP既存記事 / X / publish-notice / x-post-mail-lane / frontend / 自動 RSS / tag scrape path は不可触。次 step: impl → pytest → manual-intake-service rebuild + deploy → NTV URL dry-run で 200 verify → assignments / README へ commit / build / revision evidence 反映。 |
+
 ### 317 — 巨人OB YouTubeを差別化用 review-only 記事候補にする
 
 | ticket | status | 内容 |

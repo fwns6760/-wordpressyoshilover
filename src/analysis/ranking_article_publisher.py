@@ -1701,7 +1701,10 @@ def publish_default_set(
 ) -> list[dict]:
     """default rank set を順番に投入 (per-run 上限まで)。
 
-    2026-05-16: default auto publish は短期変化を見る ``last_7d`` に寄せる。
+    2026-05-16: default auto publish は短期変化を見る ``last_7d`` に寄せていた。
+    403 (2026-05-20): 試合のない日に sample 不足で publish 0 件になる問題を
+    解決するため、 日付 base (last_7d) を 試合数 base (last_5_games) に
+    cutover。 audit で last_5_games は 7 名達成 (last_7d は 1-2 名のみ)。
     season / last_30d は手動判断または別 gate 付きの再導入対象。
     """
     if max_per_run is None:
@@ -1710,17 +1713,17 @@ def publish_default_set(
     # 348 step 1 defense-in-depth (2026-05-16): WHIP も × metric なので除外
     # (publish_giants_centric_ranking_draft 内 gate と二重防御)。
     # 残す指標: OPS / AVG / OBP / SLG / ERA / K_per_9。
-    # 2026-05-16 user feedback: 大手が出しやすい season / 30d を
-    # default auto publish から外し、短期変化 (last_7d) に寄せる。
+    # 403 (2026-05-20): last_7d (= 直近7日) → last_5_games (直近5試合) cutover
+    # 試合のない日でも sample が確保され、 publish 過疎を回避。 audit 確定値。
     default_jobs = [
-        # batter (last_7d、短期変化)
-        {"metric_name": "OPS", "scope": "last_7d", "top_n": 50},
-        {"metric_name": "AVG", "scope": "last_7d", "top_n": 50},
-        {"metric_name": "OBP", "scope": "last_7d", "top_n": 50},
-        {"metric_name": "SLG", "scope": "last_7d", "top_n": 50},
-        # pitcher (last_7d、短期変化) — WHIP は × で削除済
-        {"metric_name": "ERA", "scope": "last_7d", "top_n": 30},
-        {"metric_name": "K_per_9", "scope": "last_7d", "top_n": 30},
+        # batter (last_5_games、 audit min_sample 12 AB / 7 名達成)
+        {"metric_name": "OPS", "scope": "last_5_games", "top_n": 50},
+        {"metric_name": "AVG", "scope": "last_5_games", "top_n": 50},
+        {"metric_name": "OBP", "scope": "last_5_games", "top_n": 50},
+        {"metric_name": "SLG", "scope": "last_5_games", "top_n": 50},
+        # pitcher (last_5_games、 audit OK) — WHIP は × で削除済
+        {"metric_name": "ERA", "scope": "last_5_games", "top_n": 30},
+        {"metric_name": "K_per_9", "scope": "last_5_games", "top_n": 30},
     ]
     results: list[dict] = []
     published = 0

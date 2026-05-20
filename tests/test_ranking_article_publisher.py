@@ -348,14 +348,14 @@ def test_publish_default_set_respects_max_per_run(tmp_path):
     try:
         # default_jobs に含まれる全 metric × scope を seed して
         # max_per_run cap が published_count を制限することを verify。
-        # 2026-05-16: default_jobs は短期変化 last_7d の 6 件。
+        # 403 (2026-05-20): default_jobs は last_7d → last_5_games cutover。
         for metric, scope in [
-            ("OPS", "last_7d"),
-            ("AVG", "last_7d"),
-            ("OBP", "last_7d"),
-            ("SLG", "last_7d"),
-            ("ERA", "last_7d"),
-            ("K_per_9", "last_7d"),
+            ("OPS", "last_5_games"),
+            ("AVG", "last_5_games"),
+            ("OBP", "last_5_games"),
+            ("SLG", "last_5_games"),
+            ("ERA", "last_5_games"),
+            ("K_per_9", "last_5_games"),
         ]:
             _seed_snapshots(conn, snapshot_date=TODAY, scope=scope, metric=metric,
                             ranking=_central_ranking(value=0.5, sample=90, total=30))
@@ -373,12 +373,12 @@ def test_publish_default_set_respects_max_per_run(tmp_path):
         conn.close()
 
 
-def test_publish_default_set_uses_last_7d_only_by_default(tmp_path):
-    """default auto run は OPS の season / 30d を出さず last_7d だけ使う。"""
+def test_publish_default_set_uses_last_5_games_only_by_default(tmp_path):
+    """default auto run は OPS の season / 30d / last_7d を出さず last_5_games だけ使う (403 cutover)。"""
     db = tmp_path / "test.db"
     conn = insight_etl.open_db(db_path=db, schema_path=insight_etl.DEFAULT_SCHEMA)
     try:
-        for scope in ["last_7d", "last_30d", "season"]:
+        for scope in ["last_5_games", "last_7d", "last_30d", "season"]:
             _seed_snapshots(
                 conn,
                 snapshot_date=TODAY,
@@ -398,9 +398,9 @@ def test_publish_default_set_uses_last_7d_only_by_default(tmp_path):
             and r.get("status") in ("published", "published_draft")
         ]
         assert len(ops_created) == 1
-        assert ops_created[0]["scope"] == "last_7d"
+        assert ops_created[0]["scope"] == "last_5_games"
         assert all(
-            r.get("scope") not in {"last_30d", "season"}
+            r.get("scope") not in {"last_7d", "last_30d", "season"}
             for r in results
             if r.get("metric_name") == "OPS"
         )

@@ -171,7 +171,10 @@ def _run_data_insight_auto_publish(*, db_path: Path) -> tuple[dict[str, Any], di
                     # publish only the most time-sensitive
                     # counting window here; longer windows need
                     # a separate change gate before re-emitting.
-                    counting_scopes = ["weekly"]
+                    # 403 (2026-05-20): weekly (calendar 月-日) も試合
+                    # のない日に sample 不足、 試合数 base last_5_games に
+                    # cutover (audit 確定)。
+                    counting_scopes = ["last_5_games"]
                     counting_published = 0
                     for metric in counting_metrics:
                         for scope in counting_scopes:
@@ -218,8 +221,9 @@ def _run_data_insight_auto_publish(*, db_path: Path) -> tuple[dict[str, Any], di
                             if split_published >= auto_draft_max_per_run:
                                 break
                             try:
+                                # 403 (2026-05-20): weekly → last_5_games cutover
                                 split_result = ranking_pub.publish_player_counting_split_draft(
-                                    conn, wp, scope="weekly",
+                                    conn, wp, scope="last_5_games",
                                     split_field=sf, split_value=sv,
                                     split_label_jp=sl, **metric,
                                 )

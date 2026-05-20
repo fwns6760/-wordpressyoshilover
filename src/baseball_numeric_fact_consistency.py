@@ -122,7 +122,7 @@ NAME_STOPWORDS = frozenset(
     }
 )
 STRICT_SUBTYPES = frozenset({"postgame", "farm_result", "lineup", "farm_lineup", "pregame", "probable_starter"})
-LENIENT_SUBTYPES = frozenset({"manager_comment", "player_comment", "sns_topic", "rumor_market"})
+LENIENT_SUBTYPES = frozenset({"manager_comment", "player_comment", "sns_topic", "rumor_market", "ob"})
 
 
 @dataclass(frozen=True)

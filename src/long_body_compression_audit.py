@@ -30,6 +30,7 @@ POLICY_ORDER = (
     "probable_starter",
     "program",
     "injury",
+    "ob",
 )
 
 SUBTYPE_POLICY: dict[str, dict[str, Any]] = {
@@ -86,6 +87,12 @@ SUBTYPE_POLICY: dict[str, dict[str, Any]] = {
         "compressibility": "hold",
         "exclude_condition": "PUB-002-A R5 hold",
         "note": "長さではなく injury hold を優先",
+    },
+    "ob": {
+        "limit": 2500,
+        "compressibility": "medium",
+        "exclude_condition": "compressed>2500",
+        "note": "OB 解説 / 寄稿。 LENIENT。 過度な圧縮で OB voice 核を失わない",
     },
 }
 

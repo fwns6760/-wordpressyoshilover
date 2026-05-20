@@ -37,6 +37,7 @@ import html as _html
 from html.parser import HTMLParser
 
 from article_parts_renderer import ArticleParts, render_postgame
+from ob_name_table import has_ob_literal_marker
 from body_validator import POSTGAME_DECISIVE_EVENT_RE
 from body_validator import validate_body_candidate as _validate_body_candidate
 from body_validator import is_supported_subtype as _body_validator_supports_subtype
@@ -6129,6 +6130,35 @@ def _emit_rss_story_type_event(
     )
 
 
+_OB_NON_OVERRIDE_SUBTYPES = frozenset({
+    "postgame",
+    "lineup",
+    "pregame",
+    "probable_starter",
+    "live_update",
+    "manager",
+    "manager_comment",
+    "farm",
+    "farm_result",
+    "farm_lineup",
+})
+
+
+def _maybe_apply_ob_subtype(title: str, resolved_subtype: str) -> str:
+    """408 Phase 1: OB literal marker override.
+
+    title に `元巨人` / `巨人OB` / `古巣巨人` 等の literal marker が含まれていて、
+    既存 subtype が game-specific でなければ `ob` に override する。
+    試合 narrative (postgame / lineup / pregame / live_update / manager / farm 系) は
+    relevance 軸として強いので OB に上書きしない。
+    """
+    if not has_ob_literal_marker(title or ""):
+        return resolved_subtype
+    if resolved_subtype in _OB_NON_OVERRIDE_SUBTYPES:
+        return resolved_subtype
+    return "ob"
+
+
 def _maybe_apply_farm_subtype_split(text: str, category: str, resolved_subtype: str) -> str:
     if not _farm_subtype_split_enabled():
         return resolved_subtype
@@ -6671,6 +6701,7 @@ def _detect_article_subtype(title: str, summary: str, category: str, has_game: b
         elif any(marker in text for marker in FACT_NOTICE_PRIMARY_MARKERS):
             # Correction or retraction markers are safer to park in the fact_notice shell.
             subtype = "fact_notice"
+    subtype = _maybe_apply_ob_subtype(title, subtype)
     return _maybe_apply_farm_subtype_split(text, category, subtype)
 
 

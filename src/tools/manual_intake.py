@@ -4287,6 +4287,7 @@ def _wp_create_draft(
     logger: logging.Logger,
     featured_media: int | None = None,
     wp_status: str = "draft",
+    tag_ids: list[int] | None = None,
 ) -> tuple[int | None, str | None]:
     """Create a post via WPClient. WPClient has its own dedupe via
     find_recent_post_by_title + source_url. Returns (post_id, post_url).
@@ -4295,9 +4296,14 @@ def _wp_create_draft(
     ``wp_status`` controls the WP post status. Default is ``draft`` so
     callers go through the guarded-publish quality gate. The manual-
     intake service passes ``publish`` when the operator picked the
-    publish-direct mode (human has already vetted the source URL)."""
+    publish-direct mode (human has already vetted the source URL).
+
+    414 fix (2026-05-20): ``tag_ids`` 受取。 caller 側で person_tag_router +
+    速報 [850] fallback の解決を行い、 渡された tag_ids を create_post に
+    pass-through。 caller が tag_ids 渡さないと従来通り tag なし draft (互換)。
+    """
     categories = _resolve_wp_category_ids(category, logger)
-    result = wp.create_post(
+    post_kwargs = dict(
         title=title,
         content=content,
         categories=categories,
@@ -4308,6 +4314,9 @@ def _wp_create_draft(
         source_published_at_iso=source_published_at_iso or None,
         featured_media=featured_media,
     )
+    if tag_ids:
+        post_kwargs["tags"] = tag_ids
+    result = wp.create_post(**post_kwargs)
     post_id: int | None
     draft_url: str | None = None
     if isinstance(result, dict):
@@ -4670,6 +4679,33 @@ def run_manual_intake(
             source_url=canonical_source_url,
             logger=logger,
         )
+        # 414 fix (2026-05-20、 387 part 3): tag 経路。 全 manual_intake post に
+        # 最低 1 tag を保証。 person_tag_router で player + context tag を解決、
+        # 0 件は [850] 速報 fallback。 rss_fetcher の同 fix (8491fd8) と同
+        # pattern。
+        tag_ids: list[int] = []
+        try:
+            from src.person_tag_router import (
+                resolve_existing_wp_tag_ids,
+                route_tag_names,
+            )
+            tag_routing = route_tag_names(
+                title=title,
+                summary=summary,
+                category=category,
+                article_subtype=subtype,
+                source_name=output.get("source_name", ""),
+                source_type=source_kind,
+            )
+            tag_ids, _missing_tags = resolve_existing_wp_tag_ids(
+                wp,
+                tag_routing.tag_names,
+                logger=logger,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("manual_intake_person_tag_routing_failed: %s", exc)
+        if not tag_ids:
+            tag_ids = [850]  # 速報 fallback、 chip / 内部リンク 0 防止
         post_id, draft_url = _wp_create_draft(
             wp,
             title=title,
@@ -4680,6 +4716,7 @@ def run_manual_intake(
             logger=logger,
             featured_media=featured_media,
             wp_status=("publish" if mode == "publish" else "draft"),
+            tag_ids=tag_ids,
         )
     except AssertionError:
         raise

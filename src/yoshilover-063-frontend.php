@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Yoshilover 063 Frontend (topic hub / SNS reactions / Phase 1 noindex)
  * Description: 062 contract §2 §3 §5 の front impl。topic hub / SNS block / noindex を基盤に、トップ速報帯・記事下回遊束・右カラム rail・上部密集ナビ・人気記事導線まで含めて SWELL front を高密度化する。既存 SWELL コメント欄は触らない。
- * Version: 0.17.1
+ * Version: 0.17.3
  * Author: yoshilover
  */
 
@@ -143,6 +143,7 @@ function yoshilover_063_buffer_inject_header_titles( $buffer ) {
         $brand_html .= '<li>記録・連勝記録・首位攻防 速報</li>';
         $brand_html .= '</ul>';
         $brand_html .= '<p class="yoshi-brand-about__author">運営: ヨシラバー(柴田義彦)。 巨人ファンが集まる速報・データ メディア。</p>';
+        $brand_html .= '<p class="yoshi-brand-about__cta"><a class="yoshi-brand-about__cta-link" href="' . esc_url( home_url( '/about-yoshilover' ) ) . '">ヨシラバーについて — 運営方針・運営者情報 ＞</a></p>';
         $brand_html .= '</section>';
 
         $main_close_pos = strpos( $buffer, '</main>' );
@@ -187,6 +188,50 @@ function yoshilover_063_start_header_title_buffer() {
     ob_start( 'yoshilover_063_buffer_inject_header_titles' );
 }
 add_action( 'template_redirect', 'yoshilover_063_start_header_title_buffer', 0 );
+
+/**
+ * 398-SEO (2026-05-20): home に Person + Brand schema を JSON-LD で追加。
+ * 既存 Organization / WebSite (SEO Simple Pack 出力) と別 @id を使い 2 重を避ける。
+ * - Person: 柴田義彦 = ヨシラバー (alternateName)、 worksFor で Organization 連結
+ * - Brand: ヨシラバー (Organization と別 @id、 entity 強化)
+ *
+ * home (is_front_page) のみ。 wp_head priority 99 で SEO plugin 後に出す。
+ */
+function yoshilover_063_inject_home_brand_schema() {
+    if ( ! is_front_page() ) {
+        return;
+    }
+    $schema = array(
+        '@context' => 'https://schema.org',
+        '@graph'   => array(
+            array(
+                '@type'         => 'Person',
+                '@id'           => 'https://yoshilover.com/#person-yoshilover',
+                'name'          => '柴田義彦',
+                'alternateName' => 'ヨシラバー',
+                'url'           => 'https://yoshilover.com/about-yoshilover',
+                'worksFor'      => array( '@id' => 'https://yoshilover.com/#organization' ),
+                'sameAs'        => array( 'https://x.com/yoshilover6760' ),
+                'description'   => 'ヨシラバー(柴田義彦)。 読売ジャイアンツ専門メディア「ヨシラバー」 運営。',
+            ),
+            array(
+                '@type'         => 'Brand',
+                '@id'           => 'https://yoshilover.com/#brand',
+                'name'          => 'ヨシラバー',
+                'alternateName' => array( 'yoshilover', '柴田義彦' ),
+                'description'   => '読売ジャイアンツ専門の速報・データ メディア。 試合速報・スタメン・試合結果・選手データを毎日更新。',
+                'url'           => 'https://yoshilover.com/',
+                'logo'          => 'https://yoshilover.com/wp-content/uploads/2026/05/GFiI8faB_400x400-3.jpg',
+            ),
+        ),
+    );
+    $json = wp_json_encode( $schema, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
+    if ( $json === false ) {
+        return;
+    }
+    echo "\n<script type=\"application/ld+json\">" . $json . "</script>\n";
+}
+add_action( 'wp_head', 'yoshilover_063_inject_home_brand_schema', 99 );
 
 function yoshilover_063_get_topic_hub_items() {
     $items = get_option( 'yoshilover_topic_hub_items', array() );

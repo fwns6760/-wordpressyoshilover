@@ -8245,6 +8245,23 @@ button.cta:hover,
   border-top: 1px solid #e5e5e5;
   padding-top: 8px;
 }
+.yoshi-brand-about__cta {
+  margin: 10px 0 0;
+}
+.yoshi-brand-about__cta-link {
+  display: inline-block;
+  font-size: 13px;
+  font-weight: 700;
+  color: #f5811f;
+  text-decoration: none;
+  padding: 6px 10px;
+  border: 1px solid rgba(245, 129, 31, 0.4);
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+.yoshi-brand-about__cta-link:hover {
+  background: rgba(245, 129, 31, 0.08);
+}
 @media (max-width: 600px) {
   .yoshi-brand-about {
     padding: 16px 14px 14px;

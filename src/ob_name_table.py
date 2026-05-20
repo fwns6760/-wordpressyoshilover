@@ -78,10 +78,41 @@ def has_ob_literal_marker(text: str) -> bool:
 
 
 def is_known_ob_name(name: str) -> bool:
-    """Phase 2 secondary gate (Phase 1 では classifier から呼ばない).
-
-    name table に登録済みかを返す。 Phase 2 で context judge と組み合わせて使う。
-    """
+    """name table に登録済みかを返す."""
     if not name:
         return False
     return name.strip() in OB_NAME_SEED
+
+
+# Phase 2 で current 巨人 staff context を除外するための marker
+# (OB 名簿に含まれている人物が記事中で現巨人スタッフ扱いされている場合は OB override を見送る)
+_CURRENT_GIANTS_ROLE_GUARDS: tuple[str, ...] = (
+    "巨人監督",
+    "巨人新監督",
+    "巨人ヘッドコーチ",
+    "巨人投手コーチ",
+    "巨人打撃コーチ",
+    "巨人内野守備走塁コーチ",
+    "巨人外野守備走塁コーチ",
+    "巨人バッテリーコーチ",
+    "巨人二軍監督",
+    "巨人三軍監督",
+    "巨人 監督",
+    "ジャイアンツ監督",
+    "現巨人",
+)
+
+
+def has_known_ob_name(text: str) -> bool:
+    """Phase 2 secondary gate: text 内に OB_NAME_SEED の名前が含まれているか.
+
+    OB literal marker (primary gate) と合わせて使う。 primary が hit しない時の
+    補強判定。 false-positive 抑制のため `_CURRENT_GIANTS_ROLE_GUARDS` (巨人監督 /
+    巨人◯◯コーチ 等) が同 text に共存している場合は False を返す
+    (OB 名簿の人物が現巨人スタッフとして言及されている文脈は OB override 対象外)。
+    """
+    if not text:
+        return False
+    if any(guard in text for guard in _CURRENT_GIANTS_ROLE_GUARDS):
+        return False
+    return any(name in text for name in OB_NAME_SEED)

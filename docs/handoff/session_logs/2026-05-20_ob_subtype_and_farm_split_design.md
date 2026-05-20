@@ -224,6 +224,8 @@ GO 後のコード編集便で実行する予定の test。本便(markdown 作�
 - 409 commit | `64125cb 409: farm 2軍 / 3軍 分離 (Phase 1, ENABLE_FARM_2GUN_3GUN_SPLIT flag-gated)` | 6 files / 295+ / 3- | push 済 (`ee1d73d..64125cb`)
 - 410 Phase 1 実装 | `src/subtype_display_format.py` 新規 (badge + 出典帯 builder helpers、 additive、 draft pipeline 未 wire) + 17 unit test | Phase 2 で wire-in (postgame_runner / nomotoke_card_renderer 等)
 - 410 Phase 1 full pytest | **5520 passed / 1 xfailed / 3 xpassed / 980 subtests / 116.68s** (regression 0) | Task #5 commit へ
+- 408 Phase 2 実装 | `src/ob_name_table.py` に `has_known_ob_name` + `_CURRENT_GIANTS_ROLE_GUARDS` 13 件追加、 `_maybe_apply_ob_subtype` を primary OR secondary に拡張、 11 new test (7 has_known_ob_name + 4 name match override) | targeted OB test 38 passed
+- 408 Phase 2 full pytest | **5539 passed / 2 failed (`test_publish_default_set_*`, ranking_article_publisher 系) / 1 xfailed / 3 xpassed / 308s** | **2 failed は並走 commit `03a49ee 403 Stage A4 cutover (last_7d → last_5_games 切替)` 由来、 OB Phase 2 と scope disjoint、 私の changes は regression 0**
 
 ## 10. Regression Memo 欄
 

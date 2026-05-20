@@ -159,6 +159,7 @@ GO後に実装する場合の予定:
 - 2026-05-20: user 指示「デプロイ前まで進めて」。status を `READY_FOR_AUTH_EXECUTOR` に正規化し、folder policy に従って `doc/waiting/` へ移動。read-only `gcloud run services describe yoshilover-fetcher --project baseballsite --region asia-northeast1 --format=json` で現行本番を確認: revision `yoshilover-fetcher-00452-glk`、image `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/yoshilover-fetcher:398-media-quote-default-6969375`、traffic 100%、service generation `594`、`RUN_DRAFT_ONLY=True`、`AUTO_TWEET_ENABLED=0`。deploy / build / env / Secret / Scheduler / WP / X / fire は未実行。
 - 2026-05-20: user 指示「ならデプロイ」。実装 commit `021c85c` の clean archive から Cloud Build `6a0c0d80-84ad-42fa-9c75-5c547e819b3f` を実行し、image `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/yoshilover-fetcher:317-ob-youtube-021c85c` / digest `sha256:2f1479043bb99ab88f4a1821e7d8df63dfa5d0f705a72036269084ecb5fc3f09` を作成。Cloud Run service `yoshilover-fetcher` へ deploy し、revision `yoshilover-fetcher-00454-ntj`、traffic 100%、`/health` OK、新 revision ERROR log 0 を確認。manual `/run` fire、env / Secret / Scheduler / RUN_DRAFT_ONLY flip / WP既存記事 / X は未変更。
 - 2026-05-20: deploy 後の current-state refresh で、fetcher は後続 revision `yoshilover-fetcher-00455-lcf` / image `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/yoshilover-fetcher:400-ext-readable-0a29e7f` / generation `597` / observedGeneration `597` へ進行済みを確認。`git merge-base --is-ancestor 021c85c 0a29e7f` は exit 0 で、317 実装は後続 image に含まれて live 維持。`/health` OK、新 revision `00455-lcf` ERROR log 0。env / Secret / Scheduler / RUN_DRAFT_ONLY flip / WP既存記事 / X / manual `/run` fire は未変更。
+- 2026-05-20: user が「引用とかしっかり取れる？変な言葉入らないか。ちゃんと引用だけになるか」と確認。現状確認で、317 本体は title + YouTube embed だが、共通 YouTube caption enrichment が `youtube_review_notice` にも走り、既存実装では「要点」リストが付く可能性を確認。修正として `quote_only` mode を追加し、`youtube_review_notice` では字幕引用 block だけを表示、要点リストを出さない。字幕ノイズ `[音楽]` / `[拍手]` / `チャンネル登録` / `高評価` / `概要欄` / `コメント欄` / URL 系は引用候補から除外。実出力チェックで summary なし、noise なし、blockquote 内の字幕引用のみを確認。env / Secret / Scheduler / WP既存記事 / X / manual `/run` fire は未変更。
 
 ## 10. Regression Memo欄
 
@@ -238,6 +239,7 @@ GO後に実装する場合の予定:
 - 2026-05-20 full pytest baseline sandbox外: PASS (`5388 passed, 1 xfailed, 3 xpassed, 4 warnings`)。
 - 2026-05-20 deploy / log 数値 diff: PASS。fetcher revision `yoshilover-fetcher-00452-glk` -> `yoshilover-fetcher-00454-ntj`、image `398-media-quote-default-6969375` -> `317-ob-youtube-021c85c`、generation / observedGeneration `594/594` -> `596/596`、traffic latest 100% 維持、`RUN_DRAFT_ONLY=True` 維持、`AUTO_TWEET_ENABLED=0` 維持、`/health` OK、新 revision ERROR log 0。
 - 2026-05-20 current-state refresh: PASS。fetcher revision `yoshilover-fetcher-00455-lcf`、image `400-ext-readable-0a29e7f`、generation / observedGeneration `597/597`、traffic latest 100% 維持。`0a29e7f` は `021c85c` descendant のため、317 実装は live image に含まれる。`/health` OK、新 revision ERROR log 0。
+- 2026-05-20 quote-only caption guard targeted: PASS。`python3 -m py_compile src/rss_fetcher.py tests/test_rss_fetcher_youtube_caption_section.py` OK。`python3 -m pytest tests/test_rss_fetcher_youtube_caption_section.py tests/test_rss_fetcher_youtube_integration.py` は `43 passed, 3 warnings`。手元実出力で `nomotoke-youtube-caption__summary` なし、`チャンネル登録` / `概要欄` / `高評価` / `[音楽]` なし、`<blockquote class="nomotoke-youtube-caption__body">` 内に字幕由来の引用だけを確認。
 - 2026-05-20 pre-deploy read-only Cloud Run check: PASS。current service `yoshilover-fetcher` は Ready、latest ready revision `yoshilover-fetcher-00452-glk`、current image `yoshilover-fetcher:398-media-quote-default-6969375`、traffic 100%。
 
 ## 15. 残った懸念
@@ -247,6 +249,7 @@ GO後に実装する場合の予定:
 - OBチャンネルの `channel_handle` は未確認のため空欄が多い。source表示はチャンネル名fallbackになる。
 - `giants_ob` source は title が弱くても draft になるため、無関係動画が混じる可能性は残る。公開は user 判断で止める。
 - 動画内発言内容は取得していないため、発言詳細を本文に出すには人間確認が必要。
+- 字幕がある場合でも `youtube_review_notice` では「要点」化しない。自動字幕の誤認識リスクは残るため、公開前にユーザーが確認する。非本文 CTA / 音楽・拍手ノイズは引用候補から除外する。
 
 ## 16. 新しく見つかったデグレ
 
@@ -266,6 +269,8 @@ GO後に実装する場合の予定:
 - 巨人OB YouTube review source は `OB・解説者` に category override されること。
 - 巨人OB YouTube review source は publish path に進まず draft-only reason を持つこと。
 - 公式 YouTube source は draft-only override の対象外で、395 の既存挙動を維持すること。
+- OB YouTube の `youtube_review_notice` では caption section が quote-only になり、要点 list を出さないこと。
+- 字幕の CTA / 音楽・拍手ノイズを quote / summary 候補から除外すること。
 
 ## 18. 次回触ってはいけない範囲
 

@@ -112,6 +112,43 @@ class MaybeAppendYoutubeCaptionSectionTests(unittest.TestCase):
         self.assertIn("youtube.com/embed/abc12345678", result)
         self.assertIn("引用法 32 条範囲内", result)
 
+    def test_quote_only_mode_appends_caption_quotes_without_summary(self):
+        html = "<p>既存本文</p>"
+        with patch(
+            "src.youtube_caption_fetcher.fetch_youtube_caption",
+            return_value=(
+                "巨人OBがあの場面は勝負だったと語った。"
+                "阿部監督についても準備が大事だと話した。"
+            ),
+        ):
+            result = rss_fetcher._maybe_append_youtube_caption_section(
+                html,
+                source_url="https://www.youtube.com/watch?v=abc12345678",
+                source_name="上原浩治の雑談魂",
+                logger=self.logger,
+                quote_only=True,
+            )
+        self.assertIn("nomotoke-youtube-caption", result)
+        self.assertIn("nomotoke-youtube-caption__body", result)
+        self.assertIn("巨人OBがあの場面は勝負だったと語った", result)
+        self.assertNotIn("nomotoke-youtube-caption__summary", result)
+        self.assertNotIn("<h4>要点</h4>", result)
+
+    def test_caption_noise_lines_are_not_used_as_quotes(self):
+        caption = (
+            "チャンネル登録よろしくお願いします。"
+            "巨人OBがあの場面は勝負だったと語った。"
+            "[音楽] "
+            "概要欄も見てください。"
+        )
+        quotes, summary = rss_fetcher._build_youtube_caption_quote_summary(caption)
+        combined = " ".join(quotes + summary)
+
+        self.assertIn("巨人OBがあの場面は勝負だったと語った", combined)
+        self.assertNotIn("チャンネル登録", combined)
+        self.assertNotIn("概要欄", combined)
+        self.assertNotIn("音楽", combined)
+
     def test_caption_fetch_uses_wider_material_window(self):
         html = "<p>既存本文</p>"
         with patch(

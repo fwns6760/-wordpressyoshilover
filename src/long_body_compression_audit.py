@@ -31,6 +31,8 @@ POLICY_ORDER = (
     "program",
     "injury",
     "ob",
+    "farm3_practice",
+    "farm3_player",
 )
 
 SUBTYPE_POLICY: dict[str, dict[str, Any]] = {
@@ -94,11 +96,26 @@ SUBTYPE_POLICY: dict[str, dict[str, Any]] = {
         "exclude_condition": "compressed>2500",
         "note": "OB 解説 / 寄稿。 LENIENT。 過度な圧縮で OB voice 核を失わない",
     },
+    "farm3_practice": {
+        "limit": 2000,
+        "compressibility": "high",
+        "exclude_condition": "compressed>2000",
+        "note": "3軍 練習試合 / オープン戦。 非公式数値中心、 短報前提",
+    },
+    "farm3_player": {
+        "limit": 2000,
+        "compressibility": "high",
+        "exclude_condition": "compressed>2000",
+        "note": "3軍 個人 narrative (育成選手 spotlight)。 短報、 LENIENT",
+    },
 }
 
 SUBTYPE_ALIASES = {
     "comment_notice": "comment",
     "farm_result": "farm",
+    "farm2_result": "farm",
+    "farm2_lineup": "farm",
+    "farm_lineup": "farm",
     "injury_notice": "injury",
     "lineup_notice": "lineup",
     "manager": "comment",

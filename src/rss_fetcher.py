@@ -483,6 +483,7 @@ ENABLE_SHORT_SOURCE_NARROW_TEMPLATE_ENV_FLAG = "ENABLE_SHORT_SOURCE_NARROW_TEMPL
 ENABLE_FARM_SHORT_POST_TEMPLATE_ENV_FLAG = "ENABLE_FARM_SHORT_POST_TEMPLATE"
 ENABLE_SOURCE_LINK_ONLY_TEMPLATE_ENV_FLAG = "ENABLE_SOURCE_LINK_ONLY_TEMPLATE"
 ENABLE_FARM_SUBTYPE_SPLIT_ENV_FLAG = "ENABLE_FARM_SUBTYPE_SPLIT"
+ENABLE_FARM_2GUN_3GUN_SPLIT_ENV_FLAG = "ENABLE_FARM_2GUN_3GUN_SPLIT"
 ENABLE_BODY_DUP_REDUCTION_ENV_FLAG = "ENABLE_BODY_DUP_REDUCTION"
 ENABLE_BODY_LEAD_PARAPHRASE_GUARD_ENV_FLAG = "ENABLE_BODY_LEAD_PARAPHRASE_GUARD"
 ENABLE_H3_COUNT_REPAIR_ENV_FLAG = "ENABLE_H3_COUNT_REPAIR"
@@ -1848,6 +1849,10 @@ def _source_link_only_template_enabled() -> bool:
 
 def _farm_subtype_split_enabled() -> bool:
     return _env_flag(ENABLE_FARM_SUBTYPE_SPLIT_ENV_FLAG, False)
+
+
+def _farm_2gun_3gun_split_enabled() -> bool:
+    return _env_flag(ENABLE_FARM_2GUN_3GUN_SPLIT_ENV_FLAG, False)
 
 
 def _body_dup_reduction_enabled() -> bool:
@@ -6159,6 +6164,45 @@ def _maybe_apply_ob_subtype(title: str, resolved_subtype: str) -> str:
     return "ob"
 
 
+_FARM_3GUN_MARKERS: tuple[str, ...] = ("3軍", "三軍", "３軍")
+_FARM_2GUN_EXPLICIT_MARKERS: tuple[str, ...] = (
+    "イースタンリーグ",
+    "イースタン",
+    "フューチャーズ",
+)
+_FARM_FAMILY_SUBTYPES: frozenset[str] = frozenset({"farm", "farm_result", "farm_lineup"})
+
+
+def _maybe_apply_farm_2gun_3gun_split(text: str, resolved_subtype: str) -> str:
+    """409 Phase 1: farm subtype を 2軍 / 3軍 で再分類.
+
+    Env flag `ENABLE_FARM_2GUN_3GUN_SPLIT` が ON の時のみ動作する。
+    default OFF (既存 contract 維持、 `ENABLE_FARM_SUBTYPE_SPLIT=1` の `三軍` → `farm` 経路を壊さない)。
+
+    flag ON 時:
+    - 既存 `farm` / `farm_result` / `farm_lineup` のうち、 title/summary text に literal
+      `3軍` / `三軍` / `３軍` marker があれば `farm3_practice` へ
+    - イースタン / フューチャーズ など 2軍 explicit marker があれば `farm2_*` へ
+    - どちらも無い場合は既存 subtype を維持 (backward-compat、 alias で farm = farm2 相当)
+
+    Phase 1 では farm3 は always `farm3_practice` (3軍 lineups は希少、 個人 narrative の
+    `farm3_player` は Phase 2 で context judge と併せて分岐)。
+    """
+    if not _farm_2gun_3gun_split_enabled():
+        return resolved_subtype
+    if resolved_subtype not in _FARM_FAMILY_SUBTYPES:
+        return resolved_subtype
+    if not text:
+        return resolved_subtype
+    if any(marker in text for marker in _FARM_3GUN_MARKERS):
+        return "farm3_practice"
+    if any(marker in text for marker in _FARM_2GUN_EXPLICIT_MARKERS):
+        if resolved_subtype == "farm_lineup":
+            return "farm2_lineup"
+        return "farm2_result"
+    return resolved_subtype
+
+
 def _maybe_apply_farm_subtype_split(text: str, category: str, resolved_subtype: str) -> str:
     if not _farm_subtype_split_enabled():
         return resolved_subtype
@@ -6702,7 +6746,8 @@ def _detect_article_subtype(title: str, summary: str, category: str, has_game: b
             # Correction or retraction markers are safer to park in the fact_notice shell.
             subtype = "fact_notice"
     subtype = _maybe_apply_ob_subtype(title, subtype)
-    return _maybe_apply_farm_subtype_split(text, category, subtype)
+    subtype = _maybe_apply_farm_subtype_split(text, category, subtype)
+    return _maybe_apply_farm_2gun_3gun_split(text, subtype)
 
 
 def _resolve_rss_story_type_context(

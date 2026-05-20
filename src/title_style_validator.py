@@ -78,6 +78,8 @@ SPECULATIVE_PHRASES_BY_SUBTYPE = {
     "notice": COMMON_SPECULATIVE_PHRASES,
     "program": COMMON_SPECULATIVE_PHRASES + ("どう見るか",),
     "ob": COMMON_SPECULATIVE_PHRASES,
+    "farm3_practice": COMMON_SPECULATIVE_PHRASES + ("どう並べたか",),
+    "farm3_player": COMMON_SPECULATIVE_PHRASES,
 }
 
 FORBIDDEN_PREFIX_RE = re.compile(r"^\s*【(?:速報|LIVE|巨人)(?:[^】]*)】")

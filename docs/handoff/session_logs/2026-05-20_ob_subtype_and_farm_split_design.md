@@ -217,6 +217,9 @@ GO 後のコード編集便で実行する予定の test。本便(markdown 作�
 - 408 Phase 1 設計調整 | OB classifier の primary gate を name table 優先から **literal marker (`元巨人` / `巨人OB` / `古巣巨人` / `巨人時代`) 優先** に変更、 name table は secondary gate で context 判定補強 | false-positive 回避 (現役兼任 OB 阿部監督 / 桑田コーチ 等の混入防止)
 - 408 Phase 1 実装 | `src/ob_name_table.py` 新規 (19 OB seed + 10 literal markers) + `src/rss_fetcher.py` `_maybe_apply_ob_subtype` 追加 + 3 validator 登録 (LENIENT / SUBTYPE_POLICY / SPECULATIVE_PHRASES) + `tests/test_ob_classifier.py` (27 tests) | AST OK / smoke import OK / new tests 27 passed
 - 408 Phase 1 full pytest | post-impl baseline 比較 | **5431 passed / 1 xfailed / 3 xpassed / 980 subtests passed / 126.31s** (baseline 5404 → +27 new tests、 regression 0) | Task #3 commit へ
+- 408 commit | `215abbf 408: OB subtype 新設 (Phase 1, literal marker + name table seed) + 407 / 409 / 410 起票` | 11 files / 1052+ / 1- | push 済 (`ee1d73d..215abbf` 経由、 並走 commit ee1d73d は scope disjoint で問題なし)
+- 409 Phase 1 実装 | rss_fetcher に `_maybe_apply_farm_2gun_3gun_split` + 4 新 subtype 登録 (validator 3 file) + 26 unit test | flag 無し時 4 件 regression (`test_third_team_result_routes_to_*` / `test_flag_on_routes_third_team_result_to_farm`) → env flag `ENABLE_FARM_2GUN_3GUN_SPLIT` で gate (default OFF) に修正、 既存 contract (ENABLE_FARM_SUBTYPE_SPLIT=1 + 三軍 → farm) を維持
+- 409 fix | flag gate 追加後、 targeted test 96 件 pass (失敗 4 件復活) | full pytest 再実行で全件 verify へ
 
 ## 10. Regression Memo 欄
 
@@ -227,6 +230,15 @@ GO 後のコード編集便で実行する予定の test。本便(markdown 作�
 - D13 回避: ob は CONTROLLED_SUBTYPES (title_validator) に**追加しない**。 既存 subtype の title validation に影響しない設計 (Phase 2 で必要なら追加検討)
 - pytest 5404 → 5431 で **既存 5404 件は変動なし** (collect 数 +27、 fail 増加 0、 既存 pass 数不変)
 - title_style_validator.SPECULATIVE_PHRASES_BY_SUBTYPE に ob 追加時、 既存 `test_prompt_lines_cover_all_editorial_subtypes` が TITLE_STYLE_CONTRACTS をループするだけで SPECULATIVE_PHRASES_BY_SUBTYPE を直接 enumerate していないため regression なし
+- **D-NEW (409 Phase 1)**: `_maybe_apply_farm_2gun_3gun_split` を flag 無し常時 ON で導入したところ既存 4 件が fail
+  - `test_third_team_result_routes_to_third_team_result_short` (contract skeleton)
+  - `test_development_player_note_routes_to_development_player_short` (contract skeleton)
+  - `test_third_team_result_routes_to_farm_article_shape_when_flag_is_on` (article quality v1)
+  - `test_flag_on_routes_third_team_result_to_farm` (candidate quality flags)
+  - 既存 contract は `ENABLE_FARM_SUBTYPE_SPLIT=1` で `三軍` → subtype=`farm` を返す前提だった
+  - **回避策**: 新 split を `ENABLE_FARM_2GUN_3GUN_SPLIT` env flag で gate (default OFF) し、 既存 contract を保護
+  - **教訓**: subtype 変更は常に env flag で gate する。 `_detect_article_subtype` 末尾の常時 override は backward-compat 破壊リスクが高い
+  - 設計 doc §8 D1 (既存 farm 記事が新 validator で draft 落ち) に該当、 fixture 経路でなく test_*_routes 系の contract test で検出された
 
 ---
 

@@ -121,8 +121,14 @@ NAME_STOPWORDS = frozenset(
         "東京ドーム",
     }
 )
-STRICT_SUBTYPES = frozenset({"postgame", "farm_result", "lineup", "farm_lineup", "pregame", "probable_starter"})
-LENIENT_SUBTYPES = frozenset({"manager_comment", "player_comment", "sns_topic", "rumor_market", "ob"})
+STRICT_SUBTYPES = frozenset({
+    "postgame", "farm_result", "lineup", "farm_lineup", "pregame", "probable_starter",
+    "farm2_result", "farm2_lineup",
+})
+LENIENT_SUBTYPES = frozenset({
+    "manager_comment", "player_comment", "sns_topic", "rumor_market", "ob",
+    "farm3_practice", "farm3_player",
+})
 
 
 @dataclass(frozen=True)

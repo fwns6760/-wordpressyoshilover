@@ -2495,24 +2495,27 @@ class TicketThreeFiftyFiveDedupTests(unittest.TestCase):
         self.assertEqual(recs, [])
 
     def test_is_fan_voice_fire_window(self) -> None:
-        """397: 17:00-23:30 JST のみ True、 朝 / 昼 / 午後は False。"""
+        """397 (2026-05-20 user 更新): 19:00-23:59 JST のみ True。
+        17:30 evening 便はファンツイートが未熟のため対象外、 22:30 postgame
+        のみ fan_voice 発動する。"""
         from src.tools.run_x_post_mail import _is_fan_voice_fire_window
 
         def _at(hh: int, mm: int) -> datetime:
             return datetime(2026, 5, 20, hh, mm, tzinfo=JST)
-        # 朝 / 昼 / 午後便: False
+        # 朝 / 昼 / 午後 / 17:30 evening: False
         self.assertFalse(_is_fan_voice_fire_window(_at(7, 0)))
         self.assertFalse(_is_fan_voice_fire_window(_at(12, 0)))
         self.assertFalse(_is_fan_voice_fire_window(_at(15, 0)))
-        self.assertFalse(_is_fan_voice_fire_window(_at(16, 59)))
-        # evening / postgame 便: True
-        self.assertTrue(_is_fan_voice_fire_window(_at(17, 0)))
-        self.assertTrue(_is_fan_voice_fire_window(_at(17, 30)))
+        self.assertFalse(_is_fan_voice_fire_window(_at(17, 0)))
+        self.assertFalse(_is_fan_voice_fire_window(_at(17, 30)))
+        self.assertFalse(_is_fan_voice_fire_window(_at(18, 59)))
+        # 19:00-23:59 postgame window: True
+        self.assertTrue(_is_fan_voice_fire_window(_at(19, 0)))
         self.assertTrue(_is_fan_voice_fire_window(_at(20, 0)))
         self.assertTrue(_is_fan_voice_fire_window(_at(22, 30)))
         self.assertTrue(_is_fan_voice_fire_window(_at(23, 30)))
-        # 夜間 / 早朝: False
-        self.assertFalse(_is_fan_voice_fire_window(_at(23, 31)))
+        self.assertTrue(_is_fan_voice_fire_window(_at(23, 59)))
+        # 翌日早朝: False
         self.assertFalse(_is_fan_voice_fire_window(_at(2, 0)))
 
     def test_build_fan_voice_candidate_ok(self) -> None:

@@ -197,18 +197,22 @@ def _fan_voice_max_per_run() -> int:
 
 
 def _is_fan_voice_fire_window(now_jst: datetime) -> bool:
-    """397: 試合時間帯 (= evening / postgame 便) なら True。
+    """397: 試合時間帯 (= postgame 便相当) なら True。
 
-    evening fire は 17:30 JST 前後、 postgame fire は 22:30 JST 前後。
-    手動 fire 等で時刻がずれる可能性を考慮し、 17:00-23:30 を許容
-    レンジとする。 朝便 (07:00) / lunch (12:00) / afternoon (15:00) は
-    試合時間帯外なので False。
+    2026-05-20 user 方針更新: 試合中はファンツイートがまだ熟しておらず
+    (= 試合開始直後の 17:30 evening は意味薄)、 試合がある程度進んだ
+    19:00 以降のツイートに価値がある。 現スケジュール 5 便 (07:00 /
+    12:00 / 15:00 / 17:30 / 22:30) のうち 19:00 以降は 22:30 postgame
+    のみが該当する。
+
+    手動 fire / cron drift を考慮し 19:00-23:59 を許容レンジ。
+    朝 / 昼 / 午後 / 17:30 evening は False (= fan_voice 発動なし)。
     """
     if now_jst.tzinfo is None:
         return False
     minutes_since_midnight = now_jst.hour * 60 + now_jst.minute
-    # 17:00 - 23:30 を試合 / 試合直後 window とする
-    return 17 * 60 <= minutes_since_midnight <= 23 * 60 + 30
+    # 19:00 - 23:59 を試合進行〜試合直後 window とする
+    return 19 * 60 <= minutes_since_midnight <= 23 * 60 + 59
 
 
 def _resolve_int_env(name: str, default: int, *, min_value: int = 0) -> int:

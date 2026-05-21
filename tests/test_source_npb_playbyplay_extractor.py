@@ -75,5 +75,132 @@ class ParseNPBPlaybyplayTests(unittest.TestCase):
         self.assertIsNone(parse_npb_playbyplay_html(None))
 
 
+class ParseNPBPlaybyplayFullDetailTests(unittest.TestCase):
+    """405 / 415 (b) Phase 1: 拡張 parser regression。"""
+
+    @classmethod
+    def setUpClass(cls):
+        if not PBP_FIXTURE.exists():
+            raise unittest.SkipTest(f"missing fixture: {PBP_FIXTURE}")
+        cls.html = PBP_FIXTURE.read_text(encoding="utf-8")
+
+    def test_returns_extended_event_list(self):
+        from src.source_npb_playbyplay_extractor import (
+            parse_npb_playbyplay_full_detail,
+        )
+        events = parse_npb_playbyplay_full_detail(self.html)
+        self.assertIsInstance(events, list)
+        self.assertGreater(len(events), 30, "30+ PA events expected for 9 innings")
+
+    def test_extended_dict_shape(self):
+        from src.source_npb_playbyplay_extractor import (
+            parse_npb_playbyplay_full_detail,
+        )
+        events = parse_npb_playbyplay_full_detail(self.html)
+        first = events[0]
+        for key in (
+            "inning_no", "half", "team", "outs", "runner_state",
+            "batter", "count", "count_balls", "count_strikes",
+            "result", "current_pitcher",
+        ):
+            self.assertIn(key, first, f"missing key: {key}")
+
+    def test_count_parsing(self):
+        """count "3-2より" → balls=3, strikes=2 に分解できる。"""
+        from src.source_npb_playbyplay_extractor import (
+            parse_npb_playbyplay_full_detail,
+        )
+        events = parse_npb_playbyplay_full_detail(self.html)
+        # count field を持つ event がほぼ全 PA にある (空 count は除く)
+        parseable = [
+            ev for ev in events
+            if ev.get("count_balls") is not None
+            and ev.get("count_strikes") is not None
+        ]
+        self.assertGreater(len(parseable), 20, "30+ events のうち多くが count parse 可能")
+        for ev in parseable:
+            self.assertIsInstance(ev["count_balls"], int)
+            self.assertIsInstance(ev["count_strikes"], int)
+            self.assertGreaterEqual(ev["count_balls"], 0)
+            self.assertLessEqual(ev["count_balls"], 3)
+            self.assertGreaterEqual(ev["count_strikes"], 0)
+            self.assertLessEqual(ev["count_strikes"], 2)
+
+    def test_pitcher_tracking(self):
+        """current_pitcher が 5/10 fixture の先発投手 (櫻井) を 1 回表 PA で track。"""
+        from src.source_npb_playbyplay_extractor import (
+            parse_npb_playbyplay_full_detail,
+        )
+        events = parse_npb_playbyplay_full_detail(self.html)
+        # 1 回表 巨人攻撃の 1 PA 目 → vs 中日先発 (櫻井 expect)
+        first_giants_top = next(
+            ev for ev in events
+            if ev["inning_no"] == 1 and ev["half"] == "表" and ev["team"] == "巨人"
+        )
+        self.assertEqual(first_giants_top["current_pitcher"], "櫻井",
+            "5/10 fixture の 1 回表先発は櫻井")
+
+    def test_runner_state_normalize(self):
+        """runner_state が 「無走者 = 空文字」 / 走者 case で適切に分類される。"""
+        from src.source_npb_playbyplay_extractor import (
+            parse_npb_playbyplay_full_detail,
+        )
+        events = parse_npb_playbyplay_full_detail(self.html)
+        runner_states = [ev.get("runner_state", "") for ev in events]
+        # 一般的試合では 無走者 PA が最多 (1 番打者の先頭 PA 等)
+        no_runner_count = sum(1 for s in runner_states if s == "")
+        self.assertGreater(no_runner_count, 5, "9 イニング x 多 PA の中で無走者 PA 多数想定")
+
+    def test_full_detail_none_for_empty(self):
+        from src.source_npb_playbyplay_extractor import (
+            parse_npb_playbyplay_full_detail,
+        )
+        self.assertIsNone(parse_npb_playbyplay_full_detail(""))
+        self.assertIsNone(parse_npb_playbyplay_full_detail(None))
+
+
+class RunnerStateHelpersTests(unittest.TestCase):
+    """405 走者状況別 helper の挙動。"""
+
+    @classmethod
+    def setUpClass(cls):
+        if not PBP_FIXTURE.exists():
+            raise unittest.SkipTest(f"missing fixture: {PBP_FIXTURE}")
+        cls.html = PBP_FIXTURE.read_text(encoding="utf-8")
+
+    def test_extract_pa_with_runners_state_no_runners(self):
+        from src.source_npb_playbyplay_extractor import (
+            parse_npb_playbyplay_full_detail,
+            extract_pa_with_runners_state,
+            RUNNER_STATE_NO_RUNNERS,
+        )
+        events = parse_npb_playbyplay_full_detail(self.html)
+        no_runners = extract_pa_with_runners_state(events, RUNNER_STATE_NO_RUNNERS)
+        self.assertGreater(len(no_runners), 0)
+        for ev in no_runners:
+            self.assertEqual(ev["runner_state"], "")
+
+    def test_extract_pa_first_pitch_decision(self):
+        from src.source_npb_playbyplay_extractor import (
+            parse_npb_playbyplay_full_detail,
+            extract_pa_first_pitch_decision,
+        )
+        events = parse_npb_playbyplay_full_detail(self.html)
+        first_pitch = extract_pa_first_pitch_decision(events)
+        for ev in first_pitch:
+            self.assertEqual(ev["count_balls"], 0)
+            self.assertEqual(ev["count_strikes"], 0)
+
+    def test_extract_pa_two_strike(self):
+        from src.source_npb_playbyplay_extractor import (
+            parse_npb_playbyplay_full_detail,
+            extract_pa_two_strike,
+        )
+        events = parse_npb_playbyplay_full_detail(self.html)
+        two_strike = extract_pa_two_strike(events)
+        for ev in two_strike:
+            self.assertEqual(ev["count_strikes"], 2)
+
+
 if __name__ == "__main__":
     unittest.main()

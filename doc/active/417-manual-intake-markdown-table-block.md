@@ -94,9 +94,15 @@ layout なので表として表示されない。 任意 Markdown table を受�
 
 ## 9. 作業ログ欄
 
-(作業実施時に 1 行 / event)
-
-- _(implementation start)_
+- 12:55 JST | pre-work doc 着地、 user GO | 417 | - | phase 1 grep
+- 12:56 JST | phase 1 grep: table_markdown / wp:table / _render_markdown_table_block 全部 既存使用 0 ✓ | 417 | - | edit
+- 13:05 JST | phase 2 edit 完了 (nomotoke_card_renderer +83 / manual_intake +8 / manual_intake_service +9 / test +103) | 417 | - | pytest
+- 13:08 JST | py_compile OK + pytest 336 passed (regression 0) | 417 | - | commit
+- 13:10 JST | commit + push 試行 → 結果 staged 空、 reflog で並走 session が 私の 5 file changes を `dc0d294 405/415 Phase 2a-3a` に巻き込んで先に push 済と判明 | 417 | dc0d294 (並走 session の commit に混入) | 状況確認
+- 13:15 JST | 実害 0 確認 (code 全 GitHub 上、 grep / git show で 完全一致)、 deploy 続行 | 417 | dc0d294 | Cloud Build
+- 14:05 JST | Cloud Build SUCCESS (image tag `table-block-485af09`、 digest sha256:3f2747b...) | 417 | 485af09 | Cloud Run deploy
+- 14:07 JST | Cloud Run deploy SUCCESS (revision `manual-intake-service-00093-rfp`、 traffic 100%) | 417 | 00093-rfp | live verify
+- 14:08 JST | live verify 4 項目 全 pass (/health=200、 textarea 出現、 dropdown 21 維持、 placeholder に Markdown table 例) | 417 | 00093-rfp | post-work doc 追記
 
 ## 10. Regression Memo 欄
 
@@ -109,20 +115,83 @@ layout なので表として表示されない。 任意 Markdown table を受�
 
 ---
 
-## (作業後追記欄 — 実施後埋める)
+## (作業後追記欄)
 
 ### 1. 実際に変更したファイル
 
+並走 session race により `dc0d294 405 / 415 (b) Phase 2a-3a` に巻き込み混入の形で landed (push 済、 production 反映):
+
+- `doc/active/417-manual-intake-markdown-table-block.md` (new、 +128 lines)
+- `src/manual_intake_service.py` (+9 lines)
+- `src/nomotoke_card_renderer.py` (+83 lines)
+- `src/tools/manual_intake.py` (+8 lines)
+- `tests/test_nomotoke_card_renderer.py` (+103 lines)
+
 ### 2. diff 概要
+
+- **src/nomotoke_card_renderer.py**: 新 helper `_render_markdown_table_block(markdown)` (GFM table → `<!-- wp:table -->` block 変換、 cell escape、 separator validation、 不正入力で None 返却)。 `render_short_news_url_card` の body 組立で lead 直後 / fact_card 直前に `data.get("table_markdown")` 経由で embed。
+- **src/tools/manual_intake.py**: `_try_render_via_nomotoke` + `run_manual_intake` に `table_markdown: str = ""` 引数追加、 short_news_url path で data dict に詰めて renderer へ pass-through。 caller も追加。
+- **src/manual_intake_service.py**: HTML form の memo 欄直前に `<textarea id="table_markdown" name="table_markdown" rows="6" placeholder="...">` 追加。 POST handler で payload から strip して `run_manual_intake` へ。
+- **tests/test_nomotoke_card_renderer.py**: `MarkdownTableBlockTests` 8 件 + `ShortNewsTableIntegrationTests` 3 件 (空 / 不正 / valid embed の 3 path)。
 
 ### 3. 実行したテスト
 
+| phase | command | scope |
+|---|---|---|
+| phase 1 | `grep -rn "table_markdown\|wp:table\b\|_render_markdown_table_block"` | 既存使用 0 確認 |
+| phase 2 | `python3 -m py_compile` 4 file | syntax |
+| phase 2 | `python3 -m pytest tests/test_nomotoke_card_renderer.py tests/test_manual_intake.py tests/test_manual_intake_service.py` | 336 件 全 pass |
+| phase 3 | `curl /health` | live |
+| phase 3 | `curl / \| grep -c 'name="table_markdown"'` | textarea 1 件出現 |
+| phase 3 | `curl / \| grep -oE '<option value="..."' \| wc -l` | dropdown 21 維持 (416 不回帰) |
+| phase 3 | textarea placeholder の Markdown table 例 が live HTML に出現 | OK |
+
 ### 4. テスト結果
+
+- phase 1 grep: 全 3 symbol (table_markdown / wp:table / _render_markdown_table_block) 既存使用 0 ✓
+- phase 2: py_compile 4 file OK、 pytest **336 passed, regression 0**
+- phase 3 live: /health=200、 textarea 1 件、 dropdown 21、 placeholder に Markdown table 例 表示 (`| 日付 | 対戦 | 球場 | 席種 | 価格 |` で始まる)
+- 既存 short_news layout (lead + fact_card + X embed + 出典 h3 + closing) は table_markdown 空入力で **完全一致** (golden test で確認)
 
 ### 5. 残った懸念
 
+- **並走 session race による 417 番号 4 重衝突**:
+  - 私の 417 = `doc/active/417-manual-intake-markdown-table-block.md` (本 ticket)
+  - 並走 session 417 #1 = `doc/active/417-X-POST-MAIL-HOCHI-PRIORITY-PIGGYBACK.md` (X-post mail Hochi piggyback)
+  - 並走 session 417 #2 = Dockerfile.x_post_mail ENTRYPOINT 修正
+  - 並走 session 417 #3 = X-post mail post-work doc 追記
+  - 実害 0 だが将来 ticket 検索時に混乱、 私のチケットを後追いで 418 に rename 検討要 (本 ticket では未実施、 user 判断)
+- **commit 履歴**: 私の changes が並走 session の `dc0d294 405/415 Phase 2a-3a` commit に巻き込まれて push 済。 commit message が私の work scope (manual_intake table block) を表していないので git log -S / --grep で追跡しにくい。 grep file 単位なら追跡可。
+- **pipe escape (`\|`) は v1 unsupported**: doc 化済み、 必要なら別 ticket で v2 拡張。
+- **Markdown 不正入力時の UI feedback 無し**: server 側で None 返却 → block embed skip だが、 user は「table が表示されない」 理由を即時に知れない。 server response に `table_markdown_skipped_reason` を返す案は別 ticket。
+
 ### 6. 新しく見つかったデグレ
+
+- **デグレ 0 件** (code は production / repo 上 完全 landed、 既存 17 種 article_type + dropdown 21 種 + short_news body unchanged-with-empty-input)
+- 並走 session race (`git add -A` で他人の uncommitted を巻き込む) は memory `feedback_parallel_commit_silent_edit_loss` / `feedback_git_diff_cached_verify_strict` で既知の罠、 本 session で再発。 次回以降 commit 前に `git diff --cached --name-status` で staged file 数を絶対 verify (今回も verify 自体は実施したが、 並走 session が私の verify と commit の間に staged を取った race window あり)。
 
 ### 7. 追加した回帰テスト
 
+新 11 件 (tests/test_nomotoke_card_renderer.py):
+- `MarkdownTableBlockTests.test_returns_none_for_empty` — 空 / None
+- `MarkdownTableBlockTests.test_returns_none_for_non_table_text` — pipes なし
+- `MarkdownTableBlockTests.test_returns_none_when_only_header_no_body` — header だけ
+- `MarkdownTableBlockTests.test_basic_table_renders` — happy path (header + 2 rows)
+- `MarkdownTableBlockTests.test_html_escape_in_cell` — XSS safe
+- `MarkdownTableBlockTests.test_drops_rows_with_mismatched_columns` — column count guard
+- `MarkdownTableBlockTests.test_align_separator_variants_accepted` — `:---` / `---:` / `:---:`
+- `MarkdownTableBlockTests.test_crlf_newlines` — Windows newline 対応
+- `ShortNewsTableIntegrationTests.test_table_markdown_empty_is_noop` — 空入力 = baseline 一致
+- `ShortNewsTableIntegrationTests.test_table_markdown_invalid_is_noop` — 不正 = baseline 一致
+- `ShortNewsTableIntegrationTests.test_table_markdown_valid_embeds_block` — block embed + 位置確認
+
 ### 8. 次回触ってはいけない範囲
+
+- `_render_markdown_table_block` の None 返却 contract (caller の skip-block 動作 = regression 0 保証)。 例外 raise への変更禁止。
+- `render_short_news_url_card` の table block 挿入位置 (lead 直後 / fact_card 直前)。 後ろに移動すると user 期待 (本文の主役) と齟齬。
+- `_esc` 経由の cell escape (XSS guard)。 escape 外しは絶対禁止。
+- pipe escape (`\|`) 対応の v1 unsupported 仕様。 implicit に対応すると既存 cell の意味が変わる risk (別 ticket で明示拡張要)。
+- 並走 session in-flight files (§3 不可触 list) は今後も touch しない。
+- 416 の 9 種 OVERRIDES (auto を除く 20 entry) の order / mapping は不変維持。
+
+ticket 417 は **CLOSED LIVE_DEPLOYED_VERIFIED** (revision `manual-intake-service-00093-rfp`)。 次の自然 fire で user 受け入れ確認 (textarea に Markdown table を入れて draft 作成、 WP draft 編集画面で `wp:table` block が表として render されるかを 1 次 source 確認)。

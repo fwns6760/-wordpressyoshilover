@@ -11,7 +11,10 @@ memory feedback_title_clickable_descriptive.md: title は「誰が・何を・li
 
 from __future__ import annotations
 
-from src.title_seo_polisher import recover_from_trailing_ellipsis
+from src.title_seo_polisher import (
+    DEFAULT_MAX_TITLE_LENGTH,
+    recover_from_trailing_ellipsis,
+)
 
 
 def test_recover_post_68870_actual_case():
@@ -79,12 +82,14 @@ def test_recover_strips_rt_prefix_from_summary():
 
 
 def test_recover_long_summary_caps_at_max_length():
-    """summary 第一文が 50 字超なら末尾 "…" で再 cap (ただし復元成功扱い)."""
+    """summary 第一文が DB-safety cap 超なら末尾 "…" で再 cap (ただし復元成功扱い)."""
     title = "巨人選手の話題…"
-    long_first_sentence = "巨人選手が" + "ほにゃらら" * 20 + "した！"
+    long_first_sentence = (
+        "巨人選手が" + "ほにゃらら" * (DEFAULT_MAX_TITLE_LENGTH // 2) + "した！"
+    )
     recovered = recover_from_trailing_ellipsis(title, long_first_sentence)
-    assert len(recovered) <= 50
-    if len(long_first_sentence) > 50:
+    assert len(recovered) <= DEFAULT_MAX_TITLE_LENGTH
+    if len(long_first_sentence) > DEFAULT_MAX_TITLE_LENGTH:
         assert recovered.endswith("…")
 
 

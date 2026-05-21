@@ -75,9 +75,11 @@ _TRAILING_FILLERS = (
 _TRAILING_DUST_RE = re.compile(r"[、。・：:\s]+$")
 _LEADING_PARTICLE_RE = re.compile(r"^[がはをにでとのも][^\s]")
 
-# Used by the length cap. We measure by len() because the WP REST + SNS
-# preview also operate on character count rather than bytes.
-DEFAULT_MAX_TITLE_LENGTH = 50
+# Length cap is a DB-safety net only (wp_posts.post_title is VARCHAR(255));
+# SNS preview truncation lives in x_post_generator / x_api_client / mail
+# subject formatter, so the polisher no longer enforces a SERP-style 50-char
+# cap that mid-cut multi-subject titles (e.g. multi-player birthday digests).
+DEFAULT_MAX_TITLE_LENGTH = 200
 
 
 def _strip_rt_prefix(title: str) -> str:

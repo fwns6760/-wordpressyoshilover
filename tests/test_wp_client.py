@@ -349,19 +349,27 @@ class TestWPClientDedup(unittest.TestCase):
         _normalize_title(stored_truncated) → no match → new draft created
         every fire (same source URL, identical body marker, ignored).
         """
+        # Use an input long enough to exceed the DB-safety cap so the
+        # polish-aware dedup compare path is exercised.
+        from src.title_seo_polisher import DEFAULT_MAX_TITLE_LENGTH, polish_title
+
         long_input_title = (
             "【要review｜post_gen_validate】村田善則バッテリーチーフコーチ"
-            "「ものすごく大きなことが起こっているわけではない」"
+            "「ものすごく大きなことが起こっているわけではないが、"
+            "守備陣のサインミスや配球判断の細部について継続的に改善が必要であり、"
+            "若手投手のメンタル維持も重要であって、次戦は石川達也と岡本和真の"
+            "好調を維持しつつ阪神戦に臨むという話を整理してチームに共有した、"
+            "また打順入れ替えや代打起用の判断軸についても、コーチ陣とベンチが"
+            "事前合意を取りまとめてベテラン選手の経験値を活用する方向で意思統一し、"
+            "明日以降の試合運びと得点圏での集中力維持に直結する形で整える方針」"
         )
-        polished_stored_title = (
-            "【要review｜post_gen_validate】村田善則バッテリーチーフコーチ「ものすごく大…"
-        )
-        # Sanity: polish_title actually truncates this long input to the
-        # exact stored form. Guards against a future polish_title change
-        # silently invalidating this regression.
-        from src.title_seo_polisher import polish_title
-
-        self.assertEqual(polish_title(long_input_title), polished_stored_title)
+        self.assertGreater(len(long_input_title), DEFAULT_MAX_TITLE_LENGTH)
+        polished_stored_title = polish_title(long_input_title)
+        # Sanity: polish_title actually truncates this long input. Guards
+        # against a future polish_title change silently invalidating this
+        # regression.
+        self.assertNotEqual(polished_stored_title, long_input_title)
+        self.assertTrue(polished_stored_title.endswith("…"))
 
         mock_get.return_value = Mock(
             status_code=200,
@@ -396,14 +404,19 @@ class TestWPClientDedup(unittest.TestCase):
         created BEFORE the polish hook (= un-polished, possibly long)
         still match when the same un-polished input is replayed.
         """
+        from src.title_seo_polisher import DEFAULT_MAX_TITLE_LENGTH, polish_title
+
         long_unpolished_title = (
             "巨人戦 試合の流れを分けたポイント 阿部監督が語る今日の中盤での采配と"
-            "次戦の見どころとして大事なところを整理"
+            "次戦の見どころとして大事なところを整理しつつ、守備陣の連携や配球の組み立て、"
+            "若手選手の起用方針について、コーチ陣の意見と過去5試合の傾向を踏まえて、"
+            "明日以降の戦い方を改めて整理した話、さらに代打起用とブルペン運用についても、"
+            "ベンチ全体で目線を揃えて、得点圏での集中力維持と守備時の連携を高めるための"
+            "練習メニューと声掛けの軸を改めて統一した上で次戦に臨むという内容"
         )
+        self.assertGreater(len(long_unpolished_title), DEFAULT_MAX_TITLE_LENGTH)
         # Sanity: confirm this title would be truncated by polish — that's
         # the only way we know the raw-variant path is exercised separately.
-        from src.title_seo_polisher import polish_title
-
         self.assertNotEqual(polish_title(long_unpolished_title), long_unpolished_title)
 
         mock_get.return_value = Mock(
@@ -456,7 +469,7 @@ class TestWPClientDedup(unittest.TestCase):
             json=lambda: [
                 {
                     "id": 65365,
-                    "title": {"raw": "【要review｜post_gen_validate】村田善則バッテリーチーフコーチ「ものすごく大…"},
+                    "title": {"raw": "【要review｜post_gen_validate】村田善則バッテリーチーフコーチ「ものすごく大きなことが起こっているわけではない」"},
                     "status": "draft",
                     "date": "2099-05-08T20:01:00",
                     "featured_media": 0,

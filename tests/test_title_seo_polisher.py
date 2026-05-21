@@ -70,6 +70,24 @@ class PolishTitleTests(unittest.TestCase):
         self.assertEqual(len(polished), 30)
         self.assertTrue(polished.endswith("…"))
 
+    def test_default_cap_keeps_multi_subject_full_text(self):
+        # post 69971 actual: multi-player birthday digest title used to
+        # truncate mid-second-player at the old 50-char cap. With the
+        # default cap raised to 200 the title passes through unchanged.
+        title = (
+            "本日5月21日は巨人大竹寛2軍投手コーチの43歳の誕生日、"
+            "堀田賢慎投手の25歳の誕生日です"
+        )
+        self.assertEqual(polisher.polish_title(title), title)
+        self.assertFalse(polisher.polish_title(title).endswith("…"))
+
+    def test_default_cap_only_trims_runaway_input(self):
+        # 200-char DB safety net still trims pathological runaway inputs.
+        runaway = "巨" * 250
+        polished = polisher.polish_title(runaway)
+        self.assertEqual(len(polished), polisher.DEFAULT_MAX_TITLE_LENGTH)
+        self.assertTrue(polished.endswith("…"))
+
     def test_protected_date_prefix_only_decoded(self):
         # 試合結果 series — leave the prefix structure untouched.
         title = "2026年5月7日 セ・リーグ 7回戦「読売ジャイアンツvs.ヤクルト」"

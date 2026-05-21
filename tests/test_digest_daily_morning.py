@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import re
+import sys
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from src.tools.digest_daily_morning import (
     build_digest_body,
@@ -132,6 +133,36 @@ class TestThinBodyValidation(unittest.TestCase):
         body = build_digest_body()
         result = is_thin_body(body)
         self.assertFalse(result.is_thin, msg=f"unexpected: {result.reason}")
+
+
+class TestCliMain(unittest.TestCase):
+    def test_main_creates_draft_and_sends_notice(self):
+        from src.tools import digest_daily_morning as ddm
+
+        with (
+            patch.object(sys, "argv", ["digest_daily_morning"]),
+            patch.object(ddm, "build_digest_title", return_value="title"),
+            patch.object(ddm, "build_digest_body", return_value="<p>body</p>"),
+            patch.object(ddm, "is_digest_already_published_today", return_value=False),
+            patch.object(ddm, "_send_draft_notice",
+                         return_value={"sent": 1, "suppressed": 0, "errors": 0}) as mock_notice,
+            patch("src.wp_client.WPClient") as mock_wp_cls,
+            patch("builtins.print"),
+        ):
+            mock_wp = MagicMock()
+            mock_wp.create_post.return_value = 72000
+            mock_wp_cls.return_value = mock_wp
+            self.assertEqual(ddm.main(), 0)
+
+        call_kwargs = mock_wp.create_post.call_args.kwargs
+        self.assertEqual(call_kwargs["status"], "draft")
+        self.assertEqual(call_kwargs["caller"], "digest_daily_morning")
+        mock_notice.assert_called_once_with(
+            mock_wp,
+            post_id=72000,
+            title="title",
+            body_html="<p>body</p>",
+        )
 
 
 if __name__ == "__main__":

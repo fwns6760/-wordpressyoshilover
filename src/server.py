@@ -156,10 +156,11 @@ def _parse_mode(body: str, content_type: str = "") -> str:
 def _run_digest_daily(force: bool = False) -> tuple[int, str]:
     """DIGEST-DAILY-MORNING (2026-05-21) Phase 2 handler。
 
-    朝まとめ digest 1 記事を WP に publish (冪等)。 src/tools/digest_daily_morning
-    の main path を直接呼ぶのではなく、 必要 step を組み立てる:
+    朝まとめ digest 1 記事を WP に作成する (冪等)。src/tools/digest_daily_morning
+    の main path を直接呼ぶのではなく、必要 step を組み立てる:
     1. 当日分既存 check (slug query)
     2. なければ build_digest_body + WPClient.create_post
+    3. draft 作成時は publish-notice HTML mail を送る
     """
     log = logging.getLogger("server.digest_daily")
     try:
@@ -193,11 +194,14 @@ def _run_digest_daily(force: bool = False) -> tuple[int, str]:
         )
     title = build_digest_title()
     body = build_digest_body()
+    # Article creation is draft-first; publishing is handled only by the
+    # mail/manual selection flow.
+    requested_status = "draft"
     try:
         post_id = wp.create_post(
             title=title,
             content=body,
-            status="publish",
+            status=requested_status,
             categories=[670],  # コラム category id (override via env if needed)
             caller="digest_daily_morning",
         )
@@ -207,11 +211,89 @@ def _run_digest_daily(force: bool = False) -> tuple[int, str]:
             {"status": "error", "error": f"create_post_failed:{type(exc).__name__}:{exc}"},
             ensure_ascii=False,
         )
-    log.info("digest_daily published post_id=%s slug=%s", post_id, slug)
+
+    actual_status = requested_status
+    try:
+        post_data = wp.get_post(post_id)
+        actual_status = str((post_data or {}).get("status") or requested_status).strip().lower()
+    except Exception as exc:  # noqa: BLE001
+        post_data = {}
+        log.warning("digest_daily get_post failed post_id=%s err=%s", post_id, exc)
+
+    notice_counts = {"sent": 0, "suppressed": 0, "errors": 0}
+    if actual_status == "draft":
+        notice_counts = _send_digest_daily_draft_notice(
+            wp=wp,
+            post_id=post_id,
+            title=title,
+            canonical_url=str((post_data or {}).get("link") or "").strip(),
+            body_html=body,
+            post_data=post_data,
+            log=log,
+        )
+    response_status = "draft" if actual_status == "draft" else "published"
+    log.info(
+        "digest_daily %s post_id=%s slug=%s notice_sent=%s notice_suppressed=%s notice_errors=%s",
+        response_status,
+        post_id,
+        slug,
+        notice_counts.get("sent", 0),
+        notice_counts.get("suppressed", 0),
+        notice_counts.get("errors", 0),
+    )
     return 200, json.dumps(
-        {"status": "published", "post_id": post_id, "title": title, "slug": slug},
+        {
+            "status": response_status,
+            "post_id": post_id,
+            "title": title,
+            "slug": slug,
+            "notice": notice_counts,
+        },
         ensure_ascii=False,
     )
+
+
+def _send_digest_daily_draft_notice(
+    *,
+    wp,
+    post_id: int,
+    title: str,
+    canonical_url: str,
+    body_html: str,
+    post_data: dict,
+    log: logging.Logger,
+) -> dict[str, int]:
+    """Send the same draft-first HTML notice used by rss_fetcher.
+
+    The user-facing contract is: article creation creates a draft, and draft
+    creation sends a mail for manual selection. Reusing rss_fetcher's notice
+    helper keeps the publish button, admin URL, body excerpt, and remote queue
+    marker behavior identical.
+    """
+    try:
+        from src.rss_fetcher import (
+            _build_inline_draft_notice_request,
+            _send_fetcher_inline_draft_notices,
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.warning("digest_daily draft notice import failed post_id=%s err=%s", post_id, exc)
+        return {"sent": 0, "suppressed": 0, "errors": 1}
+
+    try:
+        if not post_data:
+            post_data = wp.get_post(post_id)
+        request = _build_inline_draft_notice_request(
+            post_data=post_data,
+            post_id=post_id,
+            title=title,
+            canonical_url=canonical_url,
+            subtype="digest_daily",
+            body_html=body_html,
+        )
+        return _send_fetcher_inline_draft_notices([request], logger=log)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("digest_daily draft notice failed post_id=%s err=%s", post_id, exc)
+        return {"sent": 0, "suppressed": 0, "errors": 1}
 
 
 def _parse_bool_query(path: str, key: str, default: bool = False) -> bool:

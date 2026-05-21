@@ -15,7 +15,7 @@ Idempotent
 ==========
 
 WP REST で slug ``morning-digest-YYYY-MM-DD`` 既存 check、当日 2 回呼んでも
-1 記事のみ publish。
+1 記事のみ作成。
 
 Cost
 ====
@@ -34,7 +34,7 @@ Usage
 >>> title = build_digest_title()
 >>> # Or via CLI:
 >>> #   python3 -m src.tools.digest_daily_morning --dry-run
->>> #   python3 -m src.tools.digest_daily_morning  # actually publish
+>>> #   python3 -m src.tools.digest_daily_morning  # create draft + notice
 
 Integration
 ===========
@@ -49,6 +49,7 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import logging
 from typing import Optional
 
 JST = datetime.timezone(datetime.timedelta(hours=9))
@@ -176,8 +177,41 @@ def is_digest_already_published_today(wp_client) -> bool:
         return False
 
 
+def _send_draft_notice(wp_client, *, post_id: int, title: str, body_html: str) -> dict[str, int]:
+    """Best-effort publish-notice mail for CLI-created digest drafts."""
+    log = logging.getLogger("digest_daily_morning")
+    try:
+        post_data = wp_client.get_post(post_id)
+    except Exception as exc:  # noqa: BLE001
+        post_data = {}
+        log.warning("digest_daily CLI get_post failed post_id=%s err=%s", post_id, exc)
+
+    try:
+        from src.rss_fetcher import (
+            _build_inline_draft_notice_request,
+            _send_fetcher_inline_draft_notices,
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.warning("digest_daily CLI draft notice import failed post_id=%s err=%s", post_id, exc)
+        return {"sent": 0, "suppressed": 0, "errors": 1}
+
+    try:
+        request = _build_inline_draft_notice_request(
+            post_data=post_data,
+            post_id=post_id,
+            title=title,
+            canonical_url=str((post_data or {}).get("link") or "").strip(),
+            subtype="digest_daily",
+            body_html=body_html,
+        )
+        return _send_fetcher_inline_draft_notices([request], logger=log)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("digest_daily CLI draft notice failed post_id=%s err=%s", post_id, exc)
+        return {"sent": 0, "suppressed": 0, "errors": 1}
+
+
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Daily morning digest publisher")
+    parser = argparse.ArgumentParser(description="Daily morning digest draft creator")
     parser.add_argument("--dry-run", action="store_true", help="print body without publish")
     parser.add_argument(
         "--category-id", type=int, default=670,
@@ -216,11 +250,12 @@ def main() -> int:
         post_id = wp.create_post(
             title=title,
             content=body,
-            status="publish",
+            status="draft",
             categories=[args.category_id],
             caller="digest_daily_morning",
         )
-        print(f"Published: post_id={post_id}")
+        notice_counts = _send_draft_notice(wp, post_id=post_id, title=title, body_html=body)
+        print(f"Draft: post_id={post_id} notice={notice_counts}")
         return 0
     except Exception as exc:
         print(f"ERROR: create_post failed: {exc}")

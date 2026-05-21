@@ -59,8 +59,9 @@ class RunDigestDailyTests(unittest.TestCase):
         self.assertEqual(payload["reason"], "already_published_today")
         mock_wp.create_post.assert_not_called()
 
-    def test_publishes_when_not_already_published(self):
+    def test_creates_draft_even_when_draft_only_disabled(self):
         with (
+            patch("src.server.RUN_DRAFT_ONLY", False),
             patch("src.tools.digest_daily_morning.is_digest_already_published_today",
                   return_value=False),
             patch("src.tools.digest_daily_morning.build_digest_slug",
@@ -69,25 +70,65 @@ class RunDigestDailyTests(unittest.TestCase):
                   return_value="📰 朝まとめ 5月21日"),
             patch("src.tools.digest_daily_morning.build_digest_body",
                   return_value='<div class="nomotoke-card-digest-daily-morning">body</div>'),
+            patch("src.server._send_digest_daily_draft_notice",
+                  return_value={"sent": 1, "suppressed": 0, "errors": 0}) as mock_notice,
             patch("src.wp_client.WPClient") as mock_wp_cls,
         ):
             mock_wp = MagicMock()
             mock_wp.create_post.return_value = 71000
+            mock_wp.get_post.return_value = {"status": "draft", "link": "https://yoshilover.com/?p=71000"}
             mock_wp_cls.return_value = mock_wp
             code, body = _run_digest_daily()
         self.assertEqual(code, 200)
         payload = json.loads(body)
-        self.assertEqual(payload["status"], "published")
+        self.assertEqual(payload["status"], "draft")
         self.assertEqual(payload["post_id"], 71000)
         self.assertEqual(payload["slug"], "morning-digest-2026-05-21")
         mock_wp.create_post.assert_called_once()
         call_kwargs = mock_wp.create_post.call_args.kwargs
-        self.assertEqual(call_kwargs["status"], "publish")
+        self.assertEqual(call_kwargs["status"], "draft")
         self.assertIn(670, call_kwargs["categories"])
         self.assertEqual(call_kwargs["caller"], "digest_daily_morning")
+        mock_notice.assert_called_once()
+
+    def test_creates_draft_and_sends_notice_when_draft_only_enabled(self):
+        with (
+            patch("src.server.RUN_DRAFT_ONLY", True),
+            patch("src.tools.digest_daily_morning.is_digest_already_published_today",
+                  return_value=False),
+            patch("src.tools.digest_daily_morning.build_digest_slug",
+                  return_value="morning-digest-2026-05-21"),
+            patch("src.tools.digest_daily_morning.build_digest_title",
+                  return_value="📰 朝まとめ 5月21日"),
+            patch("src.tools.digest_daily_morning.build_digest_body",
+                  return_value='<div class="nomotoke-card-digest-daily-morning">body</div>'),
+            patch("src.server._send_digest_daily_draft_notice",
+                  return_value={"sent": 1, "suppressed": 0, "errors": 0}) as mock_notice,
+            patch("src.wp_client.WPClient") as mock_wp_cls,
+        ):
+            mock_wp = MagicMock()
+            mock_wp.create_post.return_value = 71002
+            mock_wp.get_post.return_value = {
+                "status": "draft",
+                "link": "https://yoshilover.com/?p=71002",
+            }
+            mock_wp_cls.return_value = mock_wp
+            code, body = _run_digest_daily()
+        self.assertEqual(code, 200)
+        payload = json.loads(body)
+        self.assertEqual(payload["status"], "draft")
+        self.assertEqual(payload["post_id"], 71002)
+        self.assertEqual(payload["notice"], {"sent": 1, "suppressed": 0, "errors": 0})
+        call_kwargs = mock_wp.create_post.call_args.kwargs
+        self.assertEqual(call_kwargs["status"], "draft")
+        mock_notice.assert_called_once()
+        notice_kwargs = mock_notice.call_args.kwargs
+        self.assertEqual(notice_kwargs["post_id"], 71002)
+        self.assertEqual(notice_kwargs["canonical_url"], "https://yoshilover.com/?p=71002")
 
     def test_force_bypasses_idempotency_check(self):
         with (
+            patch("src.server.RUN_DRAFT_ONLY", False),
             patch("src.tools.digest_daily_morning.is_digest_already_published_today",
                   return_value=True),
             patch("src.tools.digest_daily_morning.build_digest_slug",
@@ -96,15 +137,18 @@ class RunDigestDailyTests(unittest.TestCase):
                   return_value="📰 朝まとめ 5月21日"),
             patch("src.tools.digest_daily_morning.build_digest_body",
                   return_value='<div>body</div>'),
+            patch("src.server._send_digest_daily_draft_notice",
+                  return_value={"sent": 1, "suppressed": 0, "errors": 0}),
             patch("src.wp_client.WPClient") as mock_wp_cls,
         ):
             mock_wp = MagicMock()
             mock_wp.create_post.return_value = 71001
+            mock_wp.get_post.return_value = {"status": "draft", "link": "https://yoshilover.com/?p=71001"}
             mock_wp_cls.return_value = mock_wp
             code, body = _run_digest_daily(force=True)
         self.assertEqual(code, 200)
         payload = json.loads(body)
-        self.assertEqual(payload["status"], "published")
+        self.assertEqual(payload["status"], "draft")
         # force=True で is_already_published check は call されるが結果無視
         mock_wp.create_post.assert_called_once()
 

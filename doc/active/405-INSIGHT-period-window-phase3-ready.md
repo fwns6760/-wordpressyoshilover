@@ -2,7 +2,7 @@
 
 ## 1. ticket header
 
-- **status**: READY (2026-05-20 PM、 user 指示「残をやるが無料でね」 → **free source 確認**: NPB 公式 `playbyplay.html` で per-PA 走者状況 + カウント + 結果 全部 parse 可能。 paid API 不要。 実装 scope は大きい (parser + storage + 3 aggregators + tests + deploy = 6-8h) ため次 session handoff、 spec lock で残す)
+- **status**: PHASE_1_LANDED (Phase 1 parser commit `f777f4c` で `src/source_npb_playbyplay_extractor.py` に `parse_npb_playbyplay_full_detail` + 走者状況別 / 打席内カウント別 helper 全部追加、 14 tests pass、 5/10 中日 vs 巨人 fixture で per-PA 走者状況 + count_balls/strikes + current_pitcher 抽出確認。 残 Phase 2 (per-PA detail table schema + ETL ingest) / Phase 3 (aggregator + publisher per cut) は別 session)
 - **priority**: low (shadow ticket、 議論された案を忘れないため残す)
 - **owner**: Claude / **lane**: Claude
 - **stage**: Phase 3 / 段階式 ([[403]] / [[404]] の最終 follow-up)

@@ -20,8 +20,32 @@ if str(ROOT) not in sys.path:
 from src.analysis import insight_etl  # noqa: E402
 from src.analysis.ranking_article_publisher import (  # noqa: E402
     aggregate_giants_batter_runner_state,
+    aggregate_giants_batter_by_count_filter,
+    aggregate_giants_batter_vs_opponent,
+    publish_giants_batter_runner_state_split_draft,
+    publish_giants_batter_count_filter_draft,
+    publish_giants_batter_vs_opponent_draft,
     runner_state_label,
 )
+
+
+class _FakeWP:
+    def __init__(self):
+        self.posts_created = []
+        self.api = "https://example.test/wp-json/wp/v2"
+
+    def create_category(self, name):
+        return 1
+
+    def resolve_category_id(self, name):
+        return 1
+
+    def create_post(self, **kwargs):
+        self.posts_created.append(kwargs)
+        return 99999
+
+    def _request_with_retry(self, *args, **kwargs):
+        return None
 
 
 SCHEMA_PATH = ROOT / "data" / "insight" / "schema.sql"
@@ -253,6 +277,213 @@ class AggregateGiantsBatterRunnerStateTests(unittest.TestCase):
         # サンタナ (ヤクルト) は除外、 巨人 岡本のみ
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0]["batter"], "岡本")
+
+
+class CountFilterAggregatorTests(unittest.TestCase):
+    def _seed_game_and_events(self, conn: sqlite3.Connection):
+        conn.execute(
+            "INSERT INTO games (game_id, game_date, opponent, home_away, "
+            "giants_score, opp_score, result, source_url, source_kind, "
+            "ingested_at) VALUES ('2026-05-19:s-g-10', '2026-05-19', "
+            "'ヤクルト', 'home', 5, 3, '勝利', '', 'test', "
+            "'2026-05-19T22:00:00Z')"
+        )
+        events = [
+            # first_pitch: count 0-0
+            {"inning_no": 1, "half": "裏", "team": "巨人", "outs": "0アウト",
+             "runner_state": "", "batter": "吉川", "count_balls": 0,
+             "count_strikes": 0, "result": "右前安打", "current_pitcher": "小川"},
+            {"inning_no": 2, "half": "裏", "team": "巨人", "outs": "0アウト",
+             "runner_state": "", "batter": "吉川", "count_balls": 0,
+             "count_strikes": 0, "result": "中前安打", "current_pitcher": "小川"},
+            # two_strike: count_strikes=2
+            {"inning_no": 5, "half": "裏", "team": "巨人", "outs": "2アウト",
+             "runner_state": "", "batter": "岡本", "count_balls": 1,
+             "count_strikes": 2, "result": "空振り三振", "current_pitcher": "清水"},
+            {"inning_no": 7, "half": "裏", "team": "巨人", "outs": "0アウト",
+             "runner_state": "", "batter": "岡本", "count_balls": 3,
+             "count_strikes": 2, "result": "中前安打（打点1）",
+             "current_pitcher": "清水"},
+        ]
+        insight_etl.upsert_at_bat_details(
+            conn, game_id="2026-05-19:s-g-10",
+            source_url="", events=events,
+            ingested_at="2026-05-19T22:30:00Z",
+        )
+
+    def test_aggregate_first_pitch(self):
+        conn = _open_seeded_db()
+        self._seed_game_and_events(conn)
+        rows = aggregate_giants_batter_by_count_filter(
+            conn, count_filter="first_pitch", last_n_games=10,
+        )
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["batter"], "吉川")
+        self.assertEqual(rows[0]["pa_count"], 2)
+
+    def test_aggregate_two_strike(self):
+        conn = _open_seeded_db()
+        self._seed_game_and_events(conn)
+        rows = aggregate_giants_batter_by_count_filter(
+            conn, count_filter="two_strike", last_n_games=10,
+        )
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["batter"], "岡本")
+        self.assertEqual(rows[0]["pa_count"], 2)
+        self.assertEqual(rows[0]["rbi_sum"], 1)
+
+    def test_unknown_filter_returns_empty(self):
+        conn = _open_seeded_db()
+        self._seed_game_and_events(conn)
+        rows = aggregate_giants_batter_by_count_filter(
+            conn, count_filter="unknown_value", last_n_games=10,
+        )
+        self.assertEqual(rows, [])
+
+
+class VsOpponentAggregatorTests(unittest.TestCase):
+    def test_aggregate_filters_by_opponent(self):
+        conn = _open_seeded_db()
+        conn.execute(
+            "INSERT INTO games (game_id, game_date, opponent, home_away, "
+            "giants_score, opp_score, result, source_url, source_kind, "
+            "ingested_at) VALUES ('2026-05-19:s-g-10', '2026-05-19', "
+            "'ヤクルト', 'home', 5, 3, '勝利', '', 'test', "
+            "'2026-05-19T22:00:00Z')"
+        )
+        conn.execute(
+            "INSERT INTO games (game_id, game_date, opponent, home_away, "
+            "giants_score, opp_score, result, source_url, source_kind, "
+            "ingested_at) VALUES ('2026-05-17:g-db-09', '2026-05-17', "
+            "'DeNA', 'home', 2, 1, '勝利', '', 'test', "
+            "'2026-05-17T22:00:00Z')"
+        )
+        events_s = [
+            {"inning_no": 1, "half": "裏", "team": "巨人", "outs": "0アウト",
+             "runner_state": "1塁", "batter": "岡本", "count_balls": 1,
+             "count_strikes": 1, "result": "左中間タイムリー（打点2）",
+             "current_pitcher": "小川"},
+        ]
+        events_db = [
+            {"inning_no": 3, "half": "裏", "team": "巨人", "outs": "0アウト",
+             "runner_state": "", "batter": "岡本", "count_balls": 0,
+             "count_strikes": 0, "result": "中前安打", "current_pitcher": "東"},
+        ]
+        insight_etl.upsert_at_bat_details(
+            conn, game_id="2026-05-19:s-g-10",
+            source_url="", events=events_s,
+            ingested_at="2026-05-19T22:30:00Z",
+        )
+        insight_etl.upsert_at_bat_details(
+            conn, game_id="2026-05-17:g-db-09",
+            source_url="", events=events_db,
+            ingested_at="2026-05-17T22:30:00Z",
+        )
+        rows_s = aggregate_giants_batter_vs_opponent(
+            conn, opponent="ヤクルト", last_n_games=10,
+        )
+        rows_db = aggregate_giants_batter_vs_opponent(
+            conn, opponent="DeNA", last_n_games=10,
+        )
+        self.assertEqual(len(rows_s), 1)
+        self.assertEqual(rows_s[0]["rbi_sum"], 2)
+        self.assertEqual(len(rows_db), 1)
+        self.assertEqual(rows_db[0]["rbi_sum"], 0)
+
+
+class PublisherSmokeTests(unittest.TestCase):
+    """3a / 3b / 3c publishers end-to-end (FakeWP)。"""
+
+    def _seed_full(self, conn: sqlite3.Connection):
+        conn.execute(
+            "INSERT INTO games (game_id, game_date, opponent, home_away, "
+            "giants_score, opp_score, result, source_url, source_kind, "
+            "ingested_at) VALUES ('2026-05-19:s-g-10', '2026-05-19', "
+            "'ヤクルト', 'home', 5, 3, '勝利', '', 'test', "
+            "'2026-05-19T22:00:00Z')"
+        )
+        events = [
+            {"inning_no": 1, "half": "裏", "team": "巨人", "outs": "0アウト",
+             "runner_state": "満塁", "batter": "岡本", "count_balls": 3,
+             "count_strikes": 2, "result": "左中間グランドスラム（打点4）",
+             "current_pitcher": "小川"},
+            {"inning_no": 1, "half": "裏", "team": "巨人", "outs": "0アウト",
+             "runner_state": "", "batter": "吉川", "count_balls": 0,
+             "count_strikes": 0, "result": "右前安打",
+             "current_pitcher": "小川"},
+            {"inning_no": 5, "half": "裏", "team": "巨人", "outs": "2アウト",
+             "runner_state": "", "batter": "岡本", "count_balls": 1,
+             "count_strikes": 2, "result": "空振り三振",
+             "current_pitcher": "清水"},
+        ]
+        insight_etl.upsert_at_bat_details(
+            conn, game_id="2026-05-19:s-g-10",
+            source_url="", events=events,
+            ingested_at="2026-05-19T22:30:00Z",
+        )
+
+    def test_publish_runner_state_dry_run(self):
+        conn = _open_seeded_db()
+        self._seed_full(conn)
+        res = publish_giants_batter_runner_state_split_draft(
+            conn, _FakeWP(), runner_state="満塁",
+            last_n_games=10, dry_run=True,
+        )
+        self.assertEqual(res["status"], "dry_run")
+        self.assertIn("満塁時の打点", res["title"])
+
+    def test_publish_runner_state_no_data(self):
+        conn = _open_seeded_db()
+        # No games / no events
+        res = publish_giants_batter_runner_state_split_draft(
+            conn, _FakeWP(), runner_state="満塁",
+            last_n_games=10, dry_run=True,
+        )
+        self.assertEqual(res["status"], "skip")
+        self.assertEqual(res["reason"], "no_data_or_no_giants")
+
+    def test_publish_count_filter_first_pitch_dry_run(self):
+        conn = _open_seeded_db()
+        self._seed_full(conn)
+        res = publish_giants_batter_count_filter_draft(
+            conn, _FakeWP(), count_filter="first_pitch",
+            last_n_games=10, dry_run=True,
+        )
+        self.assertEqual(res["status"], "dry_run")
+        self.assertIn("初球打ち", res["title"])
+
+    def test_publish_count_filter_two_strike_dry_run(self):
+        conn = _open_seeded_db()
+        self._seed_full(conn)
+        res = publish_giants_batter_count_filter_draft(
+            conn, _FakeWP(), count_filter="two_strike",
+            last_n_games=10, dry_run=True,
+        )
+        self.assertEqual(res["status"], "dry_run")
+        self.assertIn("2ストライク後", res["title"])
+
+    def test_publish_vs_opponent_dry_run(self):
+        conn = _open_seeded_db()
+        self._seed_full(conn)
+        res = publish_giants_batter_vs_opponent_draft(
+            conn, _FakeWP(), opponent="ヤクルト",
+            last_n_games=10, dry_run=True,
+        )
+        self.assertEqual(res["status"], "dry_run")
+        self.assertIn("対ヤクルト戦", res["title"])
+
+    def test_publish_runner_state_live_creates_post(self):
+        conn = _open_seeded_db()
+        self._seed_full(conn)
+        fake_wp = _FakeWP()
+        res = publish_giants_batter_runner_state_split_draft(
+            conn, fake_wp, runner_state="満塁",
+            last_n_games=10, dry_run=False,
+        )
+        # FakeWP returns post_id=99999、 publish_status may be 'draft' / 'publish'
+        self.assertIn(res["status"], ("published_draft", "published"))
+        self.assertEqual(res["post_id"], 99999)
+        self.assertEqual(len(fake_wp.posts_created), 1)
 
 
 class RunnerStateLabelTests(unittest.TestCase):

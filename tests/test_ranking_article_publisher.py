@@ -33,6 +33,13 @@ def test_default_publish_cap_is_conservative():
     assert anomaly_pub.DEFAULT_MAX_PER_RUN == 3
 
 
+def test_resolve_publish_status_is_draft_even_when_legacy_auto_flags_are_on(monkeypatch):
+    monkeypatch.setattr(rap, "ENABLE_DATA_INSIGHT_AUTO_PUBLISH", True)
+    monkeypatch.setattr(rap, "ENABLE_DATA_INSIGHT_AUTO_PUBLISH_GIANTS", True)
+
+    assert rap._resolve_publish_status(focus_team_code="g") == "draft"
+
+
 def _seed_snapshots(conn, *, snapshot_date, scope, metric, ranking):
     """sample snapshots を insert。``ranking`` は (player, team, value, sample, rank, total) tuple."""
     for player, team, value, sample, rank, total in ranking:

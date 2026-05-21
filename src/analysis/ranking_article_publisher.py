@@ -1,4 +1,4 @@
-"""DATA-INSIGHT-continuous: 巨人中心 + 12 球団 ranking article 自動 publish.
+"""DATA-INSIGHT-continuous: 巨人中心 + 12 球団 ranking article draft creator.
 
 342-INSIGHT (data-driven ranking 自動 publish) + 343-INSIGHT-007 (12 球団
 data 基盤) の合流 module。既存 `insight_article_generator.render_article`
@@ -8,7 +8,7 @@ top player を focus にして article を構築、`wp_client.create_post(status
 
 設計方針:
   * pure rule-based、LLM 不使用
-  * `status='draft'` 固定 (auto-publish は env flag gate、本 module 範囲外)
+  * `status='draft'` 固定 (公開は mail / manual selection だけ)
   * 既存 `wp_client.find_recent_post_by_title` で重複 draft 防止 (idempotent)
   * `ENABLE_DATA_INSIGHT_AUTO_PUBLISH=1` の検知は呼び出し側で行う (本 module
     は常に status='draft' 投入)
@@ -597,14 +597,14 @@ SUBTYPE_DATA_RANKING_PREFIX = "data_ranking_"
 # 1 trigger で publish する最大 article 数 (暴走防止、env で override 可)
 DEFAULT_MAX_PER_RUN = int(os.environ.get("DATA_INSIGHT_PUBLISH_MAX_PER_RUN", "3") or "3")
 
-# auto-publish env flag (本 module は draft 固定、auto-publish は呼び出し側)
+# Legacy auto-publish env flags. 2026-05-21 user lock:
+# article creation must land as draft; publishing happens only via mail/manual
+# selection. Keep the constants for observability/backward import compatibility,
+# but _resolve_publish_status intentionally ignores them.
 ENABLE_DATA_INSIGHT_AUTO_PUBLISH = (
     os.environ.get("ENABLE_DATA_INSIGHT_AUTO_PUBLISH", "0").strip() == "1"
 )
 
-# 巨人記事のみ auto-publish (user 明示 GO「巨人は自動公開でもいいよ」)
-# focus_player が巨人 (team_code='g') の ranking 記事のみ status='publish'、
-# 他球団は draft 維持 (§11 user 判断境界)
 ENABLE_DATA_INSIGHT_AUTO_PUBLISH_GIANTS = (
     os.environ.get("ENABLE_DATA_INSIGHT_AUTO_PUBLISH_GIANTS", "0").strip() == "1"
 )
@@ -636,16 +636,11 @@ def _ensure_player_tag(wp_client_obj: Any, player_name: str) -> int:
 
 
 def _resolve_publish_status(*, focus_team_code: Optional[str] = None) -> str:
-    """env flag + team_code から WP publish status を決定。
+    """Return WP status for newly generated data-insight articles.
 
-    - ENABLE_DATA_INSIGHT_AUTO_PUBLISH=1: 全 record auto publish
-    - ENABLE_DATA_INSIGHT_AUTO_PUBLISH_GIANTS=1 + focus_team_code='g': 巨人のみ publish
-    - 上記以外: 'draft' (user 確認待ち)
+    Data-insight article creation is draft-first. The focus_team_code argument
+    remains for caller compatibility, but it no longer grants auto-publish.
     """
-    if ENABLE_DATA_INSIGHT_AUTO_PUBLISH:
-        return "publish"
-    if ENABLE_DATA_INSIGHT_AUTO_PUBLISH_GIANTS and (focus_team_code or "").strip() == "g":
-        return "publish"
     return "draft"
 
 

@@ -2346,7 +2346,8 @@ def publish_anomaly_drafts(
                 "candidate_id": cand["candidate_id"],
             })
             continue
-        # WP 投入 status 決定 (巨人選手は env flag 設定時 publish 化)
+        # WP 投入 status 決定。2026-05-21 lock: 新規作成は draft 固定、
+        # publish は mail/manual selection のみ。
         team_code_for_pub = _player_team_code(conn, cand["player_canonical"])
         publish_status = rap._resolve_publish_status(focus_team_code=team_code_for_pub)
         # NEWS-BANNER-FIX-2026-05-15: anomaly 記事も赤紫グラデ banner を冒頭に

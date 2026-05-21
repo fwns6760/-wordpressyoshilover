@@ -130,6 +130,10 @@ user 判断境界 §11 不要、 自律可)。
 - 11:38 JST | phase 2 edit 完了 ARTICLE_TYPE_OVERRIDES に 3 entry 追加 + _auto_guess_article_type に 416 path 1 ブロック追加 (priority: 最初は末尾配置 → fail 後 既存 path より先頭に移動)、 test 9 件追加 + hard count 18 → 21 update | 416 | - | pytest 確認
 - 11:39 JST | 初回 pytest 2 fail (test_scorebook / test_ticket_trade、 score pattern + generic「トレード」 が先 hit) → 416 path block を 試合結果 path / generic「トレード」 path より **先頭** (公示 path 直前) に移動 | 416 | - | pytest 再実行
 - 11:40 JST | pytest 全 pass (111 passed, regression 0) | 416 | - | phase 3 commit/push/build/deploy/verify
+- 11:55 JST | commit 9827855 + push (`feat/377-phase1c-mail-body-excerpt`、 staged 3 file = doc + src + tests のみ、 並走 session dirty 混入なし) | 416 | 9827855 | Cloud Build
+- 11:58 JST | Cloud Build SUCCESS (1m34s、 image tag `ticket-types-9827855`、 digest sha256:5161ca12...) | 416 | 9827855 | Cloud Run deploy
+- 12:00 JST | Cloud Run deploy SUCCESS (revision `manual-intake-service-00092-kqz`、 traffic 100%) | 416 | 00092-kqz | live verify
+- 12:01 JST | live verify 4 項目 全 pass (/health=200、 dropdown=21、 既存 17 種 maintain、 新 3 種 literal 出現) | 416 | 00092-kqz | post-work 追記
 
 ## 10. Regression Memo 欄
 
@@ -160,20 +164,84 @@ user 判断境界 §11 不要、 自律可)。
 
 ---
 
-## (作業後追記欄 — GO 後にここから埋める)
+## (作業後追記欄)
 
 ### 1. 実際に変更したファイル
 
+3 files in commit `9827855`:
+- `src/tools/manual_intake.py` (+22 lines, -0)
+- `tests/test_manual_intake.py` (+65 lines, -1)
+- `doc/active/416-manual-intake-ticket-scorebook-article-types.md` (+179 lines, new)
+
 ### 2. diff 概要
+
+**src/tools/manual_intake.py**
+- `ARTICLE_TYPE_OVERRIDES` 末尾に 3 entry 追加 (チケット情報 / チケット交換 / スコアブック)、 既存 17 entry / order 不変
+- `_auto_guess_article_type` の `# 公示 (NPB 登録 / 抹消)` block 直前に 416 path 1 block 追加 (スコアブック / チケット交換 / チケット情報 を specific 複合語 keyword で検出)
+- 既存 path の logic / order / keyword set 全て不変
+
+**tests/test_manual_intake.py**
+- `test_choices_tuple_includes_auto_and_overrides` の hard count 18 → 21
+- `test_new_routes_cover_missing_wp_categories` の直後に 2 つ追加 (`test_ticket_416_routes_present`、 `test_ticket_416_not_in_article_style_manual_types`)
+- 新クラス `AutoGuessTicket416KeywordTests` (5 method: scorebook / ticket_info / ticket_trade / priority_does_not_break_existing_score_path / priority_does_not_break_ticket_keyword_in_team_news)
+- 既存 102 件の test 本体は不変
+
+**doc/active/416-...md**
+- pre-work plan + 作業ログ + Regression Memo を着地
 
 ### 3. 実行したテスト
 
+| phase | command | scope |
+|---|---|---|
+| phase 1 | `grep -rn "チケット\|スコアブック\|scorebook\|ticket_trade" src/ tests/` | 既存使用箇所の有無確認 |
+| phase 2 | `python3 -m py_compile src/tools/manual_intake.py` | syntax |
+| phase 2 | `python3 -m py_compile tests/test_manual_intake.py` | syntax |
+| phase 2 | `python3 -c "import ast; ast.parse(...)"` | AST |
+| phase 2 | `python3 -m pytest tests/test_manual_intake.py -x --tb=short` | 全 manual_intake test |
+| phase 3 | `curl /health` | live |
+| phase 3 | `curl / \| grep -oE '<option value="..."' \| wc -l` | dropdown 21 |
+| phase 3 | `curl / \| grep -oE 'value="..."'` | 全 21 option literal 一致 |
+| phase 3 | `curl / \| grep -oE '"(チケット情報\|チケット交換\|スコアブック)"'` | 新 3 種 literal 出現 |
+
 ### 4. テスト結果
+
+- **phase 1 grep**: 「スコアブック / scorebook / ticket_trade」 = 0 件 (新規 OK)、 「チケット」 = 既存 8 件 (rss_fetcher 球団情報 routing で既に使用、 整合性 OK)、 subtype `ticket` = metadata 内別用途 (commit/log の ticket 番号) と namespace 衝突なし
+- **phase 2 syntax**: py_compile OK / AST OK (3 file)
+- **phase 2 pytest**: 初回 2 fail (test_scorebook / test_ticket_trade、 priority order で score pattern + generic「トレード」 が先 hit) → 416 path block を 公示 path 直前に移動 → **111 passed, 0 failed, regression 0**
+- **phase 3 live**: /health=200 / dropdown=21 / 全 21 option literal 一致 / 新 3 種 全 出現
+- 既存 18 種 (auto + 17) は live HTML 上で order / count 不変
 
 ### 5. 残った懸念
 
+- **subtype namespace 衝突 (低 risk)**: subtype `ticket` は WP post metadata key と既存 `"ticket": "<id>"` (commit log の ticket 番号) が同名。 dict key の context は完全別 (post categories vs commit metadata)、 衝突は技術的に発生しないが、 将来の grep / debug で混乱の可能性。 必要なら別 ticket で `ticket_info` に rename を検討。
+- **チケット交換 content の編集軸 (用途判断)**: 「チケットトレード」「公式リセール」 を yoshilover がそのまま転載する場合、 球団公式 / NPB 公式 source の著作権境界に注意 (memory: 巨人公式 X 引用は oEmbed のみ)。 publish するかは user の手動 intake 判断。
+- **auto_guess keyword の網羅性**: 球団公式の 実 channel 表現 (例: 「e+ チケット」「Yahoo! チケット」 等の販売 platform 固有名) は未網羅。 user の運用で漏れ patterns が判明したら別 ticket で keyword 追加。
+
 ### 6. 新しく見つかったデグレ
+
+- **デグレ 0 件** (regression test 102 全 pass、 live 既存 17 種 全 維持)
+- ただし pytest 初回 2 fail を **新規 test を書いた直後** に検知できたのは 「自己評価 OK」 罠を回避する hygiene として有効。 priority 順序が「specific keyword は generic より先」 という普遍則を再確認。
 
 ### 7. 追加した回帰テスト
 
+新 9 件 (tests/test_manual_intake.py):
+- `test_ticket_416_routes_present` — 3 entry の (category / subtype / template_key) tuple literal lock
+- `test_ticket_416_not_in_article_style_manual_types` — short-news 風 layout 維持 (article-style 昇格防止)
+- `AutoGuessTicket416KeywordTests.test_scorebook` — 3 sample title
+- `AutoGuessTicket416KeywordTests.test_ticket_info` — 3 sample title
+- `AutoGuessTicket416KeywordTests.test_ticket_trade` — 3 sample title
+- `AutoGuessTicket416KeywordTests.test_priority_does_not_break_existing_score_path` — 既存 試合結果 path 非回帰
+- `AutoGuessTicket416KeywordTests.test_priority_does_not_break_ticket_keyword_in_team_news` — generic「チケット」 1 語 hit を防止
+
+既存 hard count 18 → 21 update も含めれば update 1 + 新 8 = 計 9 件。
+
 ### 8. 次回触ってはいけない範囲
+
+- 416 path の priority order (公示 path 直前) を後ろに動かさない。 score pattern や generic「トレード」 が先 hit する罠を再発させない。
+- 416 keyword の単独「チケット」 1 語化を禁止 (rss_fetcher の generic「チケット」 と過剰 hit 化、 全 generic 巨人ニュースが ticket_info に化ける罠)。 必ず複合語限定。
+- `ARTICLE_TYPE_OVERRIDES` の既存 20 entry の order 入れ替え禁止 (dropdown 表示順が変わると user 操作の muscle memory が壊れる)。
+- `ARTICLE_STYLE_MANUAL_TYPES` set への 416 新 3 種追加禁止 (short-news 風 layout を意図的に維持)。
+- `config/categories.json` への新 WP category 追加禁止 (新 category 解放は user 判断 §11)。
+- 並走 session in-flight files (§3 不可触 list) への意図しない touch。
+
+416 ticket は **CLOSED LIVE_DEPLOYED_VERIFIED**。 次自然 fire で manual-intake-service UI を user が選択操作した際の動作確認 (受け入れ試験) を待つ。

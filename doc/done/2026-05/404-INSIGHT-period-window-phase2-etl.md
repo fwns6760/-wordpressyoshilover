@@ -2,7 +2,7 @@
 
 ## 1. ticket header
 
-- **status**: PARTIAL_LIVE_DEPLOYED_OBSERVE (2026-05-21、 登板 inning 別 = schema + derive + publisher + wire 完了済、 image `insight-nightly:415-vs-lr-mvp` gen 81 deploy 済、 inning 別 post の自然 fire 観察待ち):
+- **status**: CLOSED LIVE_DEPLOYED_VERIFIED (2026-05-21 12:01 JST 自然 fire、 image `insight-nightly:404-wire-fix-a465a7d` で **inning 別 post 出現確認**: post 70019「大勢 8回登板 (setup) 防御率 3.0 セ・リーグ 13 位 (直近5試合)」 + post 70017「マルティネス 9回登板 (closer) 防御率 0.0 セ・リーグ 3 位 (直近5試合)」、 setup / closer 両 role で publisher 稼働確認。 wire-fix commit a465a7d (open_db で backfill_pitcher_innings 自動呼出) の効果完全証明、 直前 fire (10:02) で 0 件 → 12:01 fire で 2 件 inning post という diff で fix 因果も確定)
   - **登板 inning 別**: 実装完了 commit `159d491` (schema + derive logic) + `e2dd155` (publisher + insight_nightly wire)、 LIVE_DEPLOYED、 inning 別 post の自然 fire 観察待ち (2026-05-21 10:02 fire には未出現、 投手 fire / appearance 蓄積後出現見込み)
   - **vs 左右投手**: [[415]] (#91) に split out、 approach (a) starter 限定 approx で commit `378249d` + `f621457` landed (NPB throws scraper)、 PARKED user 判断 (a) approx 維持 / (b) 厳密 へ拡張後
   - **デーゲーム / ナイター**: marginal value (年 10-15 試合のみ) で drop、 必要なら別 ticket で復活

@@ -19,7 +19,7 @@ def _make_article(title="", summary="", **kw):
         summary=summary,
         source_name=kw.get("source_name", "スポーツ報知"),
         source_type=kw.get("source_type", "rss"),
-        article_subtype=kw.get("article_subtype", "postgame"),
+        article_subtype=kw.get("article_subtype", "player_voice"),  # 既存 default、 個別 player 系
         player_canonical=kw.get("player_canonical", []),
     )
 
@@ -96,6 +96,69 @@ class BuildXPostFromArticleInfoSkipPathTests(unittest.TestCase):
         article = _make_article(title="戸郷翔征が好投")
         result = xbg.build_x_post_from_article_info(article, gemini_api_key="key")
         self.assertIsNone(result)
+
+
+class PostgameTeamWideTests(unittest.TestCase):
+    """417 user 修正 (2026-05-21): postgame は team-wide / fuuga 強制、 個別 player 不要."""
+
+    @patch("src.x_post_branding_gen._gemma_branding_safety_check", return_value=True)
+    @patch("src.x_post_branding_gen._extract_unverified_numbers", return_value=[])
+    @patch("src.x_post_branding_gen.is_giants_game_day", return_value=True)
+    @patch("google.genai.Client")
+    def test_postgame_subtype_uses_team_wide_player(self, mock_client_cls, _gd, _unv, _safety):
+        # postgame subtype → focus_player は 「巨人」 (team-wide)、 個別 player でない
+        mock_response = type("R", (), {"text": "今日は完勝！ 7 連勝でとんでもないことになってる。 噛み締めながら明日も楽しみたい。" * 3})()
+        mock_client_cls.return_value.models.generate_content.return_value = mock_response
+
+        article = _make_article(
+            title="巨人完勝で 7 連勝、 投打噛み合う充実の展開",
+            summary="9 回 3-0 でヤクルトに勝利、 投打が噛み合った内容",
+            article_subtype="postgame",
+        )
+        cand = xbg.build_x_post_from_article_info(article, gemini_api_key="key", persona="fuuga")
+        self.assertIsNotNone(cand)
+        self.assertEqual(cand.focus_player, "巨人")
+        self.assertIn("巨人", cand.title)
+
+    @patch("src.x_post_branding_gen._gemma_branding_safety_check", return_value=True)
+    @patch("src.x_post_branding_gen._extract_unverified_numbers", return_value=[])
+    @patch("src.x_post_branding_gen.is_giants_game_day", return_value=True)
+    @patch("google.genai.Client")
+    def test_postgame_skips_player_extraction_even_if_player_in_title(
+        self, mock_client_cls, _gd, _unv, _safety
+    ):
+        # title に「戸郷翔征」 が居ても postgame は team-wide (= 巨人) で書く
+        mock_response = type("R", (), {"text": "完勝で 7 連勝！ 投打が噛み合った内容。 ピッチャー陣の踏ん張りが効いた " * 3})()
+        mock_client_cls.return_value.models.generate_content.return_value = mock_response
+
+        article = _make_article(
+            title="戸郷翔征 7 回無失点で完勝、 巨人 7 連勝",
+            summary="戸郷が制球冴え、 打線も序盤から得点",
+            article_subtype="postgame",
+        )
+        cand = xbg.build_x_post_from_article_info(article, gemini_api_key="key", persona="fuuga")
+        self.assertIsNotNone(cand)
+        # 個別 player でなく 巨人 が focus_player
+        self.assertEqual(cand.focus_player, "巨人")
+
+    @patch("src.x_post_branding_gen._gemma_branding_safety_check", return_value=True)
+    @patch("src.x_post_branding_gen._extract_unverified_numbers", return_value=[])
+    @patch("src.x_post_branding_gen.is_giants_game_day", return_value=True)
+    @patch("google.genai.Client")
+    def test_non_postgame_uses_player_extraction(self, mock_client_cls, _gd, _unv, _safety):
+        # 非 postgame (player_voice 等) → 個別 player を抽出して focus
+        mock_response = type("R", (), {"text": "4 回終わって 2-2、 戸郷ようやくリズム掴んできた、 次の回頭からクリーンアップ" * 2})()
+        mock_client_cls.return_value.models.generate_content.return_value = mock_response
+
+        article = _make_article(
+            title="戸郷翔征 4 回終わって 2-2",
+            summary="戸郷投手が4回まで投げて 2 失点",
+            article_subtype="player_voice",
+        )
+        cand = xbg.build_x_post_from_article_info(article, gemini_api_key="key", persona="kandume")
+        self.assertIsNotNone(cand)
+        # 個別 player (戸郷) が focus
+        self.assertEqual(cand.focus_player, "戸郷翔征")
 
 
 class SelectBrandingModelByTimeTests(unittest.TestCase):

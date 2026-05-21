@@ -1562,29 +1562,50 @@ def build_x_post_from_article_info(
     source_name = (article_info.source_name or "").strip()
     article_subtype = (article_info.article_subtype or "").strip()
 
-    # 1. player 抽出 (roster 内 player を title から、 ダメなら summary から、
-    # それでもダメなら article_info.player_canonical の先頭、 全部空なら skip)
-    player = _find_first_giants_player_in_text(title) or _find_first_giants_player_in_text(summary)
-    if not player:
-        canonical_list = getattr(article_info, "player_canonical", None) or []
-        if canonical_list:
-            player = str(canonical_list[0] or "").strip()
-    if not player or not _is_verified_full_giants_player_name(player):
+    # 0. article_subtype 判定 (postgame = 試合総括は巨人全体対象、 個別 player でなく
+    # チーム視点、 フーガ voice で書く。 user 確定 2026-05-21:
+    #   - 試合総括は巨人全体を対象 (個別 player が title に居ても team-wide で書く)
+    #   - 試合中でも postgame ならフーガ voice 使う)
+    is_postgame_team_wide = article_subtype in {"postgame", "postgame_digest", "team_roundup"}
+
+    if is_postgame_team_wide:
+        # 試合総括 → player 抽出を skip、 「巨人」 を対象 (チーム視点で voice する)
+        player = "巨人"
         log.info(
-            "article_info_branding_skip reason=no_giants_player_in_article source_url=%s title=%r",
+            "article_info_branding_team_wide source_url=%s subtype=%s title=%r",
             source_url,
+            article_subtype,
             title[:60],
         )
-        return None
+    else:
+        # 1. player 抽出 (roster 内 player を title から、 ダメなら summary から、
+        # それでもダメなら article_info.player_canonical の先頭、 全部空なら skip)
+        player = _find_first_giants_player_in_text(title) or _find_first_giants_player_in_text(summary)
+        if not player:
+            canonical_list = getattr(article_info, "player_canonical", None) or []
+            if canonical_list:
+                player = str(canonical_list[0] or "").strip()
+        if not player or not _is_verified_full_giants_player_name(player):
+            log.info(
+                "article_info_branding_skip reason=no_giants_player_in_article source_url=%s title=%r",
+                source_url,
+                title[:60],
+            )
+            return None
 
-    # 2. persona 自動選択 (既存 logic 流用、 試合日 18-21時 = 缶詰)
+    # 2. persona 自動選択
+    #    - postgame (試合総括) → フーガ voice 強制 (team-wide、 試合中でも fuuga)
+    #    - 個別 player article → 既存 logic (試合日 18-21時 = 缶詰、 それ以外 = フーガ)
     from datetime import datetime, timezone, timedelta
 
     jst = timezone(timedelta(hours=9))
     now_jst = datetime.now(jst)
     if persona is None:
-        is_game_day = is_giants_game_day(now_jst, db_path) if db_path else False
-        resolved_persona = select_branding_persona(now_jst, is_game_day)
+        if is_postgame_team_wide:
+            resolved_persona = "fuuga"
+        else:
+            is_game_day = is_giants_game_day(now_jst, db_path) if db_path else False
+            resolved_persona = select_branding_persona(now_jst, is_game_day)
     else:
         resolved_persona = persona
 
@@ -1624,9 +1645,16 @@ def build_x_post_from_article_info(
     prompt_parts = [system_prompt]
     if post_type_guidance:
         prompt_parts.extend(["", post_type_guidance])
+    # postgame (試合総括) は team-wide なので「対象 = 巨人 (試合総括)」 として書く、
+    # 個別 player article は「対象選手 = {player}」 で書く (既存挙動)。
+    target_line = (
+        f"対象: 巨人 (試合総括、 個別選手 1 人でなく球団全体の流れ・打線・継投・守備 等を fuuga voice で総括)"
+        if is_postgame_team_wide
+        else f"対象選手: {player}"
+    )
     prompt_parts.extend([
         "",
-        f"対象選手: {player}",
+        target_line,
         "",
         "DB 照合済み数字 (使ってよい数字): なし (今回は article literal のみが factual ground)",
         "",

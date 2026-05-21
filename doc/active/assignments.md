@@ -27,17 +27,17 @@ user 方針「受け入れ NG はまた起票」+「一人開発で Active 多�
 
 ## 2026-05-20 session update
 
-### 414 — X-POST brand voice quality framework (A 型分離 / B voice / C 精度 9 axis / D 炎上 6 check / E 試合前 7 テーマ)
+### 414 — X-POST brand voice quality framework (全 5 軸 A-E 完成、 CLOSED LIVE_DEPLOYED_VERIFIED 2026-05-21)
 
 | ticket | status | 内容 |
 |---|---|---|
-| `doc/active/414-X-POST-BRAND-VOICE-QUALITY-FRAMEWORK.md` | DRAFT (user GO 受領、 実装着手中) | 元 9 axis hallucination 防止を user 追加 spec で A-E 5 軸 framework に拡張: A 型分離 5 種 (速報/感情/データ/次の展開/ポジティブ) / B voice persona (411 既実装) / C 精度 9 axis (順位/数値whitelist/率系/prompt/temp/published_date/log/1軍filter/当日only) / D 炎上 6 check (批判/断定/雑批判/監督批判/誤字/煽り) / E 試合前 7 テーマ (先発/昨日/注目/打順/昇格/相性/反応)。 7 commit 段階実装、 各 commit 後 push + pytest。 並走 agent (403) と ranking_article_publisher.py 衝突 risk = commit 直列。 spec 382 hard rule 不変、 cost ¥0/post 維持。 GH Issue #90 (元 9 axis 起票 → A-E 拡張は ticket .md 反映)。 memory 起点軸 F-Z (timing / thread / A/B / mascot 等) は 414 scope 外、 別 ticket 化要件。 |
+| `doc/done/2026-05/414-X-POST-BRAND-VOICE-QUALITY-FRAMEWORK.md` | CLOSED LIVE_DEPLOYED_VERIFIED | 全 5 軸 landed: A 型分離 `7bb8682` / B persona `3dd89e5` (411) / C 精度 9 axis `c0ac71e` + C8 1軍 filter `02e3bb7` / D 炎上 6 check `faa7226` / E 試合前 7 テーマ `b3c80b0` + caller wire `47c8961` + E3/E7 caller wire `4beef83`。 image `x-post-mail-lane:414-e3e7-4beef83` gen 40 deploy 済、 2026-05-21 07:04 JST 自然 fire で axis C 動作確認 (`gemma_branding_drop unverified_numbers` ダルベック 「7」 drop)、 mail 8 candidates `status=sent`。 GH Issue #90 CLOSED。 |
 
-### 411 — X-POST branding voice persona (Tavily whitelist 拡張 + フーガ/缶詰 2 persona + 試合日/18時 gate)
+### 411 — X-POST branding voice persona (CLOSED LIVE_DEPLOYED_VERIFIED 2026-05-21)
 
 | ticket | status | 内容 |
 |---|---|---|
-| `doc/active/411-X-POST-BRANDING-VOICE-PERSONA.md` | DRAFT (user GO 待ち) | chat 起票 (2026-05-20 「ブランディング新案 / Tavily 候補URL / 公式NPB球団主要紙優先 / answer不使用 / URL本文・媒体名・日付 / 観戦記事 / フーガ風+缶詰風 voice / 18時以降 / 試合日のみ」)。 392 (CLOSED) の Gemma 4 + Tavily 基盤を 2 persona 化。 `src/x_post_branding_gen.py:182` の `_TAVILY_INCLUDE_DOMAINS` を 2 → 9 domain (giants.jp / npb.or.jp / sponichi.co.jp / nikkansports.com / sanspo.com / daily.co.jp / chunichi.co.jp + 既存 yahoo/hochi) に拡張、 `_format_tavily_context` に published_date 注入、 `_SYSTEM_PROMPT_BASE` を フーガ風 (長文分析) / 缶詰風 (試合中実況) の 2 template に split、 `is_giants_game_day(now_jst, db_path)` helper を `insight.db` games table で実装、 `select_branding_persona` で「試合日 + 18-21時 = 缶詰、 それ以外 = フーガ」 自動選択。 cost ¥0/post 維持 (free tier 内)、 spec 382 hard rule 不変。 並走: 394 active P0 (hallucination fix) 同 file、 commit 直列。 GH Issue 別途起票予定。 |
+| `doc/done/2026-05/411-X-POST-BRANDING-VOICE-PERSONA.md` | CLOSED LIVE_DEPLOYED_VERIFIED | commit `3dd89e5` (Tavily whitelist 2→9 / `_format_tavily_context` published_date 注入 / フーガ+缶詰 2 persona prompt / `is_giants_game_day` helper / `select_branding_persona`) landed + image `x-post-mail-lane:414-e3e7-4beef83` gen 40 deploy 済。 2026-05-21 07:04 JST 自然 fire で persona switch / 18時 gate (`fan_voice skip: not in fire window`) / Tavily 3 results / Gemma mail `status=sent` 動作確認。 GH Issue #88 CLOSED。 |
 
 ### 407 / 408 / 409 / 410 — OB subtype + farm 2軍/3軍 + WP front (CLOSED 2026-05-20、 全 Phase LIVE_DEPLOYED_OBSERVE)
 

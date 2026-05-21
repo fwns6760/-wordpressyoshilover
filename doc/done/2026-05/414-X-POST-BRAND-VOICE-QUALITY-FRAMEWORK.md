@@ -2,7 +2,7 @@
 
 ## 1. ticket header
 
-- **status**: DRAFT (user GO 受領、 実装着手中)
+- **status**: CLOSED LIVE_DEPLOYED_VERIFIED (全 5 軸 A-E landed: A `7bb8682` (5 型分離) / B `3dd89e5` (411 persona) / C `c0ac71e` (hallucination 9 axis) + C8 `02e3bb7` (1軍 filter) / D `faa7226` (炎上 6 check) / E `b3c80b0` (試合前 7 テーマ) + caller wire `47c8961` + `4beef83` (E3 lineup_focus + E7 fan_voice snippet)。 image `x-post-mail-lane:414-e3e7-4beef83` gen 40 deploy 済 + 2026-05-21 07:04 JST 自然 fire で axis C 動作確認 (`gemma_branding_drop` `unverified_numbers` ダルベック 「7」 drop)、 Gemma mail 8 candidates 送信成功)
 - **priority**: P1 (user 報告 hallucination 2 件 + brand voice 全体品質課題)
 - **owner**: Claude
 - **lane**: Claude direct dev

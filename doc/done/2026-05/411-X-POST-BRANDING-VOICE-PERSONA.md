@@ -2,7 +2,7 @@
 
 ## 1. ticket header
 
-- **status**: DRAFT (user GO 待ち)
+- **status**: CLOSED LIVE_DEPLOYED_VERIFIED (commit `3dd89e5` landed + image `x-post-mail-lane:414-e3e7-4beef83` gen 40 deploy 済 + 2026-05-21 07:04 JST 自然 fire で persona switch / 18時 gate / Tavily 3 results / Gemma mail 8 candidates 動作確認、 `mail send result: status=sent` / `fan_voice skip: not in fire window` log evidence)
 - **priority**: P2 (392 / 394 系の brand post lane 個性付け、 ¥0/post 維持)
 - **owner**: Claude
 - **lane**: Claude direct dev

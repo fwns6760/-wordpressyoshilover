@@ -4,7 +4,7 @@
 
 - number: 328-QA
 - type: industry-standard ranking improvements (time decay + NER)
-- status: IMPL_LANDED, DEPLOY_PENDING
+- status: CLOSED LIVE_DEPLOYED_VERIFIED (commit `a093505` (fan voice time decay + NER entity matching) fetcher 現 image `title-cap-warn-07d24d2` に landed、 doc status の DEPLOY_PENDING は stale 表記、 実 image deploy 完了)
 - priority: P1
 - owner: Claude
 - created: 2026-05-13

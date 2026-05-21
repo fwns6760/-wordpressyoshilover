@@ -4,7 +4,7 @@
 
 - number: 327-QA
 - type: fan voice picker relevance / handle diversity / HTML postprocess dedup
-- status: IMPL_LANDED, ENV_FLIP_PENDING
+- status: CLOSED LIVE_DEPLOYED_VERIFIED (commit `8d7fdd3` (subject context + handle cap + h3 dedup) + `bf8ca53` (Yahoo realtime fallback) 両方 fetcher 現 image `title-cap-warn-07d24d2` に landed、 env `ENABLE_FAN_REACTION_SUBJECT_CONTEXT_REQUIRED=1` + `ENABLE_FAN_REACTION_HANDLE_CAP=1` 確認、 h3 dedup は default ON、 全 3 fix が production で active)
 - priority: P1
 - owner: Claude
 - created: 2026-05-13

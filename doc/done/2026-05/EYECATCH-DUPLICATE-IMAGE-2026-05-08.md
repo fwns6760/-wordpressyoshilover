@@ -1,6 +1,6 @@
 # EYECATCH-DUPLICATE-IMAGE-2026-05-08
 
-**status**: IN_FLIGHT(verify 待ち)
+**status**: CLOSED LIVE_VERIFIED 2026-05-21 (5/8 incident 「同画像連番化 -1.jpg -9.jpg」 production audit で完全消失確認、 20 件サンプルで 13 unique media_id (5/8 incident は 10 連番 = 1 unique)、 残る 8 件同 63578 使用は 5/18 user 設定の意図的 yoshilover ブランド team fallback (commit `1eb41f5` 等 で `_TEAM_FALLBACK_MEDIA_ID_DEFAULT=63578`)。 5/8 fix 2 段 (`44d3fe1` diversified pool + `7b88694` og:image 強化) 効果あり。 残る per-person mapping miss (平山功太 / マルティネス) は別 issue、 mapping 補完で別途扱う)
 **owner**: Claude(本 session 直接構築、user 明示 override)
 **priority**: P1(user 体感 site 全面で同 thumbnail = 直視認可能なデグレ)
 **created**: 2026-05-08 21:50 JST

@@ -3,6 +3,7 @@
 ## 1. meta
 
 - **ticket id**: 417
+- **GH Issue**: https://github.com/fwns6760/-wordpressyoshilover/issues/92
 - **owner**: Claude Code (session 2026-05-21)
 - **priority**: P1
 - **status**: IN_FLIGHT (= user GO 2026-05-21 15:00 JST、 code 編集着手)

@@ -28,4 +28,9 @@ RUN useradd --create-home --home-dir /home/appuser --shell /usr/sbin/nologin app
 USER appuser
 
 # Cloud Run Job entrypoint — single send-and-exit cycle.
-CMD ["python3", "-m", "src.tools.run_x_post_mail"]
+# 417: ENTRYPOINT 形式に変更。 Cloud Run jobs の `--args` flag は CMD を完全置換
+# するが、 ENTRYPOINT は保持されるため、 `--args=--mode=on-queue,--dry-run` を
+# 渡しても `python3 -m src.tools.run_x_post_mail --mode=on-queue --dry-run` として
+# 正常起動できる。 default fire (no args) は scheduled mode で従来挙動。
+ENTRYPOINT ["python3", "-m", "src.tools.run_x_post_mail"]
+CMD []

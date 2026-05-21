@@ -1,14 +1,14 @@
-"""DATA-INSIGHT-continuous: 球団 (team) metric ranking article publisher.
+"""DATA-INSIGHT-continuous: 球団 (team) metric ranking article draft creator.
 
 球団打率 / 球団 ERA / 球団 HR 等を セ・リーグ 6 球団で集計、巨人位置 highlight
-で WP に publish。個人選手の anomaly 系記事と並走、wider angle で「巨人
+で WP に draft 作成。個人選手の anomaly 系記事と並走、wider angle で「巨人
 打線 / 投手陣 全体」評価。
 
 設計方針:
   * pure rule-based、LLM 不使用
   * セ・リーグ 6 球団に限定 (user 指示「セパは別」)
   * 2026 シーズンの data のみ (今年分)
-  * 巨人記事として ENABLE_DATA_INSIGHT_AUTO_PUBLISH_GIANTS=1 で auto publish
+  * 新規作成は draft 固定。公開は mail / manual selection のみ
   * 7 日 dedup (publish_notice_history.json or タイトル check)
 """
 
@@ -109,7 +109,7 @@ def _scope_window(
 
 def aggregate_team_hr(conn: sqlite3.Connection, *, scope: str) -> list[dict]:
     """セ・リーグ 6 球団の HR 数集計 (atbats_json parse)."""
-    start, end = _scope_window(scope)
+    start, end = _scope_window(scope, conn=conn)
     hr_per_team: dict[str, int] = {tc: 0 for tc in CENTRAL_TEAMS}
     rows = conn.execute(
         "SELECT bl.team_name, bl.atbats_json FROM batting_logs bl "
@@ -141,7 +141,7 @@ def aggregate_team_hr(conn: sqlite3.Connection, *, scope: str) -> list[dict]:
 
 def aggregate_team_avg(conn: sqlite3.Connection, *, scope: str) -> list[dict]:
     """セ・リーグ 6 球団の team 打率 = SUM(H) / SUM(AB)."""
-    start, end = _scope_window(scope)
+    start, end = _scope_window(scope, conn=conn)
     rows = conn.execute(
         "SELECT bl.team_name, SUM(bl.AB) AS ab, SUM(bl.H) AS h "
         "FROM batting_logs bl JOIN games g ON bl.game_id = g.game_id "
@@ -170,7 +170,7 @@ def aggregate_team_run_diff(conn: sqlite3.Connection, *, scope: str) -> list[dic
     巨人視点しか取れないため、 巨人のみ計算 (他球団は 0 で list 化、 表示時
     に注記)。
     """
-    start, end = _scope_window(scope)
+    start, end = _scope_window(scope, conn=conn)
     row = conn.execute(
         "SELECT SUM(giants_score), SUM(opp_score) FROM games "
         "WHERE game_date >= ? AND game_date <= ? "
@@ -215,7 +215,7 @@ def aggregate_team_vs_opponent(
 
     return: {"opponent": <str>, "W": int, "L": int, "T": int, "scope": <str>}
     """
-    start, end = _scope_window(scope)
+    start, end = _scope_window(scope, conn=conn)
     rows = conn.execute(
         "SELECT result FROM games "
         "WHERE game_date >= ? AND game_date <= ? "
@@ -236,7 +236,7 @@ def aggregate_team_vs_opponent(
 
 def aggregate_team_era(conn: sqlite3.Connection, *, scope: str) -> list[dict]:
     """セ・リーグ 6 球団の team 防御率 = SUM(ER)*9 / SUM(IP)."""
-    start, end = _scope_window(scope)
+    start, end = _scope_window(scope, conn=conn)
     rows = conn.execute(
         "SELECT pl.team_name, SUM(pl.IP) AS ip, SUM(pl.ER) AS er "
         "FROM pitching_logs pl JOIN games g ON pl.game_id = g.game_id "
@@ -330,7 +330,7 @@ def render_team_metric_article(
         rank_phrase = f"低い順で{giants_rank}/6 位"
 
     scope_label = _scope_label_jp(scope)
-    start_str, end_str = _scope_window(scope)
+    start_str, end_str = _scope_window(scope, conn=conn)
 
     # 2026-05-15 user 指示「期間は末尾に」適用、日時 prefix なし、scope を
     # title 末尾に括弧書き。集計期間は body 内「集計期間」row にも記載。
@@ -631,7 +631,7 @@ def render_team_run_diff_article(
     if diff == 0:
         return None  # 0 だと記事化価値 低
     scope_label = _scope_label_jp(scope)
-    start, end = _scope_window(scope)
+    start, end = _scope_window(scope, conn=conn)
     sign = "+" if diff > 0 else ""
     title = f"【巨人データ】チーム 得失点差 {sign}{diff} ({scope_label})"
     title = title_guard.ensure_title_period(title, scope=scope).title
@@ -756,7 +756,7 @@ def render_team_vs_opponent_article(
         return None  # 3 試合未満は記事化しない
     opp_jp = rap._TEAM_LABEL_JP.get(opponent, opponent)
     scope_label = _scope_label_jp(scope)
-    start, end = _scope_window(scope)
+    start, end = _scope_window(scope, conn=conn)
     title = (
         f"【巨人データ】対 {opp_jp} {w}勝{l}敗{t}分 ({scope_label})"
         if t > 0 else

@@ -3,7 +3,7 @@
 ## meta
 
 - ticket: 418-QA-nikkan-gendai-source-body-excerpt
-- status: IN_FLIGHT
+- status: LIVE_DEPLOYED_VERIFIED
 - owner: Codex
 - lane: B
 - created: 2026-05-21
@@ -68,11 +68,15 @@ Repo checks:
 
 Deploy checks:
 
-- manual-intake-service Cloud Build success
-- yoshilover-fetcher Cloud Build success
-- both services `/health` OK
-- new revision ERROR logs 0 for a short post-deploy window
+- manual-intake-service Cloud Build `554e10ac-ba83-4a34-9dd1-96ce8d2494a3` success
+- yoshilover-fetcher Cloud Build `d21dac0a-7646-4067-a673-978572afb5b0` success
+- manual-intake-service image `manual-intake-service:418-nikkan-563f92b`
+- yoshilover-fetcher image `yoshilover-fetcher:418-nikkan-563f92b`
+- manual-intake-service revision `manual-intake-service-00094-wf2` 100% traffic, `/health` -> `{"ok": true}`
+- yoshilover-fetcher revision `yoshilover-fetcher-00466-tjs` 100% traffic, `/health` -> `OK`
+- new revision ERROR logs 0 for both services after deploy
 
 ## status log
 
 - 2026-05-21: root cause confirmed from GCP logs. Implemented shared extractor fallback and fixture test. Local targeted tests pass.
+- 2026-05-21: deployed to both manual-intake-service and yoshilover-fetcher. Existing WP post `70027` was not modified.

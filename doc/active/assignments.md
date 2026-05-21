@@ -8,7 +8,7 @@
 
 | ticket | status | 内容 |
 |---|---|---|
-| `doc/active/418-QA-nikkan-gendai-source-body-excerpt.md` | IN_FLIGHT | post `70027` / `https://www.nikkan-gendai.com/articles/view/sports/387913` で本文 extractor が `extractor_len=0` となり、`meta_len=55` fallback が引用として入った。共通 `extract_article_body_excerpt` に `www.nikkan-gendai.com` 専用 fallback を追加し、手動投入 (`manual-intake-service`) と自動 RSS (`yoshilover-fetcher`) の両方へ deploy 対象。既存 post 70027 は触らない。GitHub Issue は `api.github.com` 接続不可で PENDING。 |
+| `doc/done/2026-05/418-QA-nikkan-gendai-source-body-excerpt.md` | CLOSED LIVE_DEPLOYED_VERIFIED | post `70027` / `https://www.nikkan-gendai.com/articles/view/sports/387913` で本文 extractor が `extractor_len=0` となり、`meta_len=55` fallback が引用として入った。共通 `extract_article_body_excerpt` に `www.nikkan-gendai.com` 専用 fallback を追加し、手動投入 (`manual-intake-service`) と自動 RSS (`yoshilover-fetcher`) の両方へ deploy 済。既存 post 70027 は触らない。GitHub Issue は `api.github.com` 接続不可で PENDING。 |
 
 ## 2026-05-20 PM cleanup batch
 

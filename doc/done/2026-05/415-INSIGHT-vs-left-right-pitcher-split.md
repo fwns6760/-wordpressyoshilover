@@ -2,10 +2,12 @@
 
 ## 1. ticket header
 
-- **status**: SPLIT_PROGRESS (a approx LIVE / b strict PHASE_1_LANDED)
-  - **(a) approach LIVE_DEPLOYED**: starter 限定 approx で commit `378249d` (vs L/R split publisher + NPB throws scraper) + `f621457` landed、 image `insight-nightly:415-vs-lr-mvp` gen 81 deploy 済、 wire は `insight_nightly.py` L300-310 (last_10_games scope L/R loop)、 5/21 post 69963 「吉川尚輝 対右投手打率 0.412 (直近10試合)」 publish 確認
-  - **(b) strict PHASE_1_LANDED**: NPB playbyplay parser Phase 1 完成 commit `f777f4c` (`parse_npb_playbyplay_full_detail` で `current_pitcher` per-PA tracking 抽出可能)。 [[405]] と共通 parser、 14 tests pass。 残 Phase 2 (per-PA detail table schema + ETL ingest で current_pitcher を per-PA 永続化) / Phase 3 (vs L/R を per-PA pitcher.throws 解決 で strict aggregate)
-  - user 判断保留点: (a) approx を継続維持するか / (b) strict 拡張で精度上げるか
+- **status**: CLOSED LIVE_DEPLOYED_VERIFIED ((a) approx + (b) strict 両方 LIVE 並列稼働)
+  - **(a) approach LIVE**: starter 限定 approx で commit `378249d` + `f621457` landed、 wire `insight_nightly.py` L300-310 (last_10_games scope L/R loop)、 post 69963 「吉川尚輝 対右投手打率 0.412」 publish 確認
+  - **(b) strict LIVE**: commit `dd4f5cc` で at_bat_details + npb_pitcher_throws JOIN の per-PA strict aggregator + publisher 完成、 dedup key 別 (VS_LR_STRICT vs VS_LR) で (a) と並列 publish。 production verify (2026-05-21 15:00 JST fire):
+    - post 70055 「佐々木 対左投手 (per-PA) 打点 2 で巨人内 1 位 (直近10試合)」
+    - post 70057 「ダルベック 対右投手 (per-PA) 打点 1 で巨人内 1 位 (直近10試合)」
+  - GH Issue #91 close 候補
 - **priority**: high (user 明示「左右選手は重要」 2026-05-20 PM)
 - **owner**: Claude / **lane**: Claude
 - **github_issue**: https://github.com/fwns6760/-wordpressyoshilover/issues/91

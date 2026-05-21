@@ -2,7 +2,20 @@
 
 ## 1. ticket header
 
-- **status**: PHASE_1_LANDED (Phase 1 parser commit `f777f4c` で `src/source_npb_playbyplay_extractor.py` に `parse_npb_playbyplay_full_detail` + 走者状況別 / 打席内カウント別 helper 全部追加、 14 tests pass、 5/10 中日 vs 巨人 fixture で per-PA 走者状況 + count_balls/strikes + current_pitcher 抽出確認。 残 Phase 2 (per-PA detail table schema + ETL ingest) / Phase 3 (aggregator + publisher per cut) は別 session)
+- **status**: CLOSED LIVE_DEPLOYED_VERIFIED (全 Phase 1/2a/2b/2c/3a/3b/3c 完成 + production fire publish 確認)
+  - Phase 1 parser (`f777f4c`): per-PA 走者状況 + count + 投手追跡
+  - Phase 2a schema (`dc0d294`): at_bat_details table + 4 indexes
+  - Phase 2b ingest (`dc0d294`): upsert_at_bat_details + parse_rbi_from_result_text
+  - Phase 2c scraper (`485af09`): build_playbyplay_url + ingest_giants_playbyplay_recent_games
+  - Phase 3a (`a4f90b9`): 走者状況別 aggregator + publisher (満塁 / 1・3塁 / 2・3塁)
+  - Phase 3b (`a4f90b9`): 打席内カウント別 aggregator + publisher (first_pitch / two_strike)
+  - Phase 3c (`a4f90b9`): vs 球団別 aggregator + publisher (5 セ・リーグ相手)
+  - wire (`485af09`): insight_nightly に ingest + 10 cut publisher 配線
+  - production verify (2026-05-21 15:00 JST fire、 image `insight-nightly:team-cap-8`):
+    - 405 Phase 3a: post 70039 (吉川 満塁時) / 70041 (ダルベック 1・3塁時) / 70043 (浦田 2・3塁時)
+    - 405 Phase 3b: post 70045 (佐々木 初球打ち) / 70047 (キャベッジ 2ストライク後)
+    - 405 Phase 3c: post 70049 (大城 対ヤクルト) / 70051 (キャベッジ 対DeNA) / 70053 (浦田 対中日)
+  - GH Issue #81 close 候補
 - **priority**: low (shadow ticket、 議論された案を忘れないため残す)
 - **owner**: Claude / **lane**: Claude
 - **stage**: Phase 3 / 段階式 ([[403]] / [[404]] の最終 follow-up)

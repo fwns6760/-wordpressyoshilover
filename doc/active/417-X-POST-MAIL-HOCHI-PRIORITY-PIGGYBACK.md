@@ -222,7 +222,142 @@
 
 実装中に気付いた既存挙動 / 周辺 logic / 隣接 ticket への影響を memo。 ticket 完了後の他 session への申し送り用。
 
-(着手後追記)
+- rss_fetcher の `_create_draft_with_same_fire_guard` は dedup guard が 3 段あり、 hook はそれら通過後に置いた (二重 enqueue 防止)。 hook 位置を移動すると重複 risk
+- `_load_giants_player_aliases()` の alias map に 「岡本」 / 「岡本和真」 が現状無い (= active roster に居ない)、 これは別 ticket で roster 更新時の確認軸
+- `Gemma 4 (gemma-4-31b-it)` を `genai.Client` 経由で呼ぶときの API は `client.models.generate_content(model=, contents=, config={...})` 形式、 Gemini 3.x への切替時はこの interface のまま動く
+- Cloud Run job の `--args` flag は **CMD を完全置換** (これは Cloud Run 全般の挙動)、 別 job で同じ問題に当たったら Dockerfile.x_post_mail と同様に ENTRYPOINT 化
+- GCS bucket `baseballsite-yoshilover-state` の prefix `x_post_candidate_queue/queued/` が queue、 `processed/` が完了済、 同 bucket 内に rss_fetcher の他 state も同居しているので prefix 命名注意
+- queue entry は dataclass `CandidateArticleInfo` (schema_version=`x_post_candidate_v0`)、 将来 schema 変更時は version bump + parser side で互換性 fallback 推奨
+
+## 11. 設計検討経緯 (採用しなかった案 + 判断根拠)
+
+ticket 着手前 〜 確定までの会話で検討した代替案を記録。 ticket § 2 では最終形のみ。
+
+### 11.1 発端 (2026-05-21 user 報告)
+
+- 朝 07:04 の X-post mail が 5/17 (4 日前) のスポ報記事 (浦田俊輔 3 盗塁) を Tavily snippet として使っていた
+- user 不満: 「試合中にリアルタイムで X-post mail が欲しい」
+- 当日 5/21、 18-22 時に Hochi/Sanspo が記事 publish するタイミングで mail 来てほしい
+
+### 11.2 model 選定検討
+
+|  | text gen free | Grounding free | 月コスト (運用量) | brand voice 移植 |
+|---|---|---|---|---|
+| Gemma 4 (現使用) | ✓ | ✗ (非対応) | ¥0 | 不要 (現状維持) |
+| Gemini 2.5 Flash | ✓ 1500 RPD | ✓ 500 RPD free / 1500 RPD paid | ¥0 | 必要 |
+| Gemini 2.5 Flash-Lite | ✓ 1000 RPD | ✓ 500 RPD shared | ¥0 | 必要 |
+| Gemini 2.0 Flash | ✓ | ✓ 500 RPD | ¥0 | 必要 |
+| Gemini 3 Flash Preview | ✓ free | ✗ **Tier 1 paid のみ** (5000/月) | ~¥3,000-7,800/月 | 必要 |
+| Gemini 3.1 Flash-Lite Preview | ✓ free | ✗ free tier 不可 | (paid 必要) | 必要 |
+| Gemini 3.5 Flash | ✓ free | ✗ **free tier 不可** (公式確認、 前言訂正済) | paid 必要 | 必要 |
+| Gemini 3.1 Pro Preview | ✗ free tier なし | ✓ paid 5000/月 | (paid 必要) | 必要 |
+
+**判明した誤情報** (途中で訂正):
+- 私が前段で 「Gemini 3.5 Flash で Grounding 5000/月 free」 と claim → 公式 page 再 verify で 「Gemini 3 系の grounding は free tier 不可、 paid Tier 1 でのみ 5000/月 free」 と判明、 訂正
+
+**最終採用: Gemma 4 維持**
+
+採用理由 (優先順):
+1. **推論起因 hallucination 0** (user 提案: 「推論で hallucinate する」 → Gemma 4 は thinking token なし、 最も保守的)
+2. ticket § 0 「書き方ルール 1 文字も変えない」 と完全整合 (model 切替 = voice 再 tuning 必要、 brand voice 崩れ risk)
+3. 既に production で 200 OK 動作確認済、 切替コスト 0
+4. 414 axis 2 / D の hallucination 防止 layer は Gemma 4 出力を前提に tuning 済
+5. Grounding 不要 (案 C 採用で 報知 RSS literal が source、 外部検索不要)
+
+**Gemini 2.5 Flash-Lite が次点**:
+- text gen 単価最安 ($0.10/$0.40)、 Grounding 500 RPD free
+- 「将来 Grounding 入れたくなった時の選択肢」 として記録 (別 ticket)
+
+### 11.3 検索 source 検討
+
+|  | latency | freshness | 5/17 stale 問題 | コスト |
+|---|---|---|---|---|
+| (A1) Tavily HTTP REST (現状) | 5-15 分 | whitelist 媒体の cache 依存 | **発生する** | ¥0 (free plan 内) |
+| (A2) Google Grounding (要 Gemini 2.5 Flash) | 5-15 分 | Google index 直 | 解決 | ¥0 (500 RPD 内) |
+| (B) WP post 経由 (publish された記事を source) | 30-90 分 | 一次 source 既に整理済 | 解決 | ¥0 |
+| (C) **Hochi/Sanspo RSS 直** (rss_fetcher 流用) | **5-30 分** | 報知が書いた瞬間 | 解決 | ¥0 |
+
+**最終採用: (C) Hochi/Sanspo RSS 直、 rss_fetcher の既存 polling を流用**
+
+採用理由:
+1. user 提案 「fetcher で報知とサンスポを RSS で拾ってできる」 と一致
+2. 重複 polling なし (rss_fetcher が既に RSS 巡回中、 hook で enqueue するだけ)
+3. NPB filter / roster validation / stale skip / 報知 X handle 識別 を rss_fetcher の既存 logic から流用
+4. Grounding 完全不要 = model 切替不要 = brand voice 移植 risk 0
+5. publish 完了待ち不要 (B の 30-90 分 lag を回避)
+
+### 11.4 schedule 検討
+
+|  | cron | mail 件数 | 受信箱負荷 |
+|---|---|---|---|
+| (a) 火-金 18-22 30 分刻み + 朝 1 便 | `*/30 18-22 * * 2-5` + `0 7 * * *` | ~37 fires/週 | 軽 |
+| (b) 試合時間中心 (全曜日 平日夜 + 土日昼) | `*/30 18-22 * * *` + `*/30 14-18 * * 0,6` + `0 7` | ~80 fires/週 | 中 |
+| (c) **全時間 6-22 時 30 分刻み** | `*/30 6-22 * * *` | ~245 fires/週 | 中 (publish 0 件 fire は silent skip) |
+| (d) 全時間 + 試合中 boost (1 時間刻み 通常、 30 分刻み 試合中) | mixed | ~140 fires/週 | 中 |
+
+**最終採用: (c) 全時間 6-22 時 30 分刻み**
+
+採用理由:
+1. user 発言 「全ての時間に POST を入れたい」 (中盤の方針転換) と一致
+2. publish 0 件時は **silent skip** (= 設計上 mail spam にならない)
+3. cron 1 本で運用 simplest
+4. memory `project_mail_schedule_alignment` の 「深夜なし (6-22 限定)」 policy と整合
+5. 試算: 月 ~1,020 fires × 3 candidates × 1 Flash call = ~3,060 Gemma 4 call/月 (free 45,000/月 の 6.8%)
+
+### 11.5 話題判定 検討
+
+|  | 判定軸 | コスト | 精度 |
+|---|---|---|---|
+| (1) 時間遅延 (publish 後 30-60 分待つ) | 時間 | ¥0 | 低 |
+| (2) 複数記事 cluster (直近 1-2h で同 player 2+ 媒体) | 内部 dedup | ¥0 | 中 |
+| (3) Grounding で外部 mention 確認 | 外部検索 | Grounding 月 ~2,160 query | 高 |
+| (4) X realtime mention spike | X API | (要評価) | 高 |
+
+**最終採用: 報知優先 単独で話題化扱い、 cluster 判定は別 ticket へ delegate**
+
+理由 (user 確定):
+- 報知 (記事 + X) を 一次 source として優先 (memory `feedback_hochi_priority_no_imitate` と整合)
+- 報知単独で publish された Giants 記事 = 話題化扱い、 即 enqueue
+- 非報知 (ニッカン / デイリー 等) は scope 外、 別 ticket で cluster 判定追加検討
+- Grounding 不要、 完全 ¥0 維持
+
+### 11.6 mail 配信頻度 検討
+
+|  | 配信頻度 | 受信箱負荷 |
+|---|---|---|
+| (i) 1 publish ごとに即 mail | 24-48 mails/日 (試合中 spike) | 高 |
+| (ii) 30 分 batch | 0-2 mails/30 分 | 中 |
+
+**最終採用: (ii) 30 分 batch** (= schedule (c) と同じ)
+
+理由:
+- queue に蓄積 → 30 分 cron で 1 mail に集約
+- 試合終了直後の報知連発でも 1 mail にまとまる (受信箱圧迫しない)
+- 「最大 1 候補ごとに mail」 だと 試合中 8-15 mail/時間 で過剰
+
+### 11.7 まとめ — final 設計の決まり方
+
+```
+[発端: 5/17 stale 問題]
+       ↓
+[model 選定: Gemma 4 維持 ← 推論起因 hallucination 0 + voice 不変]
+       ↓
+[source 選定: (C) Hochi/Sanspo RSS 直 ← fetcher 流用 + latency 最小 + Grounding 不要]
+       ↓
+[schedule: (c) `*/30 6-22 * * *` ← 全時間 user 希望]
+       ↓
+[話題判定: 報知優先 単独で OK ← 非報知 cluster は別 ticket]
+       ↓
+[配信: queue + 30 分 batch flush ← 受信箱負荷)]
+       ↓
+[hallucination 防止: 既存 7 段 + § 8 verified_text hygiene 1 段 ← § 0 不可触]
+       ↓
+[実装: rss_fetcher hook + GCS queue + Gemma 4 (現状維持)]
+       ↓
+[deploy: fetcher 00465 + x-post-mail-lane job + cron x-post-mail-flush]
+```
+
+---
 
 ---
 

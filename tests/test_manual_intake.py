@@ -1528,6 +1528,101 @@ class ManualIntakeSourceOgDescriptionDensityTests(_IntakeBaseTest):
         self.assertNotIn("中日戦", content)
 
 
+class GeneralEligibleGateTests(unittest.TestCase):
+    """FRONTEND-ENRICHMENT-LIVE-AUDIT (2026-05-21) fix: _general_eligible が
+    template_key startswith nomotoke_card_ + force_enrichment env でも True に
+    なり、 順位 / 次戦 / 直近 W-L block が出るか。"""
+
+    def _enrich_with_template(self, template_key: str, force_env: str) -> str:
+        """Run apply_rss_pipeline_enrichment with mocked blocks."""
+        base_html = '<div class="nomotoke-card-short-news"><p>東京ドーム</p></div>'
+        with (
+            patch.object(mi, "_build_recent_games_block",
+                         return_value='<aside class="nomotoke-recent-games">REC</aside>'),
+            patch.object(mi, "_build_x_embeds_block", return_value=""),
+            patch.object(mi, "_build_standings_block",
+                         return_value='<aside class="nomotoke-standings">STAND</aside>'),
+            patch.object(mi, "_build_next_game_block",
+                         return_value='<aside class="nomotoke-next-game">NEXT</aside>'),
+            patch.object(mi, "_build_trust_badge_block", return_value=""),
+            patch.object(mi, "_inject_toc_anchors",
+                         side_effect=lambda html: (html, [])),
+            patch.object(mi, "_build_toc_block", return_value=""),
+            patch.object(mi, "_build_meta_header_bar", return_value=""),
+            patch.object(mi, "_build_share_buttons_block", return_value=""),
+            patch.object(mi, "_wrap_first_roster_names_in_lead",
+                         side_effect=lambda html: html),
+            patch.object(mi, "_build_tag_chip_block", return_value=""),
+            patch.object(mi, "_build_jsonld_article_schema", return_value=""),
+            patch.object(mi, "_build_related_articles_block", return_value=""),
+            patch.object(mi, "_build_player_stats_block", return_value=""),
+            patch.object(mi, "_decorate_body_with_emoji",
+                         side_effect=lambda html, **kw: html),
+            patch.dict(
+                "os.environ",
+                {"ENABLE_RSS_PIPELINE_FORCE_ENRICHMENT": force_env},
+            ),
+        ):
+            return mi.apply_rss_pipeline_enrichment(
+                base_html,
+                title="巨人 戸郷",
+                source_url="https://example.com/news/1",
+                template_key=template_key,
+                summary="",
+                source_name="スポーツ報知",
+            )
+
+    def test_nomotoke_card_video_template_includes_standings(self):
+        """5/8 audit 残 gap: nomotoke_card_video_v1 で 順位 / 次戦 出ない bug の
+        再発防止。"""
+        result = self._enrich_with_template(
+            template_key="nomotoke_card_video_v1",
+            force_env="0",
+        )
+        self.assertIn("nomotoke-standings", result)
+        self.assertIn("nomotoke-next-game", result)
+        self.assertIn("nomotoke-recent-games", result)
+
+    def test_nomotoke_card_official_notice_template_includes_standings(self):
+        result = self._enrich_with_template(
+            template_key="nomotoke_card_official_notice_v1",
+            force_env="0",
+        )
+        self.assertIn("nomotoke-standings", result)
+        self.assertIn("nomotoke-next-game", result)
+        self.assertIn("nomotoke-recent-games", result)
+
+    def test_force_enrichment_with_non_nomotoke_template_includes_standings(self):
+        """ENABLE_RSS_PIPELINE_FORCE_ENRICHMENT=1 で nomotoke 非 marker /
+        非 nomotoke_card_ template でも 順位 / 次戦 出る。"""
+        result = self._enrich_with_template(
+            template_key="social_video_notice",
+            force_env="1",
+        )
+        self.assertIn("nomotoke-standings", result)
+        self.assertIn("nomotoke-next-game", result)
+
+    def test_empty_template_key_includes_standings(self):
+        """rss_fetcher が空 template_key で呼ぶ場合 (RSS Gemini path) も
+        順位 / 次戦 出る。"""
+        result = self._enrich_with_template(
+            template_key="",
+            force_env="0",
+        )
+        self.assertIn("nomotoke-standings", result)
+        self.assertIn("nomotoke-next-game", result)
+
+    def test_no_force_no_template_match_still_skips_standings(self):
+        """force_enrichment=0 + non-nomotoke_card_ template の場合は従来通り
+        skip (article_style 系の意図的 skip 維持)。"""
+        result = self._enrich_with_template(
+            template_key="social_video_notice",
+            force_env="0",
+        )
+        self.assertNotIn("nomotoke-standings", result)
+        self.assertNotIn("nomotoke-next-game", result)
+
+
 class EmojiDecorationSafetyTests(unittest.TestCase):
     def test_apply_rss_pipeline_enrichment_returns_body_when_emoji_step_fails(self):
         base_html = (

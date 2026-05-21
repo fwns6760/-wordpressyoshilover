@@ -4021,12 +4021,17 @@ def apply_rss_pipeline_enrichment(
     # General block lenient-mode: 全 nomotoke-marked content + caller が
     # template_key 未指定 (rss_fetcher が空文字で呼ぶ) も該当扱いにする
     # (RELIABILITY-2026-05-08-I)
-    _general_eligible = (not template_key) or template_key in (
-        "nomotoke_card_short_news_url_v1",
-        "nomotoke_card_postgame_v1",
-        "nomotoke_card_pregame_pitcher_v1",
-        "nomotoke_card_manager_comment_v1",
-        "nomotoke_card_player_comment_v1",
+    #
+    # 2026-05-21 FRONTEND-ENRICHMENT-LIVE-AUDIT fix: 元の 5-key 固定リストでは
+    # nomotoke_card_video_v1 / nomotoke_card_official_notice_v1 や、
+    # force_enrichment 経由の非 nomotoke_card_ template (social_video_notice 等)
+    # で gate が False になり 順位 / 次戦 / 直近 W-L が 100% gap だった。
+    # nomotoke_card_ prefix の全 template + force_enrichment 経路 (= 非 nomotoke
+    # marker でも env で強制 enrichment) を lenient に含める。
+    _general_eligible = (
+        (not template_key)
+        or template_key.startswith("nomotoke_card_")
+        or _rss_pipeline_force_enrichment_enabled()
     )
     if (not article_style_layout) and _general_eligible:
         block = _build_recent_games_block()

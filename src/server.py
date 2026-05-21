@@ -21,7 +21,7 @@ ENABLE_TEST_GEMINI = os.environ.get("ENABLE_TEST_GEMINI", "").strip().lower() in
 CLOUD_RUN_AUTH_MODES = {"cloud_run", "iam", "oidc"}
 OIDC_SERVICE_ACCOUNT = os.environ.get("RUN_OIDC_SERVICE_ACCOUNT", "").strip()
 OIDC_AUDIENCE = os.environ.get("RUN_OIDC_AUDIENCE", "").strip()
-RUN_SUBPROCESS_TIMEOUT = int(os.environ.get("RUN_SUBPROCESS_TIMEOUT", "285"))
+RUN_SUBPROCESS_TIMEOUT = int(os.environ.get("RUN_SUBPROCESS_TIMEOUT", "840"))
 
 
 def _env_flag(name: str, default: bool = False) -> bool:

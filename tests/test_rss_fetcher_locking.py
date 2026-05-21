@@ -123,10 +123,10 @@ def test_acquire_writes_structured_metadata_when_no_lock(harness):
         payload["revision"],
         payload["timeout_seconds"],
         payload["lock_version"],
-    ) == (FIXED_RUN_ID.hex, NOW_ISO, NOW_ISO, FIXED_PID, "test-host", "rev-test", 285, 1)
+    ) == (FIXED_RUN_ID.hex, NOW_ISO, NOW_ISO, FIXED_PID, "test-host", "rev-test", 840, 1)
     assert harness["main_mock"].call_count == 1 and not harness["lock_file"].exists()
     assert harness["write_calls"][-1][0] == harness["lock_file"]
-    assert _event(harness["logger"], "rss_fetcher_lock_acquired")["ttl_seconds"] == 900
+    assert _event(harness["logger"], "rss_fetcher_lock_acquired")["ttl_seconds"] == 1680
 
 
 def test_skip_when_fresh_lock_with_live_pid(harness):
@@ -184,12 +184,12 @@ def test_skip_when_corrupt_recent_lock(harness):
 def test_remove_when_corrupt_old_lock(harness):
     harness["lock_file"].parent.mkdir(parents=True, exist_ok=True)
     harness["lock_file"].write_text("{corrupt", encoding="utf-8")
-    stale_time = FIXED_TIME - 901
+    stale_time = FIXED_TIME - 1681
     os.utime(harness["lock_file"], (stale_time, stale_time))
     harness["run"]()
     stale = _event(harness["logger"], "rss_fetcher_stale_lock_removed")
     assert harness["main_mock"].call_count == 1 and not harness["lock_file"].exists()
-    assert (stale["reason"], stale["lock_age_seconds"], stale["lock_pid"]) == ("corrupt_old", 901, "unknown")
+    assert (stale["reason"], stale["lock_age_seconds"], stale["lock_pid"]) == ("corrupt_old", 1681, "unknown")
 
 
 def test_finally_releases_owned_lock_on_exception(harness):

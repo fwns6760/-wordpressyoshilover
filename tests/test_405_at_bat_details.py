@@ -613,6 +613,162 @@ class IngestGiantsPlayByPlayTests(unittest.TestCase):
         self.assertEqual(stats["games_succeeded"], 0)
 
 
+class VsLRStrictTests(unittest.TestCase):
+    """415 (b) strict: per-PA throws lookup での vs L/R aggregator + publisher。"""
+
+    def _seed_game(self, conn: sqlite3.Connection):
+        conn.execute(
+            "INSERT INTO games (game_id, game_date, opponent, home_away, "
+            "giants_score, opp_score, result, source_url, source_kind, "
+            "ingested_at) VALUES ('2026-05-19:s-g-10', '2026-05-19', "
+            "'ヤクルト', 'home', 5, 3, '勝利', '', 'test', "
+            "'2026-05-19T22:00:00Z')"
+        )
+
+    def _inject_throws_map(self, mapping: dict):
+        from src.analysis import ranking_article_publisher as rap
+        rap._NPB_PITCHER_THROWS_CACHE = mapping
+
+    def _seed_events(self, conn: sqlite3.Connection):
+        events = [
+            # vs 小川 (L) PA1: 岡本 中前安打
+            {"inning_no": 1, "half": "裏", "team": "巨人", "outs": "0アウト",
+             "runner_state": "", "batter": "岡本", "count_balls": 0,
+             "count_strikes": 0, "result": "中前安打", "current_pitcher": "小川"},
+            # vs 小川 (L) PA2: 岡本 左中間タイムリー (打点2)
+            {"inning_no": 3, "half": "裏", "team": "巨人", "outs": "1アウト",
+             "runner_state": "1塁", "batter": "岡本", "count_balls": 2,
+             "count_strikes": 1, "result": "左中間タイムリー（打点2）",
+             "current_pitcher": "小川"},
+            # vs 清水 (R): 岡本 三振
+            {"inning_no": 5, "half": "裏", "team": "巨人", "outs": "2アウト",
+             "runner_state": "", "batter": "岡本", "count_balls": 1,
+             "count_strikes": 2, "result": "空振り三振",
+             "current_pitcher": "清水"},
+            # vs 清水 (R): 吉川 右前安打
+            {"inning_no": 6, "half": "裏", "team": "巨人", "outs": "0アウト",
+             "runner_state": "", "batter": "吉川", "count_balls": 1,
+             "count_strikes": 1, "result": "右前安打",
+             "current_pitcher": "清水"},
+        ]
+        insight_etl.upsert_at_bat_details(
+            conn, game_id="2026-05-19:s-g-10",
+            source_url="", events=events,
+            ingested_at="2026-05-19T22:30:00Z",
+        )
+
+    def test_aggregate_vs_left_returns_left_pa_only(self):
+        from src.analysis.ranking_article_publisher import (
+            aggregate_giants_batter_vs_lr_strict,
+        )
+        conn = _open_seeded_db()
+        self._seed_game(conn)
+        self._seed_events(conn)
+        self._inject_throws_map({"小川": "L", "清水": "R"})
+        rows = aggregate_giants_batter_vs_lr_strict(
+            conn, pitcher_hand="L", last_n_games=10,
+        )
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["batter"], "岡本")
+        self.assertEqual(rows[0]["pa_count"], 2)
+        self.assertEqual(rows[0]["hit_count"], 2)
+        self.assertEqual(rows[0]["rbi_sum"], 2)
+
+    def test_aggregate_vs_right_returns_right_pa_only(self):
+        from src.analysis.ranking_article_publisher import (
+            aggregate_giants_batter_vs_lr_strict,
+        )
+        conn = _open_seeded_db()
+        self._seed_game(conn)
+        self._seed_events(conn)
+        self._inject_throws_map({"小川": "L", "清水": "R"})
+        rows = aggregate_giants_batter_vs_lr_strict(
+            conn, pitcher_hand="R", last_n_games=10,
+        )
+        # 岡本 (1 三振) + 吉川 (1 安打) の 2 entries
+        batters = sorted(r["batter"] for r in rows)
+        self.assertEqual(batters, ["吉川", "岡本"])
+
+    def test_aggregate_returns_empty_when_throws_map_empty(self):
+        from src.analysis.ranking_article_publisher import (
+            aggregate_giants_batter_vs_lr_strict,
+        )
+        conn = _open_seeded_db()
+        self._seed_game(conn)
+        self._seed_events(conn)
+        self._inject_throws_map({})  # empty
+        rows = aggregate_giants_batter_vs_lr_strict(
+            conn, pitcher_hand="L", last_n_games=10,
+        )
+        self.assertEqual(rows, [])
+
+    def test_aggregate_returns_empty_for_invalid_hand(self):
+        from src.analysis.ranking_article_publisher import (
+            aggregate_giants_batter_vs_lr_strict,
+        )
+        conn = _open_seeded_db()
+        self._seed_game(conn)
+        self._seed_events(conn)
+        self._inject_throws_map({"小川": "L"})
+        rows = aggregate_giants_batter_vs_lr_strict(
+            conn, pitcher_hand="X", last_n_games=10,
+        )
+        self.assertEqual(rows, [])
+
+    def test_publish_vs_left_dry_run(self):
+        from src.analysis.ranking_article_publisher import (
+            publish_giants_batter_vs_lr_strict_draft,
+        )
+        conn = _open_seeded_db()
+        self._seed_game(conn)
+        self._seed_events(conn)
+        self._inject_throws_map({"小川": "L", "清水": "R"})
+        res = publish_giants_batter_vs_lr_strict_draft(
+            conn, _FakeWP(), pitcher_hand="L",
+            last_n_games=10, dry_run=True,
+        )
+        self.assertEqual(res["status"], "dry_run")
+        self.assertIn("対左投手", res["title"])
+        self.assertIn("per-PA", res["title"])
+
+    def test_publish_vs_right_no_throws_map_returns_skip(self):
+        from src.analysis.ranking_article_publisher import (
+            publish_giants_batter_vs_lr_strict_draft,
+        )
+        conn = _open_seeded_db()
+        self._seed_game(conn)
+        self._seed_events(conn)
+        self._inject_throws_map({})  # empty
+        res = publish_giants_batter_vs_lr_strict_draft(
+            conn, _FakeWP(), pitcher_hand="L",
+            last_n_games=10, dry_run=True,
+        )
+        self.assertEqual(res["status"], "skip")
+
+
+class IsHitResultTests(unittest.TestCase):
+    def test_hits_detected(self):
+        from src.analysis.ranking_article_publisher import _is_hit_result
+        for text in (
+            "中前安打", "右前安打", "左前安打",
+            "本塁打", "ソロホームラン", "中越え3ラン本塁打",
+            "二塁打", "三塁打",
+            "適時打", "中前タイムリーツーベース",
+        ):
+            self.assertTrue(_is_hit_result(text), msg=text)
+
+    def test_non_hits_not_detected(self):
+        from src.analysis.ranking_article_publisher import _is_hit_result
+        for text in (
+            "空振り三振", "見逃し三振",
+            "投ゴロ", "二ゴロ", "三飛", "中飛",
+            "四球", "死球",
+            "犠飛", "犠打",
+            "",
+        ):
+            self.assertFalse(_is_hit_result(text), msg=text)
+
+
 class RunnerStateLabelTests(unittest.TestCase):
     def test_known_labels(self):
         self.assertEqual(runner_state_label("満塁"), "満塁")

@@ -393,6 +393,29 @@ def _run_data_insight_auto_publish(*, db_path: Path) -> tuple[dict[str, Any], di
                                 "opponent": opp,
                                 "error": f"{type(exc).__name__}:{exc}",
                             }, ensure_ascii=False))
+                    # 415 (b) strict (2026-05-21): per-PA throws lookup で対 L/R
+                    # 高精度集計。 既存 (a) approx (publish_batter_vs_lr_split_draft、
+                    # starter 限定) と並列稼働、 dedup metric_name は別 key
+                    # (VS_LR_STRICT:L vs VS_LR:L) なので同 dedup window でも
+                    # 競合しない。
+                    lr_strict_published = 0
+                    for hand in ("L", "R"):
+                        if lr_strict_published >= auto_draft_max_per_run:
+                            break
+                        try:
+                            ls_result = ranking_pub.publish_giants_batter_vs_lr_strict_draft(
+                                conn, wp, pitcher_hand=hand, last_n_games=10,
+                            )
+                            if ls_result.get("status") in (
+                                "published", "published_draft", "dry_run",
+                            ):
+                                lr_strict_published += 1
+                        except Exception as exc:  # noqa: BLE001
+                            print(json.dumps({
+                                "warn": "vs_lr_strict_publish_failed",
+                                "pitcher_hand": hand,
+                                "error": f"{type(exc).__name__}:{exc}",
+                            }, ensure_ascii=False))
                 except Exception as exc:  # noqa: BLE001
                     ranking_publish_summary["counting_error"] = (
                         f"{type(exc).__name__}:{exc}"

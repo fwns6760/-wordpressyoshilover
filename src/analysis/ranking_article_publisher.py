@@ -3482,3 +3482,302 @@ def publish_giants_batter_vs_opponent_draft(
             "error": f"{type(exc).__name__}:{exc}",
             "opponent": opponent, "scope": scope,
         }
+
+
+# ─── 415 (b) strict: per-PA pitcher.throws lookup vs L/R aggregator ────────
+#
+# Phase 1 parser (f777f4c) + Phase 2a-c (dc0d294 + 485af09) で at_bat_details
+# に current_pitcher が per-PA 入っている。 #91 415 (b) strict は config/
+# npb_pitcher_throws.json と JOIN し、 starter 限定 approx (a) を超えて全 PA
+# (reliever 含む) で対戦投手 throws を解決し、 巨人打者の対 L/R を高精度集計。
+#
+# (a) approx は existing publish_batter_vs_lr_split_draft (batting_logs JOIN
+# starter throws); (b) strict は本 publisher (at_bat_details JOIN
+# throws_map)。 両方 LIVE 共存。
+
+
+def aggregate_giants_batter_vs_lr_strict(
+    conn: sqlite3.Connection,
+    *,
+    pitcher_hand: str,  # "L" or "R"
+    last_n_games: int = 10,
+    top_n: int = 10,
+) -> list[dict[str, Any]]:
+    """415 (b) strict: at_bat_details + throws_map で per-PA 対 L/R 集計。
+
+    手順:
+    1. throws_map を _load_npb_pitcher_throws() で取得
+    2. games table 直近 N 試合の game_id 取得
+    3. at_bat_details の 巨人攻撃 PA を取得、 current_pitcher を throws_map で
+       解決し、 throws=pitcher_hand の PA のみ filter
+    4. batter ごと PA / RBI / hit を集計
+    5. RBI DESC、 PA DESC、 hit DESC で sort
+    """
+    if pitcher_hand not in ("L", "R"):
+        return []
+    throws_map = _load_npb_pitcher_throws()
+    if not throws_map:
+        return []
+    game_id_rows = conn.execute(
+        "SELECT game_id FROM games WHERE giants_score IS NOT NULL "
+        "ORDER BY game_date DESC LIMIT ?",
+        (last_n_games,),
+    ).fetchall()
+    if not game_id_rows:
+        return []
+    game_ids = [r[0] for r in game_id_rows]
+    placeholders = ",".join("?" * len(game_ids))
+    rows = conn.execute(
+        f"SELECT batter, current_pitcher, result_text "
+        f"FROM at_bat_details "
+        f"WHERE game_id IN ({placeholders}) "
+        f"AND team LIKE '%巨人%' "
+        f"AND batter IS NOT NULL AND batter <> '' "
+        f"AND current_pitcher IS NOT NULL AND current_pitcher <> ''",
+        tuple(game_ids),
+    ).fetchall()
+    if not rows:
+        return []
+    from src.analysis import insight_etl as _etl
+    agg: dict[str, dict[str, int]] = {}
+    for batter, pitcher, result_text in rows:
+        throws = throws_map.get(pitcher or "", "")
+        if throws != pitcher_hand:
+            continue
+        if batter not in agg:
+            agg[batter] = {"pa_count": 0, "rbi_sum": 0, "hit_count": 0}
+        agg[batter]["pa_count"] += 1
+        agg[batter]["rbi_sum"] += _etl.parse_rbi_from_result_text(result_text or "")
+        if _is_hit_result(result_text or ""):
+            agg[batter]["hit_count"] += 1
+    sorted_rows = sorted(
+        [
+            {
+                "batter": k,
+                "pa_count": v["pa_count"],
+                "rbi_sum": v["rbi_sum"],
+                "hit_count": v["hit_count"],
+            }
+            for k, v in agg.items()
+        ],
+        key=lambda d: (-d["rbi_sum"], -d["pa_count"], -d["hit_count"]),
+    )
+    return sorted_rows[:top_n]
+
+
+_HIT_RESULT_RE = re.compile(
+    r"(安打|本塁打|ホームラン|塁打|適時|タイムリー)"
+)
+
+
+def _is_hit_result(result_text: str) -> bool:
+    """result_text に hit / RBI marker が含まれるか (簡易 hit 検出)。
+
+    "安打" / "本塁打" / "ホームラン" / "塁打" (二塁打/三塁打 含む) /
+    "適時" / "タイムリー" を hit と判定。 三振 / 凡退 / 四球 / 犠打 等は
+    含まないため non-hit と判定。
+    """
+    if not result_text:
+        return False
+    return bool(_HIT_RESULT_RE.search(result_text))
+
+
+def render_giants_batter_vs_lr_strict_article(
+    conn: sqlite3.Connection,
+    *,
+    pitcher_hand: str,
+    last_n_games: int = 10,
+    top_n: int = 10,
+) -> Optional[dict]:
+    """415 (b) strict: per-PA throws lookup vs L/R 記事。"""
+    rows = aggregate_giants_batter_vs_lr_strict(
+        conn, pitcher_hand=pitcher_hand,
+        last_n_games=last_n_games, top_n=top_n,
+    )
+    if not rows:
+        return None
+    hand_label = "左投手" if pitcher_hand == "L" else "右投手"
+    top = rows[0]
+    top_player = top["batter"]
+    top_rbi = top["rbi_sum"]
+    top_pa = top["pa_count"]
+    top_hits = top["hit_count"]
+    scope_label = f"直近{last_n_games}試合"
+    title = (
+        f"【巨人データ】{top_player} 対{hand_label} (per-PA) 打点 {top_rbi} "
+        f"で巨人内 1 位 ({scope_label})"
+    )
+    title = title_guard.ensure_title_period(title, scope=f"last_{last_n_games}_games").title
+    table_lines = [
+        "| 順位 | 選手 | 打席数 | 安打 | 打点 |",
+        "|---|---|---|---|---|",
+    ]
+    for i, r in enumerate(rows[:top_n], start=1):
+        is_focus = r["batter"] == top_player
+        if is_focus:
+            r_disp = f'<span style="color:#c0392b"><strong>{i}</strong></span>'
+            p_disp = (
+                f'<span style="color:#c0392b"><strong>'
+                f'{r["batter"]} ★</strong></span>'
+            )
+            v_disp = (
+                f'<span style="color:#c0392b"><strong>'
+                f'{r["rbi_sum"]}</strong></span>'
+            )
+        else:
+            r_disp = str(i)
+            p_disp = r["batter"]
+            v_disp = str(r["rbi_sum"])
+        table_lines.append(
+            f"| {r_disp} | {p_disp} | {r['pa_count']} | {r['hit_count']} | {v_disp} |"
+        )
+    table_md = "\n".join(table_lines)
+    body_md = f"""# {title}
+
+## ひとこと
+
+巨人 {top_player} の **対{hand_label}** (per-PA strict) 打点は **{top_rbi}**
+({scope_label}、 {top_pa} 打席 / {top_hits} 安打)、 巨人内 **1 位**。
+
+## 巨人内 TOP {top_n}(対{hand_label} per-PA 打点)
+
+{table_md}
+
+## このデータについて
+
+| 項目 | 内容 |
+|---|---|
+| 選手 | **{top_player}**(巨人) |
+| 指標 | 対{hand_label} (per-PA) 打点 = **{top_rbi}** ({top_pa} 打席 / {top_hits} 安打) |
+| 順位 | 巨人内 1 位 |
+| 対戦投手 | {hand_label} (throws='{pitcher_hand}') |
+| データ元 | NPB 公式 playbyplay(https://npb.jp/) + npb_pitcher_throws.json |
+| 集計式 | at_bat_details で per-PA current_pitcher → throws_map['{pitcher_hand}'] filter → batter SUM(打点) |
+| 集計期間 | {scope_label} |
+| 精度 | per-PA strict (reliever 含む全 PA で対戦投手 throws を解決、 (a) approx の starter 限定を超える) |
+"""
+    body_html = markdown_to_html(body_md)
+    return {
+        "title": title, "body_md": body_md, "body_html": body_html,
+        "pitcher_hand": pitcher_hand, "hand_label": hand_label,
+        "scope": f"last_{last_n_games}_games",
+        "top_player": top_player, "top_value": top_rbi,
+        "top_pa": top_pa, "top_hits": top_hits,
+        "giants_rank": 1, "league_total": len(rows),
+    }
+
+
+def publish_giants_batter_vs_lr_strict_draft(
+    conn: sqlite3.Connection,
+    wp_client_obj: Any,
+    *,
+    pitcher_hand: str,
+    last_n_games: int = 10,
+    category_name: str = DEFAULT_CATEGORY_NAME,
+    dry_run: bool = False,
+) -> dict:
+    """415 (b) strict publisher (per-PA throws strict)。"""
+    article = render_giants_batter_vs_lr_strict_article(
+        conn, pitcher_hand=pitcher_hand,
+        last_n_games=last_n_games, top_n=10,
+    )
+    if article is None:
+        return {
+            "status": "skip", "reason": "no_data_or_no_giants_or_no_throws_map",
+            "pitcher_hand": pitcher_hand,
+            "scope": f"last_{last_n_games}_games",
+        }
+    scope = article["scope"]
+    title_check = title_guard.ensure_title_period(article["title"], scope=scope)
+    if not title_check.ok:
+        return {
+            "status": "skip_title_period_guard",
+            "reason": title_check.reason,
+            "pitcher_hand": pitcher_hand, "scope": scope,
+            "title": article["title"],
+        }
+    article["title"] = title_check.title
+    quality_decision = quality_gate.validate_basic_article(article)
+    if not quality_decision.allowed:
+        return quality_gate.skip_result(
+            quality_decision,
+            pitcher_hand=pitcher_hand, scope=scope,
+            title=article["title"],
+        )
+    metric_key = f"VS_LR_STRICT:{pitcher_hand}"
+    dedup_context = {
+        "subject_key": article["top_player"],
+        "metric_name": metric_key,
+        "scope": scope,
+        "value": article.get("top_value"),
+        "rank": 1,
+        "total": article.get("league_total"),
+    }
+    dedup_decision = dedup_gate.evaluate_metric_cooldown(conn, **dedup_context)
+    if not dedup_decision.get("allowed"):
+        return {
+            "status": "skip_dedup_cooldown",
+            "reason": dedup_decision.get("reason"),
+            "pitcher_hand": pitcher_hand, "scope": scope,
+            "dedup": dedup_decision,
+        }
+    if dry_run:
+        return {"status": "dry_run", "title": article["title"]}
+    try:
+        category_id = wp_client_obj.create_category(category_name)
+    except Exception:
+        category_id = 0
+    if not category_id:
+        try:
+            category_id = wp_client_obj.resolve_category_id(category_name)
+        except Exception:
+            category_id = 0
+    if not category_id:
+        return {
+            "status": "skip", "reason": "category_resolution_failed",
+            "pitcher_hand": pitcher_hand, "scope": scope,
+        }
+    publish_status = _resolve_publish_status(focus_team_code="g")
+    tag_id = _ensure_player_tag(wp_client_obj, article["top_player"])
+    tags_list = [tag_id] if tag_id else [850]
+    _banner = _giants_news_banner_html(
+        article["title"], _BANNER_SOURCE_LABEL, category_name,
+    )
+    try:
+        post_id = wp_client_obj.create_post(
+            title=article["title"],
+            content=_banner + article["body_html"],
+            categories=[category_id],
+            status=publish_status,
+            caller="ranking_article_publisher_vs_lr_strict",
+        )
+        if post_id and tags_list:
+            try:
+                import requests as _req
+                wp_client_obj._request_with_retry(
+                    _req.post, f"{wp_client_obj.api}/posts/{post_id}",
+                    action="add_tags", json={"tags": tags_list},
+                )
+            except Exception:
+                pass
+        try:
+            dedup_gate.record_metric_publish(
+                conn, **dedup_context,
+                title=article["title"],
+                post_id=int(post_id or 0),
+                wp_status=publish_status,
+            )
+        except Exception:
+            pass
+        return {
+            "status": "published" if publish_status == "publish" else "published_draft",
+            "post_id": post_id,
+            "title": article["title"],
+            "pitcher_hand": pitcher_hand, "scope": scope,
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "status": "error",
+            "error": f"{type(exc).__name__}:{exc}",
+            "pitcher_hand": pitcher_hand, "scope": scope,
+        }

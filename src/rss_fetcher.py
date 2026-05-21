@@ -20902,6 +20902,31 @@ def _create_draft_with_same_fire_guard(
         "allow_title_only_reuse": allow_title_reuse,
         "tags": tag_ids,
     }
+    # 417: Hochi / Sanspo source の article は X-post mail 候補 queue に
+    # enqueue する (cron `*/30 6-22 * * *` の x-post-mail-lane flush job が drain)。
+    # fault-tolerant: queue 失敗で WP create_post を block しない。
+    try:
+        from src import x_post_candidate_queue as _xpcq
+
+        if _xpcq.is_hochi_or_sanspo_source(
+            normalized_source_url or "", enrichment_source_name or ""
+        ):
+            _xpcq.enqueue(
+                _xpcq.CandidateArticleInfo(
+                    source_url=normalized_source_url or "",
+                    title=draft_title or "",
+                    summary=enrichment_summary or "",
+                    source_name=enrichment_source_name or "",
+                    source_type=enrichment_source_type or "",
+                    article_subtype=article_subtype or "",
+                )
+            )
+    except Exception as _enq_exc:  # noqa: BLE001 — queue 障害で create_post を止めない
+        logger.warning(
+            "x_post_candidate_queue_hook_failed source_url=%s err=%r",
+            normalized_source_url,
+            _enq_exc,
+        )
     return wp.create_post(
         draft_title,
         enriched_content,

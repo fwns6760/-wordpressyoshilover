@@ -811,6 +811,61 @@ def _build_gemma_branding_candidates(
                     )
         except Exception as exc:  # noqa: BLE001
             LOG.info("fan_voice_snippet_skip reason=%r", exc)
+
+    # 414 axis E1 wire: Yahoo schedule で今日の先発を fetch、 axis E6 用 opponent
+    # 先発も同時に取得 (build_pregame_themes に渡して相手投手相性 SQL 集計に活用)
+    starting_pitcher_today = ""
+    opponent_starter = ""
+    try:
+        from src.analysis.pregame_themes import fetch_today_starting_pitchers
+        starting_pitcher_today, opponent_starter, _ = fetch_today_starting_pitchers()
+    except Exception as exc:  # noqa: BLE001
+        LOG.info("starting_pitcher_fetch_skip reason=%r", exc)
+
+    # 414 axis E4 + E5 wire: 日次 snapshot 経由で打順変更 / 昇格 diff を計算。
+    # 今日の値を save (翌日 fire の前日 snapshot として使う) + 前日 snapshot から
+    # build summary を返す。 bucket_name 不在時は silent fallback (空文字)。
+    lineup_change_summary = ""
+    promotion_summary = ""
+    if bucket_name:
+        try:
+            from src.analysis.daily_snapshot import (
+                build_lineup_change_string,
+                build_promotion_string,
+                save_lineup_snapshot,
+                save_roster_active_snapshot,
+            )
+            today_str = now_jst.strftime("%Y-%m-%d")
+            if lineup_focus_names:
+                lineup_change_summary = build_lineup_change_string(
+                    bucket_name,
+                    list(lineup_focus_names),
+                    now_jst=now_jst,
+                    logger=LOG,
+                )
+                save_lineup_snapshot(
+                    bucket_name, today_str, list(lineup_focus_names), logger=LOG
+                )
+            try:
+                roster_path = Path(__file__).resolve().parent.parent.parent / "config" / "giants_roster.json"
+                roster_data = json.loads(roster_path.read_text(encoding="utf-8"))
+                today_active = [
+                    str(p.get("name") or "").strip()
+                    for p in roster_data
+                    if p.get("active") and p.get("role") == "player"
+                ]
+                today_active_set = {n for n in today_active if n}
+                if today_active_set:
+                    promotion_summary = build_promotion_string(
+                        bucket_name, today_active_set, now_jst=now_jst, logger=LOG
+                    )
+                    save_roster_active_snapshot(
+                        bucket_name, today_str, list(today_active_set), logger=LOG
+                    )
+            except Exception as roster_exc:  # noqa: BLE001
+                LOG.info("roster_snapshot_skip reason=%r", roster_exc)
+        except Exception as snap_exc:  # noqa: BLE001
+            LOG.info("daily_snapshot_skip reason=%r", snap_exc)
     for player, lineup_fact in players[:remaining]:
         db_fact = ""
         if db_path:
@@ -836,6 +891,10 @@ def _build_gemma_branding_candidates(
             db_path=db_path or "",
             focused_players=list(lineup_focus_names) if lineup_focus_names else None,
             fan_voice_snippet=fan_voice_snippet,
+            starting_pitcher_today=starting_pitcher_today,
+            opponent_pitcher_canonical=opponent_starter,
+            lineup_change_summary=lineup_change_summary,
+            promotion_summary=promotion_summary,
         )
         if cand is not None:
             out.append(cand)
@@ -951,7 +1010,140 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         default=30,
         help="Minimum AB/IP/opps sample size for ranking inclusion (default 30, 350: tightened from 10).",
     )
+    parser.add_argument(
+        "--mode",
+        choices=("scheduled", "on-queue"),
+        default="scheduled",
+        help=(
+            "scheduled (default) = existing 5 便 flow (insight ranking + Gemma/fan_voice). "
+            "on-queue (417) = drain x_post_candidate_queue (報知/サンスポ source) + Gemma 4 で 候補生成 + mail。"
+        ),
+    )
     return parser.parse_args(argv)
+
+
+def _main_on_queue(args: argparse.Namespace, recipients: list[str]) -> int:
+    """417: drain x_post_candidate_queue → Gemma 4 で候補生成 → mail.
+
+    queue 0 件なら silent skip (mail を送らない、 return 0)。
+    Gemma 候補生成失敗 (safety_check / unverified) は個別 skip、 1 件でも候補が
+    残れば mail compose、 全件 skip なら mail 送らない。
+    mail 送信成功時のみ mark_processed (失敗時は次 fire で再 drain)。
+    """
+    LOG.info("on-queue mode: starting queue flush flow")
+    try:
+        from src import x_post_candidate_queue as _xpcq
+    except Exception as exc:  # noqa: BLE001
+        LOG.error("on-queue mode: x_post_candidate_queue import failed err=%r", exc)
+        return 5
+    if _xbg is None:
+        LOG.error("on-queue mode: x_post_branding_gen unavailable (392 deps missing)")
+        return 5
+
+    gemini_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GEMMA_BRANDING_GEMINI_API_KEY")
+    if not gemini_key:
+        LOG.error("on-queue mode: GEMINI_API_KEY env missing")
+        return 5
+
+    queue_items = _xpcq.drain(max_count=args.max_candidates * 3)
+    if not queue_items:
+        LOG.info("on-queue mode: queue is empty — silent skip (no mail sent)")
+        return 0
+    LOG.info("on-queue mode: drained %d queue items", len(queue_items))
+
+    # db_path (DB fact line は使わないが、 persona 自動選択 (is_giants_game_day)
+    # のために必要。 利用不可なら None で渡す = persona は時刻ベース fallback)
+    db_path: str | None = None
+    try:
+        db_info = miq.ensure_local_db()
+        if db_info.get("ok"):
+            db_path = db_info.get("path")
+    except Exception as exc:  # noqa: BLE001
+        LOG.info("on-queue mode: insight.db unavailable (persona fallback): %r", exc)
+
+    candidates: list[lane.Candidate] = []
+    processed_items: list = []
+    for item in queue_items:
+        try:
+            cand = _xbg.build_x_post_from_article_info(
+                item,
+                gemini_api_key=gemini_key,
+                db_path=db_path or "",
+                logger=LOG,
+            )
+        except Exception as exc:  # noqa: BLE001
+            LOG.warning(
+                "on-queue mode: build_x_post_from_article_info exception source_url=%s err=%r",
+                item.source_url,
+                exc,
+            )
+            cand = None
+        if cand is None:
+            # silent skip — gate hit / no player / API error
+            # NOTE: do NOT mark_processed; let it stay queued for next fire retry.
+            # (rss_fetcher dedup will prevent re-enqueue of same source_url.)
+            continue
+        candidates.append(cand)
+        processed_items.append(item)
+        if len(candidates) >= args.max_candidates:
+            break
+
+    if not candidates:
+        LOG.info(
+            "on-queue mode: drained %d items but all produced 0 candidates (gate hit / no player) — skip mail",
+            len(queue_items),
+        )
+        return 0
+
+    LOG.info(
+        "on-queue mode: composing mail with %d candidates (drained %d)",
+        len(candidates),
+        len(queue_items),
+    )
+    mail = lane.compose_mail(
+        candidates,
+        context_label="報知/サンスポ 直結 (queue 417)",
+        context_note="",
+    )
+
+    if args.dry_run:
+        LOG.info("[dry-run on-queue] subject=%s", mail.subject)
+        LOG.info("[dry-run on-queue] candidate count=%d", mail.candidate_count)
+        LOG.info(
+            "[dry-run on-queue] text body preview (first 600 chars):\n%s",
+            mail.text_body[:600],
+        )
+        # dry-run でも mark_processed しない (次回も同じ queue を見れるように)
+        return 0
+
+    LOG.info("on-queue mode: sending mail to %s …", recipients)
+    request = mdb.MailRequest(
+        to=recipients,
+        subject=mail.subject,
+        text_body=mail.text_body,
+        html_body=mail.html_body,
+        sender=_resolve_sender(),
+        reply_to=_resolve_reply_to(),
+        metadata={"ticket": "417", "lane": "x_post_mail", "mode": "on-queue", "candidate_count": mail.candidate_count},
+    )
+    result = mdb.send(request, dry_run=False)
+    LOG.info(
+        "on-queue mode: mail send result status=%s reason=%s refused=%s",
+        result.status,
+        result.reason,
+        result.refused_recipients,
+    )
+    if result.status not in {"sent", "dry_run"}:
+        LOG.error("on-queue mode: mail not sent (status=%s) — keep queue items for retry", result.status)
+        return 4
+
+    # mail 送信成功 → 該当 queue items を mark_processed
+    marked = 0
+    for item in processed_items:
+        if _xpcq.mark_processed(item):
+            marked += 1
+    LOG.info("on-queue mode: mark_processed %d / %d items", marked, len(processed_items))
+    return 0
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -962,6 +1154,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not recipients and not args.dry_run:
         LOG.error("No recipients configured (MAIL_BRIDGE_TO env or --to). Aborting.")
         return 2
+
+    # 417: on-queue mode は別 entry — drain queue → Gemma → mail の完結 flow。
+    if args.mode == "on-queue":
+        return _main_on_queue(args, recipients)
 
     LOG.info("Downloading insight.db cache (read-only)…")
     db_path: str | None = None

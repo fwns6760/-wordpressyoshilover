@@ -1211,6 +1211,9 @@ def build_gemma_branding_candidate(
     focused_players: Optional[list[str]] = None,
     fan_voice_snippet: str = "",
     starting_pitcher_today: str = "",
+    opponent_pitcher_canonical: str = "",
+    lineup_change_summary: str = "",
+    promotion_summary: str = "",
 ) -> Optional[Candidate]:
     """Tavily REST 検索 + Gemma 4 31B 生成で 1 件の Candidate を返す。
 
@@ -1313,7 +1316,10 @@ def build_gemma_branding_candidate(
                 now_jst=now_jst,
                 starting_pitcher_today=starting_pitcher_today,
                 focused_players=focused_players,
+                lineup_change_summary=lineup_change_summary,
+                promotion_summary=promotion_summary,
                 fan_voice_snippet=fan_voice_snippet,
+                opponent_pitcher_canonical=opponent_pitcher_canonical,
             )
             pregame_section = format_pregame_themes_for_prompt(themes)
         except Exception as exc:  # noqa: BLE001 - silent fallback
@@ -1443,4 +1449,264 @@ def build_gemma_branding_candidate(
         signature=f"gemma_branding|{signature_hash}|False|None",
         focus_player=player,
         source_material_type="gemma_branding",
+    )
+
+
+# ----------------------------------------------------------------------------
+# 417: Hochi / Sanspo source 直結 path。 rss_fetcher が classify した article info
+# (queue 経由) を入力に、 Tavily を呼ばずに Gemma 4 で X-post 候補生成。
+# 既存 prompt / persona / safety check は全部流用 (§ 0 不可触条件遵守)。
+# ----------------------------------------------------------------------------
+
+
+def _find_first_giants_player_in_text(text: str) -> str:
+    """text 中で最初に出現する Giants roster 選手の canonical name を返す.
+
+    aliases (giants_roster.json) と alias を全件 substring match で照合し、
+    text 内の最も早い位置に出る選手を選ぶ。 該当無しは ""。 normalize なし
+    (literal substring) で OK — roster alias 側を そのまま使う。
+    """
+    if not isinstance(text, str) or not text:
+        return ""
+    try:
+        from src.x_post_mail_lane import _load_giants_player_aliases  # local import to avoid cycle at module top
+    except Exception:  # noqa: BLE001
+        return ""
+    try:
+        aliases = _load_giants_player_aliases()
+    except Exception:  # noqa: BLE001
+        return ""
+    best_pos = -1
+    best_canonical = ""
+    for alias, canonical in aliases.items():
+        if not alias or len(alias) < 2:
+            continue
+        pos = text.find(alias)
+        if pos < 0:
+            continue
+        if best_pos < 0 or pos < best_pos:
+            best_pos = pos
+            best_canonical = canonical or alias
+    return best_canonical
+
+
+def build_x_post_from_article_info(
+    article_info,
+    *,
+    gemini_api_key: str,
+    db_path: str = "",
+    timeout_seconds: int = 30,
+    model_id: str = _GEMMA_BRANDING_MODEL,
+    temperature: float = 0.4,
+    persona: Optional[str] = None,
+    logger: Optional[_logging.Logger] = None,
+) -> Optional[Candidate]:
+    """417: queue 経由 article_info (Hochi/Sanspo source) から X-post 候補 1 件を生成.
+
+    既存 `build_gemma_branding_candidate` と同じ prompt / persona / safety_check /
+    unverified_numbers gate を全部流用。 違いは「Tavily 検索結果 → article_info の
+    title + summary literal」 に source 入れ替えるのみ。
+
+    silent skip 条件 (None 返却):
+    - article_info が不正 / title 空
+    - title から Giants roster player を 1 件も抽出できない (player_canonical も空)
+    - gemini_api_key 不在
+    - Gemma 失敗 (network / rate limit / 空生成)
+    - safety_check / unverified_numbers gate hit
+    """
+    log = logger or _logging.getLogger("x_post_branding_gen")
+    if article_info is None or not getattr(article_info, "title", ""):
+        log.info("article_info_branding_skip reason=invalid_input")
+        return None
+    if not gemini_api_key:
+        log.info("article_info_branding_skip reason=missing_gemini_api_key")
+        return None
+
+    title = (article_info.title or "").strip()
+    summary = (article_info.summary or "").strip()
+    source_url = (article_info.source_url or "").strip()
+    source_name = (article_info.source_name or "").strip()
+    article_subtype = (article_info.article_subtype or "").strip()
+
+    # 1. player 抽出 (roster 内 player を title から、 ダメなら summary から、
+    # それでもダメなら article_info.player_canonical の先頭、 全部空なら skip)
+    player = _find_first_giants_player_in_text(title) or _find_first_giants_player_in_text(summary)
+    if not player:
+        canonical_list = getattr(article_info, "player_canonical", None) or []
+        if canonical_list:
+            player = str(canonical_list[0] or "").strip()
+    if not player or not _is_verified_full_giants_player_name(player):
+        log.info(
+            "article_info_branding_skip reason=no_giants_player_in_article source_url=%s title=%r",
+            source_url,
+            title[:60],
+        )
+        return None
+
+    # 2. persona 自動選択 (既存 logic 流用、 試合日 18-21時 = 缶詰)
+    from datetime import datetime, timezone, timedelta
+
+    jst = timezone(timedelta(hours=9))
+    now_jst = datetime.now(jst)
+    if persona is None:
+        is_game_day = is_giants_game_day(now_jst, db_path) if db_path else False
+        resolved_persona = select_branding_persona(now_jst, is_game_day)
+    else:
+        resolved_persona = persona
+
+    # 3. post_type 自動選択 (article_subtype が postgame なら data 寄り、 lineup なら
+    # 速報寄り、 等の hint を has_tavily_results=True 相当で発火)
+    is_game_day_val = is_giants_game_day(now_jst, db_path) if db_path else False
+    has_article_context = bool(title) and bool(summary)
+    resolved_post_type = select_post_type(
+        now_jst,
+        is_game_day_val,
+        has_db_fact=False,  # DB fact line は別経路、 ここでは article literal 主体
+        has_tavily_results=has_article_context,
+    )
+    post_type_guidance = _POST_TYPE_GUIDANCE.get(resolved_post_type, "")
+
+    # 4. system prompt 構築 (既存 _build_system_prompt 完全流用、 1 文字も変えない)
+    system_prompt = _build_system_prompt(
+        now_jst_hour=now_jst.hour,
+        today_jst=now_jst.strftime("%Y-%m-%d"),
+        persona=resolved_persona,
+    )
+
+    # 5. context (Tavily snippet 相当) = article info の literal title + summary のみ。
+    # § 8 verified_text hygiene: AI commentary / 生成本文は context に含めない。
+    # rss_fetcher が source から直接 extract した raw 部分だけを Gemma に渡す。
+    context_lines = [
+        f"[出典: {source_name or '報知 / サンスポ'}] [subtype: {article_subtype or '不明'}]",
+        f"title (literal): {title}",
+    ]
+    if summary:
+        context_lines.append(f"summary (literal): {summary}")
+    context = "\n".join(context_lines)
+
+    prompt_parts = [system_prompt]
+    if post_type_guidance:
+        prompt_parts.extend(["", post_type_guidance])
+    prompt_parts.extend([
+        "",
+        f"対象選手: {player}",
+        "",
+        "DB 照合済み数字 (使ってよい数字): なし (今回は article literal のみが factual ground)",
+        "",
+        "報知 / サンスポ 記事 (literal、 ここから不検証数字 / 引用 / 媒体名 / URL は使わない、 voice 例の literal コピーも禁止):",
+        context,
+        "",
+        "上記情報を踏まえて、 独自の視点で X 投稿案を 1 件、 本文のみ書いてください。",
+    ])
+    prompt = "\n".join(prompt_parts)
+
+    # 6. Gemma 4 generate (既存 path 流用)
+    try:
+        from google import genai
+
+        client = genai.Client(api_key=gemini_api_key)
+        response = client.models.generate_content(
+            model=model_id,
+            contents=prompt,
+            config={"temperature": temperature},
+        )
+        text = (getattr(response, "text", None) or "").strip()
+    except Exception as exc:  # noqa: BLE001 — silent skip per fault-tolerance contract
+        log.warning(
+            "article_info_branding_skip reason=gemini_error player=%s err=%r",
+            player,
+            exc,
+        )
+        return None
+
+    text = _finalize_post_text(text)
+
+    # 7. spec 382 hard rule + 414 axis D 炎上防止 validator (既存 1:1 流用)
+    if not _gemma_branding_safety_check(text):
+        matched_pattern: Optional[str] = None
+        matched_axis: str = "C"
+        for pattern in _GEMMA_BRANDING_FORBIDDEN_PATTERNS:
+            match = pattern.search(text)
+            if match:
+                matched_pattern = pattern.pattern
+                matched_axis = "C"
+                break
+        if matched_pattern is None:
+            inflammatory_match = _matched_inflammatory_pattern(text)
+            if inflammatory_match:
+                matched_pattern = inflammatory_match
+                matched_axis = "D"
+        log.warning(
+            _json.dumps(
+                {
+                    "event": "article_info_branding_drop",
+                    "reason": "safety_check_failed",
+                    "axis": matched_axis,
+                    "player": player,
+                    "persona": resolved_persona,
+                    "post_type": resolved_post_type,
+                    "matched_pattern": matched_pattern,
+                    "source_url": source_url,
+                    "text_preview": text[:80],
+                    "text_len": len(text),
+                },
+                ensure_ascii=False,
+            )
+        )
+        return None
+
+    # 8. § 8 verified_text hygiene + 414 axis 2: 数値 whitelist。
+    # verified_text = article_info の title + summary literal **のみ**。
+    # AI commentary / Gemma 出力は verified_text に **含めない** (二重 hallucination 防止)。
+    verified_text = " ".join(filter(None, [title, summary]))
+    unverified = _extract_unverified_numbers(text, verified_text)
+    if unverified:
+        log.warning(
+            _json.dumps(
+                {
+                    "event": "article_info_branding_drop",
+                    "reason": "unverified_numbers",
+                    "player": player,
+                    "persona": resolved_persona,
+                    "post_type": resolved_post_type,
+                    "unverified_numbers": unverified[:10],
+                    "source_url": source_url,
+                    "text_preview": text[:80],
+                },
+                ensure_ascii=False,
+            )
+        )
+        return None
+
+    # 9. Candidate dataclass 構築
+    signature_hash = _hashlib.sha1(
+        f"article_info_branding|{player}|{source_url}|{text[:80]}".encode("utf-8")
+    ).hexdigest()[:16]
+    draft_lines = [
+        "【根拠: Gemma 4 + 報知/サンスポ literal extract (queue 417)】",
+        f"対象選手: {player}",
+        f"出典: {source_name or '報知 / サンスポ'}",
+        f"source URL: {source_url}",
+        f"subtype: {article_subtype or '不明'}",
+        f"model: {model_id}",
+        "",
+        "【記事 literal 抜粋】",
+        context,
+    ]
+    log.info(
+        "article_info_branding_candidate_built player=%s source_url=%s text_len=%d",
+        player,
+        source_url,
+        len(text),
+    )
+    return Candidate(
+        title=f"Gemma 4 branding｜{player} (報知/サンスポ)",
+        metric=_GEMMA_BRANDING_METRIC,
+        period_label="LLM 生成 (queue 417)",
+        draft_text="\n".join(draft_lines),
+        post_text=text,
+        char_count=len(text),
+        signature=f"article_info_branding|{signature_hash}|False|None",
+        focus_player=player,
+        source_material_type="article_info_branding",
     )

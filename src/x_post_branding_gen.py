@@ -39,6 +39,36 @@ from src.x_post_mail_lane import (
 _GEMMA_BRANDING_METRIC = "GEMMA_BRANDING"
 _GEMMA_BRANDING_MODEL = "gemma-4-31b-it"
 
+# 417 follow-up (2026-05-21): 試合中 (18:00-21:30 JST) は Gemini 3.5 Flash、
+# それ以外 (= 朝 / 昼 / 試合後) は Gemma 4 を使う model 切替 logic。 両方 free
+# tier 内 (1500 RPD 標準値、 我々運用は 70 call/日 max << 4.7%)、 月コスト ¥0。
+# 既存 prompt (_SYSTEM_PROMPT_FUUGA / _SYSTEM_PROMPT_KANDUME) は 1 文字も変えない
+# (ticket § 0 不可触条件)、 model id だけ切替。
+_GEMINI_FLASH_BRANDING_MODEL = "gemini-3.5-flash"
+
+
+def select_branding_model_by_time(now_jst) -> str:
+    """試合中 (18:00-21:30 JST) なら Gemini 3.5 Flash、 それ以外 Gemma 4.
+
+    判定:
+    - 18 <= hour < 21: Gemini 3.5 Flash
+    - hour == 21 and minute < 30: Gemini 3.5 Flash
+    - それ以外: Gemma 4 (現状維持)
+
+    両方 Gemini API 経由 free tier 内、 paid 切替不要。
+    """
+    if now_jst is None:
+        return _GEMMA_BRANDING_MODEL
+    hour = getattr(now_jst, "hour", None)
+    minute = getattr(now_jst, "minute", 0)
+    if hour is None:
+        return _GEMMA_BRANDING_MODEL
+    if 18 <= hour < 21:
+        return _GEMINI_FLASH_BRANDING_MODEL
+    if hour == 21 and minute < 30:
+        return _GEMINI_FLASH_BRANDING_MODEL
+    return _GEMMA_BRANDING_MODEL
+
 
 # spec 382 hard rule の追加 gate (既存 ``_FORBIDDEN_POST_TERMS`` の上に積む)
 _GEMMA_BRANDING_FORBIDDEN_PATTERNS = (
@@ -1496,7 +1526,7 @@ def build_x_post_from_article_info(
     gemini_api_key: str,
     db_path: str = "",
     timeout_seconds: int = 30,
-    model_id: str = _GEMMA_BRANDING_MODEL,
+    model_id: Optional[str] = None,
     temperature: float = 0.4,
     persona: Optional[str] = None,
     logger: Optional[_logging.Logger] = None,
@@ -1507,11 +1537,15 @@ def build_x_post_from_article_info(
     unverified_numbers gate を全部流用。 違いは「Tavily 検索結果 → article_info の
     title + summary literal」 に source 入れ替えるのみ。
 
+    model_id 未指定時は時間帯で自動切替: 試合中 (18:00-21:30 JST) は Gemini
+    3.5 Flash、 それ以外 (朝 / 昼 / 試合後) は Gemma 4。 caller が明示指定すれば
+    auto-select を override。
+
     silent skip 条件 (None 返却):
     - article_info が不正 / title 空
     - title から Giants roster player を 1 件も抽出できない (player_canonical も空)
     - gemini_api_key 不在
-    - Gemma 失敗 (network / rate limit / 空生成)
+    - Gemma / Gemini 失敗 (network / rate limit / 空生成)
     - safety_check / unverified_numbers gate hit
     """
     log = logger or _logging.getLogger("x_post_branding_gen")
@@ -1553,6 +1587,9 @@ def build_x_post_from_article_info(
         resolved_persona = select_branding_persona(now_jst, is_game_day)
     else:
         resolved_persona = persona
+
+    # 2.5: model 自動切替 (試合中 18:00-21:30 JST = Gemini 3.5 Flash、 それ以外 = Gemma 4)
+    resolved_model_id = model_id if model_id else select_branding_model_by_time(now_jst)
 
     # 3. post_type 自動選択 (article_subtype が postgame なら data 寄り、 lineup なら
     # 速報寄り、 等の hint を has_tavily_results=True 相当で発火)
@@ -1600,13 +1637,13 @@ def build_x_post_from_article_info(
     ])
     prompt = "\n".join(prompt_parts)
 
-    # 6. Gemma 4 generate (既存 path 流用)
+    # 6. Gemma 4 / Gemini 3.5 Flash generate (model は resolved_model_id で時間帯切替)
     try:
         from google import genai
 
         client = genai.Client(api_key=gemini_api_key)
         response = client.models.generate_content(
-            model=model_id,
+            model=resolved_model_id,
             contents=prompt,
             config={"temperature": temperature},
         )
@@ -1683,24 +1720,25 @@ def build_x_post_from_article_info(
         f"article_info_branding|{player}|{source_url}|{text[:80]}".encode("utf-8")
     ).hexdigest()[:16]
     draft_lines = [
-        "【根拠: Gemma 4 + 報知/サンスポ literal extract (queue 417)】",
+        f"【根拠: {resolved_model_id} + 報知/サンスポ literal extract (queue 417)】",
         f"対象選手: {player}",
         f"出典: {source_name or '報知 / サンスポ'}",
         f"source URL: {source_url}",
         f"subtype: {article_subtype or '不明'}",
-        f"model: {model_id}",
+        f"model: {resolved_model_id}",
         "",
         "【記事 literal 抜粋】",
         context,
     ]
     log.info(
-        "article_info_branding_candidate_built player=%s source_url=%s text_len=%d",
+        "article_info_branding_candidate_built player=%s source_url=%s text_len=%d model=%s",
         player,
         source_url,
         len(text),
+        resolved_model_id,
     )
     return Candidate(
-        title=f"Gemma 4 branding｜{player} (報知/サンスポ)",
+        title=f"X-post branding｜{player} ({resolved_model_id})",
         metric=_GEMMA_BRANDING_METRIC,
         period_label="LLM 生成 (queue 417)",
         draft_text="\n".join(draft_lines),

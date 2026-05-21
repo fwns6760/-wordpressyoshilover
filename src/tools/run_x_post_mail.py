@@ -1045,7 +1045,11 @@ def _main_on_queue(args: argparse.Namespace, recipients: list[str]) -> int:
         LOG.error("on-queue mode: GEMINI_API_KEY env missing")
         return 5
 
-    queue_items = _xpcq.drain(max_count=args.max_candidates * 3)
+    # 417 follow-up (RPM safety): drain max を args.max_candidates に絞る (= 10)。
+    # 旧 max_count = max_candidates * 3 (= 30) だと filter で skip された item も
+    # Gemma call は走るため、 1 fire で 30 call → 15 RPM 上限超過 risk。 cap=10 で
+    # 1 fire 最大 10 call、 ~30 sec、 < 15 RPM 安全圏。
+    queue_items = _xpcq.drain(max_count=args.max_candidates)
     if not queue_items:
         LOG.info("on-queue mode: queue is empty — silent skip (no mail sent)")
         return 0

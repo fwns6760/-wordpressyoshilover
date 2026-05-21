@@ -4687,6 +4687,64 @@ _TITLE_QUALITY_MIN_CHARS = 8
 
 # 「{役職名}「{引用}」」だけで対象人物 (= 主語) が抜けている title pattern。
 # 例: 「内海コーチ「状態非常に良い」」 — 誰が「状態非常に良い」か不明。
+# ticket 420: 球団情報 / ticket 系 article で raw_html 内に <table>
+# (チケット販売スケジュール表 等) があれば本文先頭に wp:table block で
+# prepend する narrow path。 header に下記 keyword 2 個以上含む table のみ
+# 抽出 (navigation / footer table 等の noise を弾く)。
+_TICKET_TABLE_HEADER_KEYWORDS: tuple[str, ...] = (
+    "日付", "日程", "対戦", "対戦カード", "球場", "席種", "座席",
+    "価格", "料金", "発売", "販売", "時間", "開始", "カード",
+)
+_TICKET_TABLE_RE = _re.compile(
+    r"<table\b[^>]*>(.*?)</table>", _re.DOTALL | _re.IGNORECASE
+)
+_TICKET_TABLE_HEAD_ROW_RE = _re.compile(
+    r"<tr\b[^>]*>(.*?)</tr>", _re.DOTALL | _re.IGNORECASE
+)
+_TICKET_TABLE_TAG_STRIP_RE = _re.compile(r"<[^>]+>")
+
+
+def _extract_ticket_table_block(raw_html: str) -> str:
+    """Return the first <table> whose first row contains 2+ ticket-related
+    header keywords, wrapped in a Gutenberg wp:table block. Empty string
+    when no qualifying table found.
+
+    Narrow gate: navigation / sidebar tables typically lack these
+    keywords, so they are skipped. Schedule / price tables on giants.jp /
+    hochi etc. typically pass.
+    """
+    if not raw_html or not isinstance(raw_html, str):
+        return ""
+    for m in _TICKET_TABLE_RE.finditer(raw_html):
+        inner = m.group(1)
+        head = _TICKET_TABLE_HEAD_ROW_RE.search(inner)
+        if not head:
+            continue
+        header_text = _TICKET_TABLE_TAG_STRIP_RE.sub(" ", head.group(1))
+        keyword_hits = sum(
+            1 for k in _TICKET_TABLE_HEADER_KEYWORDS if k in header_text
+        )
+        if keyword_hits >= 2:
+            table_html = m.group(0)
+            return (
+                "<!-- wp:table -->"
+                f'<figure class="wp-block-table">{table_html}</figure>'
+                "<!-- /wp:table -->"
+            )
+    return ""
+
+
+def _is_ticket_related_for_auto_table(title: str, category: str) -> bool:
+    """Return True when the article should be probed for an auto ticket
+    table (RSS-auto path). Narrow gate: 球団情報 category AND「チケット」
+    keyword in the title. Other promotional content (グッズ / イベント)
+    is intentionally excluded.
+    """
+    if (category or "").strip() != "球団情報":
+        return False
+    return "チケット" in (title or "")
+
+
 _TITLE_QUOTE_ONLY_NO_SUBJECT_RE = _re.compile(
     r"^[一-龥ぁ-ゔァ-ヴー・]{2,12}(?:監督|コーチ|投手|選手)\s*[「『][^」』]{4,50}[」』]\s*$"
 )
@@ -28096,6 +28154,30 @@ def _main(args, logger):
             # 使われず、excerpt insertion 用 _article_raw_html は空のまま
             # (no_raw_html silent skip の root cause だった)。
             _article_raw_html = _article_raw_html_else
+            # ticket 420: 球団情報 + 「チケット」 title の auto-fetch article で
+            # raw_html に販売スケジュール / 価格表 table があれば、 本文先頭に
+            # wp:table block で prepend (banner の直後)。 raw_html 未取得時は
+            # 1 度だけ fetch、 該当 table が無ければ no-op (regression 0)。
+            if _is_ticket_related_for_auto_table(title, category):
+                _ticket_raw_html = _article_raw_html_else
+                if not _ticket_raw_html:
+                    try:
+                        _ticket_raw_html = _fetch_url_html(
+                            post_url, max_bytes=240000, timeout=12
+                        )
+                    except Exception:
+                        _ticket_raw_html = ""
+                _ticket_table_block = _extract_ticket_table_block(_ticket_raw_html)
+                if _ticket_table_block and _passthrough_banner and (
+                    content.startswith(_passthrough_banner)
+                ):
+                    content = (
+                        _passthrough_banner
+                        + _ticket_table_block
+                        + content[len(_passthrough_banner):]
+                    )
+                elif _ticket_table_block:
+                    content = _ticket_table_block + (content or "")
             _article_images = _extract_source_article_image_urls(
                 source_type,
                 entry_obj_else,

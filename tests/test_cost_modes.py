@@ -382,6 +382,71 @@ class CostModeTests(unittest.TestCase):
         )
         self.assertEqual(reason, "")
 
+    def test_420_extract_ticket_table_happy_path(self):
+        # ticket 420: <table> with 2+ ticket header keywords → wp:table block
+        html = """<html><body>
+        <p>シーズンチケット情報</p>
+        <table>
+          <tr><th>日付</th><th>対戦カード</th><th>球場</th><th>価格</th></tr>
+          <tr><td>5/22</td><td>巨人vsDeNA</td><td>東京ドーム</td><td>¥5,800</td></tr>
+          <tr><td>5/23</td><td>巨人vsDeNA</td><td>東京ドーム</td><td>¥3,200</td></tr>
+        </table>
+        </body></html>"""
+        out = rss_fetcher._extract_ticket_table_block(html)
+        self.assertIn("<!-- wp:table -->", out)
+        self.assertIn("<!-- /wp:table -->", out)
+        self.assertIn('<figure class="wp-block-table">', out)
+        self.assertIn("5/22", out)
+        self.assertIn("¥5,800", out)
+
+    def test_420_extract_ticket_table_returns_empty_on_no_table(self):
+        # ticket 420: raw_html に <table> 自体無し → 空文字
+        out = rss_fetcher._extract_ticket_table_block(
+            "<html><body><p>no tables here</p></body></html>"
+        )
+        self.assertEqual(out, "")
+
+    def test_420_extract_ticket_table_skips_non_ticket_table(self):
+        # ticket 420: header に keyword が 1 つしか無い table は弾く (navigation
+        # / sidebar の generic table を回避)
+        html = """<table>
+          <tr><th>ホーム</th><th>ニュース</th><th>選手</th></tr>
+          <tr><td>a</td><td>b</td><td>c</td></tr>
+        </table>"""
+        out = rss_fetcher._extract_ticket_table_block(html)
+        self.assertEqual(out, "")
+
+    def test_420_extract_ticket_table_empty_html_safe(self):
+        self.assertEqual(rss_fetcher._extract_ticket_table_block(""), "")
+        self.assertEqual(rss_fetcher._extract_ticket_table_block(None), "")  # type: ignore[arg-type]
+
+    def test_420_ticket_gate_fires_for_team_news_with_ticket_keyword(self):
+        # ticket 420: 球団情報 + 「チケット」 title → gate 通過
+        self.assertTrue(
+            rss_fetcher._is_ticket_related_for_auto_table(
+                "巨人 シーズンチケット情報", "球団情報"
+            )
+        )
+
+    def test_420_ticket_gate_blocks_other_category(self):
+        # 試合速報 / 選手情報 / コラム category の「チケット」 title は gate
+        # 通さない (RSS auto table inject 限定対象 narrow)
+        for cat in ("試合速報", "選手情報", "コラム", "首脳陣", ""):
+            self.assertFalse(
+                rss_fetcher._is_ticket_related_for_auto_table(
+                    "巨人 シーズンチケット情報", cat
+                ),
+                f"unexpected gate pass for category={cat!r}",
+            )
+
+    def test_420_ticket_gate_blocks_no_ticket_keyword(self):
+        # 球団情報 だが「チケット」 keyword 無し → gate 通さない
+        self.assertFalse(
+            rss_fetcher._is_ticket_related_for_auto_table(
+                "巨人公式 ユニフォーム発表", "球団情報"
+            )
+        )
+
     def test_419_ticket_with_sale_marker_still_skipped(self):
         # 「チケット」 だけ exemption、 他 promotional markers (販売 / 抽選 /
         # ファンクラブ / 申し込み 等) は引き続き skip 維持 (regression 0)。

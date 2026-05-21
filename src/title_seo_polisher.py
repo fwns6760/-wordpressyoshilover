@@ -104,6 +104,16 @@ def _strip_leading_particle(title: str) -> str:
 def _cap_length(title: str, max_length: int) -> str:
     if max_length <= 0 or len(title) <= max_length:
         return title
+    # WARN on every actual trim. The 200-char default is a DB-safety net,
+    # not a display cap — if it ever fires we want to know so the source
+    # subtype can be inspected and either widened or split, never silently
+    # cut mid-subject like the multi-player birthday digest (post 69971).
+    logger.warning(
+        "polisher_truncated title_len=%d cap=%d head=%r",
+        len(title),
+        max_length,
+        title[:40],
+    )
     return title[: max_length - 1].rstrip() + "…"
 
 
@@ -156,6 +166,12 @@ def recover_from_trailing_ellipsis(title: str, summary: str) -> str:
     if not sentence:
         return title
     if len(sentence) > DEFAULT_MAX_TITLE_LENGTH:
+        logger.warning(
+            "polisher_recover_truncated sentence_len=%d cap=%d head=%r",
+            len(sentence),
+            DEFAULT_MAX_TITLE_LENGTH,
+            sentence[:40],
+        )
         sentence = sentence[: DEFAULT_MAX_TITLE_LENGTH - 1].rstrip() + "…"
     return sentence
 

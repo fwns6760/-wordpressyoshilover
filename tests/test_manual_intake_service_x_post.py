@@ -109,7 +109,8 @@ class XPostDraftEndpointTests(unittest.TestCase):
         self.assertTrue(payload.get("ok"), msg=payload)
         self.assertIn("draft_text", payload)
         self.assertIn("OPS", payload["draft_text"])
-        self.assertIn("← 巨人", payload["draft_text"])
+        # 418 case B: Giants marker は `🟧巨人🟧` (旧 `← 巨人` から更新)
+        self.assertIn("🟧巨人🟧", payload["draft_text"])
         self.assertGreater(payload.get("char_count", 0), 0)
 
     def test_metric_not_detected_returns_200_with_diagnostic(self) -> None:

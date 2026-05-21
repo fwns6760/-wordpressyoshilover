@@ -148,26 +148,56 @@ def _truncate_to_x_limit(text: str) -> str:
     return text[: X_CHAR_LIMIT - 1] + "…"
 
 
-def _build_header(parsed: dict, focus_player: Optional[dict]) -> str:
-    """Compose the first line: metric + position + league."""
-    metric_jp = _metric_label(parsed.get("metric") or "")
+# 投手 metric (header emoji = ⚡)、 それ以外は打者扱い (⚾)。
+# 353 STEP1 (2026-05-17) で導入された pitcher/batter 区分を 418 case B でも維持。
+_PITCHER_METRICS = frozenset({
+    "ERA", "WHIP", "FIP", "xFIP", "K_per_9", "BB_per_9", "HR_per_9", "K_BB"
+})
+
+
+def _build_header(parsed: dict, focus_player: Optional[dict], *, top_n: Optional[int] = None) -> str:
+    """Compose header. 418 case B: 📊 リーグ metric TOPN ⚾/⚡ + 期間 / サンプル を 2 段で."""
+    metric = parsed.get("metric") or ""
+    metric_jp = _metric_label(metric)
     pos_jp = _position_label(parsed.get("position"))
     league = parsed.get("league") or ""
+    # 投手 metric は ⚡ 、 打者/その他は ⚾ (353 STEP1 継承)
+    metric_emoji = "⚡" if metric in _PITCHER_METRICS else "⚾"
     if focus_player:
-        # Single-player focus: header centers on the player.
+        # Single-player focus: header centers on the player (既存挙動維持)
         team = focus_player.get("team_code") or ""
-        return f"{focus_player.get('player_canonical', '')}（{team}）⚾"
-    parts = []
+        return f"{focus_player.get('player_canonical', '')}（{team}）{metric_emoji}"
+    # 418 case B: 「📊 セ・リーグ 打率 TOP10 ⚾」 1 段目、 期間 / サンプル 2 段目
+    line1_parts = ["📊"]
     if league:
-        parts.append(f"{league}・")
+        line1_parts.append(f" {league}")
     if pos_jp:
-        parts.append(f"{pos_jp} ")
-    parts.append(f"{metric_jp} ランキング 📊")
-    return "".join(parts)
+        line1_parts.append(f" {pos_jp}")
+    line1_parts.append(f" {metric_jp}")
+    if top_n:
+        line1_parts.append(f" TOP{top_n}")
+    line1_parts.append(f" {metric_emoji}")
+    line1 = "".join(line1_parts)
+    # 2 段目: 期間 / サンプル context (parsed が持ってれば)
+    period_label = parsed.get("period_label") or ""
+    sample_label = parsed.get("sample_label") or ""
+    if period_label or sample_label:
+        line2_parts = []
+        if period_label:
+            line2_parts.append(period_label)
+        if sample_label:
+            line2_parts.append(sample_label)
+        return f"{line1}\n{' / '.join(line2_parts)}"
+    return line1
 
 
 def _build_ranking_body(rows: list[dict], top_n: int, metric: str) -> str:
-    """Render top-N rows. Giants players get a ← マーク suffix."""
+    """418 case B: 「1位/2位/.../N位」 表記 + 巨人 player は 🟧巨人🟧 で強調.
+
+    各行 1 改行で並べる、 280 字 cap は caller (_truncate_to_x_limit) が末尾切る。
+    Giants player は 「player（team）value 🟧巨人🟧」 で末尾強調 (末尾 ← 巨人 から
+    囲み marker へ視覚強化)。
+    """
     if not rows:
         return "（該当データなし）"
     out_lines = []
@@ -176,8 +206,8 @@ def _build_ranking_body(rows: list[dict], top_n: int, metric: str) -> str:
         name = r.get("player_canonical") or ""
         team = r.get("team_code") or ""
         value = _format_value(metric, r.get("metric_value"))
-        marker = " ← 巨人" if _is_giants(team) else ""
-        out_lines.append(f"{rank}. {name}（{team}）{value}{marker}")
+        marker = " 🟧巨人🟧" if _is_giants(team) else ""
+        out_lines.append(f"{rank}位 {name}（{team}）{value}{marker}")
     return "\n".join(out_lines)
 
 
@@ -258,7 +288,8 @@ def format_as_x_post(
     except (TypeError, ValueError):
         top_n_int = 10
 
-    header = _build_header(parsed, focus)
+    # 418 case B: ranking 時は header に TOPN を入れる (focus 時は player 中心のため不要)
+    header = _build_header(parsed, focus, top_n=None if focus else top_n_int)
 
     if focus:
         body = _build_focus_body(focus, metric)

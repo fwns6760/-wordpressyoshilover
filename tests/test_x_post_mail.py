@@ -197,9 +197,10 @@ class PickCandidatesTests(unittest.TestCase):
         })
         cands = pick_candidates(query_mock, now=datetime(2026, 5, 16, 7, 0, tzinfo=JST), max_candidates=1, min_sample=1)
         self.assertEqual(len(cands), 1)
-        # STEP1: marker 形式 — ` ← 巨人` → `  ⭐巨人` (arrow drop, 半角2sp)
-        self.assertIn("⭐巨人", cands[0].draft_text)
+        # 418 case B: marker 形式 ` 🟧巨人🟧` (STEP1 の `⭐巨人` から更新)
+        self.assertIn("🟧巨人🟧", cands[0].draft_text)
         self.assertNotIn("←", cands[0].draft_text)
+        self.assertNotIn("⭐巨人", cands[0].draft_text)
 
     def test_too_few_central_rows_skipped(self) -> None:
         # Only 1 セ row → skip. The mail no longer falls back to 巨人内
@@ -687,10 +688,11 @@ class VariationExpansionTests(unittest.TestCase):
         # Non-巨人 rows remain because the ranking scope is セ・リーグ.
         self.assertIn("佐藤輝明", text)
         self.assertIn("牧秀悟", text)
-        # 巨人 players appear with strong marker.
+        # 巨人 players appear with strong marker (418 case B: ⭐巨人 → 🟧巨人🟧)
         self.assertIn("岡本和真", text)
-        self.assertIn("⭐巨人", text)
+        self.assertIn("🟧巨人🟧", text)
         self.assertNotIn("←⭐巨人", text)
+        self.assertNotIn("⭐巨人", text)
 
     def test_format_one_adds_branded_post_text_and_emoji_title(self) -> None:
         """X intent 用の本文はランキング表ではなく、ブランド投稿案にする。"""
@@ -744,7 +746,8 @@ class VariationExpansionTests(unittest.TestCase):
         self.assertIsNotNone(cand)
         assert cand is not None
         self.assertIn("巨人最上位: 岡本和真 セ・リーグ 11/11位", cand.draft_text)
-        self.assertIn("11. 岡本和真（巨人）OPS .900  ⭐巨人", cand.draft_text)
+        # 418 case B: 「11位 岡本和真（巨人）.900 🟧巨人🟧」 形式
+        self.assertIn("11位 岡本和真（巨人）.900 🟧巨人🟧", cand.draft_text)
         self.assertLessEqual(cand.char_count, X_CHAR_LIMIT)
 
     def test_combo_pool_size_after_step1_expansion(self) -> None:
@@ -1082,10 +1085,14 @@ class EmptyResultBehaviourTests(unittest.TestCase):
 
 
 class TicketThreeFiftyThreeFormatTests(unittest.TestCase):
-    """353/STEP1: 大手なし pool + 意外性 sampling + format 見た目改善
-    (改行 / metric 別絵文字 / 数字 prefix / ⭐巨人 / metric label) の検証。
+    """353/STEP1 + 418 case B: 大手なし pool + 意外性 sampling + format 見た目改善
+    (改行 / metric 別絵文字 / 数字 prefix / 🟧巨人🟧 highlight) の検証。
+
     STEP1 (2026-05-17): medal 🥇🥈🥉 + top3 空行を廃止、 全行数字 prefix
     に統一。 ←⭐巨人 → ⭐巨人 へ。
+    418 case B (2026-05-21): header に 📊 + TOP{N} 追加、 ranking prefix を
+    「1.」→「1位」、 Giants marker を「⭐巨人」→「🟧巨人🟧」 で強調、 metric
+    label は ranking 行末から削除 (header の metric 表示で代替)。
     """
 
     def _make_mock(self) -> MagicMock:
@@ -1098,7 +1105,7 @@ class TicketThreeFiftyThreeFormatTests(unittest.TestCase):
         })
 
     def test_period_line_separated_to_second_row(self) -> None:
-        """period_suffix が lines[0] append から lines[1] 分離になっている。"""
+        """418 case B: header line 1 = 「📊 ... TOP{N} ⚾/⚡」、 line 2 = 期間 / サンプル。"""
         cands = pick_candidates(
             self._make_mock(),
             now=datetime(2026, 5, 16, 7, 0, tzinfo=JST),
@@ -1110,11 +1117,13 @@ class TicketThreeFiftyThreeFormatTests(unittest.TestCase):
         self.assertGreaterEqual(len(cands), 1)
         for c in cands:
             lines = c.draft_text.split("\n")
-            # lines[0] = header (ランキング + 絵文字)、 lines[1] = period 括弧
-            self.assertIn("ランキング", lines[0])
-            self.assertTrue(
-                lines[1].startswith("（") and lines[1].endswith("）"),
-                msg=f"period not on line 1: {lines[1]!r}",
+            # 418 case B: lines[0] = 「📊 ... TOPN ⚾/⚡」、 lines[1] = 期間 / サンプル
+            self.assertIn("📊", lines[0])
+            self.assertIn("TOP", lines[0])
+            # 2 行目に期間 context が separate されている (空でない、 ranking 行でない)
+            self.assertFalse(
+                lines[1].startswith("1位") or lines[1].startswith("1."),
+                msg=f"period line missing, ranking starts at line 1: {lines[1]!r}",
             )
 
     def test_metric_header_emoji_batting_pitching(self) -> None:
@@ -1133,7 +1142,9 @@ class TicketThreeFiftyThreeFormatTests(unittest.TestCase):
         for c in batter_cands:
             header = c.draft_text.split("\n", 1)[0]
             self.assertIn("⚾", header, msg=f"batter header missing ⚾: {header}")
-            self.assertNotIn("📊", header, msg=f"old emoji leaked: {header}")
+            # 418 case B: 📊 が header に来る (旧 STEP1 では 📊 leak 禁止だったが、
+            # 418 で 📊 + TOPN 形式に統一、 batter/pitcher emoji は維持)
+            self.assertIn("📊", header, msg=f"new 418 case B header missing 📊: {header}")
         # Pitcher combo (short-window ERA)
         pitcher_rows = [
             {"rank": i, "total": 30, "player_canonical": f"投手{i}",
@@ -1157,7 +1168,7 @@ class TicketThreeFiftyThreeFormatTests(unittest.TestCase):
             self.assertIn("⚡", header, msg=f"pitcher header missing ⚡: {header}")
 
     def test_all_ranks_use_numeric_prefix(self) -> None:
-        """STEP1 (2026-05-17): 全行 数字 prefix (`1.` `2.` ...)、 medal 廃止。"""
+        """STEP1 (2026-05-17) + 418 case B: 全行 数字 prefix (`1位` `2位` ...)、 medal 廃止。"""
         cands = pick_candidates(
             self._make_mock(),
             now=datetime(2026, 5, 16, 7, 0, tzinfo=JST),
@@ -1168,18 +1179,20 @@ class TicketThreeFiftyThreeFormatTests(unittest.TestCase):
         )
         self.assertGreaterEqual(len(cands), 1)
         text = cands[0].draft_text
-        # 数字 prefix が rank 1-3 でも使われる。
-        self.assertIn("1.", text)
-        self.assertIn("2.", text)
-        self.assertIn("3.", text)
+        # 418 case B: 「1位」「2位」「3位」 で揃う (旧 STEP1 の 「1.」 形式から変更)
+        self.assertIn("1位", text)
+        self.assertIn("2位", text)
+        self.assertIn("3位", text)
         # Medal 🥇🥈🥉 は使われない。
         self.assertNotIn("🥇", text)
         self.assertNotIn("🥈", text)
         self.assertNotIn("🥉", text)
 
     def test_giants_marker_strong_form(self) -> None:
-        """STEP1 (2026-05-17): 巨人行 marker は `  ⭐巨人` (半角2 spc + ⭐巨人、
-        arrow 削除)。"""
+        """418 case B (2026-05-21): 巨人行 marker は ` 🟧巨人🟧` で囲み強調。
+
+        STEP1 (2026-05-17) の `⭐巨人` から 418 case B で `🟧巨人🟧` に統一。
+        """
         cands = pick_candidates(
             self._make_mock(),
             now=datetime(2026, 5, 16, 7, 0, tzinfo=JST),
@@ -1187,21 +1200,23 @@ class TicketThreeFiftyThreeFormatTests(unittest.TestCase):
             min_sample=1,
             min_central_rows=3,
         )
-        # find a candidate that should highlight a Giants row
         with_giants = [
             c for c in cands
-            if "巨人" in c.draft_text and "⭐巨人" in c.draft_text
+            if "巨人" in c.draft_text and "🟧巨人🟧" in c.draft_text
         ]
         self.assertGreaterEqual(len(with_giants), 1)
         for c in with_giants:
-            self.assertIn("⭐巨人", c.draft_text)
-            # 旧 form (arrow 付き、 半角1 spc) は出ない
+            self.assertIn("🟧巨人🟧", c.draft_text)
+            # 旧 form (arrow 付き / 半角1 spc / ⭐) は出ない
             self.assertNotIn("←⭐巨人", c.draft_text)
             self.assertNotIn("← 巨人", c.draft_text)
             self.assertNotIn(" ←", c.draft_text)
+            self.assertNotIn("⭐巨人", c.draft_text)
 
     def test_metric_label_prefix_before_value(self) -> None:
-        """ranking 行の数値前に metric_jp 前置 (例: ``打率 .945``、 ``OPS .945``、 ``防御率 2.10``)。"""
+        """418 case B (2026-05-21): metric label は header に集約、 ranking 行末は
+        裸の数値のみ。 STEP1 (2026-05-17) の「打率 .945」 ranking-row 前置は廃止。
+        """
         cands = pick_candidates(
             self._make_mock(),
             now=datetime(2026, 5, 16, 7, 0, tzinfo=JST),
@@ -1213,11 +1228,19 @@ class TicketThreeFiftyThreeFormatTests(unittest.TestCase):
         avg_cands = [c for c in cands if c.metric == "AVG"]
         self.assertGreaterEqual(len(avg_cands), 1)
         text = avg_cands[0].draft_text
-        # `打率 .945` 等の形式が ranking 行に出る
-        self.assertIn("打率 .", text, msg=f"AVG label missing: {text}")
+        # header に metric_jp 「打率」 が含まれる
+        header = text.split("\n", 1)[0]
+        self.assertIn("打率", header, msg=f"AVG label missing in header: {header}")
+        # ranking 行末は裸の値 (".945" 等)、 metric label が ranking 行ごとに重複しない
+        ranking_lines = [ln for ln in text.split("\n") if ln.startswith(("1位", "2位", "3位"))]
+        self.assertGreaterEqual(len(ranking_lines), 1)
+        for ln in ranking_lines:
+            self.assertNotIn("打率 .", ln, msg=f"metric label leaked into ranking row: {ln!r}")
 
     def test_no_blank_between_ranks_after_step1(self) -> None:
-        """STEP1 (2026-05-17): 旧 medal 区切り空行を廃止、 ranking は連続表示。"""
+        """STEP1 + 418 case B: ranking は連続表示、 medal 区切り空行なし、
+        prefix 「1位」「2位」「3位」 形式で改行のみ。
+        """
         cands = pick_candidates(
             self._make_mock(),
             now=datetime(2026, 5, 16, 7, 0, tzinfo=JST),
@@ -1228,19 +1251,19 @@ class TicketThreeFiftyThreeFormatTests(unittest.TestCase):
         self.assertGreaterEqual(len(cands), 1)
         text = cands[0].draft_text
         lines = text.split("\n")
-        # 3 位の row index を見つけ、 直後が 4. で始まる (間に空行なし) こと。
+        # 3 位の row index を見つけ、 直後が 4位 で始まる (間に空行なし) こと。
         idx_3 = next(
-            (i for i, ln in enumerate(lines) if ln.startswith("3.")),
+            (i for i, ln in enumerate(lines) if ln.startswith("3位")),
             -1,
         )
-        self.assertGreaterEqual(idx_3, 0, msg="3. row not found")
-        # idx_3 の直後行が 4. で始まる (もしくは ranking 末尾)。
+        self.assertGreaterEqual(idx_3, 0, msg="3位 row not found")
+        # idx_3 の直後行が 4位 で始まる (もしくは ranking 末尾)。
         if idx_3 + 1 < len(lines):
             self.assertTrue(
-                lines[idx_3 + 1].startswith("4.") or not lines[idx_3 + 1].strip()
+                lines[idx_3 + 1].startswith("4位") or not lines[idx_3 + 1].strip()
                 or lines[idx_3 + 1].startswith("#")  # hashtag footer の場合
                 or lines[idx_3 + 1].startswith("巨人最上位:"),
-                msg=f"unexpected line after 3.: {lines[idx_3 + 1]!r}",
+                msg=f"unexpected line after 3位: {lines[idx_3 + 1]!r}",
             )
 
     def test_mainstream_combos_excluded_from_pool(self) -> None:

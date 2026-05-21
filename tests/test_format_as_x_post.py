@@ -58,12 +58,15 @@ class FormatAsXPostRankingTests(unittest.TestCase):
         )
         self.assertTrue(result["ok"], msg=result)
         text = result["draft_text"]
-        self.assertIn("OPS ランキング", text)
+        # 418 case B: header = 「📊 OPS TOP5 ⚾」 形式
+        self.assertIn("📊", text)
+        self.assertIn("OPS", text)
+        self.assertIn("TOP5", text)
         # All 5 rows present.
         for name in ["佐藤輝明", "牧秀悟", "岡本和真", "村上宗隆", "鈴木誠也"]:
             self.assertIn(name, text)
         # Giants player marked.
-        self.assertIn("← 巨人", text)
+        self.assertIn("🟧巨人🟧", text)
         # Hashtag block present.
         self.assertIn(DEFAULT_HASHTAGS, text)
         # Batting-rate convention: leading-zero stripped.
@@ -97,7 +100,7 @@ class FormatAsXPostRankingTests(unittest.TestCase):
                 ),
             )
             self.assertTrue(result["ok"], msg=f"alias={team_alias}: {result}")
-            self.assertIn("← 巨人", result["draft_text"], msg=f"alias={team_alias} should highlight")
+            self.assertIn("🟧巨人🟧", result["draft_text"], msg=f"alias={team_alias} should highlight")
 
     def test_non_giants_rows_do_not_get_highlighted(self) -> None:
         parsed = {"metric": "OPS", "top_n": 3}
@@ -112,7 +115,7 @@ class FormatAsXPostRankingTests(unittest.TestCase):
             ),
         )
         self.assertTrue(result["ok"])
-        self.assertNotIn("← 巨人", result["draft_text"])
+        self.assertNotIn("🟧巨人🟧", result["draft_text"])
 
     def test_empty_rows_yields_friendly_message(self) -> None:
         parsed = {"metric": "OPS", "top_n": 5}
@@ -151,7 +154,9 @@ class FormatAsXPostRankingTests(unittest.TestCase):
         )
         self.assertTrue(result["ok"])
         text = result["draft_text"]
-        self.assertIn("奪三振率 ランキング", text)
+        # 418 case B: 「奪三振率 TOP3 ⚾」 形式
+        self.assertIn("奪三振率", text)
+        self.assertIn("TOP3", text)
         self.assertNotIn("K/9", text)
 
 

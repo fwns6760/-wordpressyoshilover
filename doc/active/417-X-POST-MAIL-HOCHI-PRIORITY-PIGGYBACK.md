@@ -202,6 +202,21 @@
 - `2026-05-21 14:00 JST | ticket 417 作成 v1 | PRE_GO | next: user GO 待ち`
 - `2026-05-21 15:00 JST | ticket v3 update | GO | rss_fetcher hook + queue + cron flush 設計 lock、 Gemma 4 維持、 user 開発 GO 出た`
 - `2026-05-21 15:05 JST | TaskCreate 12 件 set up | next: rss_fetcher hook point locate`
+- `2026-05-21 15:20 JST | x_post_candidate_queue.py 新規 + AST OK | next: rss_fetcher hook`
+- `2026-05-21 15:25 JST | rss_fetcher hook 1 行 (Hochi/Sanspo gate) + AST OK | next: build_x_post_from_article_info`
+- `2026-05-21 15:40 JST | build_x_post_from_article_info + _find_first_giants_player_in_text + smoke import OK | next: queue flush mode`
+- `2026-05-21 15:55 JST | run_x_post_mail.py --mode=on-queue + _main_on_queue 追加 + AST/argparse OK | next: tests`
+- `2026-05-21 16:05 JST | 30 test 追加 (queue 20 + article_info 10) 全 pass | next: wide regression`
+- `2026-05-21 16:15 JST | wide regression 5,723 passed / 1 xfailed / 0 fail | next: commit + push`
+- `2026-05-21 16:18 JST | commit 6205459 + push | next: deploy build`
+- `2026-05-21 16:24 JST | 2 image build SUCCESS (fetcher + x-post-mail-lane) | next: deploy`
+- `2026-05-21 16:35 JST | fetcher 100% traffic switched (rev 00465-msq, image 417-piggyback-6205459) | next: job update + smoke`
+- `2026-05-21 16:50 JST | x-post-mail job smoke FAIL: Cloud Run jobs --args が CMD 置換、 container crash | next: Dockerfile ENTRYPOINT 化`
+- `2026-05-21 16:55 JST | Dockerfile.x_post_mail ENTRYPOINT 化 + rebuild + commit 936a4ff push | next: 再 smoke`
+- `2026-05-21 17:00 JST | x-post-mail job 再 smoke OK (drained 6 / silent skip / exit 0) | next: cron 切替`
+- `2026-05-21 17:05 JST | 既存 5 cron PAUSE + x-post-mail-flush 新 cron 作成 (*/30 6-22 * * * JST) | next: 手動 fire verify`
+- `2026-05-21 17:08 JST | 手動 fire 経由でも cron→job→queue→silent skip→exit 0 動作確認 | next: ticket finalize`
+- `2026-05-21 17:15 JST | ticket 417 post-work section (1-8) 追記、 CLOSED 準備完了 | next: user 受け入れ`
 
 ## 10. Regression Memo 欄
 
@@ -215,32 +230,105 @@
 
 ## 1. 実際に変更したファイル
 
-(着手後追記)
+**新規追加**:
+- `src/x_post_candidate_queue.py` — GCS-backed queue (enqueue / drain / mark_processed / is_hochi_or_sanspo_source)
+- `tests/test_x_post_candidate_queue.py` — 20 test (dedup / fault tolerance / Hochi 判定)
+- `tests/test_x_post_branding_gen_article_info.py` — 10 test (player 抽出 / skip path / safety check / unverified)
+- `doc/active/417-X-POST-MAIL-HOCHI-PRIORITY-PIGGYBACK.md` — 本 ticket
+
+**既存編集**:
+- `src/rss_fetcher.py` — `_create_draft_with_same_fire_guard` 内の `wp.create_post` 呼出直前に hook 1 行 (Hochi/Sanspo source の場合のみ enqueue、 try/except で fault-tolerant)
+- `src/x_post_branding_gen.py` — `build_x_post_from_article_info` / `_find_first_giants_player_in_text` を末尾に追加 (既存関数は 1 文字も変えず)
+- `src/tools/run_x_post_mail.py` — `--mode={scheduled,on-queue}` argparse 追加、 `_main_on_queue` 関数追加、 `main()` に分岐 1 行
+- `Dockerfile.x_post_mail` — `CMD ["python3", "-m", ...]` → `ENTRYPOINT ["python3", "-m", ...]` + `CMD []` (Cloud Run jobs の --args が CMD 置換する問題対応)
 
 ## 2. diff 概要
 
-(着手後追記)
+| file | 種別 | LOC 差 |
+|---|---|---|
+| src/x_post_candidate_queue.py | 新規 | +197 |
+| src/rss_fetcher.py | 修正 | +25 (hook block) |
+| src/x_post_branding_gen.py | 修正 | +210 (新関数 2 つ) |
+| src/tools/run_x_post_mail.py | 修正 | +130 (mode arg + _main_on_queue) |
+| Dockerfile.x_post_mail | 修正 | +6 -1 (ENTRYPOINT 化) |
+| tests/test_x_post_candidate_queue.py | 新規 | +200 (20 test) |
+| tests/test_x_post_branding_gen_article_info.py | 新規 | +95 (10 test) |
+| doc/active/417-... | 新規 | +250 |
+| **合計** | | **+1,113 / -1** |
 
 ## 3. 実行したテスト
 
-(着手後追記)
+**unit / integration (CI 内)**:
+1. `tests/test_x_post_candidate_queue.py` (20 test): enqueue / dedup / drain / mark_processed / is_hochi_or_sanspo_source / GCS 例外時 fault-tolerance
+2. `tests/test_x_post_branding_gen_article_info.py` (10 test): player 抽出 / skip path (invalid input / no API key / no player) / safety_check failure / unverified_numbers drop
+3. `tests/test_x_post_branding_gen.py` (既存): 流用、 regression check
+4. `tests/test_x_post_mail.py` (既存): 流用、 regression check
+5. `tests/test_rss_fetcher.py` (既存): 流用、 hook 追加で他関数に影響無いこと verify
+6. **wide regression**: `pytest tests/ --ignore=tests/test_duplicate_prevention_golden.py`
+
+**smoke (deploy 後 production)**:
+7. canary `/health` (yoshilover-fetcher-00465-msq tag p417) → 200 OK
+8. traffic 100% switch 後 `/health` → 200 OK
+9. `gcloud run jobs execute x-post-mail-lane --args=--mode=on-queue,--dry-run` (Dockerfile ENTRYPOINT fix 前) → container crash (Cloud Run jobs args 仕様判明)
+10. Dockerfile.x_post_mail ENTRYPOINT 化 → rebuild → 再 execute → **container exit 0**、 drained 6 items、 全件 silent skip (test fixture URL のため player not in roster)
+11. `gcloud scheduler jobs run x-post-mail-flush` 手動 fire → cron 経由でも正常実行確認
 
 ## 4. テスト結果
 
-(着手後追記)
+- **新規 test**: 30/30 pass (queue 20 + article_info 10)
+- **wide regression**: **5,723 passed / 1 xfailed / 0 fail** (改修前 baseline と diff 無し)
+- **canary smoke**: `/health` 両 stage 200
+- **production smoke**: cron 手動 fire → Cloud Run job → queue drain → 候補生成試行 → silent skip → exit 0、 エラー無し
+- **既存 5 便 PAUSE 後**: `x-post-mail-flush` のみ ENABLED、 cron list で確認
 
 ## 5. 残った懸念
 
-(着手後追記)
+| 項目 | 内容 | 対応 |
+|---|---|---|
+| C1. GCS queue に既に test fixture URL (`hochi.news/articles/test-*`) が 6 件溜まっている | 永久 silent skip ループ、 cleanup 必要 | TTL or 手動 cleanup を別 ticket 検討 |
+| C2. 実 Hochi/Sanspo source が来た時の actual 動作 | smoke では test URL のみで verify、 本物の roster player 入り title での E2E 動作は次の自然 fire まで未確認 | 次 4-6 時間以内の Hochi/Sanspo publish で観察、 dump log を user に報告 |
+| C3. NPB 限定 filter | 「巨人」 で始まる title が Giants 関連と判定されるが、 高校野球記事で 「巨人軍 OB が監督」 等の枝葉混入の可能性 | 想定デグレ D5 として記録、 観察 |
+| C4. mail 受信頻度 | 6-22 時 30 分刻みで 試合中に 連発する可能性 | user 受け入れ前に 1 日分観察 |
+| C5. AI Studio billing tier 未 verify | 私が claim した「無料枠内」 は user 側の AI Studio 確認なしのまま | user に screenshot 確認依頼予定 (低優先、 free tier 量内ではあるが) |
 
 ## 6. 新しく見つかったデグレ
 
-(着手後追記)
+| ID | 内容 | 修正状況 |
+|---|---|---|
+| **D-new-1** | **Cloud Run jobs の `--args` flag が Dockerfile CMD を完全置換** (= ENTRYPOINT 形式必要) | **修正済** (commit 936a4ff、 Dockerfile.x_post_mail ENTRYPOINT 化) |
+| (記載なし、 他は無し) | 既存挙動への regression は wide pytest 5,723 pass で 0 件 | — |
 
 ## 7. 追加した回帰テスト
 
-(着手後追記)
+- `tests/test_x_post_candidate_queue.py` (20 test): enqueue dedup / fault-tolerance / Hochi 判定 (報知/サンスポ/ニッカン/デイリー の正負ケース) / source_url hash 一貫性
+- `tests/test_x_post_branding_gen_article_info.py` (10 test): player 抽出の正負 / build_x_post_from_article_info の skip path (invalid input / no key / no player) / safety_check drop / unverified_numbers drop / mocked Gemini を patch して silent skip path
+
+これらは将来の改修で:
+- `DEFAULT_MAX_TITLE_LENGTH` のような cap 値 を universal に下げる改修
+- `_SYSTEM_PROMPT_FUUGA` / `_KANDUME` の Hard rule を緩める改修
+- queue dedup を弱める改修
+- Cloud Run jobs Dockerfile を CMD 形式に戻す改修
+
+これら全部が test fail として表面化する想定。
 
 ## 8. 次回触ってはいけない範囲
 
-(着手後追記)
+**§ 3 で記載した不可触条件 (全部維持)**:
+- 既存 prompt 本文 (`_SYSTEM_PROMPT_FUUGA` / `_SYSTEM_PROMPT_KANDUME` / `_build_system_prompt`)
+- `_GEMMA_BRANDING_FORBIDDEN_PATTERNS` / `_GEMMA_BRANDING_INFLAMMATORY_PATTERNS`
+- 8 段 hallucination 防止 layer
+- few-shot 例 / Hard rule
+- Gemma 4 model id
+
+**417 で新規追加された不可触**:
+- `Dockerfile.x_post_mail` の `ENTRYPOINT ["python3", "-m", "src.tools.run_x_post_mail"]` を CMD に戻すと Cloud Run jobs の args が壊れる → ENTRYPOINT 形式維持
+- `src/x_post_candidate_queue.py` の filename hash policy (`sha256(source_url)[:16]`) は dedup の正本、 hash 短縮や algorithm 変更で過去 entry と互換性失う
+- `src/rss_fetcher.py` の hook 位置 (`_create_draft_with_same_fire_guard` の `wp.create_post` 直前) は dedup guard 通過後の単一発火点、 移動すると重複 enqueue / skip 取りこぼし risk
+- `is_hochi_or_sanspo_source` の判定軸 (URL host + X handle + source_name marker)、 緩めると非報知 source も enqueue される → 別 ticket で拡張する場合は明示
+- 既存 5 X-post mail cron は PAUSED 状態維持 (削除禁止、 revert 可能性確保)
+- `x-post-mail-flush` cron schedule `*/30 6-22 * * *` JST は user 確定値、 変更時は user 判断要
+
+**次回 ticket で触る可能性が高い周辺**:
+- C1 (test fixture cleanup): queue cleanup ticket
+- C2 (non-Hochi source 拡張): ニッカン / デイリー / スポニチ も対象化する別 ticket、 ただし cluster ロジック必要 (報知単独 OK / 他媒体は cluster 必要)
+- 観察結果次第で hochi handle / sanspo handle の追加

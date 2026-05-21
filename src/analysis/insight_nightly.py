@@ -147,10 +147,18 @@ def _run_data_insight_auto_publish(*, db_path: Path) -> tuple[dict[str, Any], di
                     ),
                 }
                 # team ranking 記事 (球団 metric、user 指示で追加)
+                # 2026-05-21 user feedback「6球団横並びをもう少し増やしていい」:
+                # 個別 cap を分離。 default_jobs (HR/AVG/ERA) 3 + streak 1 +
+                # RUN_DIFF 1 + vs opponent 5 = 最大 10 可能、 cap=8 で広めに
+                # 出す (実 fire 数は dedup cooldown で半分以下に落ち着く想定)。
+                team_max_per_run = int(
+                    os.environ.get("DATA_INSIGHT_TEAM_PUBLISH_MAX_PER_RUN", "8")
+                    or "8"
+                )
                 try:
                     from src.analysis import team_ranking_publisher as team_pub
                     team_summary = team_pub.publish_team_default_set(
-                        conn, wp, max_per_run=auto_draft_max_per_run
+                        conn, wp, max_per_run=team_max_per_run
                     )
                     ranking_publish_summary["team_results"] = team_summary
                 except Exception as exc:  # noqa: BLE001

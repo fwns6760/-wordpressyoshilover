@@ -2,7 +2,7 @@
 
 ## status
 
-- **status**: LIVE_DEPLOYED_OBSERVE
+- **status**: CLOSED LIVE_DEPLOYED_VERIFIED (2026-05-21 audit、 `src/analysis/insight_quality_gate.py` に table-first contract 実装確認: `validate_body_table_format` (L436) + `_has_markdown_table` (L413) + `STATUS_TABLE_FORMAT` (L37) + html `<table>` 検出 path (L445)、 image `insight-nightly:415-vs-lr-mvp` gen 81 で LIVE、 5/21 fire publish 6 件すべて table format 含む title format 範囲内で稼働)
 - **owner**: Codex
 - **lane**: B
 - **created**: 2026-05-16 JST

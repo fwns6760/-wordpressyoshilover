@@ -2,7 +2,7 @@
 
 ## status
 
-- **status**: LIVE_DEPLOYED_OBSERVE
+- **status**: CLOSED LIVE_DEPLOYED_VERIFIED (2026-05-21 audit、 `src/x_post_mail_lane.py` L2469 `🟠🐦📮【Xポスト案 N件】` 件名 + L2493 `📮 {header_label} — {band} / {timestamp} JST` HTML/text header + L2580 同 HTML header 全部実装確認、 image `x-post-mail-lane:414-e3e7-4beef83` gen 40 で LIVE)
 - **owner**: Codex
 - **lane**: B
 - **created**: 2026-05-16 JST

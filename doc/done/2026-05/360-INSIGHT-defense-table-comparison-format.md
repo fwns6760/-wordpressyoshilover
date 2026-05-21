@@ -2,7 +2,7 @@
 
 ## status
 
-- **status**: LIVE_DEPLOYED_OBSERVE
+- **status**: CLOSED SUPERSEDED_BY_373_361 (2026-05-21 audit、 `src/analysis/anomaly_article_publisher.py` L1134 / L1149 に `セ・リーグ球団別ランキング` table 実装は LIVE (image `415-vs-lr-mvp`)、 だが UZR title は 373 で player-level 「{選手}、{位置}守備の簡易UZR ... セ・リーグ選手別 N/5位」 に進化、 360 strict title contract 「セ・リーグ球団別 {守備位置}の簡易UZR、巨人 N/6位」 は超過。 table-body 部分 (table-first / `★` 強調 / `## データ` table 必須) は 361 permanent contract に吸収済。 post 69815 で player-level format 稼働確認、 post 69816 で team-level 球団別 format も併存稼働確認)
 - **owner**: Codex
 - **lane**: B
 - **created**: 2026-05-16 JST

@@ -1,6 +1,6 @@
 # 362-INSIGHT queue cleanup and metric run cap
 
-- **status**: LIVE_DEPLOYED_OBSERVE
+- **status**: CLOSED LIVE_DEPLOYED_VERIFIED (2026-05-21 audit、 prod insight.db `article_candidates` status 分布で 4 status 全部稼働確認: DROPPED_DISABLED_SIGNAL=25283 / EXPIRED=5752 / DRAFTED=273 / PUBLISHED=76 / DROPPED_METRIC_RUN_CAP=23 / NEW=19。 metric cap = 1/run effective、 disabled signal sweep + stale expire + cleanup 全 path 動作)
 - **owner**: Codex
 - **priority**: high
 - **created_at**: 2026-05-16

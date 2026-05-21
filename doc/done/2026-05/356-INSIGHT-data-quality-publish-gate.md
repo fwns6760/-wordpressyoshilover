@@ -2,7 +2,7 @@
 
 ## 1. ticket header
 
-- **status**: LIVE_DEPLOYED_OBSERVE
+- **status**: CLOSED LIVE_DEPLOYED_VERIFIED (2026-05-21 audit、 `src/analysis/insight_quality_gate.py` に 5 gate 実装確認: STATUS_SAMPLE / STATUS_COVERAGE / STATUS_STALE / STATUS_EVIDENCE / STATUS_TABLE_FORMAT、 image `insight-nightly:415-vs-lr-mvp` gen 81 で LIVE、 5/20 fire で `insufficient_sample` 実発火 + 5/21 fire で 412/413 fix 後 0 件 = 正常 publish path)
 - **priority**: high
 - **owner**: Codex
 - **lane**: B

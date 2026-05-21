@@ -2,7 +2,7 @@
 
 ## status
 
-- **status**: REVIEW_NEEDED
+- **status**: CLOSED LIVE_DEPLOYED_VERIFIED (2026-05-21 audit、 prod log 5/20 22:00 fire で `dedup skip combo OBP/直近5試合` / `K_per_9/直近10試合` 等 human period label が period-family / dedup signature に組み込み完了、 mail 候補 pool の period 表示も `直近5試合・規定打席5以上` 形式で稼働)
 - **owner**: Codex
 - **lane**: B
 - **created**: 2026-05-16 JST

@@ -2,7 +2,7 @@
 
 ## 1. ticket header
 
-- **status**: READY (Claude 自律進行可能、 narrow fix、 387 part 3)
+- **status**: CLOSED LIVE_DEPLOYED_VERIFIED (commit `20cad0b` で manual_intake.py L4279-4318 `_wp_create_draft` に `tag_ids` 引数追加 + L4686-4719 `resolve_existing_wp_tag_ids` で person_tag_router 解決 + 空なら `[850]` 速報 fallback + create_post pass-through、 person_tag_router test cover、 GH Issue #89 close 2026-05-21 01:26 UTC、 user 1次source 監査済)
 - **priority**: P1 (manual_intake 経路の全 post が tag=0 = 内部リンク 0)
 - **owner**: Claude / **lane**: Claude
 - **github_issue**: https://github.com/fwns6760/-wordpressyoshilover/issues/89

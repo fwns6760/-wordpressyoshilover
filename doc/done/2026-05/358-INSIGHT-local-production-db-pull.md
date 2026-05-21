@@ -2,7 +2,7 @@
 
 ## status
 
-- **status**: REVIEW_NEEDED
+- **status**: CLOSED LIVE_DEPLOYED_VERIFIED (2026-05-21 audit、 `src/tools/pull_insight_db_from_gcs.py --target /tmp/yoshilover-insight-latest.db --ttl-seconds 0` を本日 404 audit で実利用、 `production_state: games: 259, pitching_logs: 2108` の prod DB pull 成功、 download-only / 双方向 sync 無し / GCS source-of-truth 維持 の決定通り稼働)
 - **owner**: Codex
 - **lane**: B
 - **created**: 2026-05-16 JST

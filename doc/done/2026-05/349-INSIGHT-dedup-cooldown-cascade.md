@@ -2,7 +2,7 @@
 
 ## 1. ticket header
 
-- **status**: LIVE_DEPLOYED_OBSERVE (2026-05-16 Codex follow-up 実装 + push + `insight-nightly:be96f18` deploy 済、自然 fire 観察待ち)
+- **status**: CLOSED LIVE_DEPLOYED_VERIFIED (2026-05-21 audit、 `src/analysis/insight_dedup_gate.py` に 3 段階 cascade 実装確認: `cooldown_days()` L38 + `delta_threshold` L256 + `rank_band()` L119 + `rank_band_changed` verdict L266、 image `insight-nightly:415-vs-lr-mvp` gen 81 で LIVE、 5/20 fire で `skip_dedup_cooldown` 実発火痕跡 + 5/21 fire で 0 件 = cooldown 経過後の正常 publish)
 - **priority**: medium-high (348 ticket 後の next 優先)
 - **owner**: Claude (実装) / user (数値 + GO 判断)
 - **依存**: 348 ticket (#26) 完了後に着手推奨 (× フィルター後の重複問題実態 verify ベースで挙動 tuning できる)

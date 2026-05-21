@@ -2,7 +2,7 @@
 
 ## 1. ticket header
 
-- **status**: READY (Claude 自律進行可能、 narrow fix)
+- **status**: CLOSED LIVE_DEPLOYED_VERIFIED (commit `cb279a9` で wp_client.py L1454 `except (requests.HTTPError, RuntimeError)` + L1473 `elif "term_exists" in msg:` で wrap 経路対応、 test `tests/test_411_wp_create_category_term_exists.py` RuntimeError + HTTPError 両経路 cover、 GH Issue #85 close 2026-05-21 01:25 UTC、 user 1次source 監査済)
 - **priority**: P1 (publish_default_set の rate metric 全 4 件 publish 失敗中、 cutover 効果半減)
 - **owner**: Claude / **lane**: Claude
 - **github_issue**: https://github.com/fwns6760/-wordpressyoshilover/issues/85

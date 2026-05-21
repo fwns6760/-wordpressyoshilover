@@ -115,6 +115,11 @@ ARTICLE_TYPE_OVERRIDES: dict[str, tuple[str, str, str]] = {
     "補強・移籍": ("補強・移籍", "transfer", "nomotoke_card_short_news_url_v1"),
     "トレード": ("補強・移籍", "trade", "nomotoke_card_short_news_url_v1"),
     "助っ人": ("補強・移籍", "foreign", "nomotoke_card_short_news_url_v1"),
+    # ticket 416: 巨人ファン向け運用情報 3 種 (チケット情報 / チケット交換 /
+    # スコアブック)。 既存 8 active WP category 内に収まる route。
+    "チケット情報": ("球団情報", "ticket", "nomotoke_card_short_news_url_v1"),
+    "チケット交換": ("球団情報", "ticket_trade", "nomotoke_card_short_news_url_v1"),
+    "スコアブック": ("試合速報", "scorebook", "nomotoke_card_short_news_url_v1"),
 }
 ARTICLE_TYPE_CHOICES: tuple[str, ...] = (
     ARTICLE_TYPE_AUTO,
@@ -237,6 +242,23 @@ def _auto_guess_article_type(
     # Title / summary keyword signals
     if not text:
         return "コラム"
+
+    # ticket 416: specific 複合語 keyword は既存 path より先に判定 (score
+    # pattern や generic「トレード」 が先 hit して誤 route するのを防ぐ)。
+    # keyword は単独「チケット」 「スコア」 のような 1 語を避け、 複合語に
+    # 限定。
+    if any(k in text for k in ("スコアブック", "スコアシート", "スコア表")):
+        return "スコアブック"
+    if any(k in text for k in (
+        "チケットトレード", "公式リセール", "リセール販売",
+        "ファン同士で譲渡", "チケット譲渡",
+    )):
+        return "チケット交換"
+    if any(k in text for k in (
+        "チケット先行販売", "チケット予約", "チケット販売開始", "販売スケジュール",
+        "シーズンチケット", "ファンクラブチケット", "チケット情報",
+    )):
+        return "チケット情報"
 
     # 公示 (NPB 登録 / 抹消)
     if any(k in text for k in (

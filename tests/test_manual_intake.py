@@ -583,9 +583,9 @@ class ArticleTypeNormalizationTests(unittest.TestCase):
         self.assertIn(mi.ARTICLE_TYPE_AUTO, mi.ARTICLE_TYPE_CHOICES)
         for value in mi.ARTICLE_TYPE_OVERRIDES.keys():
             self.assertIn(value, mi.ARTICLE_TYPE_CHOICES)
-        # 18 total: auto + 17 overrides (11 original + 6 new for the
-        # ドラフト・育成 / OB・解説者 / 補強・移籍 categories).
-        self.assertEqual(len(mi.ARTICLE_TYPE_CHOICES), 18)
+        # 21 total: auto + 20 overrides (11 original + 6 for unused WP
+        # categories + 3 for ticket / scorebook routes — ticket 416).
+        self.assertEqual(len(mi.ARTICLE_TYPE_CHOICES), 21)
 
     def test_new_routes_cover_missing_wp_categories(self):
         # 不足していた 3 category に少なくとも 1 route が存在することを保証
@@ -593,6 +593,66 @@ class ArticleTypeNormalizationTests(unittest.TestCase):
         category_set = {meta[0] for meta in mi.ARTICLE_TYPE_OVERRIDES.values()}
         for cat in ("ドラフト・育成", "OB・解説者", "補強・移籍"):
             self.assertIn(cat, category_set, f"missing route for {cat}")
+
+    def test_ticket_416_routes_present(self):
+        # ticket 416: 3 種 (チケット情報 / チケット交換 / スコアブック) が
+        # 既存 WP category 内に route されることを保証。
+        self.assertEqual(
+            mi.ARTICLE_TYPE_OVERRIDES["チケット情報"],
+            ("球団情報", "ticket", "nomotoke_card_short_news_url_v1"),
+        )
+        self.assertEqual(
+            mi.ARTICLE_TYPE_OVERRIDES["チケット交換"],
+            ("球団情報", "ticket_trade", "nomotoke_card_short_news_url_v1"),
+        )
+        self.assertEqual(
+            mi.ARTICLE_TYPE_OVERRIDES["スコアブック"],
+            ("試合速報", "scorebook", "nomotoke_card_short_news_url_v1"),
+        )
+
+    def test_ticket_416_not_in_article_style_manual_types(self):
+        # 416 新 3 種は short-news 風 layout、 article-style への昇格は不要。
+        for new_type in ("チケット情報", "チケット交換", "スコアブック"):
+            self.assertNotIn(
+                new_type,
+                mi.ARTICLE_STYLE_MANUAL_TYPES,
+                f"{new_type} should not be in ARTICLE_STYLE_MANUAL_TYPES",
+            )
+
+
+class AutoGuessTicket416KeywordTests(unittest.TestCase):
+    """ticket 416 で追加された 3 種 (チケット情報 / チケット交換 /
+    スコアブック) の auto_guess 検出。"""
+
+    def _guess(self, title: str, summary: str = "") -> str:
+        return mi._auto_guess_article_type(url="", title=title, summary=summary)
+
+    def test_scorebook(self):
+        self.assertEqual(self._guess("巨人 vs DeNA 5月22日 スコアブック詳細"), "スコアブック")
+        self.assertEqual(self._guess("ジャイアンツ スコアシート 第3戦"), "スコアブック")
+        self.assertEqual(self._guess("スコア表で振り返る 巨人 5-3 阪神"), "スコアブック")
+
+    def test_ticket_info(self):
+        self.assertEqual(self._guess("巨人 シーズンチケット先行販売開始"), "チケット情報")
+        self.assertEqual(self._guess("ファンクラブチケット 5月販売スケジュール"), "チケット情報")
+        self.assertEqual(self._guess("ジャイアンツ チケット予約 開始"), "チケット情報")
+
+    def test_ticket_trade(self):
+        self.assertEqual(self._guess("巨人戦チケット 公式リセール 受付"), "チケット交換")
+        self.assertEqual(self._guess("チケットトレード 5月東京ドーム"), "チケット交換")
+        self.assertEqual(self._guess("ファン同士で譲渡できる新サービス"), "チケット交換")
+
+    def test_priority_does_not_break_existing_score_path(self):
+        # 「スコアブック」 keyword が無い 通常の試合結果は scorebook に
+        # 化けず 既存 試合結果 path を維持。
+        self.assertEqual(self._guess("巨人 5-3 阪神 試合終了"), "試合結果")
+
+    def test_priority_does_not_break_ticket_keyword_in_team_news(self):
+        # rss_fetcher 側で「チケット」 keyword が 球団情報 routing に使われて
+        # いるが、 manual_intake._auto_guess_article_type は単独「チケット」
+        # を hit させない (複合語限定) ので、 generic 「チケット」 を含む文は
+        # 既存 fallback (コラム) に落ちる。
+        self.assertEqual(self._guess("巨人ニュース まとめ"), "コラム")
 
 
 class AutoGuessArticleTypeNewKeywordTests(unittest.TestCase):

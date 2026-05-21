@@ -578,6 +578,47 @@ _SANSPO_OPENING_DIV_RE = re.compile(
 )
 
 
+_SIRABEE_POST_ID_RE = re.compile(r"sirabee\.com/\d{4}/\d{1,2}/\d{1,2}/(\d+)/?")
+
+
+def _extract_via_sirabee_wpjson(source_url: str) -> str:
+    """Fetch the full article body via Shirabee's public WordPress REST API.
+
+    Shirabee (sirabee.com) is a client-side rendered SPA — the static HTML
+    only contains Vue template placeholders. Its WordPress REST endpoint
+    (``/wp-json/wp/v2/posts/<id>``) returns the SSR body in
+    ``content.rendered`` as a small JSON payload (no auth, no quota).
+
+    Returns the HTML body string (caller will strip via
+    ``_strip_html_to_plain``), or ``""`` on any failure so the strategy
+    ladder falls through.
+    """
+    if not source_url:
+        return ""
+    m = _SIRABEE_POST_ID_RE.search(source_url)
+    if not m:
+        return ""
+    post_id = m.group(1)
+    try:
+        import requests as _requests
+    except Exception:
+        return ""
+    api_url = f"https://sirabee.com/wp-json/wp/v2/posts/{post_id}"
+    try:
+        resp = _requests.get(api_url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+        if resp.status_code != 200:
+            return ""
+        data = resp.json()
+    except Exception:
+        return ""
+    if not isinstance(data, dict):
+        return ""
+    content = ((data.get("content") or {}).get("rendered") or "")
+    if not isinstance(content, str) or not content.strip():
+        return ""
+    return content
+
+
 def _extract_via_giants_jp_next_data(html: str) -> str:
     """giants.jp の Next.js SSR HTML から本文を抽出。
 
@@ -803,6 +844,16 @@ def extract_article_body_excerpt(
     # class. Each strategy returns either a plain-text body (JSON-LD)
     # or an HTML fragment that must be stripped.
     candidates: list[tuple[str, bool]] = []
+
+    # ticket 421: sirabee.com は client-side rendered SPA で HTML 内の
+    # `<div class="article-content">` は ${article.title} 等の Vue template
+    # placeholder のみ含む → HTML 解析戦略は全て fail。 同 site の公開
+    # WordPress REST API (/wp-json/wp/v2/posts/<id>) は SSR で full body
+    # を返すので、 そこを 1 fetch で取得する。 cost ¥0、 認証不要。
+    if "sirabee.com" in host:
+        sirabee_body = _extract_via_sirabee_wpjson(source_url)
+        if sirabee_body:
+            candidates.append((sirabee_body, True))
 
     jsonld_body = _extract_via_jsonld(raw_html)
     if jsonld_body:

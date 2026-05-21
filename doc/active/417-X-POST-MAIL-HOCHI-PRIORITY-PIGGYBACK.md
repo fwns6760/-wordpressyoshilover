@@ -42,7 +42,7 @@
 - 既存 5 便 (07/12/15/17:30/22:30) → 全 PAUSED
 - 素材 source: **Tavily 廃止** → rss_fetcher が classify した raw RSS article info に置換
 - 報知優先: rss_fetcher の `source_url` host / X handle 識別で 報知単独でも enqueue
-- 非報知 source は別 ticket で扱う (現 ticket scope = 報知 + サンスポ のみ)
+- IN scope = **報知 + サンスポ の 2 媒体のみ**。 それ以外 (日刊 / デイリー / スポニチ / 中スポ / 東スポ 等) は別 ticket で拡張検討
 - model: **Gemma 4 維持** (推論起因 hallucination 0、 既存 voice 完全保持)
 - 8 段 hallucination 防止 (既存 7 段 + verified_text hygiene 1 段)
 - latency: 報知 RSS 配信 → mail 着信 = **5-45 分**
@@ -135,7 +135,7 @@
 - **`src/x_post_branding_gen.py`**: 新関数 `build_x_post_from_article_info(article_info, persona)` 追加 (Tavily 不使用 path、 既存 prompt 流用)。 既存関数は不変
 - **`src/x_post_mail_lane.py` + `src/tools/run_x_post_mail.py`**: 新 mode `--mode=on-queue` 追加 (queue drain → 候補生成 → mail)、 既存 5 便用 mode は不変・並存
 - `tests/test_x_post_candidate_queue.py` (新規): enqueue / drain / dedup / race 動作
-- `tests/test_x_post_mail_lane.py` (既存): 新 fixture 追加 (報知単独 / 非報知 skip / NPB filter / hallucination 防止)
+- `tests/test_x_post_mail_lane.py` (既存): 新 fixture 追加 (報知単独 / サンスポ単独 / それ以外 (日刊等) skip / NPB filter / hallucination 防止)
 - `tests/test_rss_fetcher.py` (既存、 当該テスト関数のみ): hook が classify 後に enqueue を 1 度呼ぶ verify
 - Cloud Scheduler: 既存 5 cron PAUSE + 新 1 cron `x-post-mail-flush` 追加 (test 後)
 - `cloudbuild_x_post_mail.yaml` / `Dockerfile.x_post_mail`: 不変 (code 変更だけで image 再 build)
@@ -366,7 +366,7 @@ ticket 着手前 〜 確定までの会話で検討した代替案を記録。 t
 理由 (user 確定):
 - 報知 (記事 + X) を 一次 source として優先 (memory `feedback_hochi_priority_no_imitate` と整合)
 - 報知単独で publish された Giants 記事 = 話題化扱い、 即 enqueue
-- 非報知 (ニッカン / デイリー 等) は scope 外、 別 ticket で cluster 判定追加検討
+- それ以外の媒体 (日刊スポーツ / デイリースポーツ / スポニチ / 中日スポーツ / 東スポ 等) は今回 scope 外、 別 ticket で cluster 判定追加検討
 - Grounding 不要、 完全 ¥0 維持
 
 ### 11.6 mail 配信頻度 検討
@@ -394,7 +394,7 @@ ticket 着手前 〜 確定までの会話で検討した代替案を記録。 t
        ↓
 [schedule: (c) `*/30 6-22 * * *` ← 全時間 user 希望]
        ↓
-[話題判定: 報知優先 単独で OK ← 非報知 cluster は別 ticket]
+[scope: 報知 + サンスポ の 2 媒体のみ、 それ以外 (日刊 / デイリー 等) は別 ticket]
        ↓
 [配信: queue + 30 分 batch flush ← 受信箱負荷)]
        ↓
@@ -507,7 +507,7 @@ ticket 着手前 〜 確定までの会話で検討した代替案を記録。 t
 - `Dockerfile.x_post_mail` の `ENTRYPOINT ["python3", "-m", "src.tools.run_x_post_mail"]` を CMD に戻すと Cloud Run jobs の args が壊れる → ENTRYPOINT 形式維持
 - `src/x_post_candidate_queue.py` の filename hash policy (`sha256(source_url)[:16]`) は dedup の正本、 hash 短縮や algorithm 変更で過去 entry と互換性失う
 - `src/rss_fetcher.py` の hook 位置 (`_create_draft_with_same_fire_guard` の `wp.create_post` 直前) は dedup guard 通過後の単一発火点、 移動すると重複 enqueue / skip 取りこぼし risk
-- `is_hochi_or_sanspo_source` の判定軸 (URL host + X handle + source_name marker)、 緩めると非報知 source も enqueue される → 別 ticket で拡張する場合は明示
+- `is_hochi_or_sanspo_source` の判定軸 (URL host + X handle + source_name marker)、 緩めると報知+サンスポ以外の媒体 (日刊 / デイリー / スポニチ 等) も enqueue される → 別 ticket で拡張する場合は明示
 - 既存 5 X-post mail cron は PAUSED 状態維持 (削除禁止、 revert 可能性確保)
 - `x-post-mail-flush` cron schedule `*/30 6-22 * * *` JST は user 確定値、 変更時は user 判断要
 

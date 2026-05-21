@@ -1999,9 +1999,10 @@ git add -A禁止。
 ### 403-INSIGHT-period-window-game-count-switch
 
 - **alias**: -
-- **status**: READY (audit 完了 + spec 確定 2026-05-20、 実装便 fire 可) / **priority**: high
+- **status**: CLOSED LIVE_DEPLOYED_VERIFIED (2026-05-21 10:02 JST 自然 fire、 image `insight-nightly:415-vs-lr-mvp` gen 81、 6 件 publish 成功 + skip 0 件) / **priority**: high
 - **owner**: Claude / **lane**: Claude
-- **doc_path**: `doc/active/403-INSIGHT-period-window-game-count-switch.md`
+- **doc_path**: `doc/done/2026-05/403-INSIGHT-period-window-game-count-switch.md`
+- **github_issue**: https://github.com/fwns6760/-wordpressyoshilover/issues/77 (CLOSED 候補)
 - **stage**: Phase 1 stage 1 / 段階式 (404 / 405 は follow-up)
 - **背景**: 2026-05-20 logs で 12:00 / 15:00 / 17:00 publish 0 件、 主因は 356 quality gate `insufficient_sample` (浦田俊輔 / 平山功太 / マルティネス の last_7d sample 不足)。 日付 window が試合のない日に潰れる構造問題。
 - **方針**: 期間 cut を日付 base (last_7d / last_30d) から **試合数 / 打席 / 登板数 / 投球回 base に全面切替**。 同 stage で ファン視点 cut (打順別 / vs 球団別) を 既存 schema のまま追加。
@@ -2016,14 +2017,16 @@ git add -A禁止。
 ### 404-INSIGHT-period-window-phase2-etl
 
 - **alias**: -
-- **status**: BLOCKED_BY=403 (Stage 2、 403 完了 + 観察後着手) / **priority**: medium
+- **status**: PARTIAL_LIVE_DEPLOYED_OBSERVE (登板 inning 別 = LIVE / vs 左右 = [[415]] split / デーゲーム = drop) / **priority**: medium
 - **owner**: Claude / **lane**: Claude
-- **doc_path**: `doc/waiting/404-INSIGHT-period-window-phase2-etl.md`
+- **doc_path**: `doc/active/404-INSIGHT-period-window-phase2-etl.md`
+- **github_issue**: https://github.com/fwns6760/-wordpressyoshilover/issues/79 (OPEN 観察待ち)
 - **stage**: Phase 2 / 段階式
 - **背景**: [[403]] では既存 schema で実装できる cut を全部入れた。 本 ticket は ETL 軽改修 (列追加 + parse 追加) で実装できる cut 3 件を Phase 2 として追加する。
-- **scope**: (1) デーゲーム / ナイター — `games.start_hour` 列追加 + NPB box 開始時刻 parse / (2) vs 左右投手 — `pitching_logs.pitcher_throws` 列追加 + roster fill / (3) 登板 inning 別 — `pitching_logs.start_inning` 列追加 + NPB box 登板回数 parse
+- **scope (確定 2026-05-21)**: (1) ~~デーゲーム / ナイター~~ — marginal value (年 10-15 試合) で **drop** / (2) **vs 左右投手** — [[415]] (#91) に split out、 approach (a) starter 限定 approx で `378249d` + `f621457` landed / (3) **登板 inning 別** — `pitching_logs.start_inning` 列追加 + NPB box 登板回数 parse、 commit `159d491` (schema + derive) + `e2dd155` (publisher + wire) で LIVE_DEPLOYED
+- **deploy**: image `insight-nightly:415-vs-lr-mvp` gen 81 (2026-05-21 自然 fire 動作確認)
+- **観察待ち**: 登板 inning 別 post の出現 (投手 appearance 蓄積 + dedup cooldown 経過後)
 - **不可触**: [[403]] が固めた期間 cut 体系 / 348 whitelist / 349 cooldown / 356 quality gate / env / Secret / Scheduler / 既存 publisher の title format
-- **着手判断**: 403 完了 + 1 週間以上の自然 fire 観察後
 
 ### 405-INSIGHT-period-window-phase3-parked
 

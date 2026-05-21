@@ -2,9 +2,9 @@
 
 ## 1. ticket header
 
-- **status**: PARTIAL (2026-05-20 PM、 user 判断「左右選手は重要、 別チケットにして残す。 他は登板はやる」):
-  - **登板 inning 別**: 実装着手 (本 ticket scope)、 schema 拡張 + derive logic 完了 (commit pending)
-  - **vs 左右投手**: [[415]] (#91) に split out、 PARKED user 判断 (a) approx / (b) 厳密 後
+- **status**: PARTIAL_LIVE_DEPLOYED_OBSERVE (2026-05-21、 登板 inning 別 = schema + derive + publisher + wire 完了済、 image `insight-nightly:415-vs-lr-mvp` gen 81 deploy 済、 inning 別 post の自然 fire 観察待ち):
+  - **登板 inning 別**: 実装完了 commit `159d491` (schema + derive logic) + `e2dd155` (publisher + insight_nightly wire)、 LIVE_DEPLOYED、 inning 別 post の自然 fire 観察待ち (2026-05-21 10:02 fire には未出現、 投手 fire / appearance 蓄積後出現見込み)
+  - **vs 左右投手**: [[415]] (#91) に split out、 approach (a) starter 限定 approx で commit `378249d` + `f621457` landed (NPB throws scraper)、 PARKED user 判断 (a) approx 維持 / (b) 厳密 へ拡張後
   - **デーゲーム / ナイター**: marginal value (年 10-15 試合のみ) で drop、 必要なら別 ticket で復活
 - **priority**: medium (ファン視点 cut の第二弾、 403 安定後に追加)
 - **owner**: Claude / **lane**: Claude

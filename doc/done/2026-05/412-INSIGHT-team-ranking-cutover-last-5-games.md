@@ -2,7 +2,7 @@
 
 ## 1. ticket header
 
-- **status**: READY (Claude 自律進行可能、 narrow fix、 403 Stage A4 follow-up)
+- **status**: CLOSED LIVE_DEPLOYED_VERIFIED (commit `4b05527` landed + image `insight-nightly:415-vs-lr-mvp` gen 81 deploy 済 + 2026-05-21 10:02 JST 自然 fire で team_ranking 打順別 + 打点 ranking last_5_games 3 件 publish 成功 (post 69983/85/87)、 `skip_dedup_cooldown last_7d` 0 件)
 - **priority**: P1 (team metric publish 全停止中、 cutover 完成度補強)
 - **owner**: Claude / **lane**: Claude
 - **github_issue**: https://github.com/fwns6760/-wordpressyoshilover/issues/86

@@ -2,7 +2,7 @@
 
 ## 1. ticket header
 
-- **status**: READY (Claude 自律進行可能、 narrow fix、 403 Stage A3 follow-up)
+- **status**: CLOSED LIVE_DEPLOYED_VERIFIED (commit `d8c1c8a` landed + image `insight-nightly:415-vs-lr-mvp` gen 81 deploy 済 + 2026-05-21 10:02 JST 自然 fire で マルティネス last_5_games 防御率 (post 69979) / 奪三振率 (post 69981) publish 成功 → リリーフ救済確認、 `insufficient_sample sample_size=5 min_sample=10` 事象は新 min_sample table (last_5_games=3 IP) で解消)
 - **priority**: P2 (リリーフ投手の publish 機会喪失、 starter は影響なし)
 - **owner**: Claude / **lane**: Claude
 - **github_issue**: https://github.com/fwns6760/-wordpressyoshilover/issues/87

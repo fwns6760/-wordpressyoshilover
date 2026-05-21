@@ -5,7 +5,7 @@
 
 ## 1. ticket header
 
-- **status**: LIVE_DEPLOYED_OBSERVE (cutover deploy 済 image `403-cutover-e343479` gen 74、 21:00 fire 観察待ち、 **恒久 spec lock 2026-05-20 PM**)
+- **status**: CLOSED LIVE_DEPLOYED_VERIFIED (image `insight-nightly:415-vs-lr-mvp` gen 81、 2026-05-21 10:02 JST 自然 fire で新 scope の publish 6 件成功、 `skip_dedup_cooldown` / `insufficient_sample` 0 件、 0 件問題解消確認)
 - **priority**: high (5/20 12:00/15:00/17:00 publish 0 件の主因、 サンプル不足を構造的に直す)
 - **owner**: Claude (実装) / user (GO 判断、 受け入れ試験)
 - **lane**: Claude
@@ -22,7 +22,12 @@
   - 恒久 lock `f1df3be`: spec 恒久化 + status LIVE_DEPLOYED_OBSERVE
   - Stage B `febb2f0`: 打順別 publisher 新規 (band 化、 4 番固定回避)
 - **deploy 履歴**: image `403-cutover-03a49ee` (gen 73) → `403-cutover-e343479` (gen 74、 二重 label fix) → `403-stage-b-febb2f0` (gen 75、 Stage B 同梱)
-- **verify 状況 (2026-05-20 20:00 JST)**: 20:00 fire は cutover 前 image だが 406 fix verify 完了 (bl.HR error 過去 5 日 175 件 → 0 件)。 21:00 fire (data-insight-during-game-trigger) で cutover + Stage B 動作観察
+- **verify 状況 (2026-05-21 10:02 JST 自然 fire)**: image `415-vs-lr-mvp` gen 81 で 6 件 publish 成功 (平山功太/大城卓三/キャベッジ 打点 ranking + マルティネス 防御率/奪三振率 last_5_games + 平山功太 長打率)、 `skip_dedup_cooldown last_7d` / `insufficient_sample` 0 件。 新 scope vocabulary が全 path で稼働中、 5/20 12-17時 publish 0 件 の主因 (sample 不足) 解消確認。 follow-up 412 / 413 / 404 も同 image に含まれ動作確認済 (412: team_ranking last_5_games 打順別 publish / 413: マルティネス last_5_games rate metric publish / 404: 登板 inning publisher wire 完了、 inning 別 post は次回以降観察)
+- **verified evidence**:
+  - post 69977: 平山功太 長打率 last_5_games (403 batter rate)
+  - post 69979: マルティネス 防御率 last_5_games (413 pitcher rate fix の証拠)
+  - post 69981: マルティネス 奪三振率 last_5_games (413 同)
+  - post 69983/85/87: 打順別 + 打点 ranking last_5_games (412 team_ranking cutover)
 - **依存**: [[project_data_insight_period_scope_2026_05_20]] memory (新 scope spec lock)
 - **関連**: 348 (whitelist 実装、 CLOSED) / 349 (dedup cooldown、 LIVE_OBSERVE) / 356 (data quality gate、 LIVE_OBSERVE) / 357 (mail human period labels、 LIVE_OBSERVE)
 

@@ -48,17 +48,17 @@ user 方針「受け入れ NG はまた起票」+「一人開発で Active 多�
 | `doc/done/2026-05/409-SUBTYPE-farm-2gun-3gun-split.md` | LIVE_DEPLOYED_OBSERVE (flag OFF) | farm → farm2/farm3 分離。 Phase 1 (`64125cb`) `ENABLE_FARM_2GUN_3GUN_SPLIT` flag-gated (default OFF) + 4 新 subtype 登録 + 26 unit test。 backward-compat alias 維持で既存 farm test 全 pass。 GH Issue #83。 残: enable user 判断 + farm3_player narrative judge。 |
 | `doc/done/2026-05/410-FRONT-ob-farm-category-display.md` | LIVE_DEPLOYED_OBSERVE | WP front 表示。 Phase 1 (`b46ffaa`) `src/subtype_display_format.py` (build_subtype_badge_html / build_source_attribution_block + 17 test)、 Phase 2 (`d963d1d`) `maybe_prepend_subtype_display` + `_create_draft_with_same_fire_guard` wire-in + 8 test。 GH Issue #84。 残: WP テーマ CSS 追加 (`.nomotoke-subtype-badge--ob/farm2/farm3`、 user 判断)。 |
 
-### 403 — INSIGHT 期間 cut を日付 base から 試合数 / PA / 登板数 / IP base に全面切替 (段階式 Stage 1、 READY audit 完了)
+### 403 — INSIGHT 期間 cut を日付 base から 試合数 / PA / 登板数 / IP base に全面切替 (Stage 1、 CLOSED LIVE_DEPLOYED_VERIFIED 2026-05-21)
 
 | ticket | status | 内容 |
 |---|---|---|
-| `doc/active/403-INSIGHT-period-window-game-count-switch.md` | READY (audit 完了 + spec 確定 2026-05-20) | 5/20 logs で 12:00 / 15:00 / 17:00 publish 0 件、 主因は 356 quality gate `insufficient_sample` (last_7d sample 不足)。 user lock spec で **日付 cut (last_7d / last_30d) 全廃止**、 打者 3/5/10試合 (min AB=8/12/20、 audit 反映で当初仮置き 12/20/35 → 半減) + 30/50/100打席、 投手 3/5/10登板 + 5/10投球回 (last_20_ip 廃止、 audit 4/22 達成のみで過疎) base へ切替。 同 stage でファン視点 cut (打順別 + vs 球団別) を既存 schema のまま追加、 **本拠地 / ビジターは廃止** (user 判断 2026-05-20 「いらん」+ audit で `games.home_away` 直近30日全 unknown 確認)。 サバメ NG line 維持、 whitelist [[348]] 据え置き。 affected: 9 file / 67 reference、 DB schema 変更なし。 follow-up: 404 (Phase 2 ETL) / 405 (Phase 3 PARKED)。 audit log: `docs/handoff/session_logs/2026-05-20_403_audit_and_spec_finalization.md`。 next action: 実装便 fire (scope vocabulary 切替 + counting logic + min_sample 再算出 + dedup scope_family 対応 + 打順別 / vs 球団別 publisher 追加 + title 表記)。 |
+| `doc/done/2026-05/403-INSIGHT-period-window-game-count-switch.md` | CLOSED LIVE_DEPLOYED_VERIFIED | image `insight-nightly:415-vs-lr-mvp` gen 81、 2026-05-21 10:02 JST 自然 fire で新 scope の publish 6 件成功 (平山功太 長打率 / マルティネス 防御率 + 奪三振率 / 平山 + 大城 + キャベッジ 打点 ranking 打順別、 全 last_5_games)、 `skip_dedup_cooldown last_7d` / `insufficient_sample` 0 件、 5/20 12-17時 publish 0 件問題完全解消。 follow-up 412 (team_ranking last_5_games cutover) / 413 (投手 last_N_games min_sample fix) も同 image で landed + LIVE 動作確認済 → CLOSED。 GH Issue #77。 |
 
-### 404 — INSIGHT Phase 2 ETL stub (段階式 Stage 2、 BLOCKED_BY=403)
+### 404 — INSIGHT Phase 2 ETL (PARTIAL_LIVE_DEPLOYED_OBSERVE、 登板 inning 別 LIVE / vs 左右 [[415]] split / デーゲーム drop)
 
 | ticket | status | 内容 |
 |---|---|---|
-| `doc/waiting/404-INSIGHT-period-window-phase2-etl.md` | BLOCKED_BY=403 | [[403]] の follow-up。 ETL 軽改修 (列追加 + parse 追加) で実装できる ファン視点 cut 3 件 = デーゲーム / ナイター (`games.start_hour`) / vs 左右投手 (`pitching_logs.pitcher_throws` + roster fill) / 登板 inning 別 (`pitching_logs.start_inning`)。 着手は 403 完了 + 1 週間以上の自然 fire 観察後。 stub だけ残して忘れない。 |
+| `doc/active/404-INSIGHT-period-window-phase2-etl.md` | PARTIAL_LIVE_DEPLOYED_OBSERVE | 登板 inning 別 = commit `159d491` schema/derive + `e2dd155` publisher/wire で LIVE_DEPLOYED (image `415-vs-lr-mvp`)、 inning 別 post の自然 fire 観察待ち (投手 appearance 蓄積 + dedup cooldown 経過後)。 vs 左右投手 = [[415]] (#91) に split out、 starter 限定 approx (`378249d`+`f621457`) landed PARKED。 デーゲーム / ナイター = marginal value で drop (年 10-15 試合のみ、 必要なら別 ticket で復活)。 GH Issue #79 OPEN (observe)。 |
 
 ### 405 — INSIGHT Phase 3 PARKED stub (段階式 Stage 3、 当面着手しない)
 

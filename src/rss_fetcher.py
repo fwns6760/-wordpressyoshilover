@@ -4668,10 +4668,15 @@ def _game_status_indicates_started(game_status: dict | None) -> bool:
 # (so is_giants_related passes) but no actual player / 監督 / コーチ entity.
 # Examples: 「ジャイアンツタウン グッズ販売」, 「本日の審判団 球審 嶋田」.
 # detect_person presence overrides → article is kept.
+# ticket 419: 「チケット」 は 球団情報 category 経由で auto-draft 化したい
+# (user 方針「巨人サイトの幅を広げたい」)。 他 promotional marker (販売 /
+# グッズ / 抽選 / 締切 / ファンクラブ / 申し込み 等) は引き続き skip 維持で
+# noise 流入を防ぐ。 chiet keyword は 416 で manual_intake へ ticket 系
+# subtype route が landed 済、 417 で table block embed path も整備済。
 _NON_PLAYER_PROMOTIONAL_MARKERS: tuple[str, ...] = (
     "販売", "発売", "予約販売", "予約", "抽選", "グッズ", "ストア",
     "セール", "割引", "プレゼント", "受注", "限定発売",
-    "締め切り", "締切", "チケット", "ファンクラブ", "申し込み",
+    "締め切り", "締切", "ファンクラブ", "申し込み",
 )
 _NON_PLAYER_OPERATIONS_MARKERS: tuple[str, ...] = (
     "球審", "塁審", "線審", "審判団", "審判員", "本日の審判",

@@ -372,6 +372,34 @@ class CostModeTests(unittest.TestCase):
         )
         self.assertEqual(reason, "")
 
+    def test_419_pure_ticket_info_passes(self):
+        # ticket 419: user 方針「巨人サイトの幅を広げたい / チケット情報も
+        # 自動下書きへ」。 「チケット」 単独 keyword + 販売・グッズ markers
+        # なしの記事は skip しない (= auto-draft 経路へ流れる)。
+        reason = rss_fetcher._should_skip_no_entity_non_game(
+            "巨人 5月のチケット観戦ガイド",
+            "東京ドームでのチケット観戦の心得",
+        )
+        self.assertEqual(reason, "")
+
+    def test_419_ticket_with_sale_marker_still_skipped(self):
+        # 「チケット」 だけ exemption、 他 promotional markers (販売 / 抽選 /
+        # ファンクラブ / 申し込み 等) は引き続き skip 維持 (regression 0)。
+        for title in (
+            "巨人ストア グッズ販売開始",
+            "東京ドーム 抽選販売の告知",
+            "ジャイアンツ ファンクラブ申し込み開始",
+            "新グッズ予約販売スタート",
+            "シーズンチケット販売開始",  # チケット + 販売 → 販売 marker で skip
+        ):
+            with self.subTest(title=title):
+                reason = rss_fetcher._should_skip_no_entity_non_game(title, "")
+                self.assertEqual(
+                    reason,
+                    "promotional_no_entity",
+                    f"expected skip for {title!r}",
+                )
+
     def test_unfinished_postgame_skip_fires_when_game_in_progress(self):
         # post 66993 type: 試合中なのに postgame source が取り込まれ
         # 「白星」narrative の事実誤認 article が公開された事象を防ぐ。

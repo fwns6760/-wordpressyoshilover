@@ -10,7 +10,7 @@ import json
 import logging
 import os
 import subprocess
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 TRUE_VALUES = {"1", "true", "yes", "on"}
@@ -581,4 +581,10 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     print(f"起動: port={PORT}")
-    HTTPServer(("", PORT), Handler).serve_forever()
+    # DIGEST-DAILY-MORNING (2026-05-21) wire-fix: ThreadingHTTPServer に切替。
+    # 旧 HTTPServer (single-threaded) では rss_fetcher subprocess block 中
+    # に来た mode=digest_daily 等の他 mode request が queue 待機して
+    # scheduler attemptDeadline 内に dispatch 不能だった。 各 do_POST が
+    # 独立 thread で動くようにすることで、 短時間 handler (digest_daily) は
+    # RSS subprocess と並列処理される。
+    ThreadingHTTPServer(("", PORT), Handler).serve_forever()

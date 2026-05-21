@@ -583,8 +583,60 @@ class ArticleTypeNormalizationTests(unittest.TestCase):
         self.assertIn(mi.ARTICLE_TYPE_AUTO, mi.ARTICLE_TYPE_CHOICES)
         for value in mi.ARTICLE_TYPE_OVERRIDES.keys():
             self.assertIn(value, mi.ARTICLE_TYPE_CHOICES)
-        # 12 total: auto + 11 overrides.
-        self.assertEqual(len(mi.ARTICLE_TYPE_CHOICES), 12)
+        # 18 total: auto + 17 overrides (11 original + 6 new for the
+        # ドラフト・育成 / OB・解説者 / 補強・移籍 categories).
+        self.assertEqual(len(mi.ARTICLE_TYPE_CHOICES), 18)
+
+    def test_new_routes_cover_missing_wp_categories(self):
+        # 不足していた 3 category に少なくとも 1 route が存在することを保証
+        # (config/categories.json の WP id 666 / 667 / 668)。
+        category_set = {meta[0] for meta in mi.ARTICLE_TYPE_OVERRIDES.values()}
+        for cat in ("ドラフト・育成", "OB・解説者", "補強・移籍"):
+            self.assertIn(cat, category_set, f"missing route for {cat}")
+
+
+class AutoGuessArticleTypeNewKeywordTests(unittest.TestCase):
+    """Cover the 6 new article_type detections added for the unused
+    WP categories (ドラフト・育成 / OB・解説者 / 補強・移籍)."""
+
+    def _guess(self, title: str, summary: str = "") -> str:
+        return mi._auto_guess_article_type(url="", title=title, summary=summary)
+
+    def test_draft_pick(self):
+        self.assertEqual(self._guess("巨人ドラフト1位指名は石塚裕惺"), "ドラフト")
+        self.assertEqual(self._guess("ドラフト会議で巨人が交渉権獲得"), "ドラフト")
+
+    def test_farm(self):
+        self.assertEqual(self._guess("巨人2軍が首位に浮上"), "2軍・育成")
+        self.assertEqual(self._guess("ファーム 育成選手 三塚琉生がプロ初HR"), "2軍・育成")
+        self.assertEqual(self._guess("巨人3軍 紅白戦の結果"), "2軍・育成")
+
+    def test_foreign_player(self):
+        self.assertEqual(self._guess("巨人が新外国人キャベッジ獲得"), "助っ人")
+        self.assertEqual(self._guess("助っ人ハワード 来日2年目"), "助っ人")
+
+    def test_trade(self):
+        self.assertEqual(self._guess("巨人と楽天がトレード成立"), "トレード")
+
+    def test_ob(self):
+        self.assertEqual(self._guess("巨人OB桑田氏が古巣にエール"), "OB情報")
+        self.assertEqual(self._guess("元巨人 上原浩治氏が解説"), "OB情報")
+        self.assertEqual(self._guess("引退発表 阿部慎之助"), "OB情報")
+
+    def test_transfer_generic(self):
+        self.assertEqual(self._guess("FA宣言した山田太郎が巨人入団"), "補強・移籍")
+        self.assertEqual(self._guess("巨人 ルシアーノ獲得を発表"), "補強・移籍")
+
+    def test_existing_paths_unchanged(self):
+        # 既存 path が回帰していないこと(代表 3 件のみ check)。
+        self.assertEqual(self._guess("巨人 5-3 阪神 試合終了"), "試合結果")
+        self.assertEqual(
+            mi._auto_guess_article_type(
+                url="https://www.youtube.com/watch?v=abc", title=""
+            ),
+            "動画",
+        )
+        self.assertEqual(self._guess("公示 出場選手登録 田中将大"), "公示")
 
 
 class SourcePublishedAtNormalizationTests(unittest.TestCase):

@@ -107,6 +107,14 @@ ARTICLE_TYPE_OVERRIDES: dict[str, tuple[str, str, str]] = {
     "番組情報": ("コラム", "program", "nomotoke_card_short_news_url_v1"),
     "コラム": ("コラム", "other", "nomotoke_card_short_news_url_v1"),
     "ニュース": ("コラム", "other", "nomotoke_card_short_news_url_v1"),
+    # 不足 3 category を埋める route (config/categories.json 666 / 667 / 668)。
+    # template_key は既存 short_news renderer を流用 (renderer 改変なし)。
+    "ドラフト": ("ドラフト・育成", "draft", "nomotoke_card_short_news_url_v1"),
+    "2軍・育成": ("ドラフト・育成", "farm", "nomotoke_card_short_news_url_v1"),
+    "OB情報": ("OB・解説者", "ob", "nomotoke_card_short_news_url_v1"),
+    "補強・移籍": ("補強・移籍", "transfer", "nomotoke_card_short_news_url_v1"),
+    "トレード": ("補強・移籍", "trade", "nomotoke_card_short_news_url_v1"),
+    "助っ人": ("補強・移籍", "foreign", "nomotoke_card_short_news_url_v1"),
 }
 ARTICLE_TYPE_CHOICES: tuple[str, ...] = (
     ARTICLE_TYPE_AUTO,
@@ -275,6 +283,28 @@ def _auto_guess_article_type(
             if "試合終了" in text or "終了" in text:
                 return "試合結果"
             return "試合速報"
+
+    # 不足 3 category への route (ドラフト・育成 / OB・解説者 / 補強・移籍)。
+    # priority order: specific → broad。 「2軍」「3軍」「育成」 は farm に寄
+    # せ、 「ドラフト」「指名」 は draft、 「助っ人」「新外国人」 は foreign、
+    # 「トレード」 は trade、 「OB」「退団」「引退」 は ob、 残りの 「移籍」
+    # 「補強」「獲得」 は generic transfer に落とす。
+    if any(k in text for k in ("ドラフト指名", "ドラフト候補", "ドラフト会議", "ドラフト1位", "ドラフト1位", "ドラフト2位")):
+        return "ドラフト"
+    if "ドラフト" in text and any(k in text for k in ("指名", "候補", "会議", "巨人", "ジャイアンツ", "読売")):
+        return "ドラフト"
+    if any(k in text for k in ("2軍", "二軍", "ファーム", "3軍", "三軍", "育成選手", "育成契約")):
+        return "2軍・育成"
+    if any(k in text for k in ("新外国人", "助っ人")):
+        return "助っ人"
+    if "トレード" in text:
+        return "トレード"
+    if any(k in text for k in ("退団", "引退", "解説者", "OB会", "巨人OB", "元巨人")):
+        return "OB情報"
+    if any(k in text for k in ("FA宣言", "FA移籍", "FA権", "海外FA", "国内FA")):
+        return "補強・移籍"
+    if any(k in text for k in ("移籍", "獲得", "新加入", "入団", "補強")):
+        return "補強・移籍"
 
     return "コラム"
 

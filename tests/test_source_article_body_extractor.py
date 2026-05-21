@@ -119,6 +119,52 @@ class SiteSelectorPathTests(unittest.TestCase):
         self.assertIn("0回2/3", out)
         self.assertNotIn("googletag", out)
 
+    def test_nikkan_gendai_plain_page_extracts_article_body(self):
+        title = "なぜか負けない阿部巨人の手腕…「若手を育てて勝て」実践し球団フロントの評価ウナギ上り｜日刊ゲンダイDIGITAL"
+        html = f"""
+        <html>
+          <head>
+            <title>{title}</title>
+            <meta name="description" content="短いメタ説明だけ">
+          </head>
+          <body>
+            <header>
+              <a>日刊ゲンダイDIGITAL</a>
+              <a>政治/社会</a><a>芸能</a><a>スポーツ</a>
+            </header>
+            <main>
+              <nav>日刊ゲンダイDIGITAL スポーツ 野球ニュース 記事</nav>
+              <h1>{title}</h1>
+              <p>公開日：2026/05/21 10:30 更新日：2026/05/21 12:15</p>
+              <ul><li>印刷</li><li>>> バックナンバー</li></ul>
+              <h2>球団内の評価が変わりつつある</h2>
+              <figure>阿部監督（Ｃ）日刊ゲンダイ この記事の画像を見る(2枚)</figure>
+              <p>巨人は接戦を拾いながら、若手起用と勝利を同時に進めている。</p>
+              <p>阿部監督の采配について、球団フロントからは評価する声が出ているという。</p>
+              <p>投手陣を軸に守り勝つ形が固まり、ベンチの判断にも一体感が見える。</p>
+              <a>次ページ→ さらに評価が高まる理由</a>
+              <section>最新のスポーツ記事</section>
+              <p>ランキング本文ではない行。</p>
+            </main>
+          </body>
+        </html>
+        """
+        out = extract_article_body_excerpt(
+            html,
+            "https://www.nikkan-gendai.com/articles/view/sports/387913",
+            title=title,
+            max_chars=700,
+        )
+        self.assertIn("球団内の評価が変わりつつある", out)
+        self.assertIn("巨人は接戦を拾いながら", out)
+        self.assertIn("阿部監督の采配", out)
+        self.assertNotIn("短いメタ説明だけ", out)
+        self.assertNotIn("公開日", out)
+        self.assertNotIn("日刊ゲンダイDIGITAL スポーツ 野球ニュース 記事", out)
+        self.assertNotIn("この記事の画像を見る", out)
+        self.assertNotIn("次ページ", out)
+        self.assertNotIn("ランキング本文ではない行", out)
+
     def test_full_count_body_selector_drops_header_and_ads(self):
         html = (
             '<article class="s-entry-post">'

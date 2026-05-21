@@ -637,6 +637,85 @@ def _extract_via_giants_jp_next_data(html: str) -> str:
     return "\n".join(paragraphs).strip()
 
 
+_NIKKAN_GENDAI_PUBLISH_DATE_RE = re.compile(r"^(?:公開日|更新日)：")
+_NIKKAN_GENDAI_SKIP_LINE_RE = re.compile(
+    r"^(?:記事|印刷|>>\s*バックナンバー|\d+|[1-9]\d?\.\d+万)$"
+)
+_NIKKAN_GENDAI_STOP_LINE_RE = re.compile(
+    r"^(?:次ページ|次へ|政治・社会|芸能|ライフ|マネー|健康|BOOKS|"
+    r"最新のスポーツ記事|野球のアクセスランキング|編集部オススメ|"
+    r"人気キーワード|アクセスランキング|もっと見る)"
+)
+
+
+def _extract_via_nikkan_gendai_plain(html: str, title: str = "") -> str:
+    """Extract www.nikkan-gendai.com article prose from the full page text.
+
+    Nikkan Gendai pages currently expose only a short meta description to
+    the generic strategies used here, while the visible article text is
+    surrounded by navigation, pagination, rankings, and related lists. Use
+    the rendered H1/title neighborhood as the anchor, then stop at the
+    first pagination / site-chrome marker.
+    """
+    if not html:
+        return ""
+    plain = _strip_html_to_plain(html)
+    if not plain:
+        return ""
+
+    lines = [ln.strip() for ln in plain.splitlines() if ln.strip()]
+    if not lines:
+        return ""
+
+    title_clean = _normalize_title_echo_text(title)
+    start = 0
+    if title_clean:
+        title_indexes = [
+            idx
+            for idx, line in enumerate(lines)
+            if _is_title_echo(_normalize_title_echo_text(line), title_clean)
+        ]
+        dated_title_indexes = [
+            idx
+            for idx in title_indexes
+            if any(
+                _NIKKAN_GENDAI_PUBLISH_DATE_RE.match(lines[j])
+                for j in range(idx + 1, min(len(lines), idx + 8))
+            )
+        ]
+        if dated_title_indexes:
+            start = dated_title_indexes[-1] + 1
+        elif title_indexes:
+            start = title_indexes[-1] + 1
+    if start == 0:
+        for idx, line in enumerate(lines):
+            if _NIKKAN_GENDAI_PUBLISH_DATE_RE.match(line):
+                start = idx + 1
+                break
+
+    body_lines: list[str] = []
+    for line in lines[start:]:
+        if _NIKKAN_GENDAI_STOP_LINE_RE.match(line):
+            if body_lines:
+                break
+            continue
+        if _is_noise_line(line):
+            continue
+        if _NIKKAN_GENDAI_PUBLISH_DATE_RE.match(line):
+            continue
+        if _NIKKAN_GENDAI_SKIP_LINE_RE.match(line):
+            continue
+        if "この記事の画像を見る" in line:
+            continue
+        if title_clean and _is_title_echo(_normalize_title_echo_text(line), title_clean):
+            continue
+        body_lines.append(line)
+        if len("\n".join(body_lines)) >= 1800:
+            break
+
+    return "\n".join(body_lines).strip()
+
+
 def _extract_via_site_selectors(html: str, host: str) -> str:
     """Try the curated site-specific selector table for the matching
     host. Returns the inner HTML fragment or ``""``."""
@@ -737,6 +816,11 @@ def extract_article_body_excerpt(
         next_body = _extract_via_giants_jp_next_data(raw_html)
         if next_body:
             candidates.append((next_body, False))
+
+    if host in {"www.nikkan-gendai.com", "nikkan-gendai.com"}:
+        nikkan_gendai_body = _extract_via_nikkan_gendai_plain(raw_html, title=title)
+        if nikkan_gendai_body:
+            candidates.append((nikkan_gendai_body, False))
 
     site_frag = _extract_via_site_selectors(raw_html, host)
     if site_frag:

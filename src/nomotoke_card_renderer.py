@@ -332,6 +332,80 @@ def _esc(value: Any) -> str:
     return html.escape(str(value), quote=True)
 
 
+def _render_markdown_table_block(markdown: str) -> str | None:
+    """Convert a GitHub-flavored Markdown table to a Gutenberg
+    ``<!-- wp:table -->`` block. Returns ``None`` for empty / invalid
+    input so callers can skip the block insertion silently.
+
+    Format accepted (ticket 417):
+        | h1 | h2 |
+        |---|---|
+        | a1 | a2 |
+        | b1 | b2 |
+
+    Rules:
+    - lines that are entirely whitespace are skipped before parsing
+    - separator row (``---`` / ``:---:`` / ``---:``) is required and
+      treated as the header / body delimiter
+    - leading / trailing ``|`` on a row are stripped before splitting
+    - cell values are HTML-escaped via ``_esc`` (XSS-safe)
+    - pipe escape (``\\|``) is NOT supported in v1 (documented limit)
+    - rows with a different column count than the header are dropped
+    """
+    if not markdown or not isinstance(markdown, str):
+        return None
+    raw_lines = [ln.rstrip() for ln in markdown.replace("\r\n", "\n").split("\n")]
+    lines = [ln for ln in raw_lines if ln.strip()]
+    if len(lines) < 2:
+        return None
+
+    def _split_row(row: str) -> list[str]:
+        s = row.strip()
+        if s.startswith("|"):
+            s = s[1:]
+        if s.endswith("|"):
+            s = s[:-1]
+        return [c.strip() for c in s.split("|")]
+
+    separator_re = re.compile(r"^:?-{3,}:?$")
+    header_cells: list[str] | None = None
+    body_rows: list[list[str]] = []
+    saw_separator = False
+    for ln in lines:
+        if "|" not in ln:
+            continue
+        cells = _split_row(ln)
+        if not cells:
+            continue
+        if not saw_separator and all(separator_re.match(c) for c in cells if c):
+            if header_cells is None or len(cells) != len(header_cells):
+                return None
+            saw_separator = True
+            continue
+        if header_cells is None:
+            header_cells = cells
+            continue
+        if len(cells) != len(header_cells):
+            continue
+        body_rows.append(cells)
+
+    if not saw_separator or header_cells is None or not body_rows:
+        return None
+
+    header_html = "".join(f"<th>{_esc(c)}</th>" for c in header_cells)
+    body_html = "".join(
+        "<tr>" + "".join(f"<td>{_esc(c)}</td>" for c in row) + "</tr>"
+        for row in body_rows
+    )
+    table_html = (
+        '<figure class="wp-block-table"><table>'
+        f"<thead><tr>{header_html}</tr></thead>"
+        f"<tbody>{body_html}</tbody>"
+        "</table></figure>"
+    )
+    return f"<!-- wp:table -->{table_html}<!-- /wp:table -->"
+
+
 def _safe_url(value: Any) -> str:
     """Return an HTML-escaped URL only if it is http(s); else ''."""
     if value is None:
@@ -2433,6 +2507,15 @@ def render_short_news_url_card(data: Dict[str, Any]) -> Dict[str, Any]:
     body_parts.append(
         f'<p class="nomotoke-lead">{_esc(summary_clean or title_raw)}</p>'
     )
+
+    # ticket 417: 任意 Markdown table を Gutenberg `<!-- wp:table -->` block
+    # に変換して lead 直後に embed。 入力空 / 不正なら None で skip = 既存
+    # short_news body と完全一致 (regression 0 保証)。
+    table_markdown_raw = (data.get("table_markdown") or "").strip()
+    if table_markdown_raw:
+        table_block = _render_markdown_table_block(table_markdown_raw)
+        if table_block:
+            body_parts.append(table_block)
 
     # Fact card no longer echoes title / source_name / date_label rows
     # (BODY-FIX-2 C2): the helper still receives those for backward-compat

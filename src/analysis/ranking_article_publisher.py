@@ -2685,3 +2685,87 @@ def publish_default_set(
         if result.get("status") in ("published", "published_draft", "dry_run"):
             published += 1
     return results
+
+
+# ─── 405 / 415 (b) Phase 3a: 走者状況別 巨人打者 aggregator ──────────────
+#
+# at_bat_details (Phase 2a schema + Phase 2b ingest) を SELECT して、 巨人
+# 攻撃半回での per-batter 集計を出す。
+# 405 走者状況別 cut の最初の publish ready aggregator。
+
+_RUNNER_STATE_LABELS: dict[str, str] = {
+    "": "無走者",
+    "1塁": "1塁",
+    "2塁": "2塁",
+    "3塁": "3塁",
+    "1・2塁": "1・2塁",
+    "1・3塁": "1・3塁",
+    "2・3塁": "2・3塁",
+    "満塁": "満塁",
+}
+
+
+def aggregate_giants_batter_runner_state(
+    conn: sqlite3.Connection,
+    *,
+    runner_state: str,
+    last_n_games: int = 10,
+    top_n: int = 10,
+) -> list[dict[str, Any]]:
+    """走者状況別 巨人打者 ranking 集計 (405 Phase 3a)。
+
+    at_bat_details から直近 ``last_n_games`` 試合の巨人攻撃 PA を抽出、
+    指定 runner_state で filter、 batter 別に PA 数 + 打点合計を集計。
+
+    Args:
+        runner_state: "" (無走者) / "1塁" / ... / "満塁"
+        last_n_games: 巨人試合数 window
+        top_n: 返却 top 件数
+
+    Returns:
+        list of {batter, pa_count, rbi_sum} (rbi_sum DESC、 同点 → pa_count DESC)
+    """
+    # 直近 last_n_games の game_id を games から取得 (giants_score IS NOT NULL)
+    game_id_rows = conn.execute(
+        "SELECT game_id FROM games "
+        "WHERE giants_score IS NOT NULL "
+        "ORDER BY game_date DESC LIMIT ?",
+        (last_n_games,),
+    ).fetchall()
+    if not game_id_rows:
+        return []
+    game_ids = [r[0] for r in game_id_rows]
+    placeholders = ",".join("?" * len(game_ids))
+    rows = conn.execute(
+        f"SELECT batter, result_text "
+        f"FROM at_bat_details "
+        f"WHERE game_id IN ({placeholders}) "
+        f"AND team LIKE '%巨人%' "
+        f"AND runner_state = ? "
+        f"AND batter IS NOT NULL AND batter <> ''",
+        tuple(game_ids) + (runner_state,),
+    ).fetchall()
+    if not rows:
+        return []
+    # batter で group して PA + RBI 集計
+    from src.analysis import insight_etl as _etl
+    agg: dict[str, dict[str, int]] = {}
+    for batter, result_text in rows:
+        if batter not in agg:
+            agg[batter] = {"pa_count": 0, "rbi_sum": 0}
+        agg[batter]["pa_count"] += 1
+        agg[batter]["rbi_sum"] += _etl.parse_rbi_from_result_text(result_text or "")
+    # sort
+    sorted_rows = sorted(
+        [
+            {"batter": k, "pa_count": v["pa_count"], "rbi_sum": v["rbi_sum"]}
+            for k, v in agg.items()
+        ],
+        key=lambda d: (-d["rbi_sum"], -d["pa_count"]),
+    )
+    return sorted_rows[:top_n]
+
+
+def runner_state_label(runner_state: str) -> str:
+    """走者状況の表示ラベル。 ID と表示文字が一致する場合は同じ文字列。"""
+    return _RUNNER_STATE_LABELS.get(runner_state, runner_state or "無走者")

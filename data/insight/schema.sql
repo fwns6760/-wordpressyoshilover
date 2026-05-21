@@ -221,3 +221,37 @@ CREATE INDEX IF NOT EXISTS idx_snap_player_metric
     ON advanced_metric_snapshots(player_canonical, metric_name, snapshot_date);
 CREATE INDEX IF NOT EXISTS idx_snap_metric_scope
     ON advanced_metric_snapshots(metric_name, scope, snapshot_date);
+
+-- 405 / 415 (b) Phase 2a (2026-05-21): per-PA 詳細 table。
+-- NPB 公式 playbyplay.html を parse して per-plate-appearance level の
+-- 走者状況 / カウント / 結果 / 対戦投手 を永続化。
+-- 走者状況別 / 打席内カウント別 / 球場別 (games join) / vs 左右投手別
+-- (415 b strict) の各 cut で aggregator が SELECT する source-of-truth。
+CREATE TABLE IF NOT EXISTS at_bat_details (
+    game_id TEXT NOT NULL,                -- games.game_id (e.g. "2026-05-10:d-g-08")
+    inning_no INTEGER NOT NULL,           -- 1-12 (extras)
+    half TEXT NOT NULL,                   -- "表" / "裏"
+    team TEXT NOT NULL,                   -- attacking team ("巨人" / opponent)
+    pa_index INTEGER NOT NULL,            -- half-inning 内の PA 順 (0-based)
+    outs TEXT,                            -- "0アウト" / "1アウト" / "2アウト"
+    runner_state TEXT,                    -- "" (無走者) / "1塁" / "1・2塁" / ... / "満塁"
+    batter TEXT,                          -- 打者表示名
+    batter_canonical TEXT,                -- 打者 canonical (lookup 用、 NULL OK)
+    count_balls INTEGER,                  -- 0-3 (parse 不能時 NULL)
+    count_strikes INTEGER,                -- 0-2
+    result_text TEXT,                     -- 結果文 (空振り三振 / 左中間ソロホームラン 等)
+    current_pitcher TEXT,                 -- 当該 PA 時の対戦投手表示名
+    pitcher_canonical TEXT,               -- 対戦投手 canonical (NULL OK)
+    source_url TEXT,                      -- 取得元 playbyplay.html URL
+    ingested_at TEXT,                     -- ISO 8601 取り込み日時
+    PRIMARY KEY (game_id, inning_no, half, pa_index)
+);
+
+CREATE INDEX IF NOT EXISTS idx_pa_batter
+    ON at_bat_details(batter_canonical, game_id);
+CREATE INDEX IF NOT EXISTS idx_pa_pitcher
+    ON at_bat_details(pitcher_canonical, game_id);
+CREATE INDEX IF NOT EXISTS idx_pa_runner_state
+    ON at_bat_details(runner_state, game_id);
+CREATE INDEX IF NOT EXISTS idx_pa_count
+    ON at_bat_details(count_balls, count_strikes);

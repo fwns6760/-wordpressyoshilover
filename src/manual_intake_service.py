@@ -596,6 +596,10 @@ _HTML_FORM = """<!DOCTYPE html>
         <input id=\"source_published_at\" name=\"source_published_at\" type=\"text\" placeholder=\"2026-05-07T18:30:00+09:00\" autocomplete=\"off\">
       </div>
       <div class=\"field\">
+        <label for=\"table_markdown\">表データ (Markdown table、 任意)</label>
+        <textarea id=\"table_markdown\" name=\"table_markdown\" rows=\"6\" placeholder=\"| 日付 | 対戦 | 球場 | 席種 | 価格 |\n|---|---|---|---|---|\n| 5/22 18:00 | 巨人 vs DeNA | 東京ドーム | 内野指定 | ¥5,800 |\"></textarea>
+      </div>
+      <div class=\"field\">
         <label for=\"memo\">メモ（本文には流れません）</label>
         <textarea id=\"memo\" name=\"memo\" rows=\"2\"></textarea>
       </div>
@@ -1658,6 +1662,10 @@ def _handle_manual_intake(
         "registered": (payload.get("registered") or "").strip(),
         "removed": (payload.get("removed") or "").strip(),
     }
+    # ticket 417: optional Markdown table input. Renderer converts to a
+    # Gutenberg <!-- wp:table --> block when non-empty / well-formed,
+    # otherwise skips silently (no regression).
+    table_markdown = (payload.get("table_markdown") or "").strip()
 
     exit_code, output = mi.run_manual_intake(
         url=url,
@@ -1670,6 +1678,7 @@ def _handle_manual_intake(
         wp_client_factory=wp_client_factory,
         logger=logger,
         manual_facts=manual_facts,
+        table_markdown=table_markdown,
     )
 
     if exit_code == mi.EXIT_OK:

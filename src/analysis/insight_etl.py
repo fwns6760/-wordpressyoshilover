@@ -273,6 +273,95 @@ def derive_pitcher_innings(rows: list[tuple]) -> list[tuple[int, int]]:
     return result
 
 
+_RBI_FROM_RESULT_RE = re.compile(r"[（(]\s*打点\s*(?P<rbi>\d+)\s*[）)]")
+
+
+def parse_rbi_from_result_text(result_text: str) -> int:
+    """405 / 415 (b) Phase 3a helper: NPB playbyplay の result_text から 打点 を抽出。
+
+    NPB の per-PA 結果は ``（打点N）`` の括弧注釈で RBI を annotate するので
+    そこから整数で取れる。 例:
+      "左中間ソロホームラン（打点1）" → 1
+      "中前タイムリーツーベース（打点2）" → 2
+      "空振り三振" → 0 (打点 marker なし)
+      "" / None → 0
+    """
+    if not isinstance(result_text, str) or not result_text:
+        return 0
+    m = _RBI_FROM_RESULT_RE.search(result_text)
+    if not m:
+        return 0
+    try:
+        return int(m.group("rbi"))
+    except (TypeError, ValueError):
+        return 0
+
+
+def upsert_at_bat_details(
+    conn: sqlite3.Connection,
+    *,
+    game_id: str,
+    source_url: str,
+    events: list[dict],
+    ingested_at: str,
+) -> int:
+    """405 / 415 (b) Phase 2b: at_bat_details へ per-PA events を upsert。
+
+    ``events`` は ``parse_npb_playbyplay_full_detail`` の出力形式を想定。
+    冪等 (INSERT OR REPLACE on PK (game_id, inning_no, half, pa_index))。
+
+    Returns: upsert された row 数。
+    """
+    if not events:
+        return 0
+    # half-inning 内 PA 順を group して pa_index を assign
+    pa_index_by_key: dict[tuple[int, str], int] = {}
+    rows: list[tuple] = []
+    for ev in events:
+        try:
+            inning_no = int(ev["inning_no"])
+        except (TypeError, ValueError, KeyError):
+            continue
+        half = str(ev.get("half") or "").strip()
+        team = str(ev.get("team") or "").strip()
+        if not half or not team:
+            continue
+        key = (inning_no, half)
+        pa_idx = pa_index_by_key.get(key, 0)
+        pa_index_by_key[key] = pa_idx + 1
+        rows.append((
+            game_id,
+            inning_no,
+            half,
+            team,
+            pa_idx,
+            ev.get("outs") or "",
+            ev.get("runner_state") or "",
+            ev.get("batter") or "",
+            None,  # batter_canonical - filled by separate normalize step
+            ev.get("count_balls"),
+            ev.get("count_strikes"),
+            ev.get("result") or "",
+            ev.get("current_pitcher") or "",
+            None,  # pitcher_canonical
+            source_url,
+            ingested_at,
+        ))
+    if not rows:
+        return 0
+    conn.executemany(
+        "INSERT OR REPLACE INTO at_bat_details ("
+        "game_id, inning_no, half, team, pa_index, outs, runner_state, "
+        "batter, batter_canonical, count_balls, count_strikes, "
+        "result_text, current_pitcher, pitcher_canonical, source_url, "
+        "ingested_at"
+        ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        rows,
+    )
+    conn.commit()
+    return len(rows)
+
+
 def backfill_pitcher_innings(conn: sqlite3.Connection) -> int:
     """404 (2026-05-20): 既存 pitching_logs row に start_inning / end_inning
     を derive して populate。 game_id ごとに appearance_order 順に処理。

@@ -844,6 +844,7 @@ def _try_render_via_nomotoke(
     article_type: str = ARTICLE_TYPE_AUTO,
     category: str = "",
     subtype: str = "",
+    table_markdown: str = "",
 ) -> str | None:
     """Render the manual-intake submission with the matching nomotoke
     renderer when the operator's article_type pick maps to a nomotoke
@@ -926,6 +927,11 @@ def _try_render_via_nomotoke(
             "date_label": date_label,
         }
         data.update(primary_og_meta)
+        # ticket 417: optional Markdown table passes through into the
+        # short_news renderer untouched. Empty / invalid string makes
+        # the renderer skip the table block (regression 0).
+        if table_markdown:
+            data["table_markdown"] = table_markdown
 
     elif template_key == "nomotoke_card_postgame_v1":
         # Yahoo Sportsnavi boxscore is the only supported source. The
@@ -4458,6 +4464,7 @@ def run_manual_intake(
     fetch_meta: Callable[..., dict[str, str]] = _fetch_news_meta,
     logger: logging.Logger | None = None,
     manual_facts: dict[str, str] | None = None,
+    table_markdown: str = "",
 ) -> tuple[int, dict[str, Any]]:
     """Run the manual intake pipeline.
 
@@ -4682,6 +4689,7 @@ def run_manual_intake(
             article_type=canonical_article_type,
             category=category,
             subtype=subtype,
+            table_markdown=table_markdown,
         )
     if body is None:
         if is_x:

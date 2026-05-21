@@ -2244,5 +2244,108 @@ class NewsDigestBannerTests(unittest.TestCase):
         self.assertIn("📰", out["content_html"])
 
 
+class MarkdownTableBlockTests(unittest.TestCase):
+    """ticket 417: _render_markdown_table_block の単体 test。"""
+
+    def setUp(self):
+        from src.nomotoke_card_renderer import _render_markdown_table_block
+        self._fn = _render_markdown_table_block
+
+    def test_returns_none_for_empty(self):
+        self.assertIsNone(self._fn(""))
+        self.assertIsNone(self._fn("   \n  "))
+        self.assertIsNone(self._fn(None))  # type: ignore[arg-type]
+
+    def test_returns_none_for_non_table_text(self):
+        self.assertIsNone(self._fn("just a sentence without pipes"))
+        self.assertIsNone(self._fn("| header |\n(no separator)"))
+
+    def test_returns_none_when_only_header_no_body(self):
+        out = self._fn("| h1 | h2 |\n|---|---|")
+        self.assertIsNone(out)
+
+    def test_basic_table_renders(self):
+        md = "| 日付 | 価格 |\n|---|---|\n| 5/22 | ¥5800 |\n| 5/23 | ¥3200 |"
+        out = self._fn(md)
+        self.assertIsNotNone(out)
+        self.assertIn("<!-- wp:table -->", out)
+        self.assertIn("<!-- /wp:table -->", out)
+        self.assertIn('<figure class="wp-block-table">', out)
+        self.assertIn("<th>日付</th><th>価格</th>", out)
+        self.assertIn("<td>5/22</td><td>¥5800</td>", out)
+        self.assertIn("<td>5/23</td><td>¥3200</td>", out)
+
+    def test_html_escape_in_cell(self):
+        md = "| h |\n|---|\n| <script>alert(1)</script> |"
+        out = self._fn(md)
+        self.assertIsNotNone(out)
+        self.assertNotIn("<script>", out)
+        self.assertIn("&lt;script&gt;", out)
+
+    def test_drops_rows_with_mismatched_columns(self):
+        md = "| a | b |\n|---|---|\n| ok1 | ok2 |\n| only one |\n| ok3 | ok4 |"
+        out = self._fn(md)
+        self.assertIsNotNone(out)
+        self.assertIn("<td>ok1</td><td>ok2</td>", out)
+        self.assertIn("<td>ok3</td><td>ok4</td>", out)
+        self.assertNotIn("only one", out)
+
+    def test_align_separator_variants_accepted(self):
+        md = "| h1 | h2 |\n|:---|---:|\n| a | b |"
+        out = self._fn(md)
+        self.assertIsNotNone(out)
+        self.assertIn("<td>a</td><td>b</td>", out)
+
+    def test_crlf_newlines(self):
+        md = "| h |\r\n|---|\r\n| v |\r\n"
+        out = self._fn(md)
+        self.assertIsNotNone(out)
+        self.assertIn("<td>v</td>", out)
+
+
+class ShortNewsTableIntegrationTests(unittest.TestCase):
+    """ticket 417: render_short_news_url_card の table_markdown integration。"""
+
+    def _base_data(self) -> dict:
+        return {
+            "title": "巨人 シーズンチケット先行販売開始",
+            "summary": "5/22 から販売開始、シーズンチケットの受付がスタートします。",
+            "source_url": "https://www.giants.jp/news/ticket.html",
+            "source_name": "巨人公式",
+            "primary_og_title": "巨人 シーズンチケット先行販売開始",
+            "primary_og_description": "シーズンチケットの先行販売が開始されます",
+        }
+
+    def test_table_markdown_empty_is_noop(self):
+        from src.nomotoke_card_renderer import render_short_news_url_card
+
+        baseline = render_short_news_url_card(self._base_data())
+        with_empty = render_short_news_url_card({**self._base_data(), "table_markdown": ""})
+        self.assertEqual(baseline.get("content_html"), with_empty.get("content_html"))
+
+    def test_table_markdown_invalid_is_noop(self):
+        from src.nomotoke_card_renderer import render_short_news_url_card
+
+        baseline = render_short_news_url_card(self._base_data())
+        invalid_md = "just words, no pipes"
+        invalid_render = render_short_news_url_card(
+            {**self._base_data(), "table_markdown": invalid_md}
+        )
+        self.assertEqual(baseline.get("content_html"), invalid_render.get("content_html"))
+
+    def test_table_markdown_valid_embeds_block(self):
+        from src.nomotoke_card_renderer import render_short_news_url_card
+
+        md = "| 日付 | 価格 |\n|---|---|\n| 5/22 | ¥5800 |"
+        out = render_short_news_url_card({**self._base_data(), "table_markdown": md})
+        html_out = out.get("content_html", "")
+        self.assertIn("<!-- wp:table -->", html_out)
+        self.assertIn("<td>5/22</td><td>¥5800</td>", html_out)
+        # ticket 417: lead 直後 / fact_card より前に embed
+        lead_pos = html_out.find("nomotoke-lead")
+        table_pos = html_out.find("<!-- wp:table -->")
+        self.assertGreater(table_pos, lead_pos, "table should be after lead")
+
+
 if __name__ == "__main__":
     unittest.main()

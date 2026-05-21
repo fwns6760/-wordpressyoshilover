@@ -370,7 +370,7 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
         self.assertIn("manual_x_post_candidates:", body_lines)
         self.assertIn(
             "Xで開く: "
-            "https://twitter.com/intent/tweet?text=%E5%B7%A8%E4%BA%BA%E3%81%AE%E8%A9%A6%E5%90%88%E7%B5%90%E6%9E%9C%E3%82%92%E6%9B%B4%E6%96%B0%E3%81%97%E3%81%BE%E3%81%97%E3%81%9F%E3%80%82%E5%B7%A8%E4%BA%BA%E3%81%8C%E6%8E%A5%E6%88%A6%E3%82%92%E5%88%B6%E3%81%97%E3%81%9F%20https%3A%2F%2Fyoshilover.com%2Fpost-123%2F",
+            "https://x.com/intent/post?text=%E5%B7%A8%E4%BA%BA%E3%81%AE%E8%A9%A6%E5%90%88%E7%B5%90%E6%9E%9C%E3%82%92%E6%9B%B4%E6%96%B0%E3%81%97%E3%81%BE%E3%81%97%E3%81%9F%E3%80%82%E5%B7%A8%E4%BA%BA%E3%81%8C%E6%8E%A5%E6%88%A6%E3%82%92%E5%88%B6%E3%81%97%E3%81%9F%20https%3A%2F%2Fyoshilover.com%2Fpost-123%2F",
             body_lines,
         )
         self.assertFalse(any("(コピー用)" in line for line in body_lines))
@@ -766,14 +766,14 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
 
         self.assertEqual(
             sender._build_x_intent_url(text),
-            f"https://twitter.com/intent/tweet?text={quote(text, safe='')}",
+            f"https://x.com/intent/post?text={quote(text, safe='')}",
         )
 
     def test_intent_url_encoding_special_chars(self):
         text = "#巨人 #ジャイアンツ https://yoshilover.com/post-123/"
         intent_url = sender._build_x_intent_url(text)
 
-        self.assertEqual(intent_url, f"https://twitter.com/intent/tweet?text={quote(text, safe='')}")
+        self.assertEqual(intent_url, f"https://x.com/intent/post?text={quote(text, safe='')}")
         self.assertIn("%23%E5%B7%A8%E4%BA%BA", intent_url)
         self.assertIn("%23%E3%82%B8%E3%83%A3%E3%82%A4%E3%82%A2%E3%83%B3%E3%83%84", intent_url)
 
@@ -1259,7 +1259,7 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
 
         self.assertEqual(
             sender._build_x_intent_url(text),
-            "https://twitter.com/intent/tweet?text="
+            "https://x.com/intent/post?text="
             "%E5%B7%A8%E4%BA%BA%E3%81%AE%E8%A9%A6%E5%90%88%E7%B5%90%E6%9E%9C%E3%82%92%E6%9B%B4%E6%96%B0"
             "%E3%81%97%E3%81%BE%E3%81%97%E3%81%9F%E3%80%82%E5%B7%A8%E4%BA%BA%E3%81%8C%E6%8E%A5%E6%88%A6"
             "%E3%82%92%E5%88%B6%E3%81%97%E3%81%9F%20https%3A%2F%2Fyoshilover.com%2Fpost-123%2F",
@@ -2905,7 +2905,7 @@ class HtmlBodyPerPostTests(unittest.TestCase):
         # Canonical URL appears as the 「記事を見る」 button href + text
         self.assertIn('href="https://yoshilover.com/post-123/"', html_body)
         self.assertIn("記事を見る", html_body)
-        self.assertNotIn("x.com/intent/tweet", html_body)
+        self.assertNotIn("x.com/intent/post", html_body)
         self.assertNotIn("𝕏 で投稿", html_body)
 
     def test_html_escapes_dangerous_title_chars(self):
@@ -2927,7 +2927,7 @@ class HtmlBodyPerPostTests(unittest.TestCase):
         html_body = sender.build_body_html_per_post(req)
         self.assertIn("坂本勇人の逆転サヨナラ３００号", html_body)
         self.assertNotIn("&amp;hashtags=", html_body)
-        self.assertNotIn("x.com/intent/tweet", html_body)
+        self.assertNotIn("x.com/intent/post", html_body)
 
     def test_html_omits_x_intent_for_non_player_title(self):
         req = self._request(
@@ -2936,7 +2936,7 @@ class HtmlBodyPerPostTests(unittest.TestCase):
         html_body = sender.build_body_html_per_post(req)
         self.assertIn("逆転サヨナラ３００号", html_body)
         self.assertNotIn("&amp;hashtags=", html_body)
-        self.assertNotIn("x.com/intent/tweet", html_body)
+        self.assertNotIn("x.com/intent/post", html_body)
 
     # --- 379-OPS (GH #53): 「公開してX投稿画面へ」 + 「WP編集画面で確認」 button ---
 
@@ -2977,7 +2977,7 @@ class HtmlBodyPerPostTests(unittest.TestCase):
         publish_pos = html_body.find("公開してX投稿画面へ")
         self.assertGreater(publish_pos, 0)
         self.assertNotIn("𝕏 で投稿", html_body)
-        self.assertNotIn("x.com/intent/tweet", html_body)
+        self.assertNotIn("x.com/intent/post", html_body)
 
 
 class XIntentHashtagBuilderTests(unittest.TestCase):

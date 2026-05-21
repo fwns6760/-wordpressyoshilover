@@ -106,7 +106,7 @@ _X_POST_CHAR_LIMIT = 270
 
 
 def _build_x_intent_url(text: str, archive_number: int = 0) -> str:
-    """X Web Intent (twitter.com/intent/tweet) で開く 投稿 URL。
+    """X Web Intent (x.com/intent/post) で開く 投稿 URL。
 
     archive_number > 0 の時、 先頭に series header (🟠 brand + 第○回
     + 罫線) を prepend、 末尾に hashtag を append。 series 感と
@@ -130,7 +130,7 @@ def _build_x_intent_url(text: str, archive_number: int = 0) -> str:
     if len(raw) > available_for_text:
         raw = raw[: max(0, available_for_text - 1)] + "…"
     body = f"{header}{raw}{footer}"
-    return f"https://twitter.com/intent/tweet?text={_url_quote(body, safe='')}"
+    return f"https://x.com/intent/post?text={_url_quote(body, safe='')}"
 
 
 _KEYCAP_DIGITS = {

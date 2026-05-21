@@ -278,7 +278,7 @@ function yoshilover_gpts_x_actions_create_intent_link( WP_REST_Request $request 
     }
 
     $text       = yoshilover_gpts_x_actions_clean_text( $text );
-    $intent_url = 'https://twitter.com/intent/tweet?text=' . rawurlencode( $text );
+    $intent_url = 'https://x.com/intent/post?text=' . rawurlencode( $text );
 
     return rest_ensure_response(
         array(

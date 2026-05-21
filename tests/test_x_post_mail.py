@@ -92,7 +92,7 @@ class IntentUrlEncodeTests(unittest.TestCase):
     def test_url_encodes_newline_and_hashtag(self) -> None:
         text = "line1\nline2 #巨人"
         url = encode_x_intent_url(text)
-        self.assertIn("twitter.com/intent/tweet", url)
+        self.assertIn("x.com/intent/post", url)
         self.assertIn("%0A", url)  # newline encoded
         self.assertIn("%23", url)  # `#` encoded so it's not a fragment
         self.assertNotIn("\n", url)
@@ -109,8 +109,8 @@ class IntentUrlEncodeTests(unittest.TestCase):
         self.assertEqual(qs["text"][0], text)
 
     def test_empty_text_safe(self) -> None:
-        self.assertEqual(encode_x_intent_url(""), "https://twitter.com/intent/tweet?text=")
-        self.assertEqual(encode_x_intent_url(None), "https://twitter.com/intent/tweet?text=")
+        self.assertEqual(encode_x_intent_url(""), "https://x.com/intent/post?text=")
+        self.assertEqual(encode_x_intent_url(None), "https://x.com/intent/post?text=")
 
 
 class SubjectAndTimeBandTests(unittest.TestCase):
@@ -823,10 +823,10 @@ class ComposeMailTests(unittest.TestCase):
     def test_html_includes_intent_url(self) -> None:
         ts = datetime(2026, 5, 16, 17, 30, tzinfo=JST)
         mail = compose_mail([self._make_cand(1, "テスト #巨人")], now=ts)
-        self.assertIn("twitter.com/intent/tweet", mail.html_body)
+        self.assertIn("x.com/intent/post", mail.html_body)
         self.assertIn("%23", mail.html_body)  # # in text was URL-encoded
         # The plain text body also lists the URL for fallback copy.
-        self.assertIn("twitter.com/intent/tweet", mail.text_body)
+        self.assertIn("x.com/intent/post", mail.text_body)
 
     def test_html_uses_post_text_for_x_intent_when_present(self) -> None:
         ts = datetime(2026, 5, 16, 17, 30, tzinfo=JST)

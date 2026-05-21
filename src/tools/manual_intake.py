@@ -3846,7 +3846,7 @@ _SHARE_BUTTONS_SCRIPT_HTML = (
     "var u=encodeURIComponent(window.location.href);"
     "var t=encodeURIComponent(document.title);"
     "document.querySelectorAll('.nomotoke-share-x').forEach(function(a){"
-    "a.href='https://twitter.com/intent/tweet?text='+t+'&url='+u;"
+    "a.href='https://x.com/intent/post?text='+t+'&url='+u;"
     "a.target='_blank';a.rel='noopener';});"
     "document.querySelectorAll('.nomotoke-share-line').forEach(function(a){"
     "a.href='https://social-plugins.line.me/lineit/share?url='+u;"
@@ -3888,7 +3888,7 @@ def _build_share_buttons_block(
             '<p style="text-align:center;font-size:12px;'
             'color:#888;margin:6px 0 0;">'
             "JS が無効の場合は出典記事 URL を共有: "
-            f'<a href="https://twitter.com/intent/tweet?url={safe_src}" '
+            f'<a href="https://x.com/intent/post?url={safe_src}" '
             'target="_blank" rel="noopener">𝕏</a> · '
             f'<a href="https://social-plugins.line.me/lineit/share?url={safe_src}" '
             'target="_blank" rel="noopener">LINE</a>'

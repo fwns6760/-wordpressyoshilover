@@ -55,7 +55,7 @@ class BuildXIntentUrlTests(unittest.TestCase):
         parsed = urlparse(url)
         assert parsed.scheme == "https"
         assert parsed.netloc == "x.com"
-        assert parsed.path == "/intent/tweet"
+        assert parsed.path == "/intent/post"
         qs = parse_qs(parsed.query)
         # title + brand tag が text に同居 (改行区切り)
         assert qs["text"][0].startswith("巨人勝利")
@@ -236,7 +236,7 @@ class HandlePostTests(unittest.TestCase):
         )
         assert code == 302
         assert body == ""
-        assert headers["Location"].startswith("https://x.com/intent/tweet?")
+        assert headers["Location"].startswith("https://x.com/intent/post?")
         update_mock.assert_called_once_with(123, "publish")
         # post_state も flip 済 (実 update が走った)
         assert post_state["status"] == "publish"
@@ -251,7 +251,7 @@ class HandlePostTests(unittest.TestCase):
             now=_VERIFY_NOW,
         )
         assert code == 302
-        assert headers["Location"].startswith("https://x.com/intent/tweet?")
+        assert headers["Location"].startswith("https://x.com/intent/post?")
         update_mock.assert_not_called()
 
     def test_other_status_post_returns_409_and_no_update(self):
@@ -376,7 +376,7 @@ class HandlePostTests(unittest.TestCase):
             mark_consumed=lambda token, **_: True,
         )
         assert code == 302
-        assert headers["Location"].startswith("https://x.com/intent/tweet?")
+        assert headers["Location"].startswith("https://x.com/intent/post?")
         update_mock.assert_not_called()
 
     def test_unconsumed_token_with_draft_marks_consumed_after_publish(self):

@@ -29,7 +29,7 @@ from zoneinfo import ZoneInfo
 
 LOG = logging.getLogger(__name__)
 JST = ZoneInfo("Asia/Tokyo")
-X_INTENT_URL_BASE = "https://twitter.com/intent/tweet"
+X_INTENT_URL_BASE = "https://x.com/intent/post"
 XAI_RESPONSES_URL = "https://api.x.ai/v1/responses"
 DEFAULT_MODEL = "grok-4-1-fast-non-reasoning"
 DEFAULT_MAX_TOPICS = 3

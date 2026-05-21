@@ -1301,7 +1301,7 @@ def _trim_manual_x_post_text(value: str) -> str:
 
 def _build_x_intent_url(text: str) -> str:
     encoded = quote(str(text or "").strip(), safe="")
-    return f"https://twitter.com/intent/tweet?text={encoded}"
+    return f"https://x.com/intent/post?text={encoded}"
 
 
 def _build_x_post_intent_url(
@@ -1314,7 +1314,7 @@ def _build_x_post_intent_url(
     canonical article URL. Tapping the link opens X's tweet composer in
     the operator's existing X session — no API key, no auth, no cost.
 
-    Format: ``https://x.com/intent/tweet?text=<title>&url=<article_url>``
+    Format: ``https://x.com/intent/post?text=<title>&url=<article_url>``
 
     X attaches the URL as an Open Graph card preview when the article
     page has the OG meta tags the renderer already emits.
@@ -1329,7 +1329,7 @@ def _build_x_post_intent_url(
         return ""
     encoded_text = quote(title_clean, safe="")
     encoded_url = quote(url_clean, safe="")
-    base = f"https://x.com/intent/tweet?text={encoded_text}&url={encoded_url}"
+    base = f"https://x.com/intent/post?text={encoded_text}&url={encoded_url}"
     normalized: list[str] = []
     for tag in hashtags or ():
         cleaned = str(tag or "").strip().lstrip("#").replace(" ", "").replace("　", "")

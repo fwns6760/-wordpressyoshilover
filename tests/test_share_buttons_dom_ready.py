@@ -35,7 +35,7 @@ class ShareButtonsDomReadyTests(unittest.TestCase):
         self.assertIn(".nomotoke-share-x", mi._SHARE_BUTTONS_SCRIPT_HTML)
         self.assertIn(".nomotoke-share-line", mi._SHARE_BUTTONS_SCRIPT_HTML)
         self.assertIn(".nomotoke-share-copy", mi._SHARE_BUTTONS_SCRIPT_HTML)
-        self.assertIn("twitter.com/intent/tweet", mi._SHARE_BUTTONS_SCRIPT_HTML)
+        self.assertIn("x.com/intent/post", mi._SHARE_BUTTONS_SCRIPT_HTML)
         self.assertIn("social-plugins.line.me/lineit/share", mi._SHARE_BUTTONS_SCRIPT_HTML)
         self.assertIn("navigator.clipboard.writeText", mi._SHARE_BUTTONS_SCRIPT_HTML)
 

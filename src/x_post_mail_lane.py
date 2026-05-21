@@ -192,9 +192,10 @@ _POSITION_DISPLAY_JP: dict[str, str] = {
 # rather than importing keeps coupling minimal).
 X_CHAR_LIMIT = 280
 
-# X intent URL base. The Web Intent endpoint is supported by both X
-# Web (x.com / twitter.com) and the native X apps on iOS/Android.
-_X_INTENT_URL_BASE = "https://twitter.com/intent/tweet"
+# X intent URL base. Use the modern canonical endpoint `x.com/intent/post`.
+# The legacy `twitter.com/intent/tweet` redirects to x.com but the redirect
+# can drop the `?text=` query param on some clients (observed 2026-05-21).
+_X_INTENT_URL_BASE = "https://x.com/intent/post"
 
 # Time-band label per hour for the mail subject. Picked to match the
 # schedule the ticket locks (7/12/15/17:30/22:30 JST).

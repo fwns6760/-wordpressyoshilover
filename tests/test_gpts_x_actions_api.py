@@ -90,7 +90,7 @@ class GPTsXActionsApiTests(unittest.TestCase):
         src = _plugin_source()
         intent = _function_source(src, "yoshilover_gpts_x_actions_create_intent_link")
 
-        self.assertIn("'https://twitter.com/intent/tweet?text=' . rawurlencode( $text )", intent)
+        self.assertIn("'https://x.com/intent/post?text=' . rawurlencode( $text )", intent)
         self.assertNotIn("update_post_meta", intent)
 
         forbidden_network_markers = (

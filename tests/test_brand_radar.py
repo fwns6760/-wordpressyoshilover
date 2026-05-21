@@ -192,7 +192,7 @@ class BrandRadarPlanTests(unittest.TestCase):
         self.assertNotIn("X Search query", mail.text_body)
         self.assertNotIn("https://x.com/fan/status/1", mail.text_body)
         self.assertNotIn("provider usage", mail.text_body)
-        self.assertIn("twitter.com/intent/tweet", mail.text_body)
+        self.assertIn("x.com/intent/post", mail.text_body)
 
     def test_removed_x_search_scope_is_visible_without_fan_reaction_claim(self) -> None:
         now = datetime(2026, 5, 18, 18, 0, tzinfo=JST)
@@ -290,7 +290,7 @@ class BrandRadarPlanTests(unittest.TestCase):
         mail = brand_radar.compose_brand_radar_mail(result.plans, now=now, stats=result.stats)
 
         self.assertIn("X自動投稿もWP更新もしません", mail.text_body)
-        self.assertIn("twitter.com/intent/tweet", mail.text_body)
+        self.assertIn("x.com/intent/post", mail.text_body)
         self.assertNotIn("api.twitter.com", mail.text_body + mail.html_body)
         self.assertNotIn("/wp-json/wp/v2/posts", mail.text_body + mail.html_body)
 

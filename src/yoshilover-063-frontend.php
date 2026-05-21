@@ -2366,7 +2366,7 @@ function yoshilover_063_build_manual_x_share_candidates( $post ) {
             'key'        => (string) $definition['key'],
             'label'      => (string) $definition['label'],
             'text'       => $text,
-            'intent_url' => 'https://twitter.com/intent/tweet?text=' . rawurlencode( $text ),
+            'intent_url' => 'https://x.com/intent/post?text=' . rawurlencode( $text ),
         );
     }
 

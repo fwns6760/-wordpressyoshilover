@@ -94,13 +94,11 @@ UNSAFE_LICENSE_TOKENS = ("fair use", "non-free", "copyrighted", "all rights rese
 # that is NOT the 巨人 player we mean. Manual review required, do not
 # auto-fetch.
 MANUAL_REVIEW_NAMES = {
-    # 巨人「松本剛」(内野手) ≠ ja wiki「松本剛 (野球)」 (日ハム外野手)
-    "松本剛",
-    # 巨人「リチャード」(助っ人) ≠ ja wiki「リチャード (野球)」 (ソフトバンク 砂川リチャード)
-    "リチャード",
     # 巨人「ルシアーノ・フェルナンド」 ≠ en wiki「Marco Luciano」 (SF Giants /
-    # NYY 系 MLB マイナー、 ブラジル系の巨人助っ人とは別人懸念)
+    # NYY 系 MLB マイナー、 ブラジル系の巨人助っ人とは完全別人。 ja wiki 記事なし)
     "ルシアーノ",
+    # 松本剛 と リチャード(砂川リチャード) は 2026 時点で 読売ジャイアンツ所属、
+    # ja wiki 記事 = 本人なので auto-fetch 可。
 }
 
 logger = logging.getLogger("eyecatch_wikipedia")

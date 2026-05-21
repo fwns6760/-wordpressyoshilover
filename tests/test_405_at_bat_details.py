@@ -486,6 +486,133 @@ class PublisherSmokeTests(unittest.TestCase):
         self.assertEqual(len(fake_wp.posts_created), 1)
 
 
+class PlayByPlayURLBuilderTests(unittest.TestCase):
+    """405 Phase 2c: build_playbyplay_url_from_game_id。"""
+
+    def test_giants_home_vs_swallows(self):
+        self.assertEqual(
+            insight_etl.build_playbyplay_url_from_game_id("2026-05-19:s-g-10"),
+            "https://npb.jp/scores/2026/0519/s-g-10/playbyplay.html",
+        )
+
+    def test_giants_away_vs_baystars(self):
+        self.assertEqual(
+            insight_etl.build_playbyplay_url_from_game_id("2026-05-17:g-db-09"),
+            "https://npb.jp/scores/2026/0517/g-db-09/playbyplay.html",
+        )
+
+    def test_invalid_game_id_returns_none(self):
+        self.assertIsNone(insight_etl.build_playbyplay_url_from_game_id("invalid"))
+        self.assertIsNone(insight_etl.build_playbyplay_url_from_game_id(""))
+        self.assertIsNone(insight_etl.build_playbyplay_url_from_game_id(None))
+
+
+_FAKE_PBP_HTML = '''<html><body>
+<h5 name="com1-1" id="com1-1">1回表（巨人の攻撃）</h5>
+<table>
+<tr><td colspan="5" class="w2">（先発投手） <a>小川</a></td></tr>
+<tr>
+<td class="w1">0アウト</td><td class="w1">&nbsp;</td><td class="w1"><a>吉川</a></td><td class="w1">0-0より</td><td class="w2">右前安打</td>
+</tr>
+<tr>
+<td class="w1">0アウト</td><td class="w1">1塁</td><td class="w1"><a>岡本</a></td><td class="w1">3-2より</td><td class="w2">左中間グランドスラム（打点4）</td>
+</tr>
+</table>
+</body></html>'''
+
+
+class IngestGiantsPlayByPlayTests(unittest.TestCase):
+    """405 Phase 2c: ingest_giants_playbyplay_recent_games E2E。"""
+
+    def _seed_game(self, conn: sqlite3.Connection, game_id: str, date: str):
+        conn.execute(
+            "INSERT INTO games (game_id, game_date, opponent, home_away, "
+            "giants_score, opp_score, result, source_url, source_kind, "
+            "ingested_at) VALUES (?, ?, 'ヤクルト', 'home', 5, 3, '勝利', '', "
+            "'test', '2026-05-19T22:00:00Z')",
+            (game_id, date),
+        )
+
+    def test_ingest_with_fake_fetcher_returns_stats(self):
+        conn = _open_seeded_db()
+        self._seed_game(conn, "2026-05-19:s-g-10", "2026-05-19")
+        fetched_urls = []
+
+        def fake_fetch(url, timeout=10):
+            fetched_urls.append(url)
+            return _FAKE_PBP_HTML
+
+        stats = insight_etl.ingest_giants_playbyplay_recent_games(
+            conn, last_n_games=10, fetch_url=fake_fetch,
+        )
+        self.assertEqual(stats["games_attempted"], 1)
+        self.assertEqual(stats["games_succeeded"], 1)
+        self.assertEqual(stats["pa_rows_upserted"], 2)
+        self.assertEqual(stats["errors"], [])
+        self.assertEqual(
+            fetched_urls,
+            ["https://npb.jp/scores/2026/0519/s-g-10/playbyplay.html"],
+        )
+
+    def test_ingest_records_fetch_failed_error(self):
+        conn = _open_seeded_db()
+        self._seed_game(conn, "2026-05-19:s-g-10", "2026-05-19")
+
+        def fake_fetch(url, timeout=10):
+            return None  # simulate fetch failure
+
+        stats = insight_etl.ingest_giants_playbyplay_recent_games(
+            conn, last_n_games=10, fetch_url=fake_fetch,
+        )
+        self.assertEqual(stats["games_attempted"], 1)
+        self.assertEqual(stats["games_succeeded"], 0)
+        self.assertEqual(stats["pa_rows_upserted"], 0)
+        self.assertEqual(len(stats["errors"]), 1)
+        self.assertEqual(stats["errors"][0]["error"], "fetch_failed")
+
+    def test_ingest_writes_at_bat_details_rows(self):
+        conn = _open_seeded_db()
+        self._seed_game(conn, "2026-05-19:s-g-10", "2026-05-19")
+
+        def fake_fetch(url, timeout=10):
+            return _FAKE_PBP_HTML
+
+        insight_etl.ingest_giants_playbyplay_recent_games(
+            conn, last_n_games=10, fetch_url=fake_fetch,
+        )
+        rows = conn.execute(
+            "SELECT batter, runner_state, count_balls, count_strikes, "
+            "current_pitcher, result_text FROM at_bat_details "
+            "ORDER BY pa_index"
+        ).fetchall()
+        self.assertEqual(len(rows), 2)
+        # 吉川 0-0 無走者
+        self.assertEqual(rows[0][0], "吉川")
+        self.assertEqual(rows[0][1], "")
+        self.assertEqual(rows[0][2], 0)
+        self.assertEqual(rows[0][3], 0)
+        self.assertEqual(rows[0][4], "小川")
+        # 岡本 3-2 1塁 グランドスラム
+        self.assertEqual(rows[1][0], "岡本")
+        self.assertEqual(rows[1][1], "1塁")
+        self.assertEqual(rows[1][2], 3)
+        self.assertEqual(rows[1][3], 2)
+        self.assertIn("グランドスラム", rows[1][5])
+
+    def test_ingest_no_games_returns_zero_attempts(self):
+        conn = _open_seeded_db()
+        # No games seeded
+
+        def fake_fetch(url, timeout=10):
+            self.fail("fetch should not be called when no games")
+
+        stats = insight_etl.ingest_giants_playbyplay_recent_games(
+            conn, last_n_games=10, fetch_url=fake_fetch,
+        )
+        self.assertEqual(stats["games_attempted"], 0)
+        self.assertEqual(stats["games_succeeded"], 0)
+
+
 class RunnerStateLabelTests(unittest.TestCase):
     def test_known_labels(self):
         self.assertEqual(runner_state_label("満塁"), "満塁")

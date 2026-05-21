@@ -315,6 +315,84 @@ def _run_data_insight_auto_publish(*, db_path: Path) -> tuple[dict[str, Any], di
                                 "pitcher_hand": hand,
                                 "error": f"{type(exc).__name__}:{exc}",
                             }, ensure_ascii=False))
+                    # 405 (2026-05-21) Phase 2c + 3a/3b/3c: NPB playbyplay
+                    # ingest + 走者状況別 / 打席内カウント別 / vs 球団別
+                    # publisher。 ingest はベストエフォート (失敗時 publisher
+                    # 側で no_data skip)。
+                    try:
+                        from src.analysis import insight_etl as _etl
+                        ingest_stats = _etl.ingest_giants_playbyplay_recent_games(
+                            conn, last_n_games=10,
+                        )
+                        print(json.dumps({
+                            "event": "playbyplay_ingest",
+                            "attempted": ingest_stats.get("games_attempted", 0),
+                            "succeeded": ingest_stats.get("games_succeeded", 0),
+                            "pa_rows": ingest_stats.get("pa_rows_upserted", 0),
+                            "errors": len(ingest_stats.get("errors", [])),
+                        }, ensure_ascii=False))
+                    except Exception as exc:  # noqa: BLE001
+                        print(json.dumps({
+                            "warn": "playbyplay_ingest_failed",
+                            "error": f"{type(exc).__name__}:{exc}",
+                        }, ensure_ascii=False))
+                    # 走者状況別 publisher (満塁 / 1・3塁 / 2・3塁 = 得点機 3 種)
+                    runner_state_published = 0
+                    for r_state in ("満塁", "1・3塁", "2・3塁"):
+                        if runner_state_published >= auto_draft_max_per_run:
+                            break
+                        try:
+                            r_result = ranking_pub.publish_giants_batter_runner_state_split_draft(
+                                conn, wp, runner_state=r_state, last_n_games=10,
+                            )
+                            if r_result.get("status") in (
+                                "published", "published_draft", "dry_run",
+                            ):
+                                runner_state_published += 1
+                        except Exception as exc:  # noqa: BLE001
+                            print(json.dumps({
+                                "warn": "runner_state_split_publish_failed",
+                                "runner_state": r_state,
+                                "error": f"{type(exc).__name__}:{exc}",
+                            }, ensure_ascii=False))
+                    # 打席内カウント別 publisher
+                    count_filter_published = 0
+                    for cf in ("first_pitch", "two_strike"):
+                        if count_filter_published >= auto_draft_max_per_run:
+                            break
+                        try:
+                            cf_result = ranking_pub.publish_giants_batter_count_filter_draft(
+                                conn, wp, count_filter=cf, last_n_games=10,
+                            )
+                            if cf_result.get("status") in (
+                                "published", "published_draft", "dry_run",
+                            ):
+                                count_filter_published += 1
+                        except Exception as exc:  # noqa: BLE001
+                            print(json.dumps({
+                                "warn": "count_filter_publish_failed",
+                                "count_filter": cf,
+                                "error": f"{type(exc).__name__}:{exc}",
+                            }, ensure_ascii=False))
+                    # vs 球団別 publisher (5 セ・リーグ相手)
+                    vs_opp_published = 0
+                    for opp in ("ヤクルト", "阪神", "DeNA", "中日", "広島"):
+                        if vs_opp_published >= auto_draft_max_per_run:
+                            break
+                        try:
+                            opp_result = ranking_pub.publish_giants_batter_vs_opponent_draft(
+                                conn, wp, opponent=opp, last_n_games=10,
+                            )
+                            if opp_result.get("status") in (
+                                "published", "published_draft", "dry_run",
+                            ):
+                                vs_opp_published += 1
+                        except Exception as exc:  # noqa: BLE001
+                            print(json.dumps({
+                                "warn": "vs_opponent_publish_failed",
+                                "opponent": opp,
+                                "error": f"{type(exc).__name__}:{exc}",
+                            }, ensure_ascii=False))
                 except Exception as exc:  # noqa: BLE001
                     ranking_publish_summary["counting_error"] = (
                         f"{type(exc).__name__}:{exc}"

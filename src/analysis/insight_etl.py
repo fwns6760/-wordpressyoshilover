@@ -273,6 +273,135 @@ def derive_pitcher_innings(rows: list[tuple]) -> list[tuple[int, int]]:
     return result
 
 
+# 405 / 415 (b) Phase 2c (2026-05-21): NPB playbyplay.html scraper +
+# ingest pipeline。 game_id slug ("2026-05-19:s-g-10") から URL を組み立て、
+# HTTP fetch → parse → upsert_at_bat_details の chain。
+_GAME_ID_SLUG_RE = re.compile(
+    r"^(?P<year>\d{4})-(?P<month>\d{2})-(?P<day>\d{2}):(?P<slug>[a-z0-9-]+)$"
+)
+
+
+def build_playbyplay_url_from_game_id(game_id: str) -> Optional[str]:
+    """games.game_id ("2026-05-19:s-g-10") → NPB playbyplay.html URL。
+
+    e.g. "2026-05-19:s-g-10" → "https://npb.jp/scores/2026/0519/s-g-10/playbyplay.html"
+
+    None: game_id format が認識できない場合。
+    """
+    if not isinstance(game_id, str):
+        return None
+    m = _GAME_ID_SLUG_RE.match(game_id.strip())
+    if not m:
+        return None
+    return (
+        f"https://npb.jp/scores/{m.group('year')}/"
+        f"{m.group('month')}{m.group('day')}/"
+        f"{m.group('slug')}/playbyplay.html"
+    )
+
+
+def _default_playbyplay_fetcher(url: str, timeout: int = 10) -> Optional[str]:
+    """playbyplay.html を urllib で fetch (UA 付き)。 失敗時 None。"""
+    import urllib.request as _ur
+    try:
+        req = _ur.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with _ur.urlopen(req, timeout=timeout) as res:
+            return res.read().decode("utf-8", errors="ignore")
+    except Exception:
+        return None
+
+
+def ingest_giants_playbyplay_recent_games(
+    conn: sqlite3.Connection,
+    *,
+    last_n_games: int = 10,
+    fetch_url: Optional[Any] = None,
+    ingested_at: Optional[str] = None,
+) -> dict[str, Any]:
+    """games table から直近 ``last_n_games`` 試合の playbyplay.html を
+    fetch + parse + upsert into at_bat_details。
+
+    Args:
+        conn: insight.db connection
+        last_n_games: 巨人試合数 window
+        fetch_url: テスト用 fetcher injection (None なら default urllib)
+        ingested_at: ISO 8601 (None なら now UTC)
+
+    Returns: stats dict
+        {
+          "games_attempted": int,
+          "games_succeeded": int,
+          "pa_rows_upserted": int,
+          "errors": list[{game_id, error}],
+        }
+    """
+    if fetch_url is None:
+        fetch_url = _default_playbyplay_fetcher
+    if ingested_at is None:
+        ingested_at = dt.datetime.now(dt.timezone.utc).isoformat()
+
+    # 既存 parser を import (循環 import 回避のため関数内で)
+    from src.source_npb_playbyplay_extractor import (
+        parse_npb_playbyplay_full_detail,
+    )
+
+    game_rows = conn.execute(
+        "SELECT game_id FROM games WHERE giants_score IS NOT NULL "
+        "ORDER BY game_date DESC LIMIT ?",
+        (last_n_games,),
+    ).fetchall()
+    stats: dict[str, Any] = {
+        "games_attempted": 0,
+        "games_succeeded": 0,
+        "pa_rows_upserted": 0,
+        "errors": [],
+    }
+    for (game_id,) in game_rows:
+        stats["games_attempted"] += 1
+        url = build_playbyplay_url_from_game_id(game_id)
+        if not url:
+            stats["errors"].append(
+                {"game_id": game_id, "error": "url_build_failed"}
+            )
+            continue
+        html = fetch_url(url)
+        if not html:
+            stats["errors"].append(
+                {"game_id": game_id, "error": "fetch_failed"}
+            )
+            continue
+        try:
+            events = parse_npb_playbyplay_full_detail(html)
+        except Exception as exc:  # noqa: BLE001
+            stats["errors"].append(
+                {"game_id": game_id,
+                 "error": f"parse_exception:{type(exc).__name__}:{exc}"}
+            )
+            continue
+        if not events:
+            stats["errors"].append(
+                {"game_id": game_id, "error": "parse_returned_none_or_empty"}
+            )
+            continue
+        try:
+            n = upsert_at_bat_details(
+                conn,
+                game_id=game_id,
+                source_url=url,
+                events=events,
+                ingested_at=ingested_at,
+            )
+        except Exception as exc:  # noqa: BLE001
+            stats["errors"].append(
+                {"game_id": game_id,
+                 "error": f"upsert_exception:{type(exc).__name__}:{exc}"}
+            )
+            continue
+        stats["pa_rows_upserted"] += n
+        stats["games_succeeded"] += 1
+    return stats
+
+
 _RBI_FROM_RESULT_RE = re.compile(r"[（(]\s*打点\s*(?P<rbi>\d+)\s*[）)]")
 
 

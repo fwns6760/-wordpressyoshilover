@@ -130,6 +130,90 @@ def _parse_query_value(path: str, key: str, default: str = "") -> str:
     return values[0]
 
 
+def _parse_mode(body: str, content_type: str = "") -> str:
+    """DIGEST-DAILY-MORNING (2026-05-21) Phase 2: POST body / form / query
+    から ``mode`` を抽出。 未指定 / "default" / "rss" / "" → "rss" (既存挙動)。
+    """
+    mode = ""
+    if body:
+        if "application/json" in content_type:
+            try:
+                payload = json.loads(body)
+                mode = (payload.get("mode") or "").strip()
+            except json.JSONDecodeError:
+                mode = ""
+        if not mode:
+            params = parse_qs(body, keep_blank_values=False)
+            values = params.get("mode")
+            if values:
+                mode = (values[0] or "").strip()
+    mode = (mode or "").lower()
+    if mode in ("", "default", "rss"):
+        return "rss"
+    return mode
+
+
+def _run_digest_daily(force: bool = False) -> tuple[int, str]:
+    """DIGEST-DAILY-MORNING (2026-05-21) Phase 2 handler。
+
+    朝まとめ digest 1 記事を WP に publish (冪等)。 src/tools/digest_daily_morning
+    の main path を直接呼ぶのではなく、 必要 step を組み立てる:
+    1. 当日分既存 check (slug query)
+    2. なければ build_digest_body + WPClient.create_post
+    """
+    log = logging.getLogger("server.digest_daily")
+    try:
+        from src.tools.digest_daily_morning import (
+            build_digest_body,
+            build_digest_title,
+            build_digest_slug,
+            is_digest_already_published_today,
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.warning("digest_daily import failed err=%s", exc)
+        return 500, json.dumps(
+            {"status": "error", "error": f"import_failed:{type(exc).__name__}"},
+            ensure_ascii=False,
+        )
+    try:
+        from src.wp_client import WPClient
+    except Exception as exc:  # noqa: BLE001
+        log.warning("digest_daily wp_client import failed err=%s", exc)
+        return 500, json.dumps(
+            {"status": "error", "error": f"wp_client_import_failed:{type(exc).__name__}"},
+            ensure_ascii=False,
+        )
+    wp = WPClient()
+    slug = build_digest_slug()
+    if not force and is_digest_already_published_today(wp):
+        log.info("digest_daily skip reason=already_published_today slug=%s", slug)
+        return 200, json.dumps(
+            {"status": "skipped", "reason": "already_published_today", "slug": slug},
+            ensure_ascii=False,
+        )
+    title = build_digest_title()
+    body = build_digest_body()
+    try:
+        post_id = wp.create_post(
+            title=title,
+            content=body,
+            status="publish",
+            categories=[670],  # コラム category id (override via env if needed)
+            caller="digest_daily_morning",
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.warning("digest_daily create_post failed err=%s", exc)
+        return 500, json.dumps(
+            {"status": "error", "error": f"create_post_failed:{type(exc).__name__}:{exc}"},
+            ensure_ascii=False,
+        )
+    log.info("digest_daily published post_id=%s slug=%s", post_id, slug)
+    return 200, json.dumps(
+        {"status": "published", "post_id": post_id, "title": title, "slug": slug},
+        ensure_ascii=False,
+    )
+
+
 def _parse_bool_query(path: str, key: str, default: bool = False) -> bool:
     value = _parse_query_value(path, key, "")
     if not value:
@@ -472,7 +556,15 @@ class Handler(BaseHTTPRequestHandler):
 
         length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(length).decode() if length else ""
-        limit = _parse_limit(body, self.headers.get("Content-Type", ""))
+        content_type = self.headers.get("Content-Type", "")
+        mode = _parse_mode(body, content_type)
+        # DIGEST-DAILY-MORNING Phase 2 (2026-05-21): mode dispatch
+        if mode == "digest_daily":
+            _log_run_started()
+            code, message = _run_digest_daily()
+            self._respond(code, message, content_type="application/json; charset=utf-8")
+            return
+        limit = _parse_limit(body, content_type)
         _log_run_started()
         code, message = _run_fetcher(limit)
         self._respond(code, message)

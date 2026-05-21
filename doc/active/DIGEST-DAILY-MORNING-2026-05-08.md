@@ -4,7 +4,7 @@
 |---|---|
 | ticket_id | DIGEST-DAILY-MORNING-2026-05-08 |
 | priority | P1(MVP 直結、運用ループ閉鎖)|
-| status | READY_FOR_IMPL |
+| status | PHASE_1_3_LANDED (renderer + CLI publish flow 完成、 scheduler trigger Phase 2 のみ未) |
 | owner | Claude/Codex(narrow impl)|
 | lane | INGEST / FRONTEND |
 | created | 2026-05-08 |
@@ -97,11 +97,18 @@
 
 ## 7. 成功条件
 
-- [ ] `render_digest_daily_morning()` 単体テストで 600+ chars 出力
-- [ ] 既存 block helper で生成された data の集約が成立
-- [ ] 冪等性:同日 2 回呼んでも 1 記事のみ
-- [ ] live 翌朝(本 ticket 着地後の最初の 06:00 catchup)で 1 article publish 確認
-- [ ] H3 統一 ticket の 12 set に従う
+- [x] `render_digest_daily_morning()` (実装は `build_digest_body()`) 単体テストで 600+ chars 出力 — commit `8f92055`、 dry-run 1692 chars 確認 (2026-05-21)
+- [x] 既存 block helper で生成された data の集約が成立 — recent_games / standings / next_game / x_embeds 全 4 block 集約
+- [x] 冪等性:同日 2 回呼んでも 1 記事のみ — `is_digest_already_published_today(wp)` で WP slug query
+- [ ] live 翌朝(本 ticket 着地後の最初の 06:00 catchup)で 1 article publish 確認 — **Phase 2 scheduler 統合 + Phase 4 deploy 後に観察**
+- [ ] H3 統一 ticket の 12 set に従う — H3-STRUCTURE-UNIFY-2026-05-08 ticket と統合
+
+## 7.1 実装 verify (2026-05-21)
+
+- src/tools/digest_daily_morning.py: 232 lines + main() CLI + 4 block 集約 path
+- tests/test_digest_daily_morning.py: 11 tests pass (TestBodyComposition / TestIdempotency / etc.)
+- fetcher image `enrich-gate-1f9df8b` 以降 (`8f92055` 含む) で全 deploy 済
+- dry-run smoke (2026-05-21): title=「📰 朝まとめ 5月21日 — 巨人 順位 / 前日試合 / 翌日予定」、 slug=`morning-digest-2026-05-21`、 body=1692 chars、 standings + next_game + X embeds 3 block 出力確認 (recent_games は local キャッシュ無で空)
 
 ## 8. phase 分割
 

@@ -2452,7 +2452,16 @@ def render_short_news_url_card(data: Dict[str, Any]) -> Dict[str, Any]:
         title_raw, summary_raw, og_description=primary_og_description
     )
 
-    if _short_news_body_too_thin(
+    # ticket 418: body_too_thin gate bypass when a valid Markdown table is
+    # supplied. The table itself constitutes concrete body content (the
+    # ticket / scorebook articles' primary payload), so a thin lead must
+    # not skip the card. Invalid / empty Markdown still hits the gate.
+    table_markdown_for_gate = (data.get("table_markdown") or "").strip()
+    has_valid_table = bool(
+        table_markdown_for_gate
+        and _render_markdown_table_block(table_markdown_for_gate)
+    )
+    if not has_valid_table and _short_news_body_too_thin(
         title=title_raw, summary=summary_raw, facts=facts
     ):
         return _skip(

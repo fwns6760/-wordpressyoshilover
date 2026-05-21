@@ -2347,5 +2347,61 @@ class ShortNewsTableIntegrationTests(unittest.TestCase):
         self.assertGreater(table_pos, lead_pos, "table should be after lead")
 
 
+class BodyTooThinTableBypassTests(unittest.TestCase):
+    """ticket 418: body_too_thin gate を valid Markdown table が bypass する。
+
+    typical ticket / scorebook input は summary が thin + score なし で
+    既存 gate に引っかかって skip されるが、 table block が valid なら
+    本文がそれだけで concrete なので gate を bypass して embed する。"""
+
+    def _thin_data(self) -> dict:
+        # summary が title 繰り返し系で短い = body_too_thin 該当 input。
+        return {
+            "title": "巨人 シーズンチケット先行販売開始",
+            "summary": "シーズンチケット販売",
+            "source_url": "https://www.giants.jp/news/ticket.html",
+            "source_name": "巨人公式",
+            "primary_og_title": "巨人 シーズンチケット先行販売開始",
+            "primary_og_description": "短い",
+        }
+
+    def test_thin_input_no_table_still_skipped(self):
+        from src.nomotoke_card_renderer import render_short_news_url_card
+
+        out = render_short_news_url_card(self._thin_data())
+        # 既存挙動を維持: thin かつ table 無しは validation_failed:body_too_thin
+        # で skip される (skip 種別は内部の `skip_reason` / `_skip` 経由)。
+        self.assertTrue(
+            "body_too_thin" in (out.get("skip_reason") or "")
+            or out.get("status") in {"skipped", "skip"}
+            or not out.get("content_html"),
+            f"thin without table should be skipped, got {out!r}",
+        )
+
+    def test_thin_input_with_valid_table_bypasses_gate(self):
+        from src.nomotoke_card_renderer import render_short_news_url_card
+
+        md = "| 日付 | 対戦 | 価格 |\n|---|---|---|\n| 5/22 | 巨人vsDeNA | ¥5800 |"
+        out = render_short_news_url_card({**self._thin_data(), "table_markdown": md})
+        html_out = out.get("content_html", "") or ""
+        self.assertIn("<!-- wp:table -->", html_out, f"table should embed, got {out!r}")
+        self.assertNotIn("body_too_thin", out.get("skip_reason") or "")
+        self.assertIn("<td>5/22</td>", html_out)
+
+    def test_thin_input_with_invalid_table_still_skipped(self):
+        from src.nomotoke_card_renderer import render_short_news_url_card
+
+        # Markdown table としては不正 (separator 欠落)、 _render_markdown_table_block
+        # は None を返す → bypass は発動せず thin gate で skip。
+        out = render_short_news_url_card(
+            {**self._thin_data(), "table_markdown": "no pipes here"}
+        )
+        self.assertTrue(
+            "body_too_thin" in (out.get("skip_reason") or "")
+            or not out.get("content_html"),
+            f"invalid table should NOT bypass gate, got {out!r}",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

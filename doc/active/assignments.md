@@ -60,11 +60,17 @@ user 方針「受け入れ NG はまた起票」+「一人開発で Active 多�
 |---|---|---|
 | `doc/active/404-INSIGHT-period-window-phase2-etl.md` | PARTIAL_LIVE_DEPLOYED_OBSERVE | 登板 inning 別 = commit `159d491` schema/derive + `e2dd155` publisher/wire で LIVE_DEPLOYED (image `415-vs-lr-mvp`)、 inning 別 post の自然 fire 観察待ち (投手 appearance 蓄積 + dedup cooldown 経過後)。 vs 左右投手 = [[415]] (#91) に split out、 starter 限定 approx (`378249d`+`f621457`) landed PARKED。 デーゲーム / ナイター = marginal value で drop (年 10-15 試合のみ、 必要なら別 ticket で復活)。 GH Issue #79 OPEN (observe)。 |
 
-### 405 — INSIGHT Phase 3 PARKED stub (段階式 Stage 3、 当面着手しない)
+### 405 — INSIGHT Phase 3 READY (free source NPB playbyplay.html 確保、 6-8h impl 待ち、 415 b strict と統合 scope)
 
 | ticket | status | 内容 |
 |---|---|---|
-| `doc/waiting/405-INSIGHT-period-window-phase3-parked.md` | PARKED | pitch-by-pitch source が必要な cut の shadow ticket。 打席内カウント別 (初球打ち / 2 ストライク後) / 走者状況別 (満塁 / 二塁単独 / 一三塁 等) / 球場別 (本拠地以外)。 NPB box は per-PA result の text marker のみで pitch-by-pitch なし、 別 source 必要 (有料 API or NPB BIS feed)。 議論された案を忘れないため shadow 保管、 user 再指定 or source 確保で再開。 |
+| `doc/active/405-INSIGHT-period-window-phase3-ready.md` | READY | commit `f621457` で NPB 公式 `playbyplay.html` を free source として実 verify 済 (per-PA 走者状況 + カウント + 結果 + 投手交代 marker 全部 parse 可能、 paid API 不要)。 (1) 打席内カウント別 (初球/2 ストライク後/3 ボール後/投球数別) / (2) 走者状況別 (満塁/二塁単独/一三塁 等) / (3) 球場別 (本拠地以外、 甲子園/マツダ/ハマスタ 等)。 [[415]] (b) strict と同 source、 共通 parser + per-PA detail table で同時実装条件付き READY。 実装段階: playbyplay.html parser 新規 → per-PA detail table schema → aggregator × 3 cut + publisher × 3 cut → tests + build + deploy = 6-8h、 session 跨ぎ段階実装。 GH Issue #81 OPEN。 |
+
+### 415 — INSIGHT vs 左右投手 split (a approx LIVE / b strict READY、 405 と統合 scope 着手条件付き)
+
+| ticket | status | 内容 |
+|---|---|---|
+| `doc/active/415-INSIGHT-vs-left-right-pitcher-split.md` | SPLIT_LIVE_OBSERVE | (a) approach starter 限定 approx で commit `378249d` (vs L/R split publisher + NPB throws scraper) + `f621457` landed、 image `insight-nightly:415-vs-lr-mvp` gen 81 deploy 済、 wire は `insight_nightly.py` L300-310 (last_10_games scope L/R loop)。 (b) strict は [[405]] と同 source `playbyplay.html` で per-PA pitcher 追跡可、 同時実装条件付き READY (工数 6-8h 統合)。 user 判断 pending: (a) approx 継続 / (b) strict 拡張。 GH Issue #91 OPEN。 |
 
 ### 406 — HR opponent / home_away split SQL bug fix (P1 narrow、 CLOSED 2026-05-20 PM)
 

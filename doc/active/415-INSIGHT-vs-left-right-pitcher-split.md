@@ -2,7 +2,10 @@
 
 ## 1. ticket header
 
-- **status**: PARKED (重要、 user 判断後着手、 approach 選択 pending)
+- **status**: SPLIT_LIVE_OBSERVE (a approx LIVE / b strict READY)
+  - **(a) approach LIVE_DEPLOYED**: starter 限定 approx で commit `378249d` (vs L/R split publisher + NPB throws scraper) + `f621457` landed、 image `insight-nightly:415-vs-lr-mvp` gen 81 deploy 済、 wire は `insight_nightly.py` L300-310 (last_10_games scope L/R loop)
+  - **(b) strict READY**: NPB `playbyplay.html` で per-PA pitcher 追跡可 (commit `f621457` で free source 実 verify 済)、 [[405]] と同 source / 同時実装条件付き READY、 工数 6-8h は 405 と統合 scope
+  - user 判断保留点: (a) approx を継続維持するか / (b) strict 拡張で精度上げるか
 - **priority**: high (user 明示「左右選手は重要」 2026-05-20 PM)
 - **owner**: Claude / **lane**: Claude
 - **github_issue**: https://github.com/fwns6760/-wordpressyoshilover/issues/91

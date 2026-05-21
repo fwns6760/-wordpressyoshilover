@@ -2028,16 +2028,18 @@ git add -A禁止。
 - **観察待ち**: 登板 inning 別 post の出現 (投手 appearance 蓄積 + dedup cooldown 経過後)
 - **不可触**: [[403]] が固めた期間 cut 体系 / 348 whitelist / 349 cooldown / 356 quality gate / env / Secret / Scheduler / 既存 publisher の title format
 
-### 405-INSIGHT-period-window-phase3-parked
+### 405-INSIGHT-period-window-phase3-ready
 
 - **alias**: -
-- **status**: PARKED (重工事、 pitch-by-pitch source 確保から、 当面着手しない) / **priority**: low
+- **status**: READY (free source NPB `playbyplay.html` 確保 2026-05-20、 `f621457` で実 verify 済、 6-8h impl 待ち) / **priority**: low
 - **owner**: Claude / **lane**: Claude
-- **doc_path**: `doc/waiting/405-INSIGHT-period-window-phase3-parked.md`
-- **stage**: Phase 3 / 段階式
-- **背景**: ファン視点 cut のうち pitch-by-pitch (1 球単位) source が必要なため当面着手しない案を shadow ticket として保管。 議論された案を忘れないため残す。
-- **scope (parked)**: (1) 打席内カウント別 (初球打ち / 2 ストライク後 / 3 ボール後 / 投球数別) / (2) 走者状況別 (満塁 / 二塁単独 / 一三塁 等、 得点圏以外の細分) / (3) 球場別 (本拠地以外、 甲子園 / マツダ / ハマスタ 等)
-- **着手判断条件**: pitch-by-pitch data の安定 source 確保 or NPB BIS feed access 取得 or user 再指定
+- **doc_path**: `doc/active/405-INSIGHT-period-window-phase3-ready.md`
+- **github_issue**: https://github.com/fwns6760/-wordpressyoshilover/issues/81
+- **stage**: Phase 3 / 段階式 ([[404]] follow-up)
+- **背景**: 2026-05-20 PM user 「残をやるが無料でね」 → NPB 公式 `https://npb.jp/scores/YYYY/MMDD/SLUG/playbyplay.html` で per-PA 走者状況 + カウント + 結果 + 投手交代 marker 全部記載 (`f621457` で実 sample game verify)。 paid API 不要。
+- **scope**: (1) 打席内カウント別 (初球打ち / 2 ストライク後 / 3 ボール後 / 投球数別) / (2) 走者状況別 (満塁 / 二塁単独 / 一三塁 等) / (3) 球場別 (本拠地以外、 甲子園 / マツダ / ハマスタ 等)
+- **同時実装条件**: [[415]] (b) strict (per-PA pitcher 追跡) と同 source、 共通 parser + per-PA detail table で効率化
+- **実装段階**: (1) playbyplay.html parser 新規 → (2) per-PA detail table schema → (3) aggregator × 3 cut + publisher × 3 cut → (4) tests + build + deploy
 - **不可触**: [[403]] / [[404]] が固めた cut 体系 / DB schema (本 ticket 単独では何も変えない) / env / Secret / Scheduler
 
 ### 406-INSIGHT-hr-split-sql-bug-fix

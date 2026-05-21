@@ -1002,6 +1002,12 @@ def open_db(db_path: Path = DEFAULT_DB_PATH, schema_path: Path = DEFAULT_SCHEMA)
             conn.executescript(f.read())
     _ensure_team_name_columns(conn)
     _ensure_pitcher_inning_columns(conn)
+    # 404 wire-fix (2026-05-21): commit 159d491 で schema migration + derive
+    # logic は追加したが、 backfill_pitcher_innings の caller wire-up が抜けて
+    # いた。 prod DB で全 2108 row が start_inning NULL のまま → inning publisher
+    # が aggregate で 0 row hit → silent skip。 idempotent (WHERE NULL filter)
+    # なので open_db 経由で安全に毎回 call できる。
+    backfill_pitcher_innings(conn)
     return conn
 
 

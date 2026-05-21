@@ -143,6 +143,47 @@ class BackfillPitcherInningsTests(unittest.TestCase):
             import shutil
             shutil.rmtree(tmpdir, ignore_errors=True)
 
+    def test_open_db_auto_backfills_existing_null_rows(self):
+        """404 wire-fix (2026-05-21): open_db 経由で既存 NULL row が自動 backfill される。
+
+        regression guard: commit 159d491 で backfill 定義はあったが open_db
+        wire 抜けで prod 全 row NULL のまま inning publisher silent skip した
+        bug の再発防止。
+        """
+        import tempfile
+        tmpdir = Path(tempfile.mkdtemp())
+        try:
+            # 1) open_db で schema migration、 row なし
+            conn = self._open_db(tmpdir)
+            self._seed_game_with_pitchers(
+                conn,
+                game_id="g-404-3",
+                team_role="home",
+                pitchers=[(1, "戸郷翔征", 6.0), (2, "大勢", 1.0)],
+            )
+            # 2) start_inning / end_inning を明示 NULL に戻し、 conn close
+            conn.execute(
+                "UPDATE pitching_logs SET start_inning = NULL, end_inning = NULL "
+                "WHERE game_id = 'g-404-3'"
+            )
+            conn.commit()
+            conn.close()
+            # 3) 再 open_db で auto backfill 走るか
+            conn2 = self._open_db(tmpdir)
+            rows = [tuple(r) for r in conn2.execute(
+                "SELECT player_display, start_inning, end_inning "
+                "FROM pitching_logs WHERE game_id='g-404-3' "
+                "ORDER BY appearance_order"
+            ).fetchall()]
+            self.assertEqual(rows, [
+                ("戸郷翔征", 1, 6),
+                ("大勢", 7, 7),
+            ])
+            conn2.close()
+        finally:
+            import shutil
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
     def test_backfill_idempotent(self):
         """既に start/end set 済 row は backfill で touch されない (idempotent)."""
         import tempfile

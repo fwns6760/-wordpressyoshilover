@@ -3,7 +3,7 @@
 ## 1. meta
 
 - **ticket id**: 418
-- **GH Issue**: (起票後追記)
+- **GH Issue**: https://github.com/fwns6760/-wordpressyoshilover/issues/93
 - **owner**: Claude Code (session 2026-05-21)
 - **priority**: P2
 - **status**: IN_FLIGHT

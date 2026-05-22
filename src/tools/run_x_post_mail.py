@@ -176,6 +176,16 @@ def _gemma_branding_max_per_run() -> int:
     )
 
 
+def _gemma_branding_all_mode() -> bool:
+    """2026-05-22 user request: rebrand every data-ranking candidate via Gemma
+    branding (alternating fuuga / kandume persona) instead of appending a
+    fixed-count of Gemma posts on top. Default OFF — flag-gate so the
+    append-only mode stays the rollback baseline.
+    """
+    raw = (os.environ.get("X_POST_MAIL_GEMMA_BRANDING_ALL") or "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
 def _fan_voice_enabled() -> bool:
     """397: env flag for fan_voice (参考) candidate.
 
@@ -707,6 +717,180 @@ def _pick_gemma_branding_players(
     for cand in candidates_with_fact + candidates_without_fact:
         _add(cand.focus_player, cand.db_fact_line or "")
     return picks
+
+
+def _rebrand_candidates_via_gemma(
+    candidates: list[lane.Candidate],
+    *,
+    lineup_focus_names: list[str] | None,
+    db_path: str | None,
+    bucket_name: str | None,
+) -> list[lane.Candidate]:
+    """Replace each candidate's ``post_text`` with a Gemma branding rewrite.
+
+    2026-05-22 user request: instead of appending a fixed-count of branding
+    posts on top of data-ranking posts, rebrand every existing candidate so
+    the whole mail comes out in ヨシラバー voice. Personas are mixed (alternating
+    ``fuuga`` for even indices and ``kandume`` for odd) regardless of game-day
+    time-of-day — caller asked for the mix, not the time-gated auto-switch.
+
+    Behaviour notes:
+    - 24h history gate (player overuse skip in the picker) is bypassed —
+      the caller has already accepted these candidates via dedup fallback,
+      so Gemma should rewrite them too.
+    - ``focus_player`` / ``title`` / ``draft_text`` / ``signature`` are kept
+      from the original candidate; only ``post_text`` and ``char_count``
+      are replaced. ``draft_text`` keeps the analytical proof for the mail's
+      "根拠データ" disclosure block.
+    - On Gemma / Tavily failure (any of: missing API key, no Tavily results,
+      validator drop), the original candidate is kept verbatim — the mail
+      never drops a line because of a branding retry.
+
+    Cost note: Tavily runs once per player (``"巨人 {player} 最新"``). 5 fires
+    × N candidates per day vs the 1,000 credit / month limit — watch for
+    overrun once this lane scales beyond ~6 candidates / fire.
+    """
+    if _xbg is None or not candidates:
+        return candidates
+    gemini_key, tavily_key = _resolve_gemma_api_keys()
+    if not gemini_key or not tavily_key:
+        LOG.warning(
+            "Gemma rebrand skipped: missing API key (gemini=%s tavily=%s) — keeping data-ranking text",
+            bool(gemini_key),
+            bool(tavily_key),
+        )
+        return candidates
+
+    from datetime import datetime, timezone, timedelta
+    from dataclasses import replace as _dc_replace
+    jst = timezone(timedelta(hours=9))
+    now_jst = datetime.now(jst)
+
+    fan_voice_snippet = ""
+    if bucket_name:
+        try:
+            entries = lane.load_recent_fan_voice_pool_entries(
+                bucket_name, now_jst, lookback_hours=24
+            )
+            if entries:
+                top = entries[0]
+                text_preview = str(top.get("text") or "").strip()[:120]
+                handle = str(top.get("handle") or "").strip()
+                if text_preview:
+                    fan_voice_snippet = (
+                        f"@{handle}: {text_preview}" if handle else text_preview
+                    )
+        except Exception as exc:  # noqa: BLE001
+            LOG.info("fan_voice_snippet_skip reason=%r", exc)
+
+    starting_pitcher_today = ""
+    opponent_starter = ""
+    try:
+        from src.analysis.pregame_themes import fetch_today_starting_pitchers
+        starting_pitcher_today, opponent_starter, _ = fetch_today_starting_pitchers()
+    except Exception as exc:  # noqa: BLE001
+        LOG.info("starting_pitcher_fetch_skip reason=%r", exc)
+
+    lineup_change_summary = ""
+    promotion_summary = ""
+    if bucket_name:
+        try:
+            from src.analysis.daily_snapshot import (
+                build_lineup_change_string,
+                build_promotion_string,
+            )
+            if lineup_focus_names:
+                lineup_change_summary = build_lineup_change_string(
+                    bucket_name,
+                    list(lineup_focus_names),
+                    now_jst=now_jst,
+                    logger=LOG,
+                )
+            try:
+                roster_path = Path(__file__).resolve().parent.parent.parent / "config" / "giants_roster.json"
+                roster_data = json.loads(roster_path.read_text(encoding="utf-8"))
+                today_active = {
+                    str(p.get("name") or "").strip()
+                    for p in roster_data
+                    if p.get("active") and p.get("role") == "player"
+                }
+                today_active = {n for n in today_active if n}
+                if today_active:
+                    promotion_summary = build_promotion_string(
+                        bucket_name, today_active, now_jst=now_jst, logger=LOG
+                    )
+            except Exception as roster_exc:  # noqa: BLE001
+                LOG.info("roster_snapshot_skip reason=%r", roster_exc)
+        except Exception as snap_exc:  # noqa: BLE001
+            LOG.info("daily_snapshot_skip reason=%r", snap_exc)
+
+    rebranded: list[lane.Candidate] = []
+    success_count = 0
+    for idx, cand in enumerate(candidates):
+        persona = "fuuga" if idx % 2 == 0 else "kandume"
+        player = (cand.focus_player or "").strip()
+        if not player:
+            rebranded.append(cand)
+            continue
+        db_fact = ""
+        if db_path:
+            try:
+                db_fact = _xbg.build_db_fact_line(player, db_path)
+            except Exception as exc:  # noqa: BLE001
+                LOG.warning(
+                    "build_db_fact_line failed during rebrand (player=%s err=%r)",
+                    player,
+                    exc,
+                )
+                db_fact = ""
+        fact = db_fact or (cand.db_fact_line or "")
+        try:
+            new_cand = _xbg.build_gemma_branding_candidate(
+                player,
+                gemini_api_key=gemini_key,
+                tavily_api_key=tavily_key,
+                db_fact_line=fact,
+                persona=persona,
+                logger=LOG,
+                db_path=db_path or "",
+                focused_players=list(lineup_focus_names) if lineup_focus_names else None,
+                fan_voice_snippet=fan_voice_snippet,
+                starting_pitcher_today=starting_pitcher_today,
+                opponent_pitcher_canonical=opponent_starter,
+                lineup_change_summary=lineup_change_summary,
+                promotion_summary=promotion_summary,
+            )
+        except Exception as exc:  # noqa: BLE001
+            LOG.warning(
+                "rebrand_via_gemma failed player=%s persona=%s err=%r — keep original",
+                player,
+                persona,
+                exc,
+            )
+            new_cand = None
+        if new_cand is not None and (new_cand.post_text or "").strip():
+            rebranded.append(
+                _dc_replace(
+                    cand,
+                    post_text=new_cand.post_text,
+                    char_count=len(new_cand.post_text),
+                )
+            )
+            success_count += 1
+        else:
+            LOG.info(
+                "rebrand_via_gemma kept original player=%s persona=%s "
+                "(Gemma returned no text — Tavily / safety / API failure)",
+                player,
+                persona,
+            )
+            rebranded.append(cand)
+    LOG.info(
+        "Gemma rebrand: %d/%d candidates rewritten in brand voice (alternating fuuga/kandume)",
+        success_count,
+        len(candidates),
+    )
+    return rebranded
 
 
 def _build_gemma_branding_candidates(
@@ -1302,7 +1486,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     # + Tavily REST で branding candidate を 1-3 件生成して append する。
     # flag OFF (default) では既存挙動を 100% 維持 (rollback 余地)。
     gemma_enabled = _gemma_branding_enabled()
-    if gemma_enabled:
+    if gemma_enabled and _gemma_branding_all_mode():
+        # 2026-05-22 user request: rebrand every candidate via Gemma (alternating
+        # fuuga / kandume) so the whole mail comes out in ヨシラバー voice.
+        candidates = _rebrand_candidates_via_gemma(
+            candidates,
+            lineup_focus_names=lineup_focus_names,
+            db_path=db_path,
+            bucket_name=bucket_name or None,
+        )
+        news_fallback_enabled = False
+        fallback_candidates: list[lane.Candidate] = []
+    elif gemma_enabled:
         gemma_count = _gemma_branding_max_per_run()
         if gemma_count > 0:
             gemma_candidates = _build_gemma_branding_candidates(

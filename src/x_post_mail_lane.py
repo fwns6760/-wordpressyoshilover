@@ -192,7 +192,20 @@ _POSITION_DISPLAY_JP: dict[str, str] = {
 # rather than importing keeps coupling minimal).
 X_CHAR_LIMIT = 280
 
-# X intent URL base. Use the modern canonical endpoint `x.com/intent/post`.
+# X intent URL is now routed through the yoshilover-fetcher Cloud Run
+# service so the mobile X app's universal-link intercept does NOT pick up
+# the click — instead the OS opens the link in a browser, the server
+# 302-redirects to x.com/intent/post, and the browser navigates to the X
+# composer using its already-logged-in @yoshilover6760 session. Direct
+# https://x.com/intent/post links got intercepted by the X app and opened
+# the composer under the user's app-default (personal) account.
+#
+# The fetcher endpoint accepts `text` and optional `hashtags` query params.
+_X_INTENT_REDIRECT_BASE = (
+    "https://yoshilover-fetcher-487178857517.asia-northeast1.run.app/x-intent"
+)
+
+# Kept for reference / tests; not used as the click target anymore.
 # The legacy `twitter.com/intent/tweet` redirects to x.com but the redirect
 # can drop the `?text=` query param on some clients (observed 2026-05-21).
 _X_INTENT_URL_BASE = "https://x.com/intent/post"
@@ -2443,24 +2456,21 @@ def pick_candidates(
 
 
 def encode_x_intent_url(text: str) -> str:
-    """Return an X Web Intent URL with ``text`` percent-encoded.
+    """Return the yoshilover-fetcher ``/x-intent`` redirect URL.
+
+    Mobile X app intercepts direct ``x.com/intent/post`` universal links
+    and opens the composer under its app-default (personal) account.
+    Routing through ``yoshilover-fetcher.run.app/x-intent`` makes the OS
+    open a browser (the run.app domain is not a registered universal
+    link), the server returns 302 to x.com, and the browser navigates
+    to X composer under its logged-in @yoshilover6760 session.
 
     The Web Intent spec accepts both ``%0A`` for newlines and `+` for
-    spaces. We use :func:`urllib.parse.quote` with ``safe=""`` so every
-    non-RFC3986-unreserved char gets encoded — including `#` (which
-    would otherwise be parsed as a fragment) and `&` (which would
-    truncate query parameters).
-
-    ``&hashtags=巨人`` is appended unconditionally. Other mail lanes
-    that route X composer to @yoshilover6760 reliably on mobile all
-    include #巨人 — kobayashi/sakamoto embed it in the text body,
-    publish_notice attaches it via this same X intent &hashtags= param.
-    This lane historically omitted any 巨人 marker and the mobile X app
-    intermittently opened composer under the user's other personal X
-    account. Matching the working pattern fixes the routing.
+    spaces. ``urllib.parse.quote`` with ``safe=""`` encodes every
+    non-RFC3986-unreserved char — including `#` and `&`.
     """
     encoded = _url_quote(text or "", safe="")
-    return f"{_X_INTENT_URL_BASE}?text={encoded}&hashtags=%E5%B7%A8%E4%BA%BA"
+    return f"{_X_INTENT_REDIRECT_BASE}?text={encoded}&hashtags=%E5%B7%A8%E4%BA%BA"
 
 
 # ---------------------------------------------------------------------------

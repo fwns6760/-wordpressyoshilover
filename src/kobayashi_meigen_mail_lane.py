@@ -43,6 +43,47 @@ _TIME_BAND_EMOJI = {"朝": "🌅", "昼": "🌞", "夕方": "🌆", "夜": "🌙
 
 
 @dataclass(frozen=True)
+class MeigenSeriesConfig:
+    player_name: str
+    series_title: str
+    source_note: str
+    source_handle: str
+    permalink_handle: str
+    archive_key: str
+    cursor_key: str
+    hashtags: tuple[str, ...]
+    lane_name: str
+    footer_schedule: str
+
+
+KOBAYASHI_CONFIG = MeigenSeriesConfig(
+    player_name="小林誠司",
+    series_title="小林誠司 名言集",
+    source_note="妻 curation アーカイブ (@sakaikkotaiso) からの自動配信。",
+    source_handle="@sakaikkotaiso",
+    permalink_handle="sakaikkotaiso",
+    archive_key=ARCHIVE_KEY,
+    cursor_key=CURSOR_KEY,
+    hashtags=("#巨人", "#小林誠司"),
+    lane_name="kobayashi-meigen",
+    footer_schedule="1 日 3 fire 12:00 / 17:00 / 20:00 JST",
+)
+
+SAKAMOTO_CONFIG = MeigenSeriesConfig(
+    player_name="坂本勇人",
+    series_title="坂本勇人 名言集",
+    source_note="@hayatocup アーカイブからの自動配信。",
+    source_handle="@hayatocup",
+    permalink_handle="hayatocup",
+    archive_key="archives/sakamoto_meigen/tweets.jsonl",
+    cursor_key="archives/sakamoto_meigen/sent_cursor.jsonl",
+    hashtags=("#巨人", "#坂本勇人"),
+    lane_name="sakamoto-meigen",
+    footer_schedule="1 日 1 fire 18:00 JST",
+)
+
+
+@dataclass(frozen=True)
 class MeigenCandidate:
     tweet_id: str
     text: str
@@ -72,7 +113,12 @@ def _band_for_hour(hour: int) -> str:
     return "夜"
 
 
-def _build_subject(now: datetime, n: int) -> str:
+def _build_subject(
+    now: datetime,
+    n: int,
+    *,
+    config: MeigenSeriesConfig = KOBAYASHI_CONFIG,
+) -> str:
     """Subject 形式は yoshilover Gmail folder filter に揃える:
     - prefix `🟠🐦📮` (x-post-mail と同じ orange + bird marker)
     - suffix ` | YOSHILOVER` (publish-notice / alert と同じ brand 名)
@@ -81,7 +127,7 @@ def _build_subject(now: datetime, n: int) -> str:
     band = _band_for_hour(now.hour)
     emoji = _TIME_BAND_EMOJI.get(band, "📮")
     return (
-        f"🟠🐦📮【小林誠司 名言 {n}件】{emoji}{band} "
+        f"🟠🐦📮【{config.player_name} 名言 {n}件】{emoji}{band} "
         f"{now.strftime('%H:%M')} JST | YOSHILOVER"
     )
 
@@ -96,8 +142,12 @@ def _format_jst_date(iso_utc: str) -> str:
         return iso_utc
 
 
-def _permalink(tweet_id: str) -> str:
-    return f"https://twitter.com/sakaikkotaiso/status/{tweet_id}"
+def _permalink(
+    tweet_id: str,
+    *,
+    config: MeigenSeriesConfig = KOBAYASHI_CONFIG,
+) -> str:
+    return f"https://twitter.com/{config.permalink_handle}/status/{tweet_id}"
 
 
 # X 280-char hard limit on Web Intent URL pre-fill (longer text is silently
@@ -105,7 +155,13 @@ def _permalink(tweet_id: str) -> str:
 _X_POST_CHAR_LIMIT = 270
 
 
-def _build_x_intent_url(text: str, archive_number: int = 0) -> str:
+def _build_x_intent_url(
+    text: str,
+    archive_number: int = 0,
+    *,
+    config: MeigenSeriesConfig = KOBAYASHI_CONFIG,
+    source_url: str = "",
+) -> str:
     """X Web Intent (x.com/intent/post) で開く 投稿 URL。
 
     archive_number > 0 の時、 先頭に series header (🟠 brand + 第○回
@@ -120,17 +176,27 @@ def _build_x_intent_url(text: str, archive_number: int = 0) -> str:
     if archive_number and archive_number > 0:
         no_str = str(archive_number)  # plain digit (1, 100, 836 全部統一)
         header = (
-            "🏆 小林誠司 名言集 🏆\n"
+            f"🏆 {config.series_title} 🏆\n"
             "━━━━━━━━━━━━\n"
             f"       第 {no_str} 回\n"
             "━━━━━━━━━━━━\n\n"
         )
-        footer = "\n\n#巨人 #小林誠司"
+        footer_lines = [" ".join(config.hashtags)]
+        if source_url:
+            footer_lines.append(source_url)
+        footer = "\n\n" + "\n".join(footer_lines)
     available_for_text = _X_POST_CHAR_LIMIT - len(header) - len(footer)
     if len(raw) > available_for_text:
         raw = raw[: max(0, available_for_text - 1)] + "…"
     body = f"{header}{raw}{footer}"
-    return f"https://x.com/intent/post?text={_url_quote(body, safe='')}"
+    # Route through yoshilover-fetcher /x-intent so the mobile X app's
+    # universal-link intercept does NOT grab the click — direct x.com
+    # links open under the user's X-app-default (personal) account; the
+    # browser-path lands on the @yoshilover6760 web session instead.
+    return (
+        "https://yoshilover-fetcher-487178857517.asia-northeast1.run.app"
+        f"/x-intent?text={_url_quote(body, safe='')}"
+    )
 
 
 _KEYCAP_DIGITS = {
@@ -151,7 +217,12 @@ def _emoji_number(n: int) -> str:
     return "".join(_KEYCAP_DIGITS.get(c, c) for c in str(n))
 
 
-def _record_to_candidate(rec: dict[str, Any], archive_number: int = 0) -> MeigenCandidate:
+def _record_to_candidate(
+    rec: dict[str, Any],
+    archive_number: int = 0,
+    *,
+    config: MeigenSeriesConfig = KOBAYASHI_CONFIG,
+) -> MeigenCandidate:
     pm = rec.get("public_metrics") or {}
     tid = rec["tweet_id"]
     return MeigenCandidate(
@@ -162,7 +233,7 @@ def _record_to_candidate(rec: dict[str, Any], archive_number: int = 0) -> Meigen
         retweet_count=int(pm.get("retweet_count") or 0),
         has_media=bool(rec.get("has_media")),
         media=list(rec.get("media") or []),
-        permalink=_permalink(tid),
+        permalink=_permalink(tid, config=config),
         archive_number=archive_number,
     )
 
@@ -238,6 +309,7 @@ def pick_candidates(
     *,
     sent_ids: set[str],
     n: int,
+    config: MeigenSeriesConfig = KOBAYASHI_CONFIG,
 ) -> list[MeigenCandidate]:
     """Return up to ``n`` unsent candidates in created_at asc (oldest first).
 
@@ -250,21 +322,30 @@ def pick_candidates(
     }
     unsent = [r for r in chronological if str(r.get("tweet_id")) not in sent_ids]
     return [
-        _record_to_candidate(r, archive_number=position_map[str(r["tweet_id"])])
+        _record_to_candidate(
+            r,
+            archive_number=position_map[str(r["tweet_id"])],
+            config=config,
+        )
         for r in unsent[:n]
     ]
 
 
-def _compose_text_body(candidates: list[MeigenCandidate], now: datetime) -> str:
+def _compose_text_body(
+    candidates: list[MeigenCandidate],
+    now: datetime,
+    *,
+    config: MeigenSeriesConfig = KOBAYASHI_CONFIG,
+) -> str:
     lines = [
-        f"📮 小林誠司 名言 — {now.strftime('%Y-%m-%d %H:%M')} JST",
+        f"📮 {config.player_name} 名言 — {now.strftime('%Y-%m-%d %H:%M')} JST",
         "",
-        "妻 curation アーカイブ (@sakaikkotaiso) からの自動配信。",
+        config.source_note,
         "",
     ]
     for idx, c in enumerate(candidates, start=1):
         no_label = str(c.archive_number) if c.archive_number else str(idx)
-        lines.append("🏆 小林誠司 名言集 🏆")
+        lines.append(f"🏆 {config.series_title} 🏆")
         lines.append("━━━━━━━━━━━━")
         lines.append(f"       第 {no_label} 回")
         lines.append("━━━━━━━━━━━━")
@@ -272,34 +353,53 @@ def _compose_text_body(candidates: list[MeigenCandidate], now: datetime) -> str:
         lines.append("")
         lines.append(c.text)
         if c.has_media and c.media:
-            urls = [m.get("url") or m.get("preview_image_url") for m in c.media]
-            urls = [u for u in urls if u]
-            if urls:
-                lines.append("📷 画像: " + ", ".join(urls))
+            media_lines = []
+            for m in c.media:
+                u = m.get("url") or m.get("preview_image_url")
+                if not u:
+                    continue
+                media_type = str(m.get("type") or "").lower()
+                label = "動画サムネイル" if media_type == "video" and m.get("preview_image_url") else "メディア"
+                media_lines.append(f"{label}: {u}")
+            if media_lines:
+                lines.append("📎 " + " / ".join(media_lines))
             else:
-                lines.append("📷 画像あり (URL 取得は 6/12 cycle reset 後)")
+                lines.append("📎 メディアあり (URL 未取得、元 tweet で確認)")
         elif c.has_media:
-            lines.append("📷 画像あり (URL 取得は 6/12 cycle reset 後)")
-        lines.append(f"🐦 X に投稿: {_build_x_intent_url(c.text, archive_number=c.archive_number)}")
+            lines.append("📎 メディアあり (URL 未取得、元 tweet で確認)")
+        lines.append(
+            "🐦 X に投稿: "
+            + _build_x_intent_url(
+                c.text,
+                archive_number=c.archive_number,
+                config=config,
+                source_url=c.permalink if c.has_media else "",
+            )
+        )
         lines.append(f"🔗 元 tweet: {c.permalink}")
         lines.append(
             f"♥ {c.like_count}   🔁 {c.retweet_count}"
         )
         lines.append("──────────────")
         lines.append("")
-    lines.append("配信元: yoshilover archive (small batch、 1 日 3 fire)")
+    lines.append(f"配信元: yoshilover archive (small batch、 {config.footer_schedule})")
     return "\n".join(lines)
 
 
-def _compose_html_body(candidates: list[MeigenCandidate], now: datetime) -> str:
+def _compose_html_body(
+    candidates: list[MeigenCandidate],
+    now: datetime,
+    *,
+    config: MeigenSeriesConfig = KOBAYASHI_CONFIG,
+) -> str:
     parts = [
         "<!doctype html><html><head><meta charset=\"utf-8\">",
-        "<title>小林誠司 名言</title></head>",
+        f"<title>{_html.escape(config.player_name)} 名言</title></head>",
         "<body style=\"font-family:system-ui,-apple-system,Hiragino Kaku Gothic ProN,Yu Gothic,Meiryo,sans-serif;"
         "max-width:680px;margin:0 auto;padding:16px;color:#222;\">",
-        f"<h1 style=\"font-size:18px;margin:0 0 8px;\">📮 小林誠司 名言 — {now.strftime('%Y-%m-%d %H:%M')} JST</h1>",
+        f"<h1 style=\"font-size:18px;margin:0 0 8px;\">📮 {_html.escape(config.player_name)} 名言 — {now.strftime('%Y-%m-%d %H:%M')} JST</h1>",
         "<p style=\"color:#666;font-size:13px;margin:0 0 16px;\">"
-        "妻 curation アーカイブ (@sakaikkotaiso) からの自動配信</p>",
+        f"{_html.escape(config.source_note)}</p>",
     ]
     for idx, c in enumerate(candidates, start=1):
         date_str = _format_jst_date(c.created_at)
@@ -316,7 +416,7 @@ def _compose_html_body(candidates: list[MeigenCandidate], now: datetime) -> str:
             "font-size:15px;line-height:1.6;color:#222;"
             "padding:8px 0 12px;margin:0 0 12px;"
             "border-bottom:1px solid #ddd;\">"
-            "🏆 小林誠司 名言集 🏆<br>"
+            f"🏆 {_html.escape(config.series_title)} 🏆<br>"
             "━━━━━━━━━━━━<br>"
             f"第 {_html.escape(no_label)} 回<br>"
             "━━━━━━━━━━━━"
@@ -332,24 +432,32 @@ def _compose_html_body(candidates: list[MeigenCandidate], now: datetime) -> str:
             url_imgs = []
             for m in c.media:
                 u = m.get("url") or m.get("preview_image_url")
-                gcs_path = m.get("gcs_path")
-                if gcs_path and gcs_path.startswith("gs://"):
-                    # 後 fire で public URL or signed URL に置換する想定
-                    pass
+                media_type = str(m.get("type") or "").lower()
                 if u:
-                    url_imgs.append(_html.escape(u))
+                    label = "動画サムネイル" if media_type == "video" and m.get("preview_image_url") else "メディア"
+                    url_imgs.append((_html.escape(u), label))
             if url_imgs:
-                for u in url_imgs:
+                for u, label in url_imgs:
                     parts.append(
                         f"<img src=\"{u}\" alt=\"\" "
                         "style=\"max-width:100%;height:auto;border-radius:6px;margin:0 0 8px;\">"
                     )
+                    parts.append(
+                        "<div style=\"font-size:12px;color:#888;margin:-4px 0 8px;\">"
+                        f"📎 {_html.escape(label)}</div>"
+                    )
             else:
                 parts.append(
                     "<div style=\"font-size:12px;color:#a00;margin:0 0 8px;\">"
-                    "📷 画像あり (URL backfill 6/12 以降)</div>"
+                    f"📎 メディアあり (<a href=\"{_html.escape(c.permalink)}\" "
+                    "style=\"color:#1d9bf0;text-decoration:none;\">元 tweet で確認</a>)</div>"
                 )
-        intent_url = _build_x_intent_url(c.text, archive_number=c.archive_number)
+        intent_url = _build_x_intent_url(
+            c.text,
+            archive_number=c.archive_number,
+            config=config,
+            source_url=c.permalink if c.has_media else "",
+        )
         parts.append(
             "<div style=\"margin:8px 0 4px;\">"
             f"<a href=\"{_html.escape(intent_url)}\" "
@@ -371,7 +479,7 @@ def _compose_html_body(candidates: list[MeigenCandidate], now: datetime) -> str:
         parts.append("</div>")
     parts.append(
         "<div style=\"font-size:12px;color:#888;margin:16px 0 0;\">"
-        "配信元: yoshilover archive (small batch、 1 日 3 fire 12:00 / 17:00 / 20:00 JST)"
+        f"配信元: yoshilover archive (small batch、 {_html.escape(config.footer_schedule)})"
         "</div>"
     )
     parts.append("</body></html>")
@@ -379,16 +487,19 @@ def _compose_html_body(candidates: list[MeigenCandidate], now: datetime) -> str:
 
 
 def compose_mail(
-    candidates: list[MeigenCandidate], *, now: Optional[datetime] = None
+    candidates: list[MeigenCandidate],
+    *,
+    now: Optional[datetime] = None,
+    config: MeigenSeriesConfig = KOBAYASHI_CONFIG,
 ) -> ComposedMail:
     if now is None:
         now = datetime.now(JST)
     elif now.tzinfo is None:
         now = now.replace(tzinfo=JST)
-    subject = _build_subject(now, len(candidates))
+    subject = _build_subject(now, len(candidates), config=config)
     return ComposedMail(
         subject=subject,
-        text_body=_compose_text_body(candidates, now),
-        html_body=_compose_html_body(candidates, now),
+        text_body=_compose_text_body(candidates, now, config=config),
+        html_body=_compose_html_body(candidates, now, config=config),
         candidate_count=len(candidates),
     )

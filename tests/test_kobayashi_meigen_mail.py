@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import unittest
 from datetime import datetime
+from urllib.parse import parse_qs, urlparse
 from zoneinfo import ZoneInfo
 
 from src import kobayashi_meigen_mail_lane as lane
@@ -95,6 +96,36 @@ class SubjectAndComposeTests(unittest.TestCase):
         mail = lane.compose_mail([], now=now)
         self.assertIn("🌙夜", mail.subject)
 
+    def test_sakamoto_config_subject_and_body(self) -> None:
+        records = _make_records()
+        cands = lane.pick_candidates(
+            records,
+            sent_ids=set(),
+            n=1,
+            config=lane.SAKAMOTO_CONFIG,
+        )
+        mail = lane.compose_mail(
+            cands,
+            now=datetime(2026, 5, 18, 18, 0, tzinfo=JST),
+            config=lane.SAKAMOTO_CONFIG,
+        )
+        self.assertIn("坂本勇人 名言", mail.subject)
+        self.assertIn("@hayatocup", mail.text_body)
+        self.assertIn("https://twitter.com/hayatocup/status/100", mail.text_body)
+        self.assertIn("%23%E5%B7%A8%E4%BA%BA", mail.text_body)
+        self.assertIn("%23%E5%9D%82%E6%9C%AC%E5%8B%87%E4%BA%BA", mail.text_body)
+        self.assertIn("18:00 JST", mail.subject)
+        self.assertIn("1 日 1 fire 18:00 JST", mail.html_body)
+        intent_url = lane._build_x_intent_url(
+            cands[0].text,
+            archive_number=cands[0].archive_number,
+            config=lane.SAKAMOTO_CONFIG,
+        )
+        intent_text = parse_qs(urlparse(intent_url).query)["text"][0]
+        self.assertIn("🏆 坂本勇人 名言集 🏆", intent_text)
+        self.assertIn("#坂本勇人", intent_text)
+        self.assertNotIn("小林誠司", intent_text)
+
     def test_text_body_includes_dates_and_permalinks(self) -> None:
         records = _make_records()
         cands = lane.pick_candidates(records, sent_ids=set(), n=3)
@@ -115,8 +146,8 @@ class SubjectAndComposeTests(unittest.TestCase):
         # tweet 300 (媒体 URL あり) → <img> 出る
         self.assertIn("https://pbs.twimg.com/media/example.jpg", mail.html_body)
         self.assertIn("<img", mail.html_body)
-        # tweet 200 (media あるが url None) → backfill 待ち文言
-        self.assertIn("URL backfill", mail.html_body)
+        # tweet 200 (media あるが url None) → 元 tweet 確認導線
+        self.assertIn("元 tweet で確認", mail.html_body)
 
     def test_html_body_escapes_html_entities(self) -> None:
         records = [{
@@ -192,7 +223,13 @@ class CursorTests(unittest.TestCase):
 class XIntentButtonTests(unittest.TestCase):
     def test_intent_url_url_encodes_text(self) -> None:
         url = lane._build_x_intent_url("こんにちは #小林誠司")
-        self.assertTrue(url.startswith("https://x.com/intent/post?text="))
+        # 2026-05-22: routed through yoshilover-fetcher /x-intent (302 → x.com)
+        # to bypass mobile X-app universal-link intercept that opens the
+        # composer under the wrong default account.
+        self.assertTrue(url.startswith(
+            "https://yoshilover-fetcher-487178857517.asia-northeast1.run.app"
+            "/x-intent?text="
+        ))
         self.assertIn("%23", url)  # # is url-encoded
         self.assertNotIn(" ", url)
 
@@ -205,12 +242,26 @@ class XIntentButtonTests(unittest.TestCase):
         self.assertLessEqual(len(decoded), 270)
         self.assertTrue(decoded.endswith("…"))
 
+    def test_intent_url_can_include_source_tweet_for_media_card(self) -> None:
+        source_url = "https://twitter.com/hayatocup/status/123"
+        url = lane._build_x_intent_url(
+            "メディア付き投稿",
+            archive_number=1,
+            config=lane.SAKAMOTO_CONFIG,
+            source_url=source_url,
+        )
+        intent_text = parse_qs(urlparse(url).query)["text"][0]
+        self.assertIn(source_url, intent_text)
+        self.assertIn("#坂本勇人", intent_text)
+
     def test_html_body_includes_x_intent_button(self) -> None:
         records = _make_records()
         cands = lane.pick_candidates(records, sent_ids=set(), n=1)
         now = datetime(2026, 5, 18, 12, 0, tzinfo=JST)
         mail = lane.compose_mail(cands, now=now)
-        self.assertIn("x.com/intent/post", mail.html_body)
+        # 2026-05-22: routed through yoshilover-fetcher /x-intent.
+        self.assertIn("yoshilover-fetcher", mail.html_body)
+        self.assertIn("/x-intent", mail.html_body)
         self.assertIn("🐦 X に投稿", mail.html_body)
 
     def test_text_body_includes_intent_link(self) -> None:
@@ -218,7 +269,8 @@ class XIntentButtonTests(unittest.TestCase):
         cands = lane.pick_candidates(records, sent_ids=set(), n=1)
         now = datetime(2026, 5, 18, 12, 0, tzinfo=JST)
         mail = lane.compose_mail(cands, now=now)
-        self.assertIn("x.com/intent/post", mail.text_body)
+        self.assertIn("yoshilover-fetcher", mail.text_body)
+        self.assertIn("/x-intent", mail.text_body)
 
 
 class LoadArchiveTests(unittest.TestCase):

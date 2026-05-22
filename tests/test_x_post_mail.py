@@ -1823,12 +1823,8 @@ class XPostMailEntrypointFreshnessTests(unittest.TestCase):
             pick_candidates.call_args_list[1].kwargs["recent_player_counts"],
             {"浦田俊輔": 3},
         )
-        # 1-mail-per-candidate (2026-05-22): expect 4 send calls, each with candidate_count=1
-        self.assertEqual(send.call_count, 4)
-        for call in send.call_args_list:
-            request = call.args[0]
-            self.assertEqual(request.metadata["candidate_count"], 1)
-            self.assertEqual(request.metadata["batch_total"], 4)
+        request = send.call_args.args[0]
+        self.assertEqual(request.metadata["candidate_count"], 4)
         record.assert_called_once_with(
             "insight-bucket",
             ["fresh-sig", "old-sig-1", "old-sig-2", "old-sig-3"],
@@ -2017,19 +2013,11 @@ class XPostMailEntrypointFreshnessTests(unittest.TestCase):
 
         self.assertEqual(result, 0)
         fallback.assert_called_once()
-        # 1-mail-per-candidate: 2 sends, each with batch_total=2
-        self.assertEqual(send.call_count, 2)
-        subjects = [call.args[0].subject for call in send.call_args_list]
-        text_bodies = [call.args[0].text_body for call in send.call_args_list]
-        for call in send.call_args_list:
-            request = call.args[0]
-            self.assertEqual(request.metadata["candidate_count"], 1)
-            self.assertEqual(request.metadata["batch_total"], 2)
-        # The news-opinion candidate mail carries the "データ+ニュース意見" label;
-        # the data-only candidate mail does not. Either appearance is sufficient.
-        self.assertTrue(any("データ+ニュース意見" in s for s in subjects))
-        self.assertTrue(any("巨人Xポスト案" in body for body in text_bodies))
-        self.assertTrue(any("岸田行倫" in body for body in text_bodies))
+        request = send.call_args.args[0]
+        self.assertEqual(request.metadata["candidate_count"], 2)
+        self.assertIn("データ+ニュース意見", request.subject)
+        self.assertIn("巨人Xポスト案", request.text_body)
+        self.assertIn("岸田行倫", request.text_body)
 
     def test_news_opinion_candidates_take_priority_over_full_data_mail(self) -> None:
         """DB候補が満枠でも、RSS/comment 候補を先頭側に入れる。"""
@@ -2103,23 +2091,16 @@ class XPostMailEntrypointFreshnessTests(unittest.TestCase):
             result = run_x_post_mail.main(["--max-candidates", "3"])
 
         self.assertEqual(result, 0)
-        # 1-mail-per-candidate (2026-05-22): 3 send calls (news+data merge → 3 mails)
-        self.assertEqual(send.call_count, 3)
-        sent_text_bodies = [call.args[0].text_body for call in send.call_args_list]
-        for call in send.call_args_list:
-            request = call.args[0]
-            self.assertEqual(request.metadata["candidate_count"], 1)
-            self.assertEqual(request.metadata["batch_total"], 3)
-        # The kishida (news+DB merged) candidate should be in the FIRST mail
-        # (news_priority takes precedence over data candidates).
-        first_body = sent_text_bodies[0]
-        self.assertIn("DB照合済: フルネーム+論点一致｜コメント×DB｜岸田行倫", first_body)
-        self.assertIn("OPS .900", first_body)
-        # DB候補 2 / DB候補 3 ship in their own subsequent mails.
-        joined = "\n".join(sent_text_bodies)
-        self.assertIn("DB候補 2", joined)
+        request = send.call_args.args[0]
+        self.assertEqual(request.metadata["candidate_count"], 3)
+        self.assertIn("DB照合済: フルネーム+論点一致｜コメント×DB｜岸田行倫", request.text_body)
+        self.assertIn("OPS .900", request.text_body)
+        self.assertLess(
+            request.text_body.index("岸田行倫"),
+            request.text_body.index("DB候補 2"),
+        )
         # 382 系: no #巨人 hashtag in post bodies.
-        self.assertNotIn("#巨人", joined)
+        self.assertNotIn("#巨人", request.text_body)
 
     def test_news_opinion_fallback_skips_recent_history_player(self) -> None:
         """380 follow-up: news fallback も直近24h既出 player を補充しない。"""

@@ -612,24 +612,65 @@ class Handler(BaseHTTPRequestHandler):
             code, body, extra_headers = _run_publish_and_tweet("GET", post_id_raw, token)
             self._respond(code, body, content_type="text/html; charset=utf-8", extra_headers=extra_headers)
         elif parsed.path == "/x-intent":
-            # 2026-05-22: x_post_mail X button needs to reach x.com via server
-            # redirect so the mobile X app's universal-link intercept routes
-            # to @yoshilover6760 (matching publish_notice's working pattern).
-            # No token required — this is a pure URL passthrough with no side
-            # effects, just a 302 to x.com/intent/post.
+            # 2026-05-22: x_post_mail X button.
+            # iOS / Android Universal Link intercepts x.com taps from
+            # outside the browser → opens X app under its app-default
+            # (wrong) account. We can't 302-redirect directly because the
+            # OS follows the redirect chain and STILL intercepts the
+            # final x.com URL.
+            #
+            # Fix (matches publish_notice's proven pattern): render an
+            # HTML confirmation page with a form-POST button. The user's
+            # second tap inside the browser is an in-page form submit —
+            # the OS treats this as in-browser navigation, NOT a tap-from-
+            # outside, so Universal Link does NOT intercept and the
+            # composer opens under the browser's logged-in @yoshilover6760.
+            import html as _html
             qs = parse_qs(parsed.query or "")
             text_param = (qs.get("text", [""])[0] or "")
             hashtags_param = (qs.get("hashtags", [""])[0] or "")
-            from urllib.parse import quote as _q
-            location = f"https://x.com/intent/post?text={_q(text_param, safe='')}"
-            if hashtags_param:
-                location += f"&hashtags={_q(hashtags_param, safe=',')}"
-            self._respond(302, "", content_type="text/plain", extra_headers={"Location": location})
+            page = (
+                '<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8">'
+                '<meta name="viewport" content="width=device-width,initial-scale=1">'
+                '<title>X 投稿画面を開く</title></head>'
+                '<body style="font-family:-apple-system,BlinkMacSystemFont,'
+                '\'Hiragino Sans\',\'Yu Gothic\',sans-serif;padding:24px;'
+                'max-width:480px;margin:0 auto;text-align:center;color:#222;">'
+                '<h2 style="font-size:18px;margin:0 0 12px;">X 投稿画面を開く</h2>'
+                '<p style="font-size:13px;color:#666;margin:0 0 20px;">'
+                '下のボタンを押すと、 @yoshilover6760 で composer が開きます。</p>'
+                '<form method="POST" action="/x-intent">'
+                f'<input type="hidden" name="text" value="{_html.escape(text_param)}">'
+                f'<input type="hidden" name="hashtags" value="{_html.escape(hashtags_param)}">'
+                '<button type="submit" style="display:inline-block;background:#000;'
+                'color:#fff;border:0;padding:14px 40px;font-size:16px;font-weight:600;'
+                'border-radius:8px;cursor:pointer;width:100%;max-width:320px;">'
+                '🐦 X で投稿する</button></form>'
+                '</body></html>'
+            )
+            self._respond(200, page, content_type="text/html; charset=utf-8")
         else:
             self._respond(404, "Not Found")
 
     def do_POST(self):
         parsed = urlparse(self.path)
+        if parsed.path == "/x-intent":
+            # POST handler for /x-intent confirmation page form submit.
+            # Reads text / hashtags from form body, builds the x.com intent
+            # URL, returns 302. Because this navigation is browser-initiated
+            # (form submit), iOS / Android Universal Link does NOT intercept
+            # the destination → composer opens under browser's X session.
+            length = int(self.headers.get("Content-Length", 0))
+            raw = self.rfile.read(length).decode() if length else ""
+            form = parse_qs(raw)
+            text_param = (form.get("text", [""])[0] or "")
+            hashtags_param = (form.get("hashtags", [""])[0] or "")
+            from urllib.parse import quote as _q
+            location = f"https://x.com/intent/post?text={_q(text_param, safe='')}"
+            if hashtags_param:
+                location += f"&hashtags={_q(hashtags_param, safe=',')}"
+            self._respond(302, "", content_type="text/plain", extra_headers={"Location": location})
+            return
         if parsed.path == "/publish-and-tweet":
             # 379-OPS (GH #53): confirmation page から submit された publish + X intent。
             length = int(self.headers.get("Content-Length", 0))

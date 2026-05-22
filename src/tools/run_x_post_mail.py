@@ -1709,6 +1709,31 @@ def main(argv: Sequence[str] | None = None) -> int:
         LOG.warning("No candidates generated — skip send (insight.db likely sparse).")
         return 0
 
+    # 425: per-mail 1-player-1-candidate cap. queue 417 drain と data ranking が
+    # 同じ選手を別 source から拾うと「平山 ×2」「岡田 ×3」 のように同一選手
+    # の重複候補が並ぶ。 mail 直前で focus_player 単位の dedup を 1 回挟む
+    # (順序は維持、 最初の出現を残す)。 focus_player 空の候補は dedup 対象外。
+    seen_players: set[str] = set()
+    deduped: list[lane.Candidate] = []
+    dropped_for_player_dup = 0
+    for cand in candidates:
+        player_key = (cand.focus_player or "").strip()
+        if player_key and player_key in seen_players:
+            dropped_for_player_dup += 1
+            continue
+        if player_key:
+            seen_players.add(player_key)
+        deduped.append(cand)
+    if dropped_for_player_dup:
+        LOG.info(
+            "per_mail_player_dedup: dropped %d duplicate-player candidates "
+            "(before=%d after=%d)",
+            dropped_for_player_dup,
+            len(candidates),
+            len(deduped),
+        )
+    candidates = deduped
+
     LOG.info("Composing mail with %d candidates…", len(candidates))
     context_note = ""
     if context_label and lineup_focus_names:

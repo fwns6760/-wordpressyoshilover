@@ -1410,30 +1410,52 @@ def _default_fetch(base_url: str, after_iso: str) -> list[Mapping[str, Any]]:
     )
 
 
+_FETCH_PAGE_LIMIT = 10  # 100 per page * 10 pages = 1000 entry hard ceiling per fire
+
+
 def _default_fetch_by_status(endpoint: str, effective_after: str, *, status: str) -> list[Mapping[str, Any]]:
-    query = urlencode(
-        {
-            "status": status,
-            "modified_after": effective_after,
-            "per_page": 100,
-            "orderby": "modified",
-            "order": "asc",
-            "_fields": "id,title,excerpt,content,link,date,modified,status,meta,article_subtype,subtype",
-            "context": "edit",
-        }
-    )
-    request = urllib.request.Request(
-        f"{endpoint}?{query}",
-        headers={
-            "Accept": "application/json",
-            "Authorization": _wp_basic_auth_header(),
-        },
-    )
-    with urllib.request.urlopen(request, timeout=30) as response:
-        payload = json.loads(response.read().decode("utf-8"))
-    if not isinstance(payload, list):
-        raise ValueError("publish notice scan response must be a list")
-    return [item for item in payload if isinstance(item, Mapping)]
+    """Fetch posts in pages until the result page is short or the safety
+    ceiling is hit. WP REST clamps `per_page` to 100, so >100 entries in a
+    6h backcap window required paginated fetches — otherwise the oldest 100
+    occupied the slot every fire and the newer modifications were silently
+    dropped (2026-05-22 incident: 28 drafts left without per-post mail).
+    """
+    accumulated: list[Mapping[str, Any]] = []
+    for page in range(1, _FETCH_PAGE_LIMIT + 1):
+        query = urlencode(
+            {
+                "status": status,
+                "modified_after": effective_after,
+                "per_page": 100,
+                "page": page,
+                "orderby": "modified",
+                "order": "asc",
+                "_fields": "id,title,excerpt,content,link,date,modified,status,meta,article_subtype,subtype",
+                "context": "edit",
+            }
+        )
+        request = urllib.request.Request(
+            f"{endpoint}?{query}",
+            headers={
+                "Accept": "application/json",
+                "Authorization": _wp_basic_auth_header(),
+            },
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            # WP returns 400 with rest_post_invalid_page_number when page > total
+            if exc.code == 400:
+                break
+            raise
+        if not isinstance(payload, list):
+            raise ValueError("publish notice scan response must be a list")
+        page_items = [item for item in payload if isinstance(item, Mapping)]
+        accumulated.extend(page_items)
+        if len(page_items) < 100:
+            break
+    return accumulated
 
 
 def _data_insight_published_notice_enabled() -> bool:

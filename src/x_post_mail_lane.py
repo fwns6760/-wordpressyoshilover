@@ -1501,9 +1501,19 @@ def _stable_variant_index(combo: _MetricCombo, focus_name: str) -> int:
 
 def _finalize_post_text(body: str) -> str:
     text = body.strip()
+    # Append #巨人 in the literal body text (not via X intent &hashtags= param).
+    # Other mail lanes that route reliably on mobile (kobayashi/sakamoto) embed
+    # the hashtag in the body, and the X mobile app's account-routing heuristic
+    # appears to look at body content, not URL params.
+    if "#巨人" not in text:
+        text = f"{text}\n\n#巨人"
     if len(text) <= X_CHAR_LIMIT:
         return text
-    return text[: X_CHAR_LIMIT - 1].rstrip("、。 \n") + "…"
+    # Trim the original body but keep the #巨人 marker at the end.
+    available = X_CHAR_LIMIT - len("\n\n#巨人") - 1
+    head = text.split("\n\n#巨人", 1)[0]
+    head = head[:max(0, available)].rstrip("、。 \n") + "…"
+    return f"{head}\n\n#巨人"
 
 
 def _build_branded_post_text(

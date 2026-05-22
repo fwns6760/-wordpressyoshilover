@@ -720,7 +720,9 @@ class VariationExpansionTests(unittest.TestCase):
         self.assertIsNotNone(cand)
         assert cand is not None
         self.assertTrue(cand.title.startswith("📊 Xポスト案｜"))
-        self.assertNotIn("#巨人", cand.post_text)
+        # #巨人 is appended to the post body (2026-05-22 mobile X app account-routing fix).
+        # Other hashtags (e.g., #ジャイアンツ) remain disallowed.
+        self.assertTrue(cand.post_text.endswith("#巨人"))
         self.assertNotIn("#ジャイアンツ", cand.post_text)
         self.assertIn("岡本和真", cand.post_text)
         self.assertIn("OPS", cand.post_text)
@@ -910,7 +912,8 @@ class ComposeMailTests(unittest.TestCase):
         self.assertIn("岸田行倫", cand.post_text)
         self.assertIn("コメント", cand.post_text)
         self.assertNotIn("https://example.test/giants-kishida", cand.post_text)
-        self.assertNotIn("#巨人", cand.post_text)
+        # #巨人 is appended as a trailing marker (2026-05-22 mobile X app routing).
+        self.assertTrue(cand.post_text.endswith("#巨人"))
         self.assertNotIn("#ジャイアンツ", cand.post_text)
         self.assertNotIn("整理しました", cand.post_text)
         self.assertIn("材料種別: コメント (comment)", cand.draft_text)
@@ -953,7 +956,8 @@ class ComposeMailTests(unittest.TestCase):
         self.assertIn("DBで確認できる数字", combined.post_text)
         self.assertIn("長打率 .500", combined.post_text)
         self.assertNotIn("https://example.test/comment", combined.post_text)
-        self.assertNotIn("#巨人", combined.post_text)
+        # #巨人 appended at end (2026-05-22 mobile X app routing).
+        self.assertTrue(combined.post_text.endswith("#巨人"))
         self.assertIn("DB数値照合: あり（同一フルネーム+論点一致）", combined.draft_text)
         self.assertIn("論点照合: あり（コメント=打撃 / DB=打撃）", combined.draft_text)
         self.assertIn("https://example.test/comment", combined.draft_text)
@@ -2108,7 +2112,8 @@ class XPostMailEntrypointFreshnessTests(unittest.TestCase):
             request.text_body.index("岸田行倫"),
             request.text_body.index("DB候補 2"),
         )
-        self.assertNotIn("#巨人", request.text_body)
+        # #巨人 is now appended to every candidate's post_text (2026-05-22 mobile routing).
+        self.assertIn("#巨人", request.text_body)
 
     def test_news_opinion_fallback_skips_recent_history_player(self) -> None:
         """380 follow-up: news fallback も直近24h既出 player を補充しない。"""

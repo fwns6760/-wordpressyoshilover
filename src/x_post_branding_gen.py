@@ -1,4 +1,4 @@
-"""392: ヨシラバー branding X 投稿案を Gemma 4 + Tavily HTTP REST で生成。
+"""392: ヨシラバー branding X 投稿案を Gemini 3.1 Flash Lite + Tavily HTTP REST で生成。
 
 391 (Phase 1 CLI) で smoke 確認した方法を本番 ``x-post-mail-lane`` に
 組み込むための core モジュール。 stdio MCP ではなく **Tavily REST direct**
@@ -9,7 +9,9 @@ start 不変)。
 
 - 検索は ``POST https://api.tavily.com/search`` で HTTP REST 直叩き。
   fastmcp / Node は使わない。
-- 生成は Gemini API 経由 Gemma 4 31B (free tier)。 paid 切替禁止。
+- 生成は Gemini API 経由 Gemini 3.1 Flash Lite (free tier)。 paid 切替禁止。
+  2026-05-22 swap: gemma-4-31b-it から gemini-3.1-flash-lite へ。 free tier
+  1,500 RPD / 250K TPM 内で運用、 volume 試算 25 req/日 = 1.7% 利用。
 - spec 382 hard rule (URL / hashtag / 未検証数字 / 引用 / 媒体名 禁止) を
   system prompt + post-gen regex validator の二段で gate。
 - 失敗時は ``None`` 返却 (silent skip)。 caller (``run_x_post_mail.py``) は
@@ -35,9 +37,10 @@ from src.x_post_mail_lane import (
 )
 
 
-# Gemini API 経由 Gemma 4 31B model id (391 smoke で動作確認済)
+# Gemini API model id (2026-05-22 swap: gemma-4-31b-it → gemini-3.1-flash-lite、
+# 両方 free tier、 paid 切替禁止 lock 維持)。 変数 / metric 名は履歴互換のため温存。
 _GEMMA_BRANDING_METRIC = "GEMMA_BRANDING"
-_GEMMA_BRANDING_MODEL = "gemma-4-31b-it"
+_GEMMA_BRANDING_MODEL = "gemini-3.1-flash-lite"
 
 
 # spec 382 hard rule の追加 gate (既存 ``_FORBIDDEN_POST_TERMS`` の上に積む)
@@ -998,7 +1001,7 @@ def build_team_roundup_candidate(
         f"team_roundup|{today_str(now_jst)}|{text[:80]}".encode("utf-8")
     ).hexdigest()[:16]
     draft_lines = [
-        "【根拠: Gemma 4 team roundup + DB fact】",
+        "【根拠: Gemini 3.1 Flash Lite team roundup + DB fact】",
         "対象: 今日の勝利試合 (複数選手 total)",
         f"model: {model_id}",
         "",
@@ -1007,7 +1010,7 @@ def build_team_roundup_candidate(
     ]
     log.info("team_roundup_candidate_built text_len=%d", len(text))
     return Candidate(
-        title=f"Gemma 4 試合後 roundup",
+        title=f"Gemini 3.1 Flash Lite 試合後 roundup",
         metric=_GEMMA_BRANDING_METRIC,
         period_label="試合後 roundup",
         draft_text="\n".join(draft_lines),
@@ -1126,7 +1129,7 @@ def build_gemma_branding_candidate(
     lineup_change_summary: str = "",
     promotion_summary: str = "",
 ) -> Optional[Candidate]:
-    """Tavily REST 検索 + Gemma 4 31B 生成で 1 件の Candidate を返す。
+    """Tavily REST 検索 + Gemini 3.1 Flash Lite 生成で 1 件の Candidate を返す。
 
     silent skip 条件 (``None`` 返却):
     - player_name 不正 / 巨人 roster 不一致
@@ -1332,7 +1335,7 @@ def build_gemma_branding_candidate(
         f"gemma_branding|{player}|{text[:80]}".encode("utf-8")
     ).hexdigest()[:16]
     draft_lines = [
-        "【根拠: Gemma 4 + Tavily HTTP REST + 任意 DB 参照】",
+        "【根拠: Gemini 3.1 Flash Lite + Tavily HTTP REST + 任意 DB 参照】",
         f"対象選手: {player}",
         f"検索 query: {query}",
         f"Tavily 結果数: {len(results)}",
@@ -1351,7 +1354,7 @@ def build_gemma_branding_candidate(
         len(text),
     )
     return Candidate(
-        title=f"Gemma 4 branding｜{player}",
+        title=f"Gemini 3.1 Flash Lite branding｜{player}",
         metric=_GEMMA_BRANDING_METRIC,
         period_label="LLM 生成",
         draft_text="\n".join(draft_lines),

@@ -121,7 +121,7 @@
 | guarded-publish job | 不変 |
 | publish-notice mail | 不変 |
 | **rss_fetcher の既存関数本体 (classifier / NPB filter / stale skip / roster validation)** | **不変、 hook 呼出 1 行のみ追加** |
-| **Gemma 4 model id (`gemma-4-31b-it`) / Gemini API 切替** | **行わない (推論起因 hallucination 防止)** |
+| **Gemma 4 model id (`gemma-4-31b-it`) / Gemini API 切替** | ~~**行わない (推論起因 hallucination 防止)**~~ → **2026-05-22 lift**: free tier 維持 + safety_check regex 全部温存条件で `gemini-3.1-flash-lite` swap 完了 (user 直接指示、 volume 試算 25 req/日 = 1,500 RPD の 1.7%) |
 | **WP REST API への書込み (PUT/POST)** | **なし** (read-only GET のみ、 queue は別 storage) |
 | 既存 WP post (publish 済) | 不変 (forward-only) |
 | 他 ticket (411/414/415/416 等) の active 範囲 | 不可触 |

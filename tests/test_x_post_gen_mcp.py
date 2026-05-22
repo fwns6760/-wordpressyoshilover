@@ -82,8 +82,9 @@ class DefaultsTests(unittest.TestCase):
             self.assertIn("巨人", q, f"query must mention 巨人: {q!r}")
 
     def test_gemma_model_id_is_31b(self) -> None:
-        # 0 ドル制約 + user 指定: Gemma 4 31B (free tier) を使う。
-        self.assertEqual(xpg.GEMMA_MODEL_ID, "gemma-4-31b-it")
+        # 0 ドル制約 + user 指定: 2026-05-22 swap で gemma-4-31b-it →
+        # gemini-3.1-flash-lite (両方 free tier、 paid 切替禁止 lock 維持)。
+        self.assertEqual(xpg.GEMMA_MODEL_ID, "gemini-3.1-flash-lite")
 
     def test_system_prompt_forbids_url_hashtag(self) -> None:
         # spec 382 hard rule (URL / hashtag / 媒体名 禁止) が prompt に記述されている
@@ -115,14 +116,14 @@ class GenerateOneDraftTests(unittest.IsolatedAsyncioTestCase):
             gemini_client,
             mcp_session,
             "巨人 戸郷翔征",
-            model="gemma-4-31b-it",
+            model="gemini-3.1-flash-lite",
             temperature=0.5,
         )
 
         self.assertEqual(result.query, "巨人 戸郷翔征")
         self.assertEqual(result.draft, "サンプル投稿案")
         self.assertIsNone(result.error)
-        self.assertEqual(result.model, "gemma-4-31b-it")
+        self.assertEqual(result.model, "gemini-3.1-flash-lite")
         gemini_client.aio.models.generate_content.assert_awaited_once()
 
     async def test_passes_mcp_session_as_tool(self) -> None:
@@ -136,7 +137,7 @@ class GenerateOneDraftTests(unittest.IsolatedAsyncioTestCase):
             gemini_client,
             mcp_session,
             "巨人 試合結果",
-            model="gemma-4-31b-it",
+            model="gemini-3.1-flash-lite",
             temperature=0.6,
         )
 
@@ -148,7 +149,7 @@ class GenerateOneDraftTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(config)
         self.assertEqual(config["tools"], [mcp_session])
         self.assertAlmostEqual(config["temperature"], 0.6)
-        self.assertEqual(call.kwargs["model"], "gemma-4-31b-it")
+        self.assertEqual(call.kwargs["model"], "gemini-3.1-flash-lite")
 
     async def test_captures_exception_in_error_field(self) -> None:
         gemini_client = MagicMock()
@@ -161,7 +162,7 @@ class GenerateOneDraftTests(unittest.IsolatedAsyncioTestCase):
             gemini_client,
             mcp_session,
             "巨人 戸郷翔征",
-            model="gemma-4-31b-it",
+            model="gemini-3.1-flash-lite",
             temperature=0.5,
         )
 

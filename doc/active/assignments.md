@@ -4,6 +4,18 @@
 
 ## 2026-05-22 session update
 
+### 424 — X-post mail mode unification (IN_FLIGHT)
+
+| ticket | status | owner | 内容 |
+|---|---|---|---|
+| `doc/active/424-X-POST-MAIL-MODE-UNIFICATION.md` | IN_FLIGHT | Claude Code | 16:00 fire が 2 件 only (queue 417 直結のみ) になった捻れを是正。 `_main_on_queue` を `_main_scheduled` に統合し 1 fire = 1 mail = data ranking + Gemma branding + team roundup + queue 417 を mix。 `--mode` 引数廃止、 旧 PAUSED schedule 5 本 delete。 queue 由来 candidate の unverified_numbers gate を弱 variant に分離して報知 literal 数字を活かす。 |
+
+### 2026-05-22 evening: X-post branding model swap (DONE)
+
+| ticket | status | owner | 内容 |
+|---|---|---|---|
+| `src/x_post_branding_gen.py:40` 他 (commit `4e8e038`) | DONE_DEPLOYED | Claude Code | X-post branding lane の生成 model を `gemma-4-31b-it` → `gemini-3.1-flash-lite` 切替。 image `x-post-mail-lane:gemini-flash-lite-4e8e038` deploy 済、 24h billing verify pending。 free tier 1,500 RPD / volume 25 req/日 = 1.7% 利用。 Cloud Run runtime 短縮副次効果 ¥1,000-1,500/月 節約見込。 |
+
 ### 423 — データ publish ルール集約 SoT (LOCK)
 
 | ticket | status | owner | 内容 |

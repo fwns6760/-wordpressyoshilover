@@ -96,7 +96,7 @@ class IntentUrlEncodeTests(unittest.TestCase):
         self.assertIn("%0A", url)  # newline encoded
         self.assertIn("%23", url)  # `#` encoded so it's not a fragment
         self.assertNotIn("\n", url)
-        # `#` may appear in encoded `&url=` value below, so only assert against the text= segment
+        # `#` is encoded in text=; assert no raw `#` in the text= segment only
         text_segment = url.split("?", 1)[1].split("&", 1)[0]
         self.assertNotIn("#", text_segment)
 
@@ -109,20 +109,20 @@ class IntentUrlEncodeTests(unittest.TestCase):
         qs = parse_qs(parsed.query, keep_blank_values=True)
         # parse_qs replaces + with space; our quote uses %20 so this should round-trip.
         self.assertEqual(qs["text"][0], text)
-        # `&url=https://yoshilover.com/` is appended so X composer routes to @yoshilover6760.
-        self.assertEqual(qs["url"][0], "https://yoshilover.com/")
+        # `&hashtags=巨人` is appended so X mobile app routes composer to @yoshilover6760.
+        self.assertEqual(qs["hashtags"][0], "巨人")
 
     def test_empty_text_safe(self) -> None:
         expected = (
             "https://x.com/intent/post?text="
-            "&url=https%3A%2F%2Fyoshilover.com%2F"
+            "&hashtags=%E5%B7%A8%E4%BA%BA"
         )
         self.assertEqual(encode_x_intent_url(""), expected)
         self.assertEqual(encode_x_intent_url(None), expected)
 
-    def test_yoshilover_url_appended_for_account_routing(self) -> None:
+    def test_kyojin_hashtag_appended_for_account_routing(self) -> None:
         url = encode_x_intent_url("any text")
-        self.assertIn("&url=https%3A%2F%2Fyoshilover.com%2F", url)
+        self.assertIn("&hashtags=%E5%B7%A8%E4%BA%BA", url)
 
 
 class SubjectAndTimeBandTests(unittest.TestCase):

@@ -2441,15 +2441,16 @@ def encode_x_intent_url(text: str) -> str:
     would otherwise be parsed as a fragment) and `&` (which would
     truncate query parameters).
 
-    ``&url=https://yoshilover.com/`` is appended unconditionally. Other
-    mail lanes (publish_notice / publish_button_handler) include this
-    parameter and reliably route X composer to @yoshilover6760; this
-    lane historically omitted it and intermittently opened composer
-    under the user's other personal X account.
+    ``&hashtags=巨人`` is appended unconditionally. Other mail lanes
+    that route X composer to @yoshilover6760 reliably on mobile all
+    include #巨人 — kobayashi/sakamoto embed it in the text body,
+    publish_notice attaches it via this same X intent &hashtags= param.
+    This lane historically omitted any 巨人 marker and the mobile X app
+    intermittently opened composer under the user's other personal X
+    account. Matching the working pattern fixes the routing.
     """
     encoded = _url_quote(text or "", safe="")
-    site_url = _url_quote("https://yoshilover.com/", safe="")
-    return f"{_X_INTENT_URL_BASE}?text={encoded}&url={site_url}"
+    return f"{_X_INTENT_URL_BASE}?text={encoded}&hashtags=%E5%B7%A8%E4%BA%BA"
 
 
 # ---------------------------------------------------------------------------

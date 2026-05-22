@@ -2440,9 +2440,16 @@ def encode_x_intent_url(text: str) -> str:
     non-RFC3986-unreserved char gets encoded — including `#` (which
     would otherwise be parsed as a fragment) and `&` (which would
     truncate query parameters).
+
+    ``&url=https://yoshilover.com/`` is appended unconditionally. Other
+    mail lanes (publish_notice / publish_button_handler) include this
+    parameter and reliably route X composer to @yoshilover6760; this
+    lane historically omitted it and intermittently opened composer
+    under the user's other personal X account.
     """
     encoded = _url_quote(text or "", safe="")
-    return f"{_X_INTENT_URL_BASE}?text={encoded}"
+    site_url = _url_quote("https://yoshilover.com/", safe="")
+    return f"{_X_INTENT_URL_BASE}?text={encoded}&url={site_url}"
 
 
 # ---------------------------------------------------------------------------

@@ -96,7 +96,9 @@ class IntentUrlEncodeTests(unittest.TestCase):
         self.assertIn("%0A", url)  # newline encoded
         self.assertIn("%23", url)  # `#` encoded so it's not a fragment
         self.assertNotIn("\n", url)
-        self.assertNotIn("#", url.split("?", 1)[1])  # no raw `#` in query
+        # `#` may appear in encoded `&url=` value below, so only assert against the text= segment
+        text_segment = url.split("?", 1)[1].split("&", 1)[0]
+        self.assertNotIn("#", text_segment)
 
     def test_full_text_round_trips_via_decode(self) -> None:
         from urllib.parse import parse_qs, urlparse
@@ -107,10 +109,20 @@ class IntentUrlEncodeTests(unittest.TestCase):
         qs = parse_qs(parsed.query, keep_blank_values=True)
         # parse_qs replaces + with space; our quote uses %20 so this should round-trip.
         self.assertEqual(qs["text"][0], text)
+        # `&url=https://yoshilover.com/` is appended so X composer routes to @yoshilover6760.
+        self.assertEqual(qs["url"][0], "https://yoshilover.com/")
 
     def test_empty_text_safe(self) -> None:
-        self.assertEqual(encode_x_intent_url(""), "https://x.com/intent/post?text=")
-        self.assertEqual(encode_x_intent_url(None), "https://x.com/intent/post?text=")
+        expected = (
+            "https://x.com/intent/post?text="
+            "&url=https%3A%2F%2Fyoshilover.com%2F"
+        )
+        self.assertEqual(encode_x_intent_url(""), expected)
+        self.assertEqual(encode_x_intent_url(None), expected)
+
+    def test_yoshilover_url_appended_for_account_routing(self) -> None:
+        url = encode_x_intent_url("any text")
+        self.assertIn("&url=https%3A%2F%2Fyoshilover.com%2F", url)
 
 
 class SubjectAndTimeBandTests(unittest.TestCase):

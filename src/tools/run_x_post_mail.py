@@ -1100,46 +1100,64 @@ def _main_on_queue(args: argparse.Namespace, recipients: list[str]) -> int:
         return 0
 
     LOG.info(
-        "on-queue mode: composing mail with %d candidates (drained %d)",
+        "on-queue mode: composing %d single-candidate mails (drained %d)",
         len(candidates),
         len(queue_items),
     )
-    mail = lane.compose_mail(
-        candidates,
-        context_label="報知/サンスポ 直結 (queue 417)",
-        context_note="",
-    )
 
     if args.dry_run:
-        LOG.info("[dry-run on-queue] subject=%s", mail.subject)
-        LOG.info("[dry-run on-queue] candidate count=%d", mail.candidate_count)
-        LOG.info(
-            "[dry-run on-queue] text body preview (first 600 chars):\n%s",
-            mail.text_body[:600],
-        )
+        for idx, cand in enumerate(candidates, start=1):
+            mail = lane.compose_mail(
+                [cand],
+                context_label="報知/サンスポ 直結 (queue 417)",
+                context_note="",
+            )
+            LOG.info("[dry-run on-queue] mail %d/%d subject=%s", idx, len(candidates), mail.subject)
+            LOG.info(
+                "[dry-run on-queue] mail %d/%d text body preview (first 400 chars):\n%s",
+                idx, len(candidates), mail.text_body[:400],
+            )
         # dry-run でも mark_processed しない (次回も同じ queue を見れるように)
         return 0
 
-    LOG.info("on-queue mode: sending mail to %s …", recipients)
-    request = mdb.MailRequest(
-        to=recipients,
-        subject=mail.subject,
-        text_body=mail.text_body,
-        html_body=mail.html_body,
-        sender=_resolve_sender(),
-        reply_to=_resolve_reply_to(),
-        metadata={"ticket": "417", "lane": "x_post_mail", "mode": "on-queue", "candidate_count": mail.candidate_count},
-    )
-    result = mdb.send(request, dry_run=False)
-    LOG.info(
-        "on-queue mode: mail send result status=%s reason=%s refused=%s",
-        result.status,
-        result.reason,
-        result.refused_recipients,
-    )
-    if result.status not in {"sent", "dry_run"}:
-        LOG.error("on-queue mode: mail not sent (status=%s) — keep queue items for retry", result.status)
-        return 4
+    LOG.info("on-queue mode: sending %d mails to %s …", len(candidates), recipients)
+    sent_count = 0
+    for idx, cand in enumerate(candidates, start=1):
+        mail = lane.compose_mail(
+            [cand],
+            context_label="報知/サンスポ 直結 (queue 417)",
+            context_note="",
+        )
+        request = mdb.MailRequest(
+            to=recipients,
+            subject=mail.subject,
+            text_body=mail.text_body,
+            html_body=mail.html_body,
+            sender=_resolve_sender(),
+            reply_to=_resolve_reply_to(),
+            metadata={
+                "ticket": "417",
+                "lane": "x_post_mail",
+                "mode": "on-queue",
+                "candidate_count": 1,
+                "batch_index": idx,
+                "batch_total": len(candidates),
+            },
+        )
+        result = mdb.send(request, dry_run=False)
+        LOG.info(
+            "on-queue mode: mail %d/%d send result status=%s reason=%s refused=%s",
+            idx, len(candidates), result.status, result.reason, result.refused_recipients,
+        )
+        if result.status in {"sent", "dry_run"}:
+            sent_count += 1
+        else:
+            LOG.error(
+                "on-queue mode: mail %d/%d not sent (status=%s) — keep remaining queue items for retry",
+                idx, len(candidates), result.status,
+            )
+            return 4
+    LOG.info("on-queue mode: sent %d/%d single-candidate mails", sent_count, len(candidates))
 
     # mail 送信成功 → 該当 queue items を mark_processed
     marked = 0
@@ -1449,46 +1467,68 @@ def main(argv: Sequence[str] | None = None) -> int:
         LOG.warning("No candidates generated — skip send (insight.db likely sparse).")
         return 0
 
-    LOG.info("Composing mail with %d candidates…", len(candidates))
+    LOG.info("Composing %d single-candidate mails…", len(candidates))
     context_note = ""
     if context_label and lineup_focus_names:
         context_note = "今日のスタメン優先: " + "、".join(lineup_focus_names)
-    mail = lane.compose_mail(
-        candidates,
-        context_label=context_label,
-        context_note=context_note,
-    )
 
     if args.dry_run:
-        LOG.info("[dry-run] subject=%s", mail.subject)
-        LOG.info("[dry-run] candidate count=%d", mail.candidate_count)
-        LOG.info("[dry-run] text body preview (first 600 chars):\n%s",
-                 mail.text_body[:600])
+        for idx, cand in enumerate(candidates, start=1):
+            mail = lane.compose_mail(
+                [cand],
+                context_label=context_label,
+                context_note=context_note,
+            )
+            LOG.info("[dry-run] mail %d/%d subject=%s", idx, len(candidates), mail.subject)
+            LOG.info(
+                "[dry-run] mail %d/%d text body preview (first 400 chars):\n%s",
+                idx, len(candidates), mail.text_body[:400],
+            )
         return 0
 
-    LOG.info("Sending mail to %s …", recipients)
-    request = mdb.MailRequest(
-        to=recipients,
-        subject=mail.subject,
-        text_body=mail.text_body,
-        html_body=mail.html_body,
-        sender=_resolve_sender(),
-        reply_to=_resolve_reply_to(),
-        metadata={"ticket": "347", "lane": "x_post_mail", "candidate_count": mail.candidate_count},
-    )
-    result = mdb.send(request, dry_run=False)
-    LOG.info("mail send result: status=%s reason=%s refused=%s",
-             result.status, result.reason, result.refused_recipients)
-    if result.status not in {"sent", "dry_run"}:
-        LOG.error("mail send not sent (status=%s) — exit non-zero", result.status)
-        return 4
+    LOG.info("Sending %d mails to %s …", len(candidates), recipients)
+    last_result_status = "sent"
+    sent_count = 0
+    for idx, cand in enumerate(candidates, start=1):
+        mail = lane.compose_mail(
+            [cand],
+            context_label=context_label,
+            context_note=context_note,
+        )
+        request = mdb.MailRequest(
+            to=recipients,
+            subject=mail.subject,
+            text_body=mail.text_body,
+            html_body=mail.html_body,
+            sender=_resolve_sender(),
+            reply_to=_resolve_reply_to(),
+            metadata={
+                "ticket": "347",
+                "lane": "x_post_mail",
+                "candidate_count": 1,
+                "batch_index": idx,
+                "batch_total": len(candidates),
+            },
+        )
+        result = mdb.send(request, dry_run=False)
+        last_result_status = result.status
+        LOG.info("mail %d/%d send result: status=%s reason=%s refused=%s",
+                 idx, len(candidates), result.status, result.reason, result.refused_recipients)
+        if result.status in {"sent", "dry_run"}:
+            sent_count += 1
+        else:
+            LOG.error("mail %d/%d send not sent (status=%s) — exit non-zero",
+                      idx, len(candidates), result.status)
+            return 4
+    LOG.info("Sent %d/%d single-candidate mails (last status=%s)",
+             sent_count, len(candidates), last_result_status)
     # 355: record the signatures of the candidates we just shipped so
     # subsequent runs (within 24h) can dedup them. Only runs when the
     # dedup feature is enabled (bucket env present + not opted-out).
     if (
         dedup_set is not None
         and bucket_name
-        and result.status == "sent"
+        and last_result_status == "sent"
     ):
         signatures = [c.signature for c in candidates if c.signature]
         if signatures:

@@ -1194,14 +1194,14 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         default=30,
         help="Minimum AB/IP/opps sample size for ranking inclusion (default 30, 350: tightened from 10).",
     )
+    # 424: --mode 廃止 (on-queue / scheduled 統合 path に一本化、 2026-05-22)。
+    # 旧 --mode=on-queue 互換のため argparse 受け入れは残すが、 値は無視して
+    # 統合 path で fire する (scheduler body 更新を待つ間の lag tolerance)。
     parser.add_argument(
         "--mode",
         choices=("scheduled", "on-queue"),
         default="scheduled",
-        help=(
-            "scheduled (default) = existing 5 便 flow (insight ranking + Gemma/fan_voice). "
-            "on-queue (417) = drain x_post_candidate_queue (報知/サンスポ source) + Gemma 4 で 候補生成 + mail。"
-        ),
+        help="DEPRECATED (424): mode は無視、 統合 path のみ。 引数は scheduler 移行猶予のため温存。",
     )
     return parser.parse_args(argv)
 
@@ -1343,9 +1343,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         LOG.error("No recipients configured (MAIL_BRIDGE_TO env or --to). Aborting.")
         return 2
 
-    # 417: on-queue mode は別 entry — drain queue → Gemma → mail の完結 flow。
+    # 424: --mode 引数は廃止扱い (lag tolerance のため argparse は残置)、
+    # 全 fire を統合 path で処理する。 queue 417 drain は compose_mail 直前
+    # で append される (下記)。
     if args.mode == "on-queue":
-        return _main_on_queue(args, recipients)
+        LOG.info(
+            "424: --mode=on-queue is DEPRECATED — running unified path "
+            "(queue drain is inlined later in this function)."
+        )
 
     LOG.info("Downloading insight.db cache (read-only)…")
     db_path: str | None = None
@@ -1614,6 +1619,66 @@ def main(argv: Sequence[str] | None = None) -> int:
             now_jst.strftime("%H:%M"),
         )
 
+    # 424: queue 417 drain — 報知/サンスポ direct queue を統合 path に組み込む。
+    # 旧 _main_on_queue を inline 化。 build_x_post_from_article_info が cand を
+    # 返した item は processed_queue_items に残し、 mail 送信成功時に
+    # mark_processed する (失敗時は queue に残し次 fire で再 drain)。
+    processed_queue_items: list = []
+    try:
+        from src import x_post_candidate_queue as _xpcq
+    except Exception as exc:  # noqa: BLE001
+        _xpcq = None  # type: ignore[assignment]
+        LOG.info("queue 417 drain skip: x_post_candidate_queue import failed err=%r", exc)
+    if _xpcq is not None and _xbg is not None:
+        queue_gemini_key = (
+            os.environ.get("GEMINI_API_KEY")
+            or os.environ.get("GEMMA_BRANDING_GEMINI_API_KEY")
+            or ""
+        )
+        if not queue_gemini_key:
+            LOG.info("queue 417 drain skip: GEMINI_API_KEY env missing")
+        else:
+            queue_items = _xpcq.drain(max_count=args.max_candidates)
+            if not queue_items:
+                LOG.info("queue 417 drain: queue empty — 0 items")
+            else:
+                LOG.info("queue 417 drain: %d items", len(queue_items))
+                queue_candidates: list[lane.Candidate] = []
+                for item in queue_items:
+                    try:
+                        cand = _xbg.build_x_post_from_article_info(
+                            item,
+                            gemini_api_key=queue_gemini_key,
+                            db_path=db_path or "",
+                            logger=LOG,
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        LOG.warning(
+                            "queue 417 drain: build exception source_url=%s err=%r",
+                            getattr(item, "source_url", "?"),
+                            exc,
+                        )
+                        cand = None
+                    if cand is None:
+                        continue
+                    queue_candidates.append(cand)
+                    processed_queue_items.append(item)
+                if queue_candidates:
+                    before_q = len(candidates)
+                    candidates = candidates + queue_candidates
+                    LOG.info(
+                        "queue 417 appended: data+others=%d queue=%d total=%d",
+                        before_q,
+                        len(queue_candidates),
+                        len(candidates),
+                    )
+                else:
+                    LOG.info(
+                        "queue 417 drain: %d items drained but 0 candidates built "
+                        "(safety_check / unverified_numbers / no player)",
+                        len(queue_items),
+                    )
+
     if not candidates and recent_player_counts:
         LOG.warning(
             "Player history left 0 candidates after news/opinion fallback; "
@@ -1677,6 +1742,22 @@ def main(argv: Sequence[str] | None = None) -> int:
     if result.status not in {"sent", "dry_run"}:
         LOG.error("mail send not sent (status=%s) — exit non-zero", result.status)
         return 4
+    # 424: mark queue 417 items as processed only on real send (skip dry_run).
+    # 失敗時は queue に残し次 fire で再 drain (rss_fetcher dedup が再 enqueue を防ぐ)。
+    if processed_queue_items and result.status == "sent":
+        try:
+            from src import x_post_candidate_queue as _xpcq_mark  # local re-import
+            marked_q = 0
+            for item in processed_queue_items:
+                if _xpcq_mark.mark_processed(item):
+                    marked_q += 1
+            LOG.info(
+                "queue 417 mark_processed: %d / %d items",
+                marked_q,
+                len(processed_queue_items),
+            )
+        except Exception as exc:  # noqa: BLE001
+            LOG.warning("queue 417 mark_processed failed: %r", exc)
     # 355: record the signatures of the candidates we just shipped so
     # subsequent runs (within 24h) can dedup them. Only runs when the
     # dedup feature is enabled (bucket env present + not opted-out).

@@ -719,7 +719,7 @@ def test_render_team_metric_article_omits_svg_chart(tmp_path):
 
 
 def test_render_team_metric_article_era_marks_lower_is_better(tmp_path):
-    """球団防御率は低い順で順位付けし、記事にも低いほど良いと明示する。"""
+    """球団防御率は低い値ほど上位、 table label / explain で「低いほど良い」 を明示する。"""
     conn = _open_db(tmp_path)
     try:
         today = trp.dt.date.today().isoformat()
@@ -747,8 +747,10 @@ def test_render_team_metric_article_era_marks_lower_is_better(tmp_path):
         assert article is not None
         assert article["giants_rank"] == 1
         assert article["giants_value"] == 1.0
-        assert "低い順で1/6 位" in article["title"]
-        assert "**低い順で1/6 位**(1.000)" in article["body_md"]
+        assert "1/6 位" in article["title"]
+        assert "低い順で" not in article["title"]
+        assert "**1/6 位**(1.000)" in article["body_md"]
+        assert "低い順で" not in article["body_md"]
         assert "防御率(低いほど良い)" in article["body_md"]
     finally:
         conn.close()

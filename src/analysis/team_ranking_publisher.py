@@ -326,8 +326,6 @@ def render_team_metric_article(
     else:
         giants_val_str = str(giants_value)
     rank_phrase = f"{giants_rank}/6 位"
-    if metric == "ERA":
-        rank_phrase = f"低い順で{giants_rank}/6 位"
 
     scope_label = _scope_label_jp(scope)
     start_str, end_str = _scope_window(scope, conn=conn)

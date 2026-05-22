@@ -28,6 +28,9 @@ DEFAULT_DELTA_RATIO = 0.05
 DEFAULT_RANK_BANDS = (1, 5, 10, 30)
 DEFAULT_SCOPE_FAMILY = "metric_all_periods"
 LEDGER_STATUSES = ("DRAFTED", "PUBLISHED")
+DEFAULT_PLAYER_DAILY_CAP = 2
+TEAM_SUBJECT_PREFIX = "team:"
+JST = dt.timezone(dt.timedelta(hours=9))
 
 
 def _dedup_config() -> dict[str, Any]:
@@ -58,6 +61,16 @@ def rank_bands() -> tuple[int, ...]:
 def scope_family_for(_scope: Optional[str]) -> str:
     cfg = _dedup_config()
     return str(cfg.get("scope_family") or DEFAULT_SCOPE_FAMILY)
+
+
+def player_daily_cap() -> int:
+    cfg = _dedup_config()
+    raw = cfg.get("player_daily_cap", DEFAULT_PLAYER_DAILY_CAP)
+    try:
+        cap = int(raw)
+    except (TypeError, ValueError):
+        cap = DEFAULT_PLAYER_DAILY_CAP
+    return cap if cap > 0 else DEFAULT_PLAYER_DAILY_CAP
 
 
 def _now_utc() -> dt.datetime:
@@ -154,6 +167,33 @@ def _ensure_run(conn: sqlite3.Connection, run_id: str) -> None:
     )
 
 
+def _jst_day_bounds_utc(now_utc: dt.datetime) -> tuple[str, str]:
+    """Return [start, end) ISO timestamps (UTC) covering the JST calendar day of ``now_utc``."""
+    jst_date = now_utc.astimezone(JST).date()
+    start_jst = dt.datetime.combine(jst_date, dt.time(0, 0), tzinfo=JST)
+    end_jst = start_jst + dt.timedelta(days=1)
+    return start_jst.astimezone(dt.timezone.utc).isoformat(), end_jst.astimezone(dt.timezone.utc).isoformat()
+
+
+def _count_subject_publishes_today(
+    conn: sqlite3.Connection,
+    *,
+    subject_key: str,
+    now_utc: dt.datetime,
+) -> int:
+    """Count today's (JST) DRAFTED+PUBLISHED dedup history rows for the subject across all metrics."""
+    start_iso, end_iso = _jst_day_bounds_utc(now_utc)
+    placeholders = ",".join("?" * len(LEDGER_STATUSES))
+    row = conn.execute(
+        f"SELECT COUNT(*) FROM article_candidates "
+        f"WHERE signal_type = ? AND player_canonical = ? "
+        f"AND status IN ({placeholders}) "
+        f"AND created_at >= ? AND created_at < ?",
+        (SIGNAL_DEDUP_HISTORY, subject_key, *LEDGER_STATUSES, start_iso, end_iso),
+    ).fetchone()
+    return int(row[0]) if row else 0
+
+
 def _latest_history(
     conn: sqlite3.Connection,
     *,
@@ -208,6 +248,26 @@ def evaluate_metric_cooldown(
         return {"allowed": True, "reason": "missing_dedup_key"}
     family = scope_family or scope_family_for(scope)
     current_band = rank_band(rank, total)
+    now_dt = (now or _now_utc()).astimezone(dt.timezone.utc)
+    now_jst_date = now_dt.astimezone(JST).date()
+
+    # Per-player daily cap (Type B): skip for team-level subjects since each
+    # team metric is independent (cap C is handled by same-day block below).
+    if not subject.startswith(TEAM_SUBJECT_PREFIX):
+        cap = player_daily_cap()
+        today_count = _count_subject_publishes_today(
+            conn, subject_key=subject, now_utc=now_dt,
+        )
+        if today_count >= cap:
+            return {
+                "allowed": False,
+                "reason": "player_daily_cap",
+                "today_count": today_count,
+                "cap": cap,
+                "scope_family": family,
+                "current_band": current_band,
+            }
+
     previous = _latest_history(
         conn, subject_key=subject, metric_name=metric, scope_family=family,
     )
@@ -219,7 +279,6 @@ def evaluate_metric_cooldown(
             "current_band": current_band,
         }
 
-    now_dt = (now or _now_utc()).astimezone(dt.timezone.utc)
     prev_ts = _parse_ts(previous.get("created_at"))
     cd_days = cooldown_days_value if cooldown_days_value is not None else cooldown_days()
     if prev_ts is None:
@@ -230,6 +289,20 @@ def evaluate_metric_cooldown(
             "scope_family": family,
             "current_band": current_band,
         }
+
+    # Same JST calendar day for same subject+metric: hard block regardless of
+    # value_delta / rank_band bypass. Catches Type A (player same-day dup) and
+    # Type C (team ranking same-day dup, e.g. TEAM_ERA twice on 5/21).
+    prev_jst_date = prev_ts.astimezone(JST).date()
+    if prev_jst_date == now_jst_date:
+        return {
+            "allowed": False,
+            "reason": "same_day_block",
+            "previous_candidate_id": previous.get("candidate_id"),
+            "scope_family": family,
+            "current_band": current_band,
+        }
+
     age_days = (now_dt - prev_ts).total_seconds() / 86400.0
     if age_days >= cd_days:
         return {

@@ -638,7 +638,8 @@ class Handler(BaseHTTPRequestHandler):
                 'max-width:480px;margin:0 auto;text-align:center;color:#222;">'
                 '<h2 style="font-size:18px;margin:0 0 12px;">X 投稿画面を開く</h2>'
                 '<p style="font-size:13px;color:#666;margin:0 0 20px;">'
-                '下のボタンを押すと、 @yoshilover6760 で composer が開きます。</p>'
+                '下のボタンを押すと、 browser に現在 login 中の X account で '
+                'composer が開きます。</p>'
                 '<form method="POST" action="/x-intent">'
                 f'<input type="hidden" name="text" value="{_html.escape(text_param)}">'
                 f'<input type="hidden" name="hashtags" value="{_html.escape(hashtags_param)}">'
@@ -659,25 +660,22 @@ class Handler(BaseHTTPRequestHandler):
             # Reads text / hashtags from form body, builds the x.com intent
             # URL, returns 302. Because this navigation is browser-initiated
             # (form submit), iOS / Android Universal Link does NOT intercept
-            # the destination → composer opens under browser's X session.
+            # the destination → composer opens under browser's currently-
+            # active X session.
             #
-            # &url=https://yoshilover.com/ is appended so X's composer
-            # picks the @yoshilover6760 account via verified-domain
-            # ownership of yoshilover.com (publish_notice's URL has the
-            # same param and reliably opens under that account; without
-            # &url= X falls back to browser default which may be a
-            # different yoshilover-related account logged into the same
-            # browser).
+            # We do NOT append &url=<yoshilover.com>: X Web Intent params
+            # cannot force a posting account, and adding a yoshilover URL
+            # would just pollute the post body (against 382 系 rule
+            # forbidding URL / hashtag / site link inside X-post drafts).
+            # Account selection is the user's responsibility (log out other
+            # accounts, switch active in browser, or pick in composer).
             length = int(self.headers.get("Content-Length", 0))
             raw = self.rfile.read(length).decode() if length else ""
             form = parse_qs(raw)
             text_param = (form.get("text", [""])[0] or "")
             hashtags_param = (form.get("hashtags", [""])[0] or "")
             from urllib.parse import quote as _q
-            location = (
-                f"https://x.com/intent/post?text={_q(text_param, safe='')}"
-                f"&url={_q('https://yoshilover.com/', safe='')}"
-            )
+            location = f"https://x.com/intent/post?text={_q(text_param, safe='')}"
             if hashtags_param:
                 location += f"&hashtags={_q(hashtags_param, safe=',')}"
             self._respond(302, "", content_type="text/plain", extra_headers={"Location": location})

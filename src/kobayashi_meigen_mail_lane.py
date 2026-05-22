@@ -189,14 +189,7 @@ def _build_x_intent_url(
     if len(raw) > available_for_text:
         raw = raw[: max(0, available_for_text - 1)] + "…"
     body = f"{header}{raw}{footer}"
-    # Route through yoshilover-fetcher /x-intent so the mobile X app's
-    # universal-link intercept does NOT grab the click — direct x.com
-    # links open under the user's X-app-default (personal) account; the
-    # browser-path lands on the @yoshilover6760 web session instead.
-    return (
-        "https://yoshilover-fetcher-487178857517.asia-northeast1.run.app"
-        f"/x-intent?text={_url_quote(body, safe='')}"
-    )
+    return f"https://x.com/intent/post?text={_url_quote(body, safe='')}"
 
 
 _KEYCAP_DIGITS = {

@@ -192,20 +192,7 @@ _POSITION_DISPLAY_JP: dict[str, str] = {
 # rather than importing keeps coupling minimal).
 X_CHAR_LIMIT = 280
 
-# X intent URL is now routed through the yoshilover-fetcher Cloud Run
-# service so the mobile X app's universal-link intercept does NOT pick up
-# the click — instead the OS opens the link in a browser, the server
-# 302-redirects to x.com/intent/post, and the browser navigates to the X
-# composer using its already-logged-in @yoshilover6760 session. Direct
-# https://x.com/intent/post links got intercepted by the X app and opened
-# the composer under the user's app-default (personal) account.
-#
-# The fetcher endpoint accepts `text` and optional `hashtags` query params.
-_X_INTENT_REDIRECT_BASE = (
-    "https://yoshilover-fetcher-487178857517.asia-northeast1.run.app/x-intent"
-)
-
-# Kept for reference / tests; not used as the click target anymore.
+# X intent URL base. Use the modern canonical endpoint `x.com/intent/post`.
 # The legacy `twitter.com/intent/tweet` redirects to x.com but the redirect
 # can drop the `?text=` query param on some clients (observed 2026-05-21).
 _X_INTENT_URL_BASE = "https://x.com/intent/post"
@@ -1514,19 +1501,9 @@ def _stable_variant_index(combo: _MetricCombo, focus_name: str) -> int:
 
 def _finalize_post_text(body: str) -> str:
     text = body.strip()
-    # Append #巨人 in the literal body text (not via X intent &hashtags= param).
-    # Other mail lanes that route reliably on mobile (kobayashi/sakamoto) embed
-    # the hashtag in the body, and the X mobile app's account-routing heuristic
-    # appears to look at body content, not URL params.
-    if "#巨人" not in text:
-        text = f"{text}\n\n#巨人"
     if len(text) <= X_CHAR_LIMIT:
         return text
-    # Trim the original body but keep the #巨人 marker at the end.
-    available = X_CHAR_LIMIT - len("\n\n#巨人") - 1
-    head = text.split("\n\n#巨人", 1)[0]
-    head = head[:max(0, available)].rstrip("、。 \n") + "…"
-    return f"{head}\n\n#巨人"
+    return text[: X_CHAR_LIMIT - 1].rstrip("、。 \n") + "…"
 
 
 def _build_branded_post_text(
@@ -2456,21 +2433,19 @@ def pick_candidates(
 
 
 def encode_x_intent_url(text: str) -> str:
-    """Return the yoshilover-fetcher ``/x-intent`` redirect URL.
+    """Return an X Web Intent URL with ``text`` percent-encoded.
 
-    Mobile X app intercepts direct ``x.com/intent/post`` universal links
-    and opens the composer under its app-default (personal) account.
-    Routing through ``yoshilover-fetcher.run.app/x-intent`` makes the OS
-    open a browser (the run.app domain is not a registered universal
-    link), the server returns 302 to x.com, and the browser navigates
-    to X composer under its logged-in @yoshilover6760 session.
+    Per 382 系 rule and Codex review (2026-05-22): no URL, no hashtag,
+    no site link appended — pure text= only. X intent params cannot
+    force a posting account; account selection is the user's
+    responsibility (browser session / X app default / composer switch).
 
-    The Web Intent spec accepts both ``%0A`` for newlines and `+` for
-    spaces. ``urllib.parse.quote`` with ``safe=""`` encodes every
-    non-RFC3986-unreserved char — including `#` and `&`.
+    ``urllib.parse.quote`` with ``safe=""`` encodes every non-RFC3986-
+    unreserved char including ``#`` (so it is not parsed as a fragment)
+    and ``&`` (so it does not truncate the query string).
     """
     encoded = _url_quote(text or "", safe="")
-    return f"{_X_INTENT_REDIRECT_BASE}?text={encoded}&hashtags=%E5%B7%A8%E4%BA%BA"
+    return f"{_X_INTENT_URL_BASE}?text={encoded}"
 
 
 # ---------------------------------------------------------------------------

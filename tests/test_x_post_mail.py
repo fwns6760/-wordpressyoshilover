@@ -92,15 +92,11 @@ class IntentUrlEncodeTests(unittest.TestCase):
     def test_url_encodes_newline_and_hashtag(self) -> None:
         text = "line1\nline2 #巨人"
         url = encode_x_intent_url(text)
-        # 2026-05-22: routed through yoshilover-fetcher /x-intent (302 → x.com).
-        self.assertIn("yoshilover-fetcher", url)
-        self.assertIn("/x-intent", url)
+        self.assertIn("x.com/intent/post", url)
         self.assertIn("%0A", url)  # newline encoded
         self.assertIn("%23", url)  # `#` encoded so it's not a fragment
         self.assertNotIn("\n", url)
-        # `#` is encoded in text=; assert no raw `#` in the text= segment only
-        text_segment = url.split("?", 1)[1].split("&", 1)[0]
-        self.assertNotIn("#", text_segment)
+        self.assertNotIn("#", url.split("?", 1)[1])  # no raw `#` in query
 
     def test_full_text_round_trips_via_decode(self) -> None:
         from urllib.parse import parse_qs, urlparse
@@ -111,21 +107,13 @@ class IntentUrlEncodeTests(unittest.TestCase):
         qs = parse_qs(parsed.query, keep_blank_values=True)
         # parse_qs replaces + with space; our quote uses %20 so this should round-trip.
         self.assertEqual(qs["text"][0], text)
-        # `&hashtags=巨人` is appended so X mobile app routes composer to @yoshilover6760.
-        self.assertEqual(qs["hashtags"][0], "巨人")
+        # 382 系: no &hashtags / &url params allowed in the intent URL.
+        self.assertNotIn("hashtags", qs)
+        self.assertNotIn("url", qs)
 
     def test_empty_text_safe(self) -> None:
-        expected = (
-            "https://yoshilover-fetcher-487178857517.asia-northeast1.run.app"
-            "/x-intent?text="
-            "&hashtags=%E5%B7%A8%E4%BA%BA"
-        )
-        self.assertEqual(encode_x_intent_url(""), expected)
-        self.assertEqual(encode_x_intent_url(None), expected)
-
-    def test_kyojin_hashtag_appended_for_account_routing(self) -> None:
-        url = encode_x_intent_url("any text")
-        self.assertIn("&hashtags=%E5%B7%A8%E4%BA%BA", url)
+        self.assertEqual(encode_x_intent_url(""), "https://x.com/intent/post?text=")
+        self.assertEqual(encode_x_intent_url(None), "https://x.com/intent/post?text=")
 
 
 class SubjectAndTimeBandTests(unittest.TestCase):
@@ -723,9 +711,7 @@ class VariationExpansionTests(unittest.TestCase):
         self.assertIsNotNone(cand)
         assert cand is not None
         self.assertTrue(cand.title.startswith("📊 Xポスト案｜"))
-        # #巨人 is appended to the post body (2026-05-22 mobile X app account-routing fix).
-        # Other hashtags (e.g., #ジャイアンツ) remain disallowed.
-        self.assertTrue(cand.post_text.endswith("#巨人"))
+        self.assertNotIn("#巨人", cand.post_text)
         self.assertNotIn("#ジャイアンツ", cand.post_text)
         self.assertIn("岡本和真", cand.post_text)
         self.assertIn("OPS", cand.post_text)
@@ -840,13 +826,10 @@ class ComposeMailTests(unittest.TestCase):
     def test_html_includes_intent_url(self) -> None:
         ts = datetime(2026, 5, 16, 17, 30, tzinfo=JST)
         mail = compose_mail([self._make_cand(1, "テスト #巨人")], now=ts)
-        # 2026-05-22: URL routes through yoshilover-fetcher /x-intent.
-        self.assertIn("yoshilover-fetcher", mail.html_body)
-        self.assertIn("/x-intent", mail.html_body)
+        self.assertIn("x.com/intent/post", mail.html_body)
         self.assertIn("%23", mail.html_body)  # # in text was URL-encoded
         # The plain text body also lists the URL for fallback copy.
-        self.assertIn("yoshilover-fetcher", mail.text_body)
-        self.assertIn("/x-intent", mail.text_body)
+        self.assertIn("x.com/intent/post", mail.text_body)
 
     def test_html_uses_post_text_for_x_intent_when_present(self) -> None:
         ts = datetime(2026, 5, 16, 17, 30, tzinfo=JST)
@@ -918,8 +901,7 @@ class ComposeMailTests(unittest.TestCase):
         self.assertIn("岸田行倫", cand.post_text)
         self.assertIn("コメント", cand.post_text)
         self.assertNotIn("https://example.test/giants-kishida", cand.post_text)
-        # #巨人 is appended as a trailing marker (2026-05-22 mobile X app routing).
-        self.assertTrue(cand.post_text.endswith("#巨人"))
+        self.assertNotIn("#巨人", cand.post_text)
         self.assertNotIn("#ジャイアンツ", cand.post_text)
         self.assertNotIn("整理しました", cand.post_text)
         self.assertIn("材料種別: コメント (comment)", cand.draft_text)
@@ -962,8 +944,7 @@ class ComposeMailTests(unittest.TestCase):
         self.assertIn("DBで確認できる数字", combined.post_text)
         self.assertIn("長打率 .500", combined.post_text)
         self.assertNotIn("https://example.test/comment", combined.post_text)
-        # #巨人 appended at end (2026-05-22 mobile X app routing).
-        self.assertTrue(combined.post_text.endswith("#巨人"))
+        self.assertNotIn("#巨人", combined.post_text)
         self.assertIn("DB数値照合: あり（同一フルネーム+論点一致）", combined.draft_text)
         self.assertIn("論点照合: あり（コメント=打撃 / DB=打撃）", combined.draft_text)
         self.assertIn("https://example.test/comment", combined.draft_text)
@@ -2137,8 +2118,8 @@ class XPostMailEntrypointFreshnessTests(unittest.TestCase):
         # DB候補 2 / DB候補 3 ship in their own subsequent mails.
         joined = "\n".join(sent_text_bodies)
         self.assertIn("DB候補 2", joined)
-        # #巨人 is now appended to every candidate's post_text (2026-05-22 mobile routing).
-        self.assertIn("#巨人", joined)
+        # 382 系: no #巨人 hashtag in post bodies.
+        self.assertNotIn("#巨人", joined)
 
     def test_news_opinion_fallback_skips_recent_history_player(self) -> None:
         """380 follow-up: news fallback も直近24h既出 player を補充しない。"""

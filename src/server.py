@@ -611,6 +611,20 @@ class Handler(BaseHTTPRequestHandler):
             token = (qs.get("token", [""])[0] or "").strip()
             code, body, extra_headers = _run_publish_and_tweet("GET", post_id_raw, token)
             self._respond(code, body, content_type="text/html; charset=utf-8", extra_headers=extra_headers)
+        elif parsed.path == "/x-intent":
+            # 2026-05-22: x_post_mail X button needs to reach x.com via server
+            # redirect so the mobile X app's universal-link intercept routes
+            # to @yoshilover6760 (matching publish_notice's working pattern).
+            # No token required — this is a pure URL passthrough with no side
+            # effects, just a 302 to x.com/intent/post.
+            qs = parse_qs(parsed.query or "")
+            text_param = (qs.get("text", [""])[0] or "")
+            hashtags_param = (qs.get("hashtags", [""])[0] or "")
+            from urllib.parse import quote as _q
+            location = f"https://x.com/intent/post?text={_q(text_param, safe='')}"
+            if hashtags_param:
+                location += f"&hashtags={_q(hashtags_param, safe=',')}"
+            self._respond(302, "", content_type="text/plain", extra_headers={"Location": location})
         else:
             self._respond(404, "Not Found")
 

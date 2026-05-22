@@ -39,36 +39,6 @@ from src.x_post_mail_lane import (
 _GEMMA_BRANDING_METRIC = "GEMMA_BRANDING"
 _GEMMA_BRANDING_MODEL = "gemma-4-31b-it"
 
-# 417 follow-up (2026-05-21): 試合中 (18:00-21:30 JST) は Gemini 3.5 Flash、
-# それ以外 (= 朝 / 昼 / 試合後) は Gemma 4 を使う model 切替 logic。 両方 free
-# tier 内 (1500 RPD 標準値、 我々運用は 70 call/日 max << 4.7%)、 月コスト ¥0。
-# 既存 prompt (_SYSTEM_PROMPT_FUUGA / _SYSTEM_PROMPT_KANDUME) は 1 文字も変えない
-# (ticket § 0 不可触条件)、 model id だけ切替。
-_GEMINI_FLASH_BRANDING_MODEL = "gemini-3.5-flash"
-
-
-def select_branding_model_by_time(now_jst) -> str:
-    """試合中 (18:00-21:30 JST) なら Gemini 3.5 Flash、 それ以外 Gemma 4.
-
-    判定:
-    - 18 <= hour < 21: Gemini 3.5 Flash
-    - hour == 21 and minute < 30: Gemini 3.5 Flash
-    - それ以外: Gemma 4 (現状維持)
-
-    両方 Gemini API 経由 free tier 内、 paid 切替不要。
-    """
-    if now_jst is None:
-        return _GEMMA_BRANDING_MODEL
-    hour = getattr(now_jst, "hour", None)
-    minute = getattr(now_jst, "minute", 0)
-    if hour is None:
-        return _GEMMA_BRANDING_MODEL
-    if 18 <= hour < 21:
-        return _GEMINI_FLASH_BRANDING_MODEL
-    if hour == 21 and minute < 30:
-        return _GEMINI_FLASH_BRANDING_MODEL
-    return _GEMMA_BRANDING_MODEL
-
 
 # spec 382 hard rule の追加 gate (既存 ``_FORBIDDEN_POST_TERMS`` の上に積む)
 _GEMMA_BRANDING_FORBIDDEN_PATTERNS = (
@@ -1609,8 +1579,7 @@ def build_x_post_from_article_info(
     else:
         resolved_persona = persona
 
-    # 2.5: model 自動切替 (試合中 18:00-21:30 JST = Gemini 3.5 Flash、 それ以外 = Gemma 4)
-    resolved_model_id = model_id if model_id else select_branding_model_by_time(now_jst)
+    resolved_model_id = model_id if model_id else _GEMMA_BRANDING_MODEL
 
     # 3. post_type 自動選択 (article_subtype が postgame なら data 寄り、 lineup なら
     # 速報寄り、 等の hint を has_tavily_results=True 相当で発火)
@@ -1665,7 +1634,7 @@ def build_x_post_from_article_info(
     ])
     prompt = "\n".join(prompt_parts)
 
-    # 6. Gemma 4 / Gemini 3.5 Flash generate (model は resolved_model_id で時間帯切替)
+    # 6. Gemma 4 generate
     try:
         from google import genai
 

@@ -161,42 +161,5 @@ class PostgameTeamWideTests(unittest.TestCase):
         self.assertEqual(cand.focus_player, "戸郷翔征")
 
 
-class SelectBrandingModelByTimeTests(unittest.TestCase):
-    """417 follow-up: 試合中 (18:00-21:30 JST) Gemini 3.5 Flash 切替 boundary test."""
-
-    def _at(self, h, m=0):
-        from datetime import datetime, timezone, timedelta
-        return datetime(2026, 5, 21, h, m, tzinfo=timezone(timedelta(hours=9)))
-
-    def test_morning_uses_gemma(self):
-        self.assertEqual(xbg.select_branding_model_by_time(self._at(7, 0)), "gemma-4-31b-it")
-
-    def test_lunch_uses_gemma(self):
-        self.assertEqual(xbg.select_branding_model_by_time(self._at(12, 0)), "gemma-4-31b-it")
-
-    def test_pre_game_1759_uses_gemma(self):
-        # 17:59 → まだ試合中ではない、 Gemma
-        self.assertEqual(xbg.select_branding_model_by_time(self._at(17, 59)), "gemma-4-31b-it")
-
-    def test_game_start_1800_uses_flash(self):
-        # 18:00 ちょうど → 試合中、 Gemini 3.5 Flash
-        self.assertEqual(xbg.select_branding_model_by_time(self._at(18, 0)), "gemini-3.5-flash")
-
-    def test_mid_game_uses_flash(self):
-        for h, m in [(18, 30), (19, 15), (20, 0), (20, 59), (21, 0), (21, 29)]:
-            with self.subTest(time=f"{h:02d}:{m:02d}"):
-                self.assertEqual(xbg.select_branding_model_by_time(self._at(h, m)), "gemini-3.5-flash")
-
-    def test_game_end_2130_uses_gemma(self):
-        # 21:30 ちょうど → 試合終了扱い、 Gemma に戻る
-        self.assertEqual(xbg.select_branding_model_by_time(self._at(21, 30)), "gemma-4-31b-it")
-
-    def test_postgame_2200_uses_gemma(self):
-        self.assertEqual(xbg.select_branding_model_by_time(self._at(22, 0)), "gemma-4-31b-it")
-
-    def test_none_input_returns_gemma(self):
-        self.assertEqual(xbg.select_branding_model_by_time(None), "gemma-4-31b-it")
-
-
 if __name__ == "__main__":
     unittest.main()

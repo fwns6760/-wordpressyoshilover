@@ -8,7 +8,7 @@
 
 | ticket | status | owner | 内容 |
 |---|---|---|---|
-| `doc/active/423-DATA-PUBLISH-RULES-CONSOLIDATED.md` | LOCK | Claude Code | データ post の 9 領域 rule (metric / 期間 / threshold / title / dedup / draft / mail / 表示 / site 方向) を 1 file 集約。 5/22 同日 landed した dedup gate 拡張 (commit `d724f0c`) / ERA 「低い順で」 削除 (commit `635cbd8`) / 【まとめ】mail 停止 (env `DISABLE_BURST_SUMMARY_MAIL=1`) / Gemma 4 revert (commit `2af8f0e`) も記載。 個別 rule 変更時は本 file 同 commit 更新する運用。 metric ◯/× SoT は `doc/reference/data-insight-metric-whitelist.md` を維持。 |
+| `doc/active/423-DATA-PUBLISH-RULES-CONSOLIDATED.md` (GH Issue #96) | LOCK | Claude Code | データ post の 9 領域 rule (metric / 期間 / threshold / title / dedup / draft / mail / 表示 / site 方向) を 1 file 集約。 5/22 同日 landed した dedup gate 拡張 (commit `d724f0c`) / ERA 「低い順で」 削除 (commit `635cbd8`) / 【まとめ】mail 停止 (env `DISABLE_BURST_SUMMARY_MAIL=1`) / Gemma 4 revert (commit `2af8f0e`) も記載。 個別 rule 変更時は本 file 同 commit 更新する運用。 metric ◯/× SoT は `doc/reference/data-insight-metric-whitelist.md` を維持。 |
 
 ## 2026-05-21 session update
 

@@ -3,7 +3,7 @@
 ## 1. meta
 
 - **ticket id**: 423
-- **GH Issue**: (pending — repo doc 正本、 GH は後追い)
+- **GH Issue**: https://github.com/fwns6760/-wordpressyoshilover/issues/96
 - **owner**: Claude Code (session 2026-05-22)
 - **priority**: P1 (運用 SoT / source of truth)
 - **status**: LOCK (恒久 rule book、 個別 fix は別 ticket 起票)

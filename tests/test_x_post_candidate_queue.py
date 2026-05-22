@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import unittest
+from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
 from src import x_post_candidate_queue as q
@@ -106,6 +107,7 @@ class DrainTests(unittest.TestCase):
     def test_drain_returns_entries(self, mock_bucket_fn):
         article = _make_article()
         blob = MagicMock()
+        blob.updated = datetime(2026, 5, 22, 9, 0, 0, tzinfo=timezone.utc)
         blob.download_as_text.return_value = json.dumps({
             "source_url": article.source_url,
             "title": article.title,
@@ -125,10 +127,72 @@ class DrainTests(unittest.TestCase):
         self.assertEqual(out[0].source_url, article.source_url)
 
     @patch("src.x_post_candidate_queue._get_bucket")
+    def test_drain_orders_newest_first(self, mock_bucket_fn):
+        old_blob = MagicMock()
+        old_blob.updated = datetime(2026, 5, 21, 3, 0, 0, tzinfo=timezone.utc)
+        old_blob.download_as_text.return_value = json.dumps({
+            "source_url": "https://hochi.news/g/old",
+            "title": "old", "summary": "", "source_name": "スポーツ報知",
+            "source_type": "rss", "article_subtype": "postgame",
+            "player_canonical": [],
+            "enqueued_at_utc": "2026-05-21T03:00:00Z",
+            "schema_version": q.QUEUE_SCHEMA_VERSION,
+        })
+        new_blob = MagicMock()
+        new_blob.updated = datetime(2026, 5, 22, 9, 30, 0, tzinfo=timezone.utc)
+        new_blob.download_as_text.return_value = json.dumps({
+            "source_url": "https://hochi.news/g/new",
+            "title": "new", "summary": "", "source_name": "スポーツ報知",
+            "source_type": "rss", "article_subtype": "postgame",
+            "player_canonical": [],
+            "enqueued_at_utc": "2026-05-22T09:30:00Z",
+            "schema_version": q.QUEUE_SCHEMA_VERSION,
+        })
+        mock_bucket = MagicMock()
+        # GCS returns lex order (old hash < new hash); drain must re-sort.
+        mock_bucket.list_blobs.return_value = [old_blob, new_blob]
+        mock_bucket_fn.return_value = mock_bucket
+        out = q.drain(max_count=10)
+        self.assertEqual(len(out), 2)
+        self.assertEqual(out[0].source_url, "https://hochi.news/g/new")
+        self.assertEqual(out[1].source_url, "https://hochi.news/g/old")
+
+    @patch("src.x_post_candidate_queue._get_bucket")
+    def test_drain_caps_at_max_count_keeping_newest(self, mock_bucket_fn):
+        def _blob(hash_id: str, upload_dt: datetime) -> MagicMock:
+            blob = MagicMock()
+            blob.updated = upload_dt
+            blob.download_as_text.return_value = json.dumps({
+                "source_url": f"https://hochi.news/g/{hash_id}",
+                "title": hash_id, "summary": "", "source_name": "スポーツ報知",
+                "source_type": "rss", "article_subtype": "postgame",
+                "player_canonical": [],
+                "enqueued_at_utc": upload_dt.isoformat(),
+                "schema_version": q.QUEUE_SCHEMA_VERSION,
+            })
+            return blob
+        blobs = [
+            _blob("a", datetime(2026, 5, 21, 3, 0, 0, tzinfo=timezone.utc)),
+            _blob("b", datetime(2026, 5, 22, 9, 0, 0, tzinfo=timezone.utc)),
+            _blob("c", datetime(2026, 5, 21, 12, 0, 0, tzinfo=timezone.utc)),
+            _blob("d", datetime(2026, 5, 22, 9, 30, 0, tzinfo=timezone.utc)),
+        ]
+        mock_bucket = MagicMock()
+        mock_bucket.list_blobs.return_value = blobs
+        mock_bucket_fn.return_value = mock_bucket
+        out = q.drain(max_count=2)
+        self.assertEqual(len(out), 2)
+        # Newest two (d, b) — older c, a dropped.
+        urls = {c.source_url for c in out}
+        self.assertEqual(urls, {"https://hochi.news/g/d", "https://hochi.news/g/b"})
+
+    @patch("src.x_post_candidate_queue._get_bucket")
     def test_corrupt_entry_skipped(self, mock_bucket_fn):
         bad_blob = MagicMock()
+        bad_blob.updated = datetime(2026, 5, 22, 9, 0, 0, tzinfo=timezone.utc)
         bad_blob.download_as_text.return_value = "{not valid json"
         good_blob = MagicMock()
+        good_blob.updated = datetime(2026, 5, 22, 8, 0, 0, tzinfo=timezone.utc)
         good_blob.download_as_text.return_value = json.dumps({
             "source_url": "https://hochi.news/g/2",
             "title": "戸郷投手",

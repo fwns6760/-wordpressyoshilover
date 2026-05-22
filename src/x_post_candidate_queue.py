@@ -118,7 +118,14 @@ def enqueue(article_info: CandidateArticleInfo) -> bool:
 
 
 def drain(max_count: int = 50) -> list[CandidateArticleInfo]:
-    """Drain up to `max_count` queued entries. Does NOT mark them processed.
+    """Drain up to `max_count` queued entries (newest first). Does NOT mark
+    them processed.
+
+    Ordering: blobs are sorted by GCS upload time (= enqueue time) descending
+    so the most recent RSS-derived item appears first in the returned list.
+    Earlier behaviour (hash lex order from ``list_blobs``) made stale 5/21
+    items occupy the top slots while same-day enqueues sat lower in hash
+    space and were skipped under ``max_count`` cap.
 
     Caller MUST call `mark_processed()` per entry after mail send succeeds,
     otherwise the entry stays queued and will be re-drained next fire (which
@@ -126,10 +133,12 @@ def drain(max_count: int = 50) -> list[CandidateArticleInfo]:
     """
     try:
         bucket = _get_bucket()
-        blobs = list(bucket.list_blobs(prefix=_QUEUED_PREFIX, max_results=max_count))
+        all_blobs = list(bucket.list_blobs(prefix=_QUEUED_PREFIX))
     except Exception as exc:  # noqa: BLE001
         logger.warning("x_post_queue_drain_failed err=%r", exc)
         return []
+    all_blobs.sort(key=lambda b: b.updated, reverse=True)
+    blobs = all_blobs[:max_count]
     out: list[CandidateArticleInfo] = []
     for blob in blobs:
         try:

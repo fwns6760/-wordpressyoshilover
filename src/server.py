@@ -660,13 +660,24 @@ class Handler(BaseHTTPRequestHandler):
             # URL, returns 302. Because this navigation is browser-initiated
             # (form submit), iOS / Android Universal Link does NOT intercept
             # the destination → composer opens under browser's X session.
+            #
+            # &url=https://yoshilover.com/ is appended so X's composer
+            # picks the @yoshilover6760 account via verified-domain
+            # ownership of yoshilover.com (publish_notice's URL has the
+            # same param and reliably opens under that account; without
+            # &url= X falls back to browser default which may be a
+            # different yoshilover-related account logged into the same
+            # browser).
             length = int(self.headers.get("Content-Length", 0))
             raw = self.rfile.read(length).decode() if length else ""
             form = parse_qs(raw)
             text_param = (form.get("text", [""])[0] or "")
             hashtags_param = (form.get("hashtags", [""])[0] or "")
             from urllib.parse import quote as _q
-            location = f"https://x.com/intent/post?text={_q(text_param, safe='')}"
+            location = (
+                f"https://x.com/intent/post?text={_q(text_param, safe='')}"
+                f"&url={_q('https://yoshilover.com/', safe='')}"
+            )
             if hashtags_param:
                 location += f"&hashtags={_q(hashtags_param, safe=',')}"
             self._respond(302, "", content_type="text/plain", extra_headers={"Location": location})

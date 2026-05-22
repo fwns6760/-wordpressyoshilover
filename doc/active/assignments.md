@@ -10,6 +10,12 @@
 |---|---|---|---|
 | `doc/active/423-DATA-PUBLISH-RULES-CONSOLIDATED.md` (GH Issue #96) | LOCK | Claude Code | データ post の 9 領域 rule (metric / 期間 / threshold / title / dedup / draft / mail / 表示 / site 方向) を 1 file 集約。 5/22 同日 landed した dedup gate 拡張 (commit `d724f0c`) / ERA 「低い順で」 削除 (commit `635cbd8`) / 【まとめ】mail 停止 (env `DISABLE_BURST_SUMMARY_MAIL=1`) / Gemma 4 revert (commit `2af8f0e`) も記載。 個別 rule 変更時は本 file 同 commit 更新する運用。 metric ◯/× SoT は `doc/reference/data-insight-metric-whitelist.md` を維持。 |
 
+### #95 / 417 — ヨシラバー X-post branding 2 source mix + 試合中 15 分 schedule (全 scope 完了)
+
+| ticket | status | owner | 内容 |
+|---|---|---|---|
+| GH Issue #95 / `doc/active/417-X-POST-MAIL-HOCHI-PRIORITY-PIGGYBACK.md` | DONE (close 候補) | Claude Code | 4 scope 全完了。 (1) Source A voice 統一 = ヨシラバー voice 180-280 字 (commit `9cc08b1`、 image `yoshilover-voice-9cc08b1` deploy 済)。 (2) Source B 維持 = 418 case B format (commit `6ab949f`)。 (3) schedule = 1h cycle (`x-post-mail-flush 0 6-22 *`) + 試合中 15 分 burst 2 本 (`flush-game-1 15,30,45 19-20 *` / `flush-game-2 15,30 21 *`)。 (4) Tavily 0 化 = 旧 5 cron (am-1 / lunch / afternoon / evening / postgame) PAUSE + 5/17 one-time cron DELETE → log verify 06:00 UTC 以降 Tavily call 0 件。 issue #95 comment 4516083275 で進捗報告済、 user 承認後 close。 |
+
 ## 2026-05-21 session update
 
 ### 418 — 日刊ゲンダイ本文抜粋が 55 文字 meta fallback になる問題

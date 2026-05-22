@@ -782,23 +782,27 @@ class InflammationPreventionAxisDTests414(unittest.TestCase):
 
 
 class BuildSystemPromptPersonaTests411(unittest.TestCase):
-    """411: _build_system_prompt が persona 引数で フーガ / 缶詰 を切替."""
+    """411 → #95: persona 切替 helper は維持、 ただし新 unified
+    ヨシラバー voice prompt を 1 本 返す。 persona = fuuga / kandume /
+    unknown どれでも同じ prompt content (例文 / hard rule / 3 軸圧縮).
+    """
 
-    def test_default_persona_uses_fuuga_prompt(self) -> None:
+    def test_default_persona_returns_yoshilover_voice(self) -> None:
         prompt = xbg._build_system_prompt(19, "2026-05-20")
-        # フーガ system prompt の few-shot 例の「完勝！」 が含まれる
+        # ヨシラバー voice の few-shot 例「完勝！」 (試合後)
         self.assertIn("完勝！", prompt)
-        # 缶詰 voice 用の few-shot ヘッダーが含まれない
-        self.assertNotIn("試合中実況 X 投稿 voice (缶詰系)", prompt)
+        # 3 軸圧縮の voice 核 phrasing
+        self.assertIn("3 軸", prompt)
 
-    def test_kandume_persona_uses_kandume_prompt(self) -> None:
+    def test_kandume_persona_returns_same_unified_prompt(self) -> None:
+        # #95: kandume persona でも unified prompt を返す (alias)。
         prompt = xbg._build_system_prompt(19, "2026-05-20", persona="kandume")
-        # 缶詰 system prompt の few-shot ヘッダー が含まれる
-        self.assertIn("試合中実況 X 投稿 voice (缶詰系)", prompt)
-        # フーガ few-shot 例の literal は含まれない (voice 切替済)
-        self.assertNotIn("完勝！ 7連勝！！", prompt)
+        # 統合された unified prompt の試合中 example も含まれる
+        self.assertIn("4回終わって 2-2", prompt)
+        # 完勝！ も含まれる (試合後 example)
+        self.assertIn("完勝！", prompt)
 
-    def test_unknown_persona_falls_back_to_fuuga(self) -> None:
+    def test_unknown_persona_falls_back_to_yoshilover_voice(self) -> None:
         prompt = xbg._build_system_prompt(19, "2026-05-20", persona="unknown_voice")
         self.assertIn("完勝！", prompt)
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 import html
@@ -2095,6 +2095,45 @@ def _is_recent_per_post_duplicate(
     return False
 
 
+def recent_per_post_duplicate_post_ids(
+    history_path: str | Path | None,
+    *,
+    post_ids: Iterable[int | str] | None = None,
+    now: datetime | None = None,
+    duplicate_window: timedelta = DEFAULT_DUPLICATE_WINDOW,
+) -> set[str]:
+    """Return post IDs already sent inside the normal per-post dedupe window.
+
+    This mirrors ``_is_recent_per_post_duplicate`` but loads the queue once so
+    callers can avoid building/sending mail bodies that would be suppressed.
+    """
+    if history_path is None:
+        return set()
+    current_now = _coerce_now(now)
+    wanted = {str(post_id) for post_id in post_ids or [] if str(post_id or "").strip()}
+    matched: set[str] = set()
+    for entry in reversed(_load_queue_entries(history_path)):
+        notice_kind = str(entry.get("notice_kind") or "per_post").strip() or "per_post"
+        if notice_kind != "per_post":
+            continue
+        if str(entry.get("status") or "").strip() != "sent":
+            continue
+        post_key = str(entry.get("post_id") or "").strip()
+        if not post_key:
+            continue
+        if wanted and post_key not in wanted:
+            continue
+        recorded_at = _parse_datetime_to_jst(entry.get("sent_at") or entry.get("recorded_at"))
+        if recorded_at is None:
+            continue
+        delta = current_now - recorded_at
+        if timedelta(0) <= delta <= duplicate_window:
+            matched.add(post_key)
+            if wanted and matched >= wanted:
+                break
+    return matched
+
+
 def _duplicate_within_reason(duplicate_window: timedelta) -> str:
     if duplicate_window >= timedelta(hours=24):
         return "DUPLICATE_WITHIN_24H"
@@ -3487,7 +3526,8 @@ def summarize_execution_results(
 def build_execution_summary_log(summary: PublishNoticeExecutionSummary) -> str:
     return (
         f"[summary] sent={summary.sent} suppressed={summary.suppressed} "
-        f"errors={summary.errors} reasons={json.dumps(summary.reasons, ensure_ascii=False, sort_keys=True)}"
+        f"errors={summary.errors} dry_run={summary.dry_run} emitted={summary.emitted} "
+        f"reasons={json.dumps(summary.reasons, ensure_ascii=False, sort_keys=True)}"
     )
 
 
@@ -3534,4 +3574,5 @@ __all__ = [
     "send_alert",
     "send_summary",
     "summarize_execution_results",
+    "recent_per_post_duplicate_post_ids",
 ]

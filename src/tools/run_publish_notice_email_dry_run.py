@@ -37,6 +37,7 @@ from src.publish_notice_email_sender import (  # noqa: E402
     emit_emergency_hook,
     append_send_result,
     maybe_send_morning_heartbeat,
+    recent_per_post_duplicate_post_ids,
     send,
     send_alert,
     send_summary,
@@ -307,6 +308,53 @@ def _emit_notice_ledger(
     )
 
 
+def _prefilter_recent_duplicate_requests(
+    requests: Sequence[PublishNoticeRequest],
+    *,
+    queue_path: str,
+    dry_run: bool,
+    send_enabled: bool,
+) -> tuple[list[PublishNoticeRequest], list[PublishNoticeEmailResult]]:
+    if dry_run or not send_enabled or not requests:
+        return list(requests), []
+    duplicate_post_ids = recent_per_post_duplicate_post_ids(
+        queue_path,
+        post_ids=[request.post_id for request in requests],
+    )
+    if not duplicate_post_ids:
+        return list(requests), []
+
+    active_requests: list[PublishNoticeRequest] = []
+    suppressed_results: list[PublishNoticeEmailResult] = []
+    suppressed_post_ids: list[str] = []
+    for request in requests:
+        post_key = str(request.post_id)
+        if post_key not in duplicate_post_ids:
+            active_requests.append(request)
+            continue
+        suppressed_post_ids.append(post_key)
+        subject = str(getattr(request, "subject_override", None) or request.title or "").strip()
+        suppressed_results.append(
+            PublishNoticeEmailResult(
+                status="suppressed",
+                reason="DUPLICATE_WITHIN_24H",
+                subject=subject,
+                recipients=[],
+            )
+        )
+
+    if suppressed_post_ids:
+        visible_ids = ",".join(suppressed_post_ids[:50])
+        omitted = max(0, len(suppressed_post_ids) - 50)
+        suffix = f" omitted={omitted}" if omitted else ""
+        print(
+            "[prefilter:per_post] "
+            f"suppressed={len(suppressed_post_ids)} reason=DUPLICATE_WITHIN_24H "
+            f"post_ids={visible_ids}{suffix}"
+        )
+    return active_requests, suppressed_results
+
+
 def _send_per_post_requests(
     requests: Sequence[PublishNoticeRequest],
     *,
@@ -317,7 +365,14 @@ def _send_per_post_requests(
     ledger_sink: runner_ledger_integration.BestEffortLedgerSink,
 ) -> list[Any]:
     results: list[Any] = []
-    for request in requests:
+    active_requests, prefiltered_results = _prefilter_recent_duplicate_requests(
+        requests,
+        queue_path=queue_path,
+        dry_run=dry_run,
+        send_enabled=send_enabled,
+    )
+    results.extend(prefiltered_results)
+    for request in active_requests:
         mail_result = send(
             request,
             dry_run=dry_run,

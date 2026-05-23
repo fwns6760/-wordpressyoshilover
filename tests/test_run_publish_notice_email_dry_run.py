@@ -5,6 +5,7 @@ import json
 import os
 import tempfile
 import unittest
+from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
@@ -334,6 +335,130 @@ class RunPublishNoticeEmailDryRunScanTests(unittest.TestCase):
         self.assertEqual(len(summary_rows), 2)
         self.assertEqual(len(marker_rows), 101)
         self.assertEqual({str(row["post_id"]) for row in marker_rows}, {str(71000 + index) for index in range(101)})
+
+    def test_per_post_requests_prefilter_recent_24h_duplicates_before_send(self) -> None:
+        duplicate_request = PublishNoticeRequest(
+            post_id=72001,
+            title="重複済み記事",
+            canonical_url="https://yoshilover.com/72001",
+            subtype="postgame",
+            publish_time_iso="2026-05-23T08:00:00+09:00",
+        )
+        fresh_request = PublishNoticeRequest(
+            post_id=72002,
+            title="新規記事",
+            canonical_url="https://yoshilover.com/72002",
+            subtype="postgame",
+            publish_time_iso="2026-05-23T08:05:00+09:00",
+        )
+        now = datetime.now().astimezone()
+
+        class _Sink:
+            enabled = False
+
+        send_calls: list[PublishNoticeRequest] = []
+
+        def fake_send(request, **kwargs):
+            send_calls.append(request)
+            return PublishNoticeEmailResult(
+                status="sent",
+                reason=None,
+                subject=f"【投稿候補】{request.title} | YOSHILOVER",
+                recipients=["notice@example.com"],
+            )
+
+        with tempfile.TemporaryDirectory() as tmpdir, patch(
+            "src.tools.run_publish_notice_email_dry_run.send",
+            side_effect=fake_send,
+        ), patch(
+            "src.tools.run_publish_notice_email_dry_run._emit_notice_ledger",
+        ), patch("sys.stdout", io.StringIO()) as stdout:
+            queue_path = Path(tmpdir) / "queue.jsonl"
+            queue_path.write_text(
+                json.dumps(
+                    {
+                        "status": "sent",
+                        "reason": None,
+                        "subject": "sent",
+                        "recipients": ["notice@example.com"],
+                        "post_id": 72001,
+                        "recorded_at": (now - timedelta(hours=2)).isoformat(),
+                        "sent_at": (now - timedelta(hours=2)).isoformat(),
+                        "notice_kind": "per_post",
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            results = runner._send_per_post_requests(
+                [duplicate_request, fresh_request],
+                queue_path=str(queue_path),
+                history_path=str(Path(tmpdir) / "history.json"),
+                dry_run=False,
+                send_enabled=True,
+                ledger_sink=_Sink(),
+            )
+
+        self.assertEqual([request.post_id for request in send_calls], [72002])
+        self.assertEqual([result.status for result in results], ["suppressed", "sent"])
+        self.assertEqual(results[0].reason, "DUPLICATE_WITHIN_24H")
+        self.assertIn("[prefilter:per_post] suppressed=1 reason=DUPLICATE_WITHIN_24H", stdout.getvalue())
+
+    def test_per_post_prefilter_does_not_run_for_dry_run(self) -> None:
+        request = PublishNoticeRequest(
+            post_id=73001,
+            title="dry run 記事",
+            canonical_url="https://yoshilover.com/73001",
+            subtype="postgame",
+            publish_time_iso="2026-05-23T08:00:00+09:00",
+        )
+
+        class _Sink:
+            enabled = False
+
+        send_calls: list[PublishNoticeRequest] = []
+
+        def fake_send(request, **kwargs):
+            send_calls.append(request)
+            return PublishNoticeEmailResult(
+                status="dry_run",
+                reason=None,
+                subject=request.title,
+                recipients=[],
+            )
+
+        with tempfile.TemporaryDirectory() as tmpdir, patch(
+            "src.tools.run_publish_notice_email_dry_run.send",
+            side_effect=fake_send,
+        ), patch(
+            "src.tools.run_publish_notice_email_dry_run._emit_notice_ledger",
+        ), patch("sys.stdout", io.StringIO()):
+            queue_path = Path(tmpdir) / "queue.jsonl"
+            queue_path.write_text(
+                json.dumps(
+                    {
+                        "status": "sent",
+                        "post_id": 73001,
+                        "recorded_at": datetime.now().astimezone().isoformat(),
+                        "notice_kind": "per_post",
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            results = runner._send_per_post_requests(
+                [request],
+                queue_path=str(queue_path),
+                history_path=str(Path(tmpdir) / "history.json"),
+                dry_run=True,
+                send_enabled=True,
+                ledger_sink=_Sink(),
+            )
+
+        self.assertEqual([call.post_id for call in send_calls], [73001])
+        self.assertEqual([result.status for result in results], ["dry_run"])
 
 
 class LoadStateFetchReasonsFromEnvTests(unittest.TestCase):

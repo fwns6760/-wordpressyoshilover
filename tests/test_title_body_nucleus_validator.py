@@ -124,6 +124,128 @@ class TitleBodyNucleusValidatorTests(unittest.TestCase):
                 self.assertEqual(result.reason_code, "MULTIPLE_NUCLEI")
                 self.assertIn("opening subjects=", result.detail or "")
 
+    def test_lineup_announcement_title_diverges_when_body_unrelated(self):
+        """71314型: title が当日スタメン宣言なのに本文冒頭が別トピック."""
+        cases = [
+            {
+                "name": "71314 mascot body under giants lineup title",
+                "title": "巨人スタメン 試合前情報",
+                "body": "マスコット通信簿の特集をお届けします。今週のジャビット君は...",
+                "subtype": "pregame",
+            },
+            {
+                "name": "honjitsu lineup but body covers unrelated event",
+                "title": "本日のスタメン",
+                "body": "東京ドームでは引退セレモニーが行われた。",
+                "subtype": "pregame",
+            },
+            {
+                "name": "starter pitcher announce but body is interview",
+                "title": "予告先発 戸郷翔征",
+                "body": "選手会の食事会の様子をレポートします。",
+                "subtype": "pregame",
+            },
+            {
+                "name": "mis-classified subtype still caught",
+                "title": "巨人スタメン発表",
+                "body": "ファン感謝デーのグッズ販売が始まった。",
+                "subtype": "manager",
+            },
+        ]
+        for case in cases:
+            with self.subTest(case=case["name"]):
+                result = validate_title_body_nucleus(
+                    case["title"], case["body"], case["subtype"]
+                )
+                self.assertFalse(result.aligned, case["name"])
+                self.assertEqual(result.reason_code, "EVENT_DIVERGE")
+                self.assertIn("lineup", result.detail or "")
+
+    def test_lineup_announcement_passes_with_supported_body(self):
+        cases = [
+            {
+                "name": "lineup announcement with batting order list",
+                "title": "巨人スタメン",
+                "body": "巨人スタメンが発表された。1番中堅、2番二塁、3番右翼の打順が組まれている。",
+                "subtype": "lineup",
+            },
+            {
+                "name": "lineup announcement with order keyword",
+                "title": "本日のスタメン",
+                "body": "本日の先発オーダーが発表された。打順は次の通り。",
+                "subtype": "lineup",
+            },
+        ]
+        for case in cases:
+            with self.subTest(case=case["name"]):
+                result = validate_title_body_nucleus(
+                    case["title"], case["body"], case["subtype"]
+                )
+                # Gate-specific assertion: the new lineup-announcement gate
+                # must not raise EVENT_DIVERGE on supported announcement
+                # bodies. Other axes are out of scope for this gate.
+                if result.reason_code == "EVENT_DIVERGE":
+                    self.assertNotIn(
+                        "lineup but body opening lacks",
+                        result.detail or "",
+                        case["name"],
+                    )
+
+    def test_lineup_general_context_not_misfired(self):
+        """スタメン定着 / 落ち / 争い / 予想 / 候補 / 振り返り は誤爆させない."""
+        cases = [
+            {
+                "name": "starter spot retention discussion",
+                "title": "坂本勇人 スタメン定着 へ",
+                "body": "坂本勇人は今季ここまで打率.290と存在感を見せている。",
+                "subtype": "feature",
+            },
+            {
+                "name": "starter drop discussion",
+                "title": "中山礼都 スタメン落ち の背景",
+                "body": "中山礼都は調整不足を理由にベンチスタートとなった。",
+                "subtype": "feature",
+            },
+            {
+                "name": "lineup competition discussion",
+                "title": "巨人 スタメン争い 激化",
+                "body": "若手の台頭でレギュラー争いが激しくなっている。",
+                "subtype": "feature",
+            },
+            {
+                "name": "lineup prediction column",
+                "title": "本日のスタメン予想",
+                "body": "対戦相手は左腕。打線は右打者中心になりそうだ。",
+                "subtype": "preview",
+            },
+            {
+                "name": "starter candidate discussion",
+                "title": "若手 スタメン候補 急浮上",
+                "body": "二軍で結果を残す若手選手の名前が出てきた。",
+                "subtype": "feature",
+            },
+            {
+                "name": "retrospective lineup column",
+                "title": "過去のスタメン振り返り 2010年代の名打線",
+                "body": "2014年の打線は屈指の破壊力を誇った。",
+                "subtype": "feature",
+            },
+        ]
+        for case in cases:
+            with self.subTest(case=case["name"]):
+                result = validate_title_body_nucleus(
+                    case["title"], case["body"], case["subtype"]
+                )
+                # The validator may still flag other axes (SUBJECT_ABSENT 等);
+                # what matters is that the new lineup-announcement gate does
+                # not misfire on general 定着/落ち/争い/予想/候補/振り返り forms.
+                if result.reason_code == "EVENT_DIVERGE":
+                    self.assertNotIn(
+                        "lineup but body opening lacks",
+                        result.detail or "",
+                        f"{case['name']} should not raise lineup-announcement EVENT_DIVERGE",
+                    )
+
     def test_known_subjects_take_priority_for_rare_name(self):
         result = validate_title_body_nucleus(
             "𠮷川尚輝 2安打",

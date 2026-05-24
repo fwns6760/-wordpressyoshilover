@@ -145,6 +145,113 @@ _FAN_VOICE_FALLBACK_RE = re.compile(
 )
 _POSTGAME_SCORECARD_ONLY_MAX_TEXT_CHARS = 220
 
+# thin_source_padding: 1-tweet / short-source articles that have been padded
+# to 1500-2700 chars with AI scaffolding (questions, generic columns, filler
+# "どう見る" / "今後の動向" phrases) rather than concrete fact reporting.
+#
+# Heuristic — fires only when ALL of:
+#   1. X embed wrapper present (yoshilover-x-embed div) — signals 1-tweet
+#      source path.
+#   2. Visible body text (with chrome stripped) is large enough to be padded
+#      (>= 800 chars) but not so large that real reporting is plausible
+#      (<= 3000 chars).
+#   3. Concrete fact density is low: fewer than 2 fact-token matches
+#      (scores like ``3-2``, ``5回``, ``X安打/打点/号/勝/敗`` etc.).
+#   4. AI-scaffolding signal count is high: >= 3 rhetorical / general-column
+#      phrases.
+#
+# Conservative by design — false positives skew toward routing to review/draft
+# rather than refusing legitimate short-source reporting that has real facts.
+_THIN_SOURCE_PADDING_MIN_TEXT_CHARS = 600
+_THIN_SOURCE_PADDING_MAX_TEXT_CHARS = 3000
+_THIN_SOURCE_PADDING_MIN_SCAFFOLDING = 3
+_THIN_SOURCE_PADDING_MIN_FACT_TOKENS = 2
+
+# Rhetorical / general-column phrases that pad out short-source articles.
+_THIN_SOURCE_SCAFFOLDING_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
+    re.compile(p)
+    for p in (
+        r"どう(?:見|思|捉|感じ)",
+        r"(?:今後|次)(?:の|に)?(?:注目|展開|動向|焦点|期待|展望)",
+        r"気になる(?:ポイント|ところ|点)",
+        r"ご注目(?:ください|を)",
+        r"ではないでしょうか",
+        r"のではないか",
+        r"と(?:言|い)える(?:でしょう|だろう)",
+        r"と考えられ(?:ます|る)",
+        r"と思われ(?:ます|る)",
+        r"皆さん(?:は|も)",
+        r"みなさん(?:は|も)",
+        r"ファンの(?:皆さん|期待|反応|声)",
+        r"楽しみ(?:です|ですね|にしたい)",
+        r"これからの(?:活躍|戦い|展開)",
+        r"今シーズン(?:の|も)(?:活躍|期待|注目)",
+    )
+)
+# Quote markers count as scaffolding only if they are empty bracket pairs (a
+# common 1-tweet-padding tell where AI invents framing without actual quote).
+_EMPTY_QUOTE_PATTERN = re.compile(r"「\s*」")
+
+# Concrete fact tokens that indicate real reporting density.
+_FACT_TOKEN_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
+    re.compile(p)
+    for p in (
+        r"[0-9０-９]+\s*[-－ー]\s*[0-9０-９]+",   # score
+        r"[0-9０-９]+\s*安打",
+        r"[0-9０-９]+\s*打点",
+        r"[0-9０-９]+\s*打数",
+        r"[0-9０-９]+\s*本塁打",
+        r"第?[0-9０-９]+\s*号",
+        r"[0-9０-９]+\s*勝[0-9０-９]*敗?",
+        r"[0-9０-９]+\s*回(?:[1-9０-９/](?:1/3|2/3))?\s*(?:を投げ|を投球|投げ)",
+        r"防御率\s*[0-9０-９]+\.[0-9０-９]+",
+        r"打率\s*[\.\．]?[0-9０-９]+",
+        r"中[0-9０-９]+日",
+        r"イニング",
+        r"ホームラン",
+        r"タイムリー",
+        r"先発出場",
+        r"完投",
+        r"完封",
+        r"勝利投手|敗戦投手|セーブ|ホールド",
+    )
+)
+# Non-empty 「...」 quote with substantive content also counts as fact token
+# (real player comment quoted from source).
+_REAL_QUOTE_PATTERN = re.compile(r"「[^」]{6,}」")
+
+
+def _count_pattern_hits(text: str, patterns: tuple[re.Pattern[str], ...]) -> int:
+    return sum(1 for p in patterns if p.search(text))
+
+
+def _count_scaffolding_signals(text: str) -> int:
+    count = _count_pattern_hits(text, _THIN_SOURCE_SCAFFOLDING_PATTERNS)
+    if _EMPTY_QUOTE_PATTERN.search(text):
+        count += 1
+    return count
+
+
+def _count_fact_tokens(text: str) -> int:
+    count = _count_pattern_hits(text, _FACT_TOKEN_PATTERNS)
+    if _REAL_QUOTE_PATTERN.search(text):
+        count += 1
+    return count
+
+
+def _is_thin_source_padding(body_html: str, *, text: str, text_chars: int) -> bool:
+    if text_chars < _THIN_SOURCE_PADDING_MIN_TEXT_CHARS:
+        return False
+    if text_chars > _THIN_SOURCE_PADDING_MAX_TEXT_CHARS:
+        return False
+    if not _OEMBED_DIV_RE.search(body_html):
+        return False
+    if _count_fact_tokens(text) >= _THIN_SOURCE_PADDING_MIN_FACT_TOKENS:
+        return False
+    if _count_scaffolding_signals(text) < _THIN_SOURCE_PADDING_MIN_SCAFFOLDING:
+        return False
+    return True
+
 
 def _strip_html_to_text(html: str) -> str:
     """HTML タグ / script / comment / news-digest banner / fan-voice
@@ -241,6 +348,14 @@ def is_thin_body(body_html: str) -> ThinBodyResult:
         return ThinBodyResult(
             is_thin=True,
             reason="postgame_scorecard_only",
+            text_chars=text_chars,
+            html_chars=html_chars,
+        )
+
+    if _is_thin_source_padding(body_html, text=text, text_chars=text_chars):
+        return ThinBodyResult(
+            is_thin=True,
+            reason="thin_source_padding",
             text_chars=text_chars,
             html_chars=html_chars,
         )

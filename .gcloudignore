@@ -1,0 +1,64 @@
+# .gcloudignore — recurring deploy hygiene policy.
+#
+# `gcloud builds submit` uploads the entire working directory by default.
+# Without this file, untracked logs / dev artifacts / WIP files leak into
+# every container image build, growing the blast radius of each deploy
+# beyond what the active git ref intended.
+#
+# Format mirrors .gitignore. When this file is present, gcloud auto-loads
+# .gitignore on top, so anything already ignored by git is also excluded.
+
+# version control
+.git
+.gitignore
+
+# python build / cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.coverage
+htmlcov/
+.pytest_cache/
+*.egg-info/
+
+# secrets / env
+.env
+.env.*
+auth.json
+
+# local logs (operational telemetry, not part of any image)
+logs/
+data/insight/insight.db
+data/insight/insight.db-journal
+data/insight/insight.db-wal
+data/insight/article_candidates.csv
+data/insight/raw_html/
+data/hermes_x_search/
+data/posted_urls.json.bak
+
+# test / dev / docs (image runtime never needs these)
+tests/
+docs/
+doc/
+build/
+backups/
+out/
+gemini_audit/
+
+# editor / OS noise
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.bak
+*.tmp
+
+# Codex / Claude / agent scratch
+.codex/
+.claude/
+
+# Stray strings dropped into repo root by prior shell mishaps
+=*
+HEAD/
+", joined[start:end].replace(n, "

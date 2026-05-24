@@ -713,5 +713,118 @@ class ExcerptParagraphFormattingTests(unittest.TestCase):
         self.assertEqual(len(out), 4)
 
 
+class ScrapeNoiseCleanerTests(unittest.TestCase):
+    """Media-side UI / nav chrome and CSS/JS leak removal.
+
+    71246-type (スポニチ "大谷翔平特集" navigation block) and 71148-type
+    (読売 "保存して後で読む" UI button label) bled through the prior
+    extractor. These fixtures lock the new cleaner in place.
+    """
+
+    def test_sponichi_otani_feature_nav_dropped(self):
+        # 71246-type: スポニチ navigation block with "大谷翔平特集" link
+        # bleeding into article body. Real article prose follows.
+        html = """
+        <article>
+          <h1>巨人 戸郷翔征 7回2失点で勝利投手</h1>
+          <nav class="related-feature">
+            <a href="/otani/">大谷翔平特集</a>
+            <a href="/saved/">保存して後で読む</a>
+          </nav>
+          <div class="article-body">
+            <p>戸郷翔征は7日の阪神戦で7回2失点と好投。試合後、阿部監督は次回も期待したいと評価した。</p>
+            <p>打線は坂本勇人の3安打などで5点を奪い、勝利投手となった戸郷の今季5勝目を支えた。</p>
+          </div>
+        </article>
+        """
+        out = extract_article_body_excerpt(
+            html,
+            "https://www.sponichi.co.jp/baseball/news/2026/05/12/example.html",
+            title="巨人 戸郷翔征 7回2失点で勝利投手",
+            max_chars=600,
+        )
+        self.assertIn("戸郷翔征は7日の阪神戦", out)
+        self.assertNotIn("大谷翔平特集", out)
+        self.assertNotIn("保存して後で読む", out)
+
+    def test_yomiuri_save_for_later_ui_dropped(self):
+        # 71148-type: 読売 article body with "保存して後で読む" / "会員登録" /
+        # "ログイン" UI labels embedded next to real prose.
+        html = """
+        <article>
+          <h1>巨人 岡本和真 10号本塁打</h1>
+          <div class="article-body">
+            <span class="save-btn">保存して後で読む</span>
+            <span class="member-cta">会員登録</span>
+            <span class="login-cta">ログイン</span>
+            <p>岡本和真は12日の中日戦で今季10号本塁打を放った。5月としては自己最速のペース。</p>
+            <p>チームは現在首位を維持しており、今後の打撃陣の活躍に期待がかかる。</p>
+            <aside class="related-list">関連記事一覧</aside>
+          </div>
+        </article>
+        """
+        out = extract_article_body_excerpt(
+            html,
+            "https://www.yomiuri.co.jp/sports/baseball/example.html",
+            title="巨人 岡本和真 10号本塁打",
+            max_chars=600,
+        )
+        self.assertIn("岡本和真は12日の中日戦", out)
+        self.assertNotIn("保存して後で読む", out)
+        self.assertNotIn("会員登録", out)
+        self.assertNotIn("ログイン", out)
+        self.assertNotIn("関連記事一覧", out)
+
+    def test_css_js_text_leak_dropped(self):
+        # Raw CSS rule / JS function leak surviving <script>/<style> strip.
+        # These come from template fragments where rules are emitted as
+        # plain text nodes (sloppy CMS / SSR-rendered React error fallbacks).
+        html = """
+        <article>
+          <h1>巨人 試合速報</h1>
+          <div class="article-body">
+            <p>.headline { color: red; font-size: 18px; }</p>
+            <p>function trackClick() { document.write('hello'); }</p>
+            <p>var pageId = '12345';</p>
+            <p>巨人は3-2で阪神に勝利した。先発の戸郷翔征が7回2失点と好投を見せた。</p>
+            <p>9回には岡本和真がタイムリーを放ち決勝点。リリーフ陣は無失点で逃げ切った。</p>
+          </div>
+        </article>
+        """
+        out = extract_article_body_excerpt(
+            html,
+            "https://example.com/news/2026/05/12/leaky.html",
+            title="巨人 試合速報",
+            max_chars=600,
+        )
+        self.assertIn("巨人は3-2で阪神に勝利", out)
+        self.assertNotIn("color: red", out)
+        self.assertNotIn("document.write", out)
+        self.assertNotIn("function trackClick", out)
+        self.assertNotIn("var pageId", out)
+
+    def test_normal_body_not_overtrimmed(self):
+        # Real article prose must survive even when adjacent paragraphs
+        # contain chrome substrings. The chrome lines are short and
+        # standalone; the article paragraphs are long-form prose.
+        html = """
+        <article>
+          <h1>戸郷翔征 完投勝利</h1>
+          <div class="article-body">
+            <p>戸郷翔征は12日の中日戦で完投勝利を挙げた。9回を投げ被安打4、1失点、無四球の完璧な内容で今季6勝目を飾った。試合後の取材で「最後まで集中して投げ切れたのが良かった。次の登板に向けて、しっかり調整したいと思います」と語った。</p>
+            <p>打線では坂本勇人が3安打、岡本和真が2打点と援護。投打が噛み合い、チームは首位を独走している。</p>
+          </div>
+        </article>
+        """
+        out = extract_article_body_excerpt(
+            html,
+            "https://example.com/sports/baseball/2026/05/12/normal.html",
+            title="戸郷翔征 完投勝利",
+            max_chars=600,
+        )
+        self.assertIn("戸郷翔征は12日の中日戦で完投勝利", out)
+        self.assertIn("坂本勇人が3安打", out)
+
+
 if __name__ == "__main__":
     unittest.main()

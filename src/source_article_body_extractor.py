@@ -215,6 +215,45 @@ _COPYRIGHT_LINE_RE = re.compile(
     re.IGNORECASE,
 )
 _RELATED_LINK_MARKER_RE = re.compile(r"^【[^】]{1,30}】[^\n]*$")
+
+# UI / navigation chrome that may appear wrapped in 【】, ［］, or 連結
+# inside a single text node. These substrings are unambiguous markers
+# of media-side chrome — real article prose never contains them.
+# 71246 (スポニチ 大谷翔平特集 nav) / 71148 (読売 "保存して後で読む" UI) は
+# このリスト経由で除去する。
+_UI_CHROME_SUBSTRINGS: tuple[str, ...] = (
+    "大谷翔平特集",
+    "保存して後で読む",
+    "後で読む",
+    "あとで読む",
+    "会員登録",
+    "新規会員登録",
+    "プレミアム会員",
+    "ログインしてください",
+    "関連記事一覧",
+    "おすすめ記事一覧",
+    "アクセスランキング",
+    "週間ランキング",
+    "もっと見る",
+    "メニューを開く",
+    "メニューを閉じる",
+    "サイトマップ",
+    "プライバシーポリシー",
+    "利用規約",
+)
+# Raw CSS / JS leak patterns. ``<style>`` / ``<script>`` blocks are stripped
+# at the HTML phase via ``_SCRIPT_STYLE_RE``; this catches plain-text leaks
+# left over from template fragments that escaped the HTML strip.
+_CSS_RULE_LINE_RE = re.compile(
+    r"^[a-zA-Z0-9_\-#.\[\]:,>\s*+]{1,80}\s*\{[^}]*\}\s*$"
+)
+_CSS_DECLARATION_LINE_RE = re.compile(
+    r"^[a-zA-Z\-]+\s*:\s*[^;{}]+;\s*$"
+)
+_JS_FUNCTION_RE = re.compile(
+    r"(?:^|\s)(?:function\s*\(|var\s+\w+\s*=|const\s+\w+\s*=|let\s+\w+\s*=|"
+    r"document\.|window\.|return\s+|=>\s*\{|\.addEventListener\()"
+)
 _BOILERPLATE_LINES = {
     "PR",
     "広告",
@@ -230,6 +269,33 @@ _BOILERPLATE_LINES = {
     "通知OFF",
     "野球スコア速報",
     "編集者のオススメ記事",
+    # Media-side UI / nav text that bled into extracted article bodies
+    # (71246 スポニチ "大谷翔平特集" navigation / 71148 読売 "保存して
+    # 後で読む" UI). These are short, exact-match labels. The contains-
+    # match variant lives in ``_UI_CHROME_SUBSTRINGS`` below to catch
+    # nav text wrapped in 【】 / ［］ or interleaved with adjacent labels.
+    "大谷翔平特集",
+    "保存して後で読む",
+    "あとで読む",
+    "会員登録",
+    "新規会員登録",
+    "ログイン",
+    "ログアウト",
+    "マイページ",
+    "関連記事",
+    "関連記事一覧",
+    "おすすめ記事",
+    "おすすめ",
+    "アクセスランキング",
+    "ランキング",
+    "ピックアップ",
+    "メニュー",
+    "メニューを開く",
+    "メニューを閉じる",
+    "閉じる",
+    "サイトマップ",
+    "プライバシーポリシー",
+    "利用規約",
     # Share / SNS UI button labels that React-rendered news sites
     # (e.g. news.ntv.co.jp) emit as separate sibling <p>/<button>
     # nodes inside the article container. Each label only ever
@@ -294,6 +360,10 @@ def _strip_html_to_plain(fragment: str) -> str:
         if _PHOTO_CREDIT_LINE_RE.search(cleaned):
             continue
         if _COPYRIGHT_LINE_RE.match(cleaned):
+            continue
+        if _is_ui_chrome_line(cleaned):
+            continue
+        if _is_css_or_js_leak_line(cleaned):
             continue
         if cleaned:
             lines.append(cleaned)
@@ -468,6 +538,42 @@ def _is_noise_line(line: str) -> bool:
     if _PHOTO_CREDIT_LINE_RE.search(line):
         return True
     if _COPYRIGHT_LINE_RE.match(line):
+        return True
+    if _is_ui_chrome_line(line):
+        return True
+    if _is_css_or_js_leak_line(line):
+        return True
+    return False
+
+
+def _is_ui_chrome_line(line: str) -> bool:
+    """Detect media-side UI / nav text wrapped or interleaved within a single
+    extracted line. Short lines that are dominated by a UI chrome substring
+    are dropped; long article paragraphs that mention a chrome phrase
+    incidentally are preserved.
+    """
+    if not line:
+        return False
+    if len(line) > 80:
+        return False
+    for phrase in _UI_CHROME_SUBSTRINGS:
+        if phrase in line:
+            return True
+    return False
+
+
+def _is_css_or_js_leak_line(line: str) -> bool:
+    """Detect raw CSS/JS that survived ``<script>``/``<style>`` stripping.
+    These leaks come from template fragments where the markup author put
+    inline rule text outside of a proper tag.
+    """
+    if not line:
+        return False
+    if _CSS_RULE_LINE_RE.match(line):
+        return True
+    if _CSS_DECLARATION_LINE_RE.match(line):
+        return True
+    if _JS_FUNCTION_RE.search(line):
         return True
     return False
 

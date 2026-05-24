@@ -411,6 +411,49 @@ class RunManualIntakeTests(_IntakeBaseTest):
         self.assertIn("勝利でM3", captured.get("content", ""))
         self.assertEqual(captured.get("status"), "draft")
 
+    # 12b. og:description empty (baseballking.jp shape) → summary fallback from body
+    def test_12b_empty_og_description_falls_back_to_body_excerpt(self):
+        wp = MagicMock()
+        captured: dict = {}
+
+        def fake_create(**kwargs):
+            captured.update(kwargs)
+            return 1001
+        wp.create_post = fake_create
+
+        body_text = (
+            "巨人の泉口友汰内野手が2年目のジンクスについて齊藤明雄氏が解説した。"
+            "技術面より精神面の課題が大きいと指摘し、坂本勇人選手の助言の重要性を語った。"
+        )
+        bk_html = (
+            "<html><head>"
+            "<meta property=\"og:title\" content=\"巨人・泉口、実質2年目のジンクス\">"
+            "<meta property=\"og:description\" content=\"\">"
+            "</head><body>"
+            f"<div class=\"entry-content\"><p>{body_text}</p></div>"
+            "</body></html>"
+        )
+
+        def fake_fetch(url, **kw):
+            return {
+                "title": "巨人・泉口、実質2年目のジンクス",
+                "summary": "",
+                "image": "",
+                "_html": bk_html,
+            }
+
+        code, out = mi.run_manual_intake(
+            url="https://baseballking.jp/ns/696218/",
+            mode="draft",
+            wp_client_factory=lambda: wp,
+            rate_limit_lockfile=self.lockfile,
+            fetch_meta=fake_fetch,
+        )
+        self.assertEqual(code, mi.EXIT_OK)
+        self.assertEqual(out["title"], "巨人・泉口、実質2年目のジンクス")
+        # Summary fallback was applied: WP draft body contains body-derived text
+        self.assertIn("泉口", captured.get("content", ""))
+
     # 12. OG/meta parse fail + override title/summary success
     def test_12_og_fail_with_overrides_succeeds(self):
         wp = MagicMock()
@@ -697,6 +740,34 @@ class AutoGuessArticleTypeNewKeywordTests(unittest.TestCase):
             "動画",
         )
         self.assertEqual(self._guess("公示 出場選手登録 田中将大"), "公示")
+
+    def test_farm_fullwidth_digit(self):
+        # 全角数字 ２軍 / ３軍 でも 2軍・育成 に route する
+        # (source RSS が ３軍 等 全角 で配信する事例の救済)。
+        self.assertEqual(self._guess("栃木GB、巨人３軍と引き分け"), "2軍・育成")
+        self.assertEqual(self._guess("巨人２軍が首位"), "2軍・育成")
+        self.assertEqual(self._guess("巨人３軍 紅白戦"), "2軍・育成")
+
+    def test_ob_name_fallback(self):
+        # 既存 keyword (退団 / 引退 / 解説者 等) が hit しない時に、
+        # 著名 OB の人名 そのものを is_giants_ob fallback で拾う。
+        self.assertEqual(
+            self._guess("上原浩治氏、今季初勝利の巨人・戸郷翔征にゲキ"),
+            "OB情報",
+        )
+        self.assertEqual(
+            self._guess("堀内恒夫氏と江本孟紀氏がYouTubeで戸郷の好投を称賛"),
+            "OB情報",
+        )
+
+    def test_ob_name_fallback_does_not_override_higher_priority(self):
+        # 現役監督 (阿部 + quote) は 監督談話 で 先に確定する。
+        self.assertEqual(
+            self._guess("阿部監督「最後まで集中して振り切れた」"),
+            "監督談話",
+        )
+        # score pattern (試合速報) は 先に確定する。
+        self.assertEqual(self._guess("巨人 5-3 阪神 試合終了"), "試合結果")
 
 
 class SourcePublishedAtNormalizationTests(unittest.TestCase):

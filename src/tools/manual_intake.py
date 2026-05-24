@@ -315,7 +315,7 @@ def _auto_guess_article_type(
         return "ドラフト"
     if "ドラフト" in text and any(k in text for k in ("指名", "候補", "会議", "巨人", "ジャイアンツ", "読売")):
         return "ドラフト"
-    if any(k in text for k in ("2軍", "二軍", "ファーム", "3軍", "三軍", "育成選手", "育成契約")):
+    if any(k in text for k in ("2軍", "２軍", "二軍", "ファーム", "3軍", "３軍", "三軍", "育成選手", "育成契約")):
         return "2軍・育成"
     if any(k in text for k in ("新外国人", "助っ人")):
         return "助っ人"
@@ -323,6 +323,16 @@ def _auto_guess_article_type(
         return "トレード"
     if any(k in text for k in ("退団", "引退", "解説者", "OB会", "巨人OB", "元巨人")):
         return "OB情報"
+    # Giants OB 人名 fallback: 既存の keyword (退団/引退/解説者 等) が hit
+    # しない時に、 著名 OB の人名そのものを拾う。 現役監督 (阿部) / 現役選手 /
+    # 試合速報 は すでに上位 path で 排他確定済なので、 ここに来た時点で残った
+    # 候補は OB 寄りのコメント記事である可能性が高い。
+    try:
+        from src.giants_ob_roster import is_giants_ob
+        if is_giants_ob(text):
+            return "OB情報"
+    except Exception:
+        pass
     if any(k in text for k in ("FA宣言", "FA移籍", "FA権", "海外FA", "国内FA")):
         return "補強・移籍"
     if any(k in text for k in ("移籍", "獲得", "新加入", "入団", "補強")):
@@ -4586,6 +4596,30 @@ def run_manual_intake(
             summary = (meta.get("summary", "") or "").strip()
         og_image = (meta.get("image", "") or "").strip()
         raw_html = meta.get("_html", "") or ""
+        # baseballking.jp / 一部 CMS は og:description を空で配信する。
+        # title は og:title から取れているのに summary 空で fail する救済として、
+        # 本文先頭 ~120 字を summary fallback に使う。出典 link は draft 本文側で
+        # 維持され、本文抜粋 block も別途 nomotoke-source-excerpt として
+        # 出典つきで挿入される (主従関係 / 引用最小限 維持)。
+        if title and not summary and raw_html:
+            try:
+                from src.source_article_body_extractor import (
+                    extract_article_body_excerpt,
+                )
+                fallback = extract_article_body_excerpt(
+                    raw_html, url, max_chars=120, title=title,
+                ).strip()
+                if fallback:
+                    summary = fallback
+                    logger.info(
+                        "manual_intake_summary_body_fallback url=%s len=%d",
+                        url, len(summary),
+                    )
+            except Exception as _exc:
+                logger.warning(
+                    "manual_intake_summary_body_fallback_failed url=%s err=%s",
+                    url, _exc,
+                )
         if not title or not summary:
             output["reason"] = "missing_title_or_summary"
             return EXIT_MISSING_TITLE_OR_SUMMARY, output

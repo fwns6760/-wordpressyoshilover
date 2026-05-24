@@ -238,5 +238,142 @@ class TestScoreboardOnlyPostgameDetection(unittest.TestCase):
         self.assertFalse(result.is_thin, msg=f"unexpected: {result.reason}")
 
 
+class TestThinSourcePaddingDetection(unittest.TestCase):
+    """1ツイート水増し: 短いSNSソースをAI scaffolding/質問句/一般論で
+    1500-2700字に膨らませた本文を検出する。"""
+
+    @staticmethod
+    def _x_embed_block() -> str:
+        return (
+            '<div class="yoshilover-x-embed" '
+            'style="margin:24px auto !important;max-width:550px;">'
+            '<blockquote class="twitter-tweet" data-dnt="true" data-lang="ja">'
+            '<a href="https://twitter.com/yomiuri_giants/status/12345">'
+            "twitter post</a>"
+            "</blockquote></div>"
+            '<script async src="https://platform.twitter.com/widgets.js"></script>'
+        )
+
+    def test_one_tweet_with_scaffolding_padding_is_thin(self) -> None:
+        embed = self._x_embed_block()
+        # ~1500-2700字 padding pattern: 1 ツイート + AI scaffolding 長文.
+        scaffolding_padding = (
+            "<p>球団からの発表を受けて、ファンの皆さんはどう感じるでしょうか。"
+            "今後の動向に注目が集まります。次の試合に向けて期待が高まりますね。"
+            "これからの活躍が楽しみです。皆さんはどう見るでしょうか。"
+            "気になるポイントとして、コンディション面が挙げられます。"
+            "ご注目ください。次の展開を見守りたいところです。"
+            "今シーズンの注目選手として名前が挙がるのではないでしょうか。"
+            "ファンの期待は高まる一方です。これからの戦いに期待したいと言えるでしょう。"
+            "選手のコメントは「」とだけ伝えられました。"
+            "ファンの反応も様々で、楽しみにしたいという声が多いです。"
+            "今後の展開に注目したいところです。これからの活躍を見守りたいですね。"
+            "球団としては慎重な判断が求められる場面と言えるでしょう。"
+            "ファンの皆さんの応援が選手を支える大きな力になっていると考えられます。"
+            "今シーズンのチーム力強化に向けて、どのような展開になるのか気になるところです。"
+            "これからの展開を皆さんも見守っていただきたいと言えるでしょう。"
+            "今後の発表に注目が集まることは間違いありません。"
+            "選手のコンディションや起用法についても、これからの動向に注目したいですね。"
+            "ファンの皆さんはどう見るのではないでしょうか。"
+            "球団からの今後の発表が待たれるところです。"
+            "今シーズンの戦いに向けて、どのような展開を見せてくれるのか期待が高まります。"
+            "ファンの反応もこれから様々な形で表れてくると思われます。"
+            "次の試合に向けて、選手たちのコンディションが気になるところです。"
+            "皆さんも今後の動向にぜひ注目してみてください。"
+            "これからのチームの戦いに期待したいですね。"
+            "ファンの皆さんの期待に応える活躍が見られるのではないかと考えられます。"
+            "選手たちのこれからの戦いに、心からエールを送りたいところです。</p>"
+        )
+        body = embed + scaffolding_padding
+        result = is_thin_body(body)
+        self.assertTrue(
+            result.is_thin,
+            msg=f"unexpected reason={result.reason} chars={result.text_chars}",
+        )
+        self.assertEqual(result.reason, "thin_source_padding")
+
+    def test_short_fact_summary_with_tweet_passes(self) -> None:
+        """1ツイート + 400-500字の短い事実整理は padding ではないので通す."""
+        embed = self._x_embed_block()
+        short_factual = (
+            "<p>巨人の岡本和真選手が今季 10 号本塁打を放った。"
+            "5 月としては自己最速のペース。チームは現在首位を維持しており、"
+            "5 月 13 日の試合では 3-2 で勝利した。"
+            "岡本は 4 打数 2 安打 2 打点と好調をキープしている。</p>"
+        )
+        body = embed + short_factual
+        result = is_thin_body(body)
+        self.assertFalse(
+            result.is_thin,
+            msg=f"unexpected reason={result.reason} chars={result.text_chars}",
+        )
+
+    def test_postgame_card_with_dense_facts_passes(self) -> None:
+        """試合結果/二軍結果/データ記事など短文でも事実密度が高い記事は通す."""
+        embed = self._x_embed_block()
+        dense_facts = (
+            "<h3>📋 事実カード</h3>"
+            "<p>巨人 3-2 阪神。先発投手の戸郷翔征は 7 回を投げ 2 失点で勝利投手。"
+            "中4日での登板で防御率 2.50。坂本勇人は 4 打数 3 安打 2 打点で第 15 号本塁打を放った。"
+            "9 回には岡本和真がタイムリーを放ち決勝点。リリーフ陣は無失点で逃げ切り、"
+            "完投はならなかったが見事な勝利。打率 .295 の坂本が打線を牽引した。"
+            "ホームランは今季 15 号目で、5 月としては自己最速ペース。"
+            "中堅としては安定した守備も見せ、勝利に大きく貢献した。</p>"
+        )
+        body = embed + dense_facts
+        result = is_thin_body(body)
+        self.assertFalse(
+            result.is_thin,
+            msg=f"unexpected reason={result.reason} chars={result.text_chars}",
+        )
+
+    def test_long_real_quote_with_tweet_passes(self) -> None:
+        """実コメント引用は scaffolding ではない."""
+        embed = self._x_embed_block()
+        real_quote_body = (
+            "<p>戸郷翔征は試合後の取材で「最後まで集中して投げ切れたのが良かった。"
+            "次の登板に向けて、しっかり調整したいと思います。チームに勝ちをつけられて"
+            "嬉しいです」と語った。中4日での登板だったが、7回2失点でまとめ、"
+            "防御率は 2.50 まで下がった。次回登板は中日戦の見込み。</p>"
+        )
+        body = embed + real_quote_body
+        result = is_thin_body(body)
+        self.assertFalse(
+            result.is_thin,
+            msg=f"unexpected reason={result.reason} chars={result.text_chars}",
+        )
+
+    def test_no_x_embed_not_flagged(self) -> None:
+        """X embed 無し (短文 SNS source signal なし) は本 gate の対象外."""
+        # Same scaffolding text as the padded case, but no X embed. 別 gate
+        # の責務 (post_gen_validate 等) で扱うべきで thin_source_padding 自体は
+        # この shape を flag しない。
+        scaffolding_only = (
+            "<p>ファンの皆さんはどう感じるでしょうか。今後の動向に注目が集まります。"
+            "次の試合に向けて期待が高まりますね。これからの活躍が楽しみです。"
+            "皆さんはどう見るでしょうか。気になるポイントとして、コンディション面が"
+            "挙げられます。ご注目ください。次の展開を見守りたいところです。"
+            "今シーズンの注目選手として名前が挙がるのではないでしょうか。"
+            "ファンの期待は高まる一方です。これからの戦いに期待したいと言えるでしょう。"
+            "球団としては慎重な判断が求められる場面と言えるでしょう。"
+            "ファンの皆さんの応援が選手を支える大きな力になっていると考えられます。"
+            "今シーズンのチーム力強化に向けて、どのような展開になるのか気になるところです。"
+            "これからの展開を皆さんも見守っていただきたいと言えるでしょう。"
+            "今後の発表に注目が集まることは間違いありません。"
+            "選手のコンディションや起用法についても、これからの動向に注目したいですね。"
+            "今後の展開に注目したいところです。これからの活躍を見守りたいですね。</p>"
+        )
+        result = is_thin_body(scaffolding_only)
+        # X embed が無ければ thin_source_padding は発火しない (別 gate の責務)。
+        self.assertNotEqual(result.reason, "thin_source_padding")
+
+    def test_text_too_short_for_padding_passes(self) -> None:
+        """1ツイート + 100字以下の事実短文は padding 範囲外."""
+        embed = self._x_embed_block()
+        body = embed + "<p>ファンの皆さんはどう感じるでしょうか。注目したい。</p>"
+        result = is_thin_body(body)
+        self.assertNotEqual(result.reason, "thin_source_padding")
+
+
 if __name__ == "__main__":
     unittest.main()

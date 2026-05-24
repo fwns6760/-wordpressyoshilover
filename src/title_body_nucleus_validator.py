@@ -75,6 +75,59 @@ _FALLBACK_EVENT_RE = re.compile(
     r"([^\s。]{1,16}(?:した|する|したか|見せた|語った|振り返った|放った|決めた|担った|続けた|説明した))"
 )
 
+# 71314-type articles (title="巨人スタメン" / "本日のスタメン", body=unrelated
+# topic such as マスコット通信簿) must be stopped pre-publish even when subtype
+# is mis-classified away from {lineup, pregame}.
+#
+# Suffixes that follow "スタメン" but indicate a non-announcement context.
+# 「スタメン定着」「スタメン落ち」「スタメン争い」「スタメン予想」「スタメン候補」
+# 「スタメン抜擢」「スタメン奪取」 are general baseball discourse, not a
+# lineup-announcement claim.
+_LINEUP_NON_ANNOUNCEMENT_SUFFIXES = (
+    "定着",
+    "落ち",
+    "外れ",
+    "外し",
+    "争い",
+    "予想",
+    "候補",
+    "抜擢",
+    "奪取",
+    "争奪",
+    "失う",
+    "失っ",
+    "なれず",
+)
+# Markers that bracket the title/body as past or retrospective lineup
+# discussion ("過去のスタメン振り返り" 等). When present, the title is not
+# treated as a today-lineup announcement.
+_LINEUP_RETROSPECTIVE_MARKERS = (
+    "過去",
+    "歴代",
+    "回顧",
+    "振り返り",
+    "振り返る",
+    "今までの",
+    "これまでの",
+    "あの",
+)
+# Body-side announcement support markers — used to confirm the opening
+# really lists today's lineup, not an unrelated topic.
+_LINEUP_ANNOUNCEMENT_BODY_MARKERS = (
+    "先発オーダー",
+    "本日のオーダー",
+    "今日のオーダー",
+    "予告先発",
+    "先発メンバー",
+    "本日の先発",
+    "今日の先発",
+    "スタメン発表",
+    "スタメン公開",
+    "本日のスタメン",
+    "今日のスタメン",
+)
+_BATTING_ORDER_TOKEN_RE = re.compile(r"[1-9１-９]\s*番")
+
 
 @dataclass(frozen=True)
 class NucleusAlignmentResult:
@@ -325,6 +378,82 @@ def _has_lineup_support(text: str) -> bool:
     return any(marker in normalized for marker in _LINEUP_MARKERS)
 
 
+def _title_claims_lineup_announcement(title: str) -> bool:
+    """Detect whether ``title`` makes a today-lineup announcement claim.
+
+    Returns True only for assertive announcement forms ("巨人スタメン",
+    "本日のスタメン", "スタメン発表", "予告先発" 等). Retrospective forms
+    ("過去のスタメン振り返り", "歴代スタメン") and discourse forms
+    ("スタメン定着", "スタメン落ち", "スタメン争い", "スタメン予想",
+    "スタメン候補") are excluded so the gate does not misfire on general
+    baseball coverage. The "スタメン"-suffix check fires first so that
+    "本日のスタメン予想" is recognised as discourse, not announcement,
+    even though "本日のスタメン" is a strong pattern by itself.
+    """
+    normalized = _normalize_text(title)
+    if not normalized:
+        return False
+    if any(marker in normalized for marker in _LINEUP_RETROSPECTIVE_MARKERS):
+        return False
+    needle = "スタメン"
+    if needle in normalized:
+        pos = 0
+        any_announcement = False
+        any_suffixed = False
+        while True:
+            idx = normalized.find(needle, pos)
+            if idx < 0:
+                break
+            after = normalized[idx + len(needle):]
+            if any(after.startswith(suffix) for suffix in _LINEUP_NON_ANNOUNCEMENT_SUFFIXES):
+                any_suffixed = True
+            else:
+                any_announcement = True
+            pos = idx + len(needle)
+        if any_announcement:
+            return True
+        if any_suffixed:
+            return False
+    non_sutamen_strong = (
+        "予告先発",
+        "先発オーダー発表",
+        "先発メンバー発表",
+        "本日の先発",
+        "今日の先発",
+        "本日のオーダー",
+        "今日のオーダー",
+    )
+    return any(p in normalized for p in non_sutamen_strong)
+
+
+def _body_supports_lineup_announcement(text: str) -> bool:
+    """Confirm body opening contains today-lineup signal, not unrelated topic.
+
+    Support shapes (any one is enough):
+      - explicit announcement marker (``先発オーダー``, ``予告先発`` 等)
+      - 2+ batting-order tokens (``1番`` / ``3番`` 等) in opening
+      - "スタメン" mention that is not in a non-announcement context
+        (``スタメン定着`` / ``スタメン落ち`` 等)
+    """
+    normalized = _normalize_text(text)
+    if not normalized:
+        return False
+    if any(marker in normalized for marker in _LINEUP_ANNOUNCEMENT_BODY_MARKERS):
+        return True
+    if len(_BATTING_ORDER_TOKEN_RE.findall(normalized)) >= 2:
+        return True
+    needle = "スタメン"
+    pos = 0
+    while True:
+        idx = normalized.find(needle, pos)
+        if idx < 0:
+            return False
+        after = normalized[idx + len(needle):]
+        if not any(after.startswith(suffix) for suffix in _LINEUP_NON_ANNOUNCEMENT_SUFFIXES):
+            return True
+        pos = idx + len(needle)
+
+
 def _opening_has_multiple_nuclei(
     opening_text: str,
     subtype: str,
@@ -354,6 +483,17 @@ def validate_title_body_nucleus(
     title_event, title_event_category = _extract_event_match(normalized_title)
     body_subject = _extract_body_subject(opening_text, subtype, known_subjects)
     body_event, body_event_category = _extract_event_match(opening_text)
+
+    if _title_claims_lineup_announcement(normalized_title) and not _body_supports_lineup_announcement(opening_text):
+        return NucleusAlignmentResult(
+            aligned=False,
+            title_subject=title_subject,
+            title_event=title_event,
+            body_subject=body_subject,
+            body_event=body_event,
+            reason_code="EVENT_DIVERGE",
+            detail="title announces lineup but body opening lacks lineup signal",
+        )
 
     has_multiple, multiple_detail = _opening_has_multiple_nuclei(opening_text, subtype, known_subjects)
     if has_multiple:

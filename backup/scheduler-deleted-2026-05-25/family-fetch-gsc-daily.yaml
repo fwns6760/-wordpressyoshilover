@@ -1,0 +1,24 @@
+attemptDeadline: 300s
+description: Run fetch_gsc once per day.
+httpTarget:
+  body: e30=
+  headers:
+    Content-Type: application/json
+    User-Agent: Google-Cloud-Scheduler
+  httpMethod: POST
+  oauthToken:
+    scope: https://www.googleapis.com/auth/cloud-platform
+    serviceAccountEmail: seo-scheduler-invoker@baseballsite.iam.gserviceaccount.com
+  uri: https://run.googleapis.com/v2/projects/baseballsite/locations/asia-northeast1/jobs/family-fetch-gsc:run
+name: projects/baseballsite/locations/asia-northeast1/jobs/family-fetch-gsc-daily
+retryConfig:
+  maxBackoffDuration: 300s
+  maxDoublings: 2
+  maxRetryDuration: 0s
+  minBackoffDuration: 5s
+schedule: 0 6 * * *
+state: PAUSED
+status:
+  code: -1
+timeZone: Asia/Tokyo
+userUpdateTime: '2026-03-17T03:08:37.220468Z'

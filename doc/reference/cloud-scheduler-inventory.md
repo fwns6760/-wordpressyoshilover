@@ -154,7 +154,10 @@ memo: data-insight fire 後 5 分 (publish-notice-trigger) と 10 分 (burst-tai
   - D. yoshilover-fetcher-job
   - 全 14/14 削除成功、 backup は `backup/scheduler-deleted-2026-05-25/*.yaml` に保存。 復元は `gcloud scheduler jobs create http <name> --schedule=... --uri=... ` を yaml から手動。
   - **削除後 jobs 総数: 40** (前 54 - 14)
-- E (audit-notify-6x / family-fetch-gsc / publish-notice-peak-followup) は **未削除**、 user 判断待ち。
+- **2026-05-25 E 3 個 追加削除** (user 「安全に消して」 GO):
+  - audit-notify-6x / family-fetch-gsc-daily / publish-notice-peak-followup
+  - 全 3/3 削除成功、 backup 同 dir 保存
+  - **削除後 jobs 総数: 37** (前 40 - 3)
 
 ---
 

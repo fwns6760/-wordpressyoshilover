@@ -2525,6 +2525,18 @@ def render_player_counting_article(
     top_giants = giants_rows[0]
     top_player = top_giants["player"]
     top_value = top_giants["value"]
+    # 2026-05-25 user 確定: counting stat の低カウント post を防止
+    # (例: 「盗塁 1 でセ 5 位」 等は ファン興味薄い noise)。 stat 別の最小値
+    # gate で early-return。 last_5_games 想定の閾値:
+    _COUNTING_MIN_VALUE = {
+        "H": 6,    # 打率 .3 水準 (5 試合 × 4 PA × .3)
+        "HR": 2,   # 連続活躍 signal
+        "RBI": 5,  # 1 試合 1 RBI ペース
+        "SB": 3,   # 盗塁意欲 signal (1 は noise)
+    }
+    _min_value = _COUNTING_MIN_VALUE.get(stat_col, 1)
+    if top_value < _min_value:
+        return None
     # giants_rank in the league: position of top_giants in full sorted rows
     giants_rank = next(
         (i + 1 for i, r in enumerate(rows) if r["player"] == top_player),

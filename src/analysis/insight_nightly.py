@@ -248,38 +248,16 @@ def _run_data_insight_auto_publish(*, db_path: Path) -> tuple[dict[str, Any], di
                                 }, ensure_ascii=False))
                         if split_published >= auto_draft_max_per_run:
                             break
-                    # 403 Stage B: 打順 band 別 publish (上位 / クリーンナップ /
-                    # 下位)。 audit 確定で 4 番固定 (= 岡本ばかり) リスク回避
-                    # のため band 化。
-                    slot_band_published = 0
-                    slot_band_metrics = [
-                        m for m in counting_metrics
-                        if m["stat_col"] in ("H", "RBI", "SB")
-                    ]
-                    for metric in slot_band_metrics:
-                        for band in ("top", "cleanup", "bottom"):
-                            if slot_band_published >= auto_draft_max_per_run:
-                                break
-                            try:
-                                band_result = ranking_pub.publish_player_counting_by_slot_band_draft(
-                                    conn, wp, scope="last_5_games",
-                                    slot_band=band,
-                                    stat_col=metric["stat_col"],
-                                    metric_label_jp=metric["metric_label_jp"],
-                                )
-                                if band_result.get("status") in (
-                                    "published", "published_draft", "dry_run",
-                                ):
-                                    slot_band_published += 1
-                            except Exception as exc:  # noqa: BLE001
-                                print(json.dumps({
-                                    "warn": "player_counting_slot_band_publish_failed",
-                                    "metric": metric.get("stat_col"),
-                                    "slot_band": band,
-                                    "error": f"{type(exc).__name__}:{exc}",
-                                }, ensure_ascii=False))
-                        if slot_band_published >= auto_draft_max_per_run:
-                            break
+                    # 2026-05-25 user 確定: 打順 band 別 publish (上位 /
+                    # クリーンナップ / 下位) は disable。 「下位打線 打点 2」
+                    # 「クリーンナップ 安打数 5」 等の slice metric は ファン
+                    # 興味の薄い niche metric で interesting でない判定。
+                    # 関数 (publish_player_counting_by_slot_band_draft /
+                    # render_player_counting_by_slot_band_article /
+                    # aggregate_player_counting_stat_by_slot_band) は
+                    # `ranking_article_publisher.py` 内に残置 (test 互換)、
+                    # nightly 自動 publish trigger のみここで disable。
+                    slot_band_published = 0  # noqa: F841 — disable 後も summary 用に変数維持
                     # 404 (2026-05-20): 登板 inning 別 publisher。 リリーフ
                     # role split (7 回 setup / 8 回 setup / 9 回 closer)。
                     # start_inning 列は 404 で derive、 backfill_pitcher_innings

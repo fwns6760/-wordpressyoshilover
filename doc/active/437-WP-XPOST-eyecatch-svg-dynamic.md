@@ -48,6 +48,7 @@ design 確定済 (2026-05-25 user 確認、白背景 + ジャイアンツカラ�
 | **template 数** | **12 base style + 3 variant** (3crown / 6crown / 1hero 等) |
 | **format auto-routing** | データ条件 (crown_count / margin / player_count) で template を Python が自動選択。 LLM 呼び出し 0 |
 | **選手 mix 方針** | **巨人多め** (= 巨人選手を上位 row で highlight)、 但し他球団も table に並べる (user 2026-05-25「巨人だけに頼らないでもいい」)。 = 現状の `find_all_giants_in_candidates` 経由 ranking と整合 |
+| **中立画像方針 (2026-05-25 PM user 確定)** | 巨人選手が TOP 8 に居る時 → orange row + 金 ★ + 「🔥 巨人 N 名 トップ X 入り」 hook。 居ない時 → 純粋な TOP 8 中立 ranking + 「📊 セ・リーグ {metric} ranking」 hook、 **巨人下位を強制押し込まない**。 ML 不使用、 純 Python の if/else 判定。 重複は既存 dedup_gate / player_daily_cap=2 / 24h dedup で抑制済 (画像 layer は判定に触れない)。 |
 
 ## 4. acceptance criteria (品質 gate 10 項目)
 

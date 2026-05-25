@@ -107,6 +107,11 @@ design 確定済 (2026-05-25 user 確認、白背景 + ジャイアンツカラ�
   - **(8)** 「format 切替できる?」 → data 条件で template 自動 routing 確認、 sample9b (3 crown variant) 追加
   - **(9)** 「Cloud Run コスト」 → ¥0 / 月 (free tier 0.8% 使用) 確認
   - **(10)** 「ticket 更新」 → 本 doc 更新 (scope 3 → 12 style + 4 phase + 品質 gate 10 項目)
+- 2026-05-25 evening JST: Phase 1 (WP eyecatch) live deploy 完了:
+  - **commits**: 1A `8c42f42` (base) / 1B `c0a19f8` (12 templates + router) / 1C `29b699c` (publisher 統合) / 1F `562c4d5` (slug dedup) / `158dbe8` (insight-nightly Dockerfile 修正) / `285d548` (.dockerignore !templates) / `33886d9` (doc 中立画像方針)
+  - **images**: `yoshilover-fetcher:437-dedup-562c4d5` (revision `00645-kiy` 100% traffic) + `insight-nightly:latest-job` (build `f0c74916` SUCCESS)
+  - **smoke**: insight-nightly execution `insight-nightly-jc7r6` 手動 fire → **3 件 PNG upload 成功** (media_id 71992 / 71995 / 71998、 filename `437eyc-{hash}.png` で slug dedup 動作確認)
+  - **次セッション TODO**: (1) 24h billing verify (5/26 18:30 JST `gcloud billing`)、 (2) **Phase 2 = X-post media attach 実装** (user 2026-05-25 evening 明示「ポストのブランディングだから X に上げる」)、 (3) Phase 1 WP draft 群の eyecatch 視覚品質を WP 管理画面で確認
 
 ## 9. implementation plan (4 phase、 production quality release)
 
@@ -127,7 +132,33 @@ Phase 1 終了 gate:
 - post-deploy 24h `gcloud billing` 実測 = ¥0 increase 確認
 - 本 doc work_log に commit hash + revision + verify 結果記録
 
-### Phase 2 (5 template + format auto-routing)
+### Phase 2 (X-post media attach、 brand 本命、 user 2026-05-25 明示 GO 待ち)
+
+**位置づけ**: WP eyecatch (Phase 1) は **副次成果**、 本来の目的は **X-post の画像添付** によるインプ向上 + brand 露出。 user 2026-05-25 evening 確認「ポストのブランディングだから X に上げる」。
+
+実装内容:
+- `tweepy.API.media_upload(png_bytes, file_type='image/png')` で X に upload → `media_id_string` 取得
+- `create_tweet(text=..., media_ids=[media_id_string])` で post に添付
+- `src/x_post_mail_lane.py` (X-post 候補配信 lane) で attach 呼び出し統合
+- 失敗時は text-only fallback (rate limit / network error で X 投稿は止めない)
+- 既存 `attach_ranking_image()` の PNG bytes を再利用 (新規生成不要、 CPU 増加 0)
+- `templates/x_post_image_gen.py` は変更不要 (PNG 生成は既存 path、 添付先だけ追加)
+
+cost (memory `reference_x_api_tier_free_writeonly.md` 整合):
+- X API Free tier media upload: 1500/日まで free、 yoshilover 1 日数十件で余裕
+- 追加 GCP コスト: ¥0 (Cloud Run / Network 既に無料枠内、 PNG 再利用で CPU 増加 0)
+- LLM 呼び出し 0、 新 GCP service 不要
+
+user 判断境界 (§11、 memory `feedback_publish_forward_must_check_gate_reason.md` 整合):
+- X 自動投稿の画像添付解放は **user GO 必要** (SNS 投稿は user 判断 lane)
+- live deploy 前に user 明示 GO 取得、 deploy 後は X-post lane が live で画像添付開始
+
+実装規模: 1-2 時間。 commits 想定:
+- **2A**: `src/x_post_image_attach_x.py` (or extend `x_post_image_gen.py`) 新規 helper `attach_x_post_image(twitter_client, png_bytes) → media_id_string` + tests
+- **2B**: `src/x_post_mail_lane.py` 統合 + integration test (mock tweepy)
+- **2C**: Cloud Run job (x-post-mail-lane) image rebuild + Job update + canary execute
+
+### Phase 3 (5 template + format auto-routing、 旧 Phase 2)
 
 - 追加 template: sample2 (player_spotlight) / sample4 (scoreboard) / sample6 (standings) / sample9 (6crown_grid) / sample9b (3crown_row) / sample10 (data_sheet)
 - `src/x_post_image_router.py` 新規: `select_template(data) → style_key` (crown_count / player_count / margin で routing)

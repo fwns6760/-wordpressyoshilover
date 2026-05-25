@@ -143,3 +143,48 @@ def build_ranking_data(
         "footer_handle": footer_handle,
         "footer_meta": footer_meta,
     }
+
+
+def attach_ranking_image(wp_client_obj: Any, article: dict[str, Any]) -> int:
+    """ranking article → PNG eyecatch → WP media upload → media_id。
+
+    画像生成 / upload が失敗しても 0 を返して caller 側 publish は続行する。
+
+    article に期待される keys:
+      - image_rows: list[dict] (rank/name/team/value/is_giants)
+      - image_metric_name: str (e.g. "OPS")
+      - image_period_label: str (e.g. "直近 10 試合")
+      - focus_player: str
+    """
+    try:
+        rows = article.get("image_rows") or []
+        if not rows:
+            return 0
+        metric = article.get("image_metric_name", "OPS")
+        period = article.get("image_period_label", "")
+        focus = article.get("focus_player", "giants")
+        giants_count = sum(1 for r in rows if r.get("is_giants"))
+        if giants_count >= 2:
+            hook = f"🔥 巨人 {giants_count} 名 トップ {len(rows)} 入り"
+        elif giants_count == 1:
+            hook = f"🔥 {focus} がリーグ上位ランクイン"
+        else:
+            hook = f"📊 セ・リーグ {metric} ranking"
+        title = f"セ・リーグ {metric} ランキング"
+        subtitle = f"{period} / 規定打席 20 以上" if period else "規定打席 20 以上"
+        data = build_ranking_data(
+            title=title,
+            subtitle=subtitle,
+            hook_line=hook,
+            rows=rows,
+        )
+        png = generate_png("ranking_table", data)
+        if not png:
+            return 0
+        safe_focus = "".join(c for c in focus if c.isalnum() or c in "_-")[:32] or "giants"
+        filename = f"yoshilover-ranking-{metric.lower()}-{safe_focus}.png"
+        media_id = wp_client_obj.upload_generated_image(png, filename, "image/png")
+        return int(media_id or 0)
+    except Exception as exc:
+        logger.warning("[437] attach_ranking_image failed: %s", exc)
+        return 0

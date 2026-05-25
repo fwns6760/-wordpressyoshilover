@@ -1065,6 +1065,18 @@ def render_giants_centric_ranking(
 | 比較 | この期間の セ・リーグ 6 球団 内 全選手 |
 """
     body_html = markdown_to_html(body_md)
+    # 437: build image_rows for SVG eyecatch (top 8、 巨人 row 強調用)
+    image_rows: list[dict] = []
+    for r in table_rows[:8]:
+        team_disp = team_label_map.get(r.team_code or "", r.team_code or "?")
+        val = f"{r.metric_value:.3f}" if r.metric_value is not None else "-"
+        image_rows.append({
+            "rank": r.rank,
+            "name": r.player_canonical,
+            "team": team_disp,
+            "value": val,
+            "is_giants": (r.team_code or "").lower() == "g",
+        })
     return {
         "title": base_title,
         "body_md": body_md,
@@ -1080,6 +1092,10 @@ def render_giants_centric_ranking(
         "focus_value": focus_row_obj.metric_value if focus_row_obj else None,
         "focus_rank": focus_row_obj.rank if focus_row_obj else None,
         "focus_total": focus_row_obj.total if focus_row_obj else None,
+        # 437: SVG eyecatch generation 用 metadata
+        "image_rows": image_rows,
+        "image_metric_name": metric_name,
+        "image_period_label": sample_window_label,
     }
 
 
@@ -1241,6 +1257,14 @@ def publish_giants_centric_ranking_draft(
     _banner = _giants_news_banner_html(
         article["title"], _BANNER_SOURCE_LABEL, category_name
     )
+    # 437: SVG eyecatch 生成 + WP media upload (失敗しても publish 続行)
+    image_media_id = 0
+    try:
+        from src.x_post_image_gen import attach_ranking_image
+        image_media_id = attach_ranking_image(wp_client_obj, article)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[437] eyecatch attach failed (continuing without image): {exc}")
+        image_media_id = 0
     dedup_history_id = 0
     dedup_record_error = ""
     try:
@@ -1249,6 +1273,7 @@ def publish_giants_centric_ranking_draft(
             content=_banner + article["body_html"],
             categories=[category_id],
             status=publish_status,
+            featured_media=image_media_id if image_media_id else None,
             caller="ranking_article_publisher",
         )
         # tag は別 PUT で post に attach (create_post に tags param がないため)

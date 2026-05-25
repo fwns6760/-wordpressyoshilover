@@ -7,6 +7,7 @@
 - **owner**: Claude Code (2026-05-12 user 切替で Claude が dev + deploy 全権)
 - **lane**: data-image
 - **created**: 2026-05-25
+- **updated**: 2026-05-25 (PM scope 拡張: 3 → 12 style + format auto-routing + quality gate)
 - **priority**: P1
 - **github_issue**: https://github.com/fwns6760/-wordpressyoshilover/issues/112
 - **parent**: なし (新規 lane)
@@ -14,100 +15,149 @@
   - 423 (DATA-PUBLISH rules consolidated) — data 記事 publish の SoT
   - 430 (XPOST Source A voice) — voice text 側との並行
   - 436 (XPOST Top10 data diversity) — ranking 表との関連
+  - 428 (XPOST branding requirements v2) — text post 側 branding と画像 branding の整合
 
 ## 2. purpose
 
-WP data 記事 (ranking / spotlight / chart) に **動的生成画像 (eyecatch + body 内画像)** を添付。 X-post でも同画像を添付し、 視覚 hook で インプ向上 + ブランド統一を狙う。
+WP data 記事 (ranking / spotlight / chart / scoreboard / standings 等) に **動的生成画像 (eyecatch + body 内画像)** を添付。 X-post でも同画像を添付し、 視覚 hook で インプ向上 + ブランド統一を狙う。
 
-design 確定済 (2026-05-25 user 確認):
-- 配色: 白 bg + orange (#F39800) accent + 黒線
-- 巨人ロゴ 不使用
-- 1080x1080 (X 正方形 post + WP eyecatch)
-- 3 style:
-  - (1) ranking table — TOP 10 表、 巨人 row を orange highlight
-  - (2) player spotlight — 1 選手 大数字 + 順位 + 前期比
-  - (3) chart bars — 試合推移 / trend
+design 確定済 (2026-05-25 user 確認、白背景 + ジャイアンツカラー + brand guide lock):
+- **背景**: 白 #ffffff (読みやすさ最優先、 オレンジ bg 禁止)
+- **primary orange**: `#FF6F00` (vivid Giants orange) + gradient `#FF8C00 → #E65100`
+- **黒**: `#000000` (Giants 第 2 色 / 締め / brand stripe)
+- **金 ★ marker / hook line**: `#FFD700`
+- **巨人ロゴ 不使用**
+- **1080x1080** (X 正方形 post + WP eyecatch 兼用)
+- **font**: 'Yu Gothic', 'Hiragino Sans', 'Noto Sans CJK JP'
+- **数値強調**: font-weight 900 + 黒 stroke + tabular nums (桁揃え)
+- **drop shadow**: 巨人 row / hero number に立体感 (SVG filter)
+- **hook line**: 左上に金 1 行 (例: 「🔥 巨人選手 2 名 トップ 10 入り」、 インプ up)
 
-design sample: `/mnt/c/Users/fwns6/Desktop/yoshilover-x-design-samples/sample[1-3]_*.svg` (Claude が user desktop に保存済)
+**design sample 12 種 + variant** (Claude が user desktop に保存済): `C:\Users\fwns6\Desktop\yoshilover-x-design-samples\sample1-12 + sample9b_3crown.svg`
 
 ## 3. scope
 
 | 項目 | 内容 |
 |---|---|
-| 対象 path | (a) ranking_article_publisher (WP data 記事) (b) anomaly_article_publisher (WP individual highlight) (c) x_post_mail_lane (X-post candidate) |
-| 出力 | 1080x1080 PNG file |
-| 生成方式 | SVG template (Jinja2 / f-string) + cairosvg → PNG 変換 |
-| WP 添付 | wp_client で media upload → featured_media (eyecatch) 設定 |
-| X 添付 | tweepy media upload + post media_ids 指定 |
-| データ source | 既存 ranking_article_publisher / anomaly_article_publisher の rows / focus_player / metric を流用 |
-| **選手 mix 方針** | **巨人多め (= 巨人選手を上位 row で highlight)、 但し他球団も table に並べる** (user 2026-05-25 確定「巨人だけに頼らないでもいい」)。 = 現状の find_all_giants_in_candidates 経由 ranking と整合 |
+| 対象 path | (a) `ranking_article_publisher` (WP data 記事) (b) `anomaly_article_publisher` (WP individual highlight) (c) postgame draft (d) lineup draft (e) `x_post_mail_lane` (X-post candidate) |
+| 出力 | 1080x1080 PNG file (< 500KB) |
+| 生成方式 | SVG template (Jinja2) + cairosvg → PNG 変換 |
+| WP 添付 | `wp_client` で media upload → featured_media (eyecatch) 設定 |
+| X 添付 | tweepy media upload + post media_ids 指定 (Phase 4) |
+| データ source | 既存 publisher の rows / focus_player / metric を流用 |
+| **template 数** | **12 base style + 3 variant** (3crown / 6crown / 1hero 等) |
+| **format auto-routing** | データ条件 (crown_count / margin / player_count) で template を Python が自動選択。 LLM 呼び出し 0 |
+| **選手 mix 方針** | **巨人多め** (= 巨人選手を上位 row で highlight)、 但し他球団も table に並べる (user 2026-05-25「巨人だけに頼らないでもいい」)。 = 現状の `find_all_giants_in_candidates` 経由 ranking と整合 |
 
-## 4. acceptance criteria
+## 4. acceptance criteria (品質 gate 10 項目)
 
-- ranking 表 SVG template に DB data を流し込んで PNG 生成、 WP draft に eyecatch 設定できる
-- X-post に同 PNG を添付できる (X API Free tier 内で動作)
-- 巨人 row が orange highlight + 白文字で出る、 他球団 row は白 bg + 黒文字
-- 画像生成失敗時は post 自体は publish される (image なし fallback)
-- 画像 file は GCS bucket に保存、 重複生成回避 (= 同 metric × scope × date は cache)
+- [ ] SVG template 忠実度: sample との diff 5% 以内 (色 / font size / layout)
+- [ ] 日本語 font 描画: CJK 文字化け 0、 Yu Gothic / Noto Sans JP fallback verify
+- [ ] 数値強調: font-weight 900 + 黒 stroke が PNG 化後も保持
+- [ ] 巨人 row highlight: orange gradient + 金 ★ が thumbnail size でも判別可
+- [ ] 画像 spec: 1080x1080 / < 500KB / sRGB
+- [ ] 生成時間: 1 PNG あたり < 3 秒 (Cloud Run timeout 余裕)
+- [ ] WP media upload: featured_media 設定後、 記事 preview で画像表示確認
+- [ ] format auto-routing: crown_count / player_count 条件で正しい template が選ばれる
+- [ ] 失敗 fallback: 画像生成失敗時も post 自体は publish される
+- [ ] post-deploy 24h `gcloud billing` 実測 = ¥0 increase 確認 ([[project_2026_05_22_gemini_flash_cost_revert]] の教訓)
 
 ## 5. do not touch
 
 - Source A Gemini prompt (430 ticket scope)
-- ranking_article_publisher の publish loop logic (今日 deploy 済の改修維持)
+- ranking_article_publisher の publish loop logic
 - Cloud Scheduler
 - env / Secret
 - 巨人ロゴ素材 (使わない、 user 明示)
+- 既存 publisher の generation stage logic / dedup logic (画像生成は post-generation の attach のみ)
 
 ## 6. tests
 
-- SVG template render fixture: 巨人選手 1-2 名 highlight 確認
-- cairosvg PNG 変換 fixture: 1080x1080 出力サイズ確認
-- WP media upload mock: featured_media id 設定確認
-- X media upload mock: media_ids 添付確認
-- fallback fixture: 画像生成失敗時 post 自体は通る
+| カテゴリ | 件数 (目安) | 内容 |
+|---|---|---|
+| SVG template render fixture | 12+ | 各 template に mock data 流し込み、 期待 string が含まれる確認 |
+| cairosvg PNG 変換 fixture | 4 | 1080x1080 / < 500KB / 日本語 font 描画 / drop shadow 保持 |
+| format router fixture | 6 | crown_count / player_count / margin 別に正しい template_key 返却 |
+| WP media upload mock | 2 | featured_media id 設定 + 失敗時 fallback |
+| X media upload mock | 2 | media_ids 添付 (Phase 4) + 失敗時 text only fallback |
+| fallback fixture | 4 | 画像生成失敗 (font missing / cairosvg error / timeout / size 超) で post 自体は通る |
+| integration smoke | 1 | 実 DB で 1 件 ranking 記事 draft 生成 → WP 管理画面で eyecatch 表示 |
 
 ## 7. STOP conditions
 
 - cairosvg deploy で他 lib 衝突 (= image gen 部分のみ revert)
-- X API Free tier で media attach が rate limit hit
+- X API Free tier で media attach が rate limit hit (Phase 4)
 - font 描画事故 (日本語 font 不在で 文字化け)
-- 1 post あたり 画像生成時間 が 10 秒超 (= Cloud Run timeout risk)
-- 画像 file size が 5MB 超 (= X / WP の制限)
+- 1 post あたり 画像生成時間 が 5 秒超 (= Cloud Run timeout risk)
+- 画像 file size が 500KB 超 (= X / WP 帯域圧迫)
+- post-deploy 24h で `gcloud billing` 増額 観測 (= ¥0 前提の見積もりと乖離)
 
 ## 8. work log
 
-- 2026-05-25 JST: user 発議「アイキャッチ入れるなら、 チケット作れる?」 で 437 起票。 design 3 案は user 確認済 (背景白 + orange + 黒線、 巨人ロゴなし)。 sample SVG は user desktop 保存済 (`yoshilover-x-design-samples/`)。
+- 2026-05-25 AM JST: user 発議「アイキャッチ入れるなら、 チケット作れる?」 で 437 起票 (commit `295bbea`)。 design 3 案は user 確認済。 sample SVG は user desktop 保存済。
+- 2026-05-25 PM JST: user iteration で design + scope 大幅拡張:
+  - **(1)** 「インプ向上 + 図種拡充」 → 試合速報 / 打順表 / 順位表 / 投手成績 / 月間集計 / @chikupn2896 系 (12 球団比較系) を追加 (3 → 8 sample)
+  - **(2)** 「数値を強調」 → font-weight 900 + sizes +30-50% + 黒 stroke
+  - **(3)** 「鮮やかな色 + ジャイアンツカラー」 → palette を `#F39800` → vivid `#FF6F00` + gradient + 金 ★ + 黒 stripe
+  - **(4)** 「@chikupn2896 を意識」 → 12 球団比較 マトリクス系 4 案 追加 (8 → 12 sample)
+  - **(5)** 「白背景 + ユーザビリティ + ブランド + インプ up」 → 全 sample 白 bg 化 + hook line + brand guide lock
+  - **(6)** 「品質上げて」 → drop shadow filter / tabular nums / editorial metadata / 数値 size up
+  - **(7)** 「もっと わかりやすく」 → 編集 metadata 削除 / 英文 header 削除 / 情報絞り / 3 秒理解設計
+  - **(8)** 「format 切替できる?」 → data 条件で template 自動 routing 確認、 sample9b (3 crown variant) 追加
+  - **(9)** 「Cloud Run コスト」 → ¥0 / 月 (free tier 0.8% 使用) 確認
+  - **(10)** 「ticket 更新」 → 本 doc 更新 (scope 3 → 12 style + 4 phase + 品質 gate 10 項目)
 
-## 9. implementation plan (MVP → 段階)
+## 9. implementation plan (4 phase、 production quality release)
 
-### Phase 1 (MVP、 1 commit)
+**Phase 1 framing は MVP ではなく「1 style だけ本番品質で先行 release」**。 各 Phase で同じ品質 gate (§4 10 項目) を全 style に通す。
 
-- `src/x_post_image_gen.py` 新規:
-  - `generate_ranking_table_png(rows, metric, scope, focus_players) → png_bytes`
-  - `generate_player_spotlight_png(player, metric, value, rank) → png_bytes`
-  - `generate_chart_bars_png(games, date_range) → png_bytes`
-- SVG template は `templates/x_post_*.svg` (Jinja2)
-- `requirements.txt` に `cairosvg` 追加 (lightweight)
-- WP integration: `wp_client.create_post()` に `featured_media_id` 渡す path 追加 (既存 media upload は 416-eyecatch / 067-068 ticket 関連で済み の場合 流用)
-- ranking 1 path だけ MVP fire (sample1 ranking table)
+### Phase 1 (commit 3 本直列、 ranking 1 style production-quality)
 
-### Phase 2 (Phase 1 観察後)
+| commit | 内容 | 検証 |
+|---|---|---|
+| **A** | `requirements.txt` に `cairosvg` 追加 + `templates/x_post_ranking_table.svg` (sample1 Jinja2 化) + `src/x_post_image_gen.py` 新規 + unit test 4 件 | local pytest pass / cairosvg PNG 出力 1080x1080 < 500KB / 日本語 font 描画 OK |
+| **B** | `ranking_article_publisher.py` 統合 + `wp_client.upload_media()` 拡張 + integration test (mock WP) | local pytest pass / mock WP media upload 成功 |
+| **C** | `Dockerfile` に cairo system lib (`libcairo2`) 追加 + cloudbuild → `gcloud builds submit` → `gcloud run deploy` (no-traffic canary) → smoke → traffic 100% | canary で 1 件 draft 生成 → WP preview で eyecatch 表示確認 → revision tag 付与 |
 
-- spotlight (sample2) を anomaly publisher path に
-- chart (sample3) を 試合後 catchup post に
-- X-post 側 (x_post_mail_lane) にも image 添付
+Phase 1 終了 gate:
+- 12 unit + 4 integration test 全 pass
+- 実 DB で 1 件 ranking 記事 draft 生成、 WP 管理画面で eyecatch 表示
+- 画像生成失敗 fallback 動作確認
+- post-deploy 24h `gcloud billing` 実測 = ¥0 increase 確認
+- 本 doc work_log に commit hash + revision + verify 結果記録
 
-### Phase 3 (改善)
+### Phase 2 (5 template + format auto-routing)
 
-- font 改善 (日本語 font 同梱)
-- 画像 cache (GCS bucket)
-- 画像 A/B test (orange vs 別配色)
+- 追加 template: sample2 (player_spotlight) / sample4 (scoreboard) / sample6 (standings) / sample9 (6crown_grid) / sample9b (3crown_row) / sample10 (data_sheet)
+- `src/x_post_image_router.py` 新規: `select_template(data) → style_key` (crown_count / player_count / margin で routing)
+- `anomaly_article_publisher.py` / postgame builder 統合
+- 同じ品質 gate (§4) を全 template に通す
+- commit 3 本程度
 
-## 10. user 判断境界 (今 ticket 内で発生し得るもの)
+### Phase 3 (残り 6 template + GCS cache)
 
-- §11 4 領域:
-  - 公開記事の削除 / 書き換え → 該当なし
-  - X 投稿解放 → image 添付は既存 X-post path 内、 解放枠は不変
-  - MVP scope 拡張 → image 追加自体は scope 拡張、 user 既 GO
-  - 法務 / 著作権 → 巨人ロゴ不使用 + 全 mock data → 該当なし
-- Claude 自律実行範囲 (§3, §19): code/test/commit/push/cloudbuild/deploy 全 Claude 直接、 user 報告のみ
+- 追加 template: sample3 (chart_bars) / sample5 (lineup) / sample7 (pitcher_card) / sample8 (monthly_summary) / sample11 (spray_chart) / sample12 (12team_bar)
+- GCS bucket cache: 重複 PNG 再利用 (key: `{style}_{data_hash}_{date}`)
+- commit 2-3 本程度
+
+### Phase 4 (X media attach + monitoring + A/B)
+
+- `x_post_mail_lane.py` に tweepy media upload 統合 (Phase 4 は user GO 後、 X live post 不可触解除が前提)
+- 画像生成失敗 alert (Cloud Logging metric → email)
+- 画像 A/B test (color / template variant) — optional
+- commit 2-3 本程度
+
+## 10. user 判断境界 (§11 4 領域)
+
+- **公開記事の削除 / 書き換え**: 該当なし (画像追加は append-only、 既存記事の本文書き換えなし)
+- **X 投稿解放 / 新カテゴリ解放**: Phase 4 で X media attach 着手前に user GO 取得
+- **MVP scope 拡張 / 縮小**: 本 doc の 4 phase scope 拡張は user 既 GO (2026-05-25 PM)
+- **法務 / 著作権 / プライバシー / 金銭・外部 API 課金増**: 巨人ロゴ不使用 + 全 mock data / LLM 不使用 / Cloud Run 無料枠内 → 該当なし
+
+Claude 自律実行範囲 (§3, §19): code/test/commit/push/cloudbuild/deploy 全 Claude 直接、 user 報告のみ。
+
+## 11. 補足
+
+- design sample 詳細: `C:\Users\fwns6\Desktop\yoshilover-x-design-samples\README.md` 参照 (brand guide / palette / publisher path 対応表)
+- cost 見積もり: Cloud Run vCPU 0.8% / GCS 9% / Network 45% (全 free tier 内、 月 ¥0)
+- format auto-routing 例: 岡本 6 冠時 → sample9 (3x2 grid) / 3 冠時 → sample9b (1x3 + その他 list) / 1 冠時 → sample2 (single hero card) / 0 冠時 → sample1 (ranking)

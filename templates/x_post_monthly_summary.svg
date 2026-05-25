@@ -1,0 +1,43 @@
+<svg viewBox="0 0 1080 1080" xmlns="http://www.w3.org/2000/svg" font-family="'Yu Gothic', 'Hiragino Sans', 'Noto Sans CJK JP', sans-serif">
+  <defs>
+    <linearGradient id="header" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FF8C00"/><stop offset="100%" stop-color="#E65100"/>
+    </linearGradient>
+    <linearGradient id="mvp" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFA000"/><stop offset="100%" stop-color="#D84315"/>
+    </linearGradient>
+    <linearGradient id="bar" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#FF8C00"/><stop offset="100%" stop-color="#E65100"/>
+    </linearGradient>
+  </defs>
+  <rect width="1080" height="1080" fill="#ffffff"/>
+  <rect x="0" y="0" width="1080" height="14" fill="#000000"/>
+  <rect x="0" y="14" width="1080" height="200" fill="url(#header)"/>
+  <rect x="0" y="214" width="1080" height="6" fill="#000000"/>
+  <text x="60" y="68" font-size="28" font-weight="900" fill="#FFD700">{{ hook_line }}</text>
+  <text x="540" y="135" text-anchor="middle" font-size="54" font-weight="900" fill="#ffffff">📅 {{ period_label }} 集計</text>
+  <text x="540" y="185" text-anchor="middle" font-size="26" font-weight="bold" fill="#ffffff">{{ subtitle }}</text>
+  <rect x="60" y="250" width="960" height="200" fill="none" stroke="#000" stroke-width="4"/>
+  <line x1="380" y1="250" x2="380" y2="450" stroke="#000" stroke-width="2"/>
+  <line x1="700" y1="250" x2="700" y2="450" stroke="#000" stroke-width="2"/>
+  {% for kpi in kpis %}
+  {% set x = 220 + loop.index0 * 320 %}
+  <text x="{{ x }}" y="305" text-anchor="middle" font-size="30" font-weight="900" fill="#FF6F00">{{ kpi.label }}</text>
+  <text x="{{ x }}" y="395" text-anchor="middle" font-size="{{ kpi.font_size | default(78) }}" font-weight="900" fill="{{ kpi.color | default('#000') }}" stroke="{{ kpi.stroke | default('none') }}" stroke-width="{{ kpi.stroke_width | default(0) }}" style="font-feature-settings:'tnum'">{{ kpi.value }}</text>
+  <text x="{{ x }}" y="435" text-anchor="middle" font-size="24" font-weight="bold" fill="#666">{{ kpi.sub }}</text>
+  {% endfor %}
+  <rect x="60" y="480" width="960" height="200" fill="url(#mvp)" stroke="#000" stroke-width="4"/>
+  <text x="540" y="530" text-anchor="middle" font-size="30" font-weight="900" fill="#FFD700">月間 MVP</text>
+  <text x="540" y="615" text-anchor="middle" font-size="84" font-weight="900" fill="#ffffff" stroke="#000" stroke-width="3">{{ mvp_name }} <tspan fill="#FFD700">★</tspan></text>
+  <text x="540" y="660" text-anchor="middle" font-size="28" font-weight="900" fill="#ffffff">{{ mvp_stats }}</text>
+  <text x="60" y="740" font-size="34" font-weight="900" fill="#000">{{ top3_title }}</text>
+  {% for b in top3 %}
+  {% set y = 800 + loop.index0 * 60 %}
+  <text x="60" y="{{ y }}" font-size="30" font-weight="900" fill="#000">{{ b.name }}</text>
+  <rect x="280" y="{{ y - 27 }}" width="{{ b.bar_width }}" height="44" fill="url(#bar)" stroke="#000" stroke-width="2"/>
+  <text x="950" y="{{ y + 5 }}" text-anchor="end" font-size="34" font-weight="900" fill="#000" style="font-feature-settings:'tnum'">{{ b.value }}</text>
+  {% endfor %}
+  <rect x="60" y="970" width="960" height="60" fill="none" stroke="#000" stroke-width="3"/>
+  <text x="540" y="1010" text-anchor="middle" font-size="26" font-weight="bold" fill="#000">{{ highlight_line }}</text>
+  <text x="540" y="1065" text-anchor="middle" font-size="22" fill="#888">{{ footer_handle }} — {{ footer_meta }}</text>
+</svg>

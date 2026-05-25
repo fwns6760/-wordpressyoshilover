@@ -1,0 +1,37 @@
+<svg viewBox="0 0 1080 1080" xmlns="http://www.w3.org/2000/svg" font-family="'Yu Gothic', 'Hiragino Sans', 'Noto Sans CJK JP', sans-serif">
+  <defs>
+    <linearGradient id="header" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FF8C00"/><stop offset="100%" stop-color="#E65100"/>
+    </linearGradient>
+    <linearGradient id="giantsBar" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#FF6F00"/><stop offset="100%" stop-color="#FF9100"/>
+    </linearGradient>
+  </defs>
+  <rect width="1080" height="1080" fill="#ffffff"/>
+  <rect x="0" y="0" width="1080" height="14" fill="#000000"/>
+  <rect x="0" y="14" width="1080" height="170" fill="url(#header)"/>
+  <rect x="0" y="184" width="1080" height="6" fill="#000000"/>
+  <text x="60" y="55" font-size="28" font-weight="900" fill="#FFD700">{{ hook_line }}</text>
+  <text x="540" y="115" text-anchor="middle" font-size="50" font-weight="900" fill="#ffffff">{{ title }}</text>
+  <text x="540" y="160" text-anchor="middle" font-size="26" font-weight="bold" fill="#ffffff">{{ subtitle }}</text>
+  {% for t in teams %}
+  {% set y = 248 + loop.index0 * 60 %}
+  {% set bar_w = (t.value / max_value * 680) | round | int %}
+  {% if t.is_giants %}
+  <text x="155" y="{{ y }}" text-anchor="end" font-size="26" font-weight="900" fill="#FFD700" stroke="#000" stroke-width="1">{{ loop.index }}</text>
+  <text x="200" y="{{ y }}" text-anchor="end" font-size="30" font-weight="900" fill="#FF6F00" stroke="#000" stroke-width="0.5">{{ t.name }} ★</text>
+  <rect x="210" y="{{ y - 28 }}" width="{{ bar_w }}" height="38" fill="url(#giantsBar)" stroke="#000" stroke-width="3"/>
+  <text x="{{ 210 + bar_w + 10 }}" y="{{ y }}" font-size="36" font-weight="900" fill="#FF6F00" stroke="#000" stroke-width="1" style="font-feature-settings:'tnum'">{{ t.value_label }}</text>
+  {% else %}
+  <text x="155" y="{{ y }}" text-anchor="end" font-size="22" font-weight="900" fill="#FF6F00">{{ loop.index }}</text>
+  <text x="200" y="{{ y }}" text-anchor="end" font-size="26" font-weight="900" fill="#000">{{ t.name }}</text>
+  <rect x="210" y="{{ y - 28 }}" width="{{ bar_w }}" height="38" fill="#666" stroke="#000" stroke-width="2"/>
+  <text x="{{ 210 + bar_w + 10 }}" y="{{ y }}" font-size="32" font-weight="900" fill="#000" style="font-feature-settings:'tnum'">{{ t.value_label }}</text>
+  {% endif %}
+  {% endfor %}
+  <rect x="0" y="950" width="1080" height="130" fill="#000000"/>
+  <rect x="0" y="950" width="1080" height="4" fill="#FF6F00"/>
+  <text x="60" y="1005" font-size="32" font-weight="900" fill="#FFD700">{{ footer_summary }}</text>
+  <text x="60" y="1045" font-size="22" font-weight="bold" fill="#ffffff">{{ footer_detail }}</text>
+  <text x="1020" y="1065" text-anchor="end" font-size="22" font-weight="bold" fill="#FF6F00">{{ footer_handle }} — {{ footer_meta }}</text>
+</svg>

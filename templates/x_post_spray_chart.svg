@@ -1,0 +1,42 @@
+<svg viewBox="0 0 1080 1080" xmlns="http://www.w3.org/2000/svg" font-family="'Yu Gothic', 'Hiragino Sans', 'Noto Sans CJK JP', sans-serif">
+  <defs>
+    <linearGradient id="header" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FF8C00"/><stop offset="100%" stop-color="#E65100"/>
+    </linearGradient>
+  </defs>
+  <rect width="1080" height="1080" fill="#ffffff"/>
+  <rect x="0" y="0" width="1080" height="14" fill="#000000"/>
+  <rect x="0" y="14" width="1080" height="160" fill="url(#header)"/>
+  <rect x="0" y="174" width="1080" height="6" fill="#000000"/>
+  <text x="540" y="80" text-anchor="middle" font-size="52" font-weight="900" fill="#ffffff">🎯 {{ player_name }} 打球分布</text>
+  <text x="540" y="135" text-anchor="middle" font-size="26" font-weight="bold" fill="#ffffff">{{ subtitle }}</text>
+  <path d="M 540 880 L 200 540 A 400 400 0 0 1 880 540 Z" fill="#FFF8E1" stroke="#000" stroke-width="4"/>
+  <path d="M 540 880 L 380 720 L 540 560 L 700 720 Z" fill="#FFE0B2" stroke="#000" stroke-width="3"/>
+  <circle cx="540" cy="720" r="18" fill="#FFB74D" stroke="#000" stroke-width="2"/>
+  <path d="M 525 880 L 555 880 L 555 870 L 540 855 L 525 870 Z" fill="#ffffff" stroke="#000" stroke-width="3"/>
+  <line x1="540" y1="880" x2="200" y2="540" stroke="#000" stroke-width="2" stroke-dasharray="6 4"/>
+  <line x1="540" y1="880" x2="880" y2="540" stroke="#000" stroke-width="2" stroke-dasharray="6 4"/>
+  <text x="280" y="500" text-anchor="middle" font-size="22" font-weight="900" fill="#888">左翼</text>
+  <text x="540" y="290" text-anchor="middle" font-size="22" font-weight="900" fill="#888">中堅</text>
+  <text x="800" y="500" text-anchor="middle" font-size="22" font-weight="900" fill="#888">右翼</text>
+  {% for h in hits %}
+  <circle cx="{{ h.x }}" cy="{{ h.y }}" r="{{ h.r }}" fill="{{ h.color }}" stroke="#000" stroke-width="{{ h.sw | default(2) }}"/>
+  {% endfor %}
+  <rect x="60" y="200" width="280" height="190" fill="#ffffff" stroke="#000" stroke-width="3"/>
+  <text x="200" y="240" text-anchor="middle" font-size="26" font-weight="900" fill="#000">凡例</text>
+  {% for leg in legend %}
+  <circle cx="90" cy="{{ 270 + loop.index0 * 35 }}" r="{{ leg.r }}" fill="{{ leg.color }}" stroke="#000" stroke-width="2"/>
+  <text x="115" y="{{ 278 + loop.index0 * 35 }}" font-size="22" font-weight="900" fill="#000">{{ leg.label }}</text>
+  {% endfor %}
+  <text x="115" y="380" font-size="22" font-weight="bold" fill="#666">{{ legend_total }}</text>
+  <rect x="740" y="200" width="280" height="190" fill="#ffffff" stroke="#000" stroke-width="3"/>
+  <text x="880" y="240" text-anchor="middle" font-size="26" font-weight="900" fill="#000">{{ stats_panel_title }}</text>
+  <text x="880" y="290" text-anchor="middle" font-size="20" font-weight="bold" fill="#888">{{ stats_main_label }}</text>
+  <text x="880" y="335" text-anchor="middle" font-size="48" font-weight="900" fill="#FF6F00" stroke="#000" stroke-width="1" style="font-feature-settings:'tnum'">{{ stats_main_value }}</text>
+  <text x="880" y="375" text-anchor="middle" font-size="20" font-weight="900" fill="#000">{{ stats_sub }}</text>
+  <rect x="0" y="950" width="1080" height="130" fill="#000000"/>
+  <rect x="0" y="950" width="1080" height="4" fill="#FF6F00"/>
+  <text x="60" y="1005" font-size="32" font-weight="900" fill="#FFD700">{{ footer_summary }}</text>
+  <text x="60" y="1045" font-size="22" font-weight="bold" fill="#ffffff">{{ footer_detail }}</text>
+  <text x="1020" y="1065" text-anchor="end" font-size="22" font-weight="bold" fill="#FF6F00">{{ footer_handle }} — {{ footer_meta }}</text>
+</svg>

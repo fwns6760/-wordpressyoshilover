@@ -1,0 +1,41 @@
+<svg viewBox="0 0 1080 1080" xmlns="http://www.w3.org/2000/svg" font-family="'Yu Gothic', 'Hiragino Sans', 'Noto Sans CJK JP', sans-serif">
+  <defs>
+    <linearGradient id="winBar" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FF8C00"/><stop offset="100%" stop-color="#E65100"/>
+    </linearGradient>
+    <linearGradient id="header" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FF8C00"/><stop offset="100%" stop-color="#E65100"/>
+    </linearGradient>
+  </defs>
+  <rect width="1080" height="1080" fill="#ffffff"/>
+  <rect x="0" y="0" width="1080" height="14" fill="#000000"/>
+  <rect x="0" y="14" width="1080" height="160" fill="url(#header)"/>
+  <rect x="0" y="174" width="1080" height="6" fill="#000000"/>
+  <text x="540" y="80" text-anchor="middle" font-size="56" font-weight="900" fill="#ffffff">{{ title }}</text>
+  <text x="540" y="125" text-anchor="middle" font-size="28" font-weight="bold" fill="#ffffff">{{ subtitle }}</text>
+  <rect x="80" y="220" width="960" height="600" fill="none" stroke="#000" stroke-width="4"/>
+  {% for game in games %}
+  {% set x = 105 + loop.index0 * 95 %}
+  {% set h = (game.value / max_y * 580) | round | int %}
+  {% set bar_y = 800 - h %}
+  {% if game.is_off %}
+  <rect x="{{ x }}" y="790" width="75" height="10" fill="#ffffff" stroke="#000" stroke-width="2"/>
+  <text x="{{ x + 37 }}" y="848" text-anchor="middle" font-size="24" font-weight="bold" fill="#000">{{ game.label }}</text>
+  <text x="{{ x + 37 }}" y="900" text-anchor="middle" font-size="26" font-weight="bold" fill="#666">OFF</text>
+  {% elif game.is_win %}
+  <rect x="{{ x }}" y="{{ bar_y }}" width="75" height="{{ h }}" fill="url(#winBar)" stroke="#000" stroke-width="3"/>
+  <text x="{{ x + 37 }}" y="{{ bar_y - 10 }}" text-anchor="middle" font-size="40" font-weight="900" fill="#FF6F00" stroke="#000" stroke-width="1" style="font-feature-settings:'tnum'">{{ game.value }}</text>
+  <text x="{{ x + 37 }}" y="848" text-anchor="middle" font-size="24" font-weight="bold" fill="#000">{{ game.label }}</text>
+  <text x="{{ x + 37 }}" y="900" text-anchor="middle" font-size="32" font-weight="900" fill="#FF6F00">勝</text>
+  {% else %}
+  <rect x="{{ x }}" y="{{ bar_y }}" width="75" height="{{ h }}" fill="#000000" stroke="#000" stroke-width="3"/>
+  <text x="{{ x + 37 }}" y="{{ bar_y - 10 }}" text-anchor="middle" font-size="40" font-weight="900" fill="#000" style="font-feature-settings:'tnum'">{{ game.value }}</text>
+  <text x="{{ x + 37 }}" y="848" text-anchor="middle" font-size="24" font-weight="bold" fill="#000">{{ game.label }}</text>
+  <text x="{{ x + 37 }}" y="900" text-anchor="middle" font-size="32" font-weight="bold" fill="#000">敗</text>
+  {% endif %}
+  {% endfor %}
+  <rect x="0" y="950" width="1080" height="130" fill="url(#header)"/>
+  <rect x="0" y="950" width="1080" height="6" fill="#000000"/>
+  <text x="540" y="1000" text-anchor="middle" font-size="40" font-weight="900" fill="#ffffff">{{ summary_line }}</text>
+  <text x="540" y="1045" text-anchor="middle" font-size="22" font-weight="bold" fill="#ffffff">{{ footer_handle }} — {{ footer_meta }}</text>
+</svg>

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import unittest
 from datetime import datetime, timedelta
+from urllib.parse import parse_qs, urlparse
 from unittest.mock import ANY, MagicMock, patch
 
 from src.x_post_mail_lane import (
@@ -11,6 +12,10 @@ from src.x_post_mail_lane import (
     JST,
     X_CHAR_LIMIT,
     Candidate,
+    _candidate_anomaly_flags,
+    _candidate_source_kind,
+    _sample_threshold_label,
+    _source_mix_summary,
     _load_giants_player_aliases,
     build_comment_numeric_candidate,
     build_news_opinion_candidate,
@@ -205,6 +210,92 @@ class PickCandidatesTests(unittest.TestCase):
         self.assertNotIn("←", cands[0].draft_text)
         self.assertNotIn("⭐巨人", cands[0].draft_text)
 
+    def test_farm_rows_do_not_mix_into_first_team_x_candidates(self) -> None:
+        rows = [
+            {**_row(1, "若手二軍", "巨人", 1.100, sample=30), "league_label": "イースタン"},
+            _row(2, "岡本和真", "巨人", 0.950, sample=30),
+            _row(3, "牧秀悟", "DeNA", 0.930, sample=30),
+            _row(4, "村上宗隆", "ヤクルト", 0.920, sample=30),
+            _row(5, "細川成也", "中日", 0.910, sample=30),
+            _row(6, "坂倉将吾", "広島", 0.900, sample=30),
+        ]
+        query_mock = MagicMock(return_value={
+            "ok": True,
+            "rows": rows,
+            "count": len(rows),
+            "total": len(rows),
+            "focus_player": None,
+        })
+        cands = pick_candidates(
+            query_mock,
+            now=datetime(2026, 5, 16, 7, 0, tzinfo=JST),
+            max_candidates=1,
+            min_sample=1,
+            min_central_rows=3,
+        )
+        self.assertEqual(len(cands), 1)
+        self.assertEqual(cands[0].focus_player, "岡本和真")
+        self.assertNotIn("若手二軍", cands[0].draft_text)
+        self.assertEqual(cands[0].team_level, "first")
+
+    def test_low_sample_rate_rows_do_not_drive_x_candidates(self) -> None:
+        rows = [
+            _row(1, "少数打席", "巨人", 1.100, sample=2),
+            _row(2, "岡本和真", "巨人", 0.950, sample=12),
+            _row(3, "牧秀悟", "DeNA", 0.930, sample=12),
+            _row(4, "村上宗隆", "ヤクルト", 0.920, sample=12),
+            _row(5, "細川成也", "中日", 0.910, sample=12),
+            _row(6, "坂倉将吾", "広島", 0.900, sample=12),
+        ]
+        query_mock = MagicMock(return_value={
+            "ok": True,
+            "rows": rows,
+            "count": len(rows),
+            "total": len(rows),
+            "focus_player": None,
+        })
+        cands = pick_candidates(
+            query_mock,
+            now=datetime(2026, 5, 16, 7, 0, tzinfo=JST),
+            max_candidates=1,
+            min_sample=1,
+            min_central_rows=3,
+        )
+        self.assertEqual(len(cands), 1)
+        self.assertEqual(cands[0].focus_player, "岡本和真")
+        self.assertNotIn("少数打席", cands[0].draft_text)
+        self.assertGreaterEqual(cands[0].sample_size, 10)
+
+    def test_sample_gate_hard_skips_when_only_low_sample_rows(self) -> None:
+        rows = [
+            _row(1, "少数打席", "巨人", 1.100, sample=2),
+            _row(2, "牧秀悟", "DeNA", 0.930, sample=2),
+            _row(3, "村上宗隆", "ヤクルト", 0.920, sample=2),
+            _row(4, "細川成也", "中日", 0.910, sample=2),
+            _row(5, "坂倉将吾", "広島", 0.900, sample=2),
+            _row(6, "佐藤輝明", "阪神", 0.890, sample=2),
+        ]
+
+        def _mock(metric_name=None, **_kw):
+            if metric_name == "AVG":
+                return {
+                    "ok": True,
+                    "rows": rows,
+                    "count": len(rows),
+                    "total": len(rows),
+                    "focus_player": None,
+                }
+            return {"ok": False, "rows": [], "reason": "skip"}
+
+        cands = pick_candidates(
+            _mock,
+            now=datetime(2026, 5, 16, 7, 0, tzinfo=JST),
+            max_candidates=1,
+            min_sample=1,
+            min_central_rows=3,
+        )
+        self.assertEqual(cands, [])
+
     def test_too_few_central_rows_skipped(self) -> None:
         # Only 1 セ row → skip. The mail no longer falls back to 巨人内
         # ranking because the user needs the セ・リーグ6球団での順位.
@@ -274,9 +365,12 @@ class PickCandidatesTests(unittest.TestCase):
         self.assertGreaterEqual(len(cands), 1)
         cand = cands[0]
         self.assertIn("今日のスタメン 泉口友汰", cand.title)
-        self.assertIn("今日のスタメンから", cand.post_text)
+        # 429: Source B keeps the DB table as post_text even when lineup context is present.
+        self.assertIn("📊", cand.post_text)
+        self.assertIn("TOP", cand.post_text)
+        self.assertIn("今日のスタメン: 泉口友汰", cand.post_text)
         self.assertIn("泉口友汰", cand.post_text)
-        self.assertNotIn("岡本和真", cand.post_text)
+        self.assertNotIn("今日のスタメンから", cand.post_text)
         self.assertIn("今日のスタメン: 泉口友汰", cand.draft_text)
         self.assertNotIn("巨人最上位: 泉口友汰", cand.draft_text)
         self.assertEqual(cand.context_label, "今日のスタメン")
@@ -518,6 +612,13 @@ class PickCandidatesTests(unittest.TestCase):
                 msg=f"missing sample threshold in: {text[:60]}",
             )
 
+    def test_pitching_metrics_use_ip_sample_label(self) -> None:
+        """436 follow-up: 投手rate系で「規定打席」を出さない。"""
+        for metric in ("ERA", "K_per_9", "BB_per_9", "HR_per_9"):
+            self.assertEqual(_sample_threshold_label(metric, 3), "規定投球回3以上")
+        for metric in ("AVG", "OBP", "SLG", "OPS"):
+            self.assertEqual(_sample_threshold_label(metric, 10), "規定打席10以上")
+
     def test_monthly_combo_year_round_after_step1(self) -> None:
         """STEP1 (2026-05-17): 今月 combo は年通開放、 月別「N月成績」は
         月初 3 日だけ前月分を出す現状を維持。
@@ -698,7 +799,7 @@ class VariationExpansionTests(unittest.TestCase):
         self.assertNotIn("⭐巨人", text)
 
     def test_format_one_adds_branded_post_text_and_emoji_title(self) -> None:
-        """X intent 用の本文はランキング表ではなく、ブランド投稿案にする。"""
+        """429: X intent 用の本文はDB ranking tableを正本にする。"""
         from src.x_post_mail_lane import _MetricCombo, _format_one, _rebuild_ranks_within_central
 
         ranked = _rebuild_ranks_within_central(_MIXED_12_TEAM_ROWS)
@@ -713,11 +814,16 @@ class VariationExpansionTests(unittest.TestCase):
         self.assertTrue(cand.title.startswith("📊 Xポスト案｜"))
         self.assertNotIn("#巨人", cand.post_text)
         self.assertNotIn("#ジャイアンツ", cand.post_text)
+        self.assertIn("📊", cand.post_text)
+        self.assertIn("TOP", cand.post_text)
+        self.assertIn("巨人最上位", cand.post_text)
+        self.assertIn("🟧巨人🟧", cand.post_text)
         self.assertIn("岡本和真", cand.post_text)
         self.assertIn("OPS", cand.post_text)
         self.assertIn("セ・リーグ", cand.post_text)
         self.assertNotIn("https://", cand.post_text)
         self.assertNotIn("整理しました", cand.post_text)
+        self.assertNotIn("どう見ますか", cand.post_text)
         self.assertNotIn("🥇", cand.post_text)
         self.assertNotIn("阿部監督", cand.post_text)
         self.assertLessEqual(len(cand.post_text), X_CHAR_LIMIT)
@@ -848,6 +954,201 @@ class ComposeMailTests(unittest.TestCase):
         self.assertIn("根拠データを開く", mail.html_body)
         self.assertIn("%E6%8A%95%E7%A8%BF%E6%9C%AC%E6%96%87", mail.html_body)
 
+    def test_text_body_x_intent_decodes_final_post_text_not_draft_text(self) -> None:
+        ts = datetime(2026, 5, 16, 17, 30, tzinfo=JST)
+        cand = Candidate(
+            title="📊 Xポスト案｜正本確認",
+            metric="OPS",
+            period_label="直近5試合",
+            draft_text="根拠データだけにある文",
+            post_text="Xに実際に入る本文",
+            char_count=len("Xに実際に入る本文"),
+        )
+        mail = compose_mail([cand], now=ts)
+        urls = [
+            line.strip()
+            for line in mail.text_body.splitlines()
+            if line.strip().startswith("https://x.com/intent/post?text=")
+        ]
+        self.assertEqual(len(urls), 1)
+        decoded = parse_qs(urlparse(urls[0]).query)["text"][0]
+        self.assertEqual(decoded, "Xに実際に入る本文")
+        self.assertNotEqual(decoded, "根拠データだけにある文")
+
+    def test_source_mix_summary_visible_in_text_and_html(self) -> None:
+        ts = datetime(2026, 5, 16, 17, 30, tzinfo=JST)
+        source_a = Candidate(
+            title="Source A",
+            metric="NEWS_OPINION",
+            period_label="ニュース",
+            draft_text="根拠",
+            post_text="坂本勇人の次の打席を見たい。",
+            char_count=15,
+        )
+        source_b = Candidate(
+            title="Source B",
+            metric="OPS",
+            period_label="直近5試合",
+            draft_text="根拠",
+            post_text="📊 セ OPS TOP5 ⚾\n(直近5試合・規定打席5以上)\n巨人最上位: 岡本和真 セ・リーグ 2/20位\n\n2位 岡本和真（巨人）.950 🟧巨人🟧",
+            char_count=80,
+        )
+        mail = compose_mail([source_a, source_b], now=ts)
+        self.assertIn("【Source / flags】", mail.text_body)
+        self.assertIn("Source構成: A(RSS観戦)=1 / B(DB表)=1 / C(DB slice)=0 / total=2", mail.text_body)
+        self.assertIn("Source / flags", mail.html_body)
+        self.assertIn("candidate_count_low:2", mail.text_body)
+        self.assertIn("採用理由:", mail.text_body)
+        self.assertIn("DB表=1", mail.text_body)
+
+    def test_selected_reason_visible_in_text_and_html(self) -> None:
+        ts = datetime(2026, 5, 16, 17, 30, tzinfo=JST)
+        cand = Candidate(
+            title="Source B",
+            metric="OPS",
+            period_label="直近5試合",
+            draft_text="根拠",
+            post_text="📊 セ OPS TOP5 ⚾\n(直近5試合・規定打席10以上)\n巨人最上位: 岡本和真 セ・リーグ 2/20位\n2位 岡本和真（巨人）.950 🟧巨人🟧",
+            char_count=80,
+            focus_player="岡本和真",
+            team_level="first",
+            sample_size=12,
+            reason_tags=("fan_useful:central_rank", "sample_ok"),
+        )
+        mail = compose_mail([cand], now=ts)
+        self.assertIn("【採用理由】", mail.text_body)
+        self.assertIn("DB表", mail.text_body)
+        self.assertIn("短期変化", mail.text_body)
+        self.assertIn("sample確認", mail.text_body)
+        self.assertIn("採用理由:", mail.html_body)
+        self.assertIn("DB表", mail.html_body)
+
+    def test_anomaly_flags_separate_hard_and_flag_only(self) -> None:
+        source_a_short = Candidate(
+            title="Source A short",
+            metric="NEWS_OPINION",
+            period_label="ニュース",
+            draft_text="根拠",
+            post_text="短い。",
+            char_count=3,
+        )
+        source_b_broken = Candidate(
+            title="Source B broken",
+            metric="OPS",
+            period_label="直近5試合",
+            draft_text="根拠",
+            post_text="今日の巨人データメモ。数字だけで語り切る話ではないけど、どう見ますか？",
+            char_count=40,
+        )
+        self.assertEqual(_candidate_source_kind(source_a_short), "A")
+        self.assertEqual(_candidate_source_kind(source_b_broken), "B")
+        # 2026-05-25 user 確定: ヨシラバー voice 短文化 (180-280→100-180)。
+        # hard NG 140 → 60 字、 warn 180 → 100 字 に閾値更新。
+        self.assertIn("hard:source_a_under_60", _candidate_anomaly_flags(source_a_short))
+        b_flags = _candidate_anomaly_flags(source_b_broken)
+        self.assertTrue(any(flag.startswith("hard:source_b_table_token_missing") for flag in b_flags))
+        self.assertIn("hard:source_b_prose_overwrite", b_flags)
+
+    def test_source_c_slice_requires_sample_condition(self) -> None:
+        source_c_ok = Candidate(
+            title="Source C ok",
+            metric="VS_LHP_AVG",
+            period_label="直近10試合",
+            draft_text="根拠",
+            post_text="📊 巨人 対左投手 打率 TOP5\n(直近10試合・規定打席8以上)\n1位 岡本和真(巨人) .333 🟧巨人🟧\n次の起用が気になる。",
+            char_count=80,
+            source_material_type="specialized_db",
+        )
+        source_c_bad = Candidate(
+            title="Source C bad",
+            metric="VS_LHP_AVG",
+            period_label="直近10試合",
+            draft_text="根拠",
+            post_text="岡本和真は対左が良さそう。",
+            char_count=14,
+            source_material_type="specialized_db",
+        )
+        self.assertEqual(_candidate_source_kind(source_c_ok), "C")
+        self.assertEqual(_candidate_anomaly_flags(source_c_ok), [])
+        self.assertIn("hard:source_c_sample_condition_missing", _candidate_anomaly_flags(source_c_bad))
+
+    def test_farm_unknown_and_low_sample_flags_are_visible(self) -> None:
+        farm_b = Candidate(
+            title="Source B farm",
+            metric="OPS",
+            period_label="直近5試合",
+            draft_text="根拠",
+            post_text="📊 セ OPS TOP5 ⚾\n(直近5試合・規定打席10以上)\n巨人最上位: 若手二軍 セ・リーグ 1/20位\n1位 若手二軍（巨人）1.100 🟧巨人🟧",
+            char_count=80,
+            focus_player="若手二軍",
+            team_level="farm2",
+            sample_size=12,
+        )
+        unknown_b = Candidate(
+            title="Source B unknown",
+            metric="OPS",
+            period_label="直近5試合",
+            draft_text="根拠",
+            post_text="📊 セ OPS TOP5 ⚾\n(直近5試合・規定打席10以上)\n巨人最上位: 岡本和真 セ・リーグ 2/20位\n2位 岡本和真（巨人）.950 🟧巨人🟧",
+            char_count=80,
+            focus_player="岡本和真",
+            team_level="unknown",
+            sample_size=12,
+        )
+        low_sample_b = Candidate(
+            title="Source B low sample",
+            metric="OPS",
+            period_label="直近5試合",
+            draft_text="根拠",
+            post_text="📊 セ OPS TOP5 ⚾\n(直近5試合・規定打席10以上)\n巨人最上位: 少数打席 セ・リーグ 1/20位\n1位 少数打席（巨人）1.100 🟧巨人🟧",
+            char_count=80,
+            focus_player="少数打席",
+            team_level="first",
+            sample_size=2,
+        )
+        self.assertIn("hard:team_level_farm2_separated", _candidate_anomaly_flags(farm_b))
+        self.assertIn("hard:team_level_unknown", _candidate_anomaly_flags(unknown_b))
+        self.assertIn("hard:sample_too_small:2<10", _candidate_anomaly_flags(low_sample_b))
+
+    def test_source_mix_summary_flags_low_source_b_ratio(self) -> None:
+        cands = [
+            Candidate("A1", "NEWS_OPINION", "ニュース", "根拠", 3, post_text="短い。"),
+            Candidate("A2", "FAN_VOICE", "ニュース", "根拠", 3, post_text="短い。"),
+            Candidate("B1", "OPS", "直近5試合", "根拠", 80, post_text="📊 セ OPS TOP5 ⚾\n巨人最上位: 岡本和真 セ・リーグ 2/20位\n2位 岡本和真（巨人）.950 🟧巨人🟧"),
+        ]
+        lines, flags = _source_mix_summary(cands)
+        self.assertIn("Source構成: A(RSS観戦)=2 / B(DB表)=1 / C(DB slice)=0 / total=3", lines[0])
+        self.assertIn("source_b_ratio_low:1/3", flags)
+
+    def test_source_mix_summary_flags_duplicate_player_metric_and_level_counts(self) -> None:
+        cands = [
+            Candidate(
+                "B1", "OPS", "直近5試合", "根拠", 80,
+                post_text="📊 セ OPS TOP5 ⚾\n巨人最上位: 岡本和真 セ・リーグ 2/20位\n2位 岡本和真（巨人）.950 🟧巨人🟧",
+                focus_player="岡本和真",
+                team_level="first",
+                sample_size=12,
+            ),
+            Candidate(
+                "B2", "OPS", "直近10試合", "根拠", 80,
+                post_text="📊 セ OPS TOP5 ⚾\n巨人最上位: 岡本和真 セ・リーグ 3/20位\n3位 岡本和真（巨人）.900 🟧巨人🟧",
+                focus_player="岡本和真",
+                team_level="first",
+                sample_size=22,
+            ),
+            Candidate(
+                "B3", "OPS", "今月", "根拠", 80,
+                post_text="📊 セ OPS TOP5 ⚾\n巨人最上位: 坂本勇人 セ・リーグ 5/20位\n5位 坂本勇人（巨人）.850 🟧巨人🟧",
+                focus_player="坂本勇人",
+                team_level="farm2",
+                sample_size=40,
+            ),
+        ]
+        lines, flags = _source_mix_summary(cands)
+        self.assertIn("Data構成: first=2 / farm2=1 / farm3=0 / unknown=0", lines)
+        self.assertIn("duplicate_player:岡本和真x2", flags)
+        self.assertIn("duplicate_metric:OPSx3", flags)
+
     def test_html_escapes_special_chars(self) -> None:
         # Draft text containing `<` `>` `&` must be escaped so the
         # HTML mail does not break or get reinterpreted as markup.
@@ -900,6 +1201,10 @@ class ComposeMailTests(unittest.TestCase):
         self.assertIn("要確認: 数値未照合｜コメント案｜岸田行倫", cand.title)
         self.assertIn("岸田行倫", cand.post_text)
         self.assertIn("コメント", cand.post_text)
+        self.assertGreaterEqual(len(cand.post_text), 180)
+        self.assertLessEqual(len(cand.post_text), X_CHAR_LIMIT)
+        self.assertEqual(len([line for line in cand.post_text.splitlines() if line.strip()]), 3)
+        self.assertEqual(_candidate_anomaly_flags(cand), [])
         self.assertNotIn("https://example.test/giants-kishida", cand.post_text)
         self.assertNotIn("#巨人", cand.post_text)
         self.assertNotIn("#ジャイアンツ", cand.post_text)
@@ -943,6 +1248,10 @@ class ComposeMailTests(unittest.TestCase):
         self.assertEqual(combined.metric, "COMMENT_DB")
         self.assertIn("DBで確認できる数字", combined.post_text)
         self.assertIn("長打率 .500", combined.post_text)
+        self.assertGreaterEqual(len(combined.post_text), 180)
+        self.assertLessEqual(len(combined.post_text), X_CHAR_LIMIT)
+        self.assertEqual(len([line for line in combined.post_text.splitlines() if line.strip()]), 3)
+        self.assertEqual(_candidate_anomaly_flags(combined), [])
         self.assertNotIn("https://example.test/comment", combined.post_text)
         self.assertNotIn("#巨人", combined.post_text)
         self.assertIn("DB数値照合: あり（同一フルネーム+論点一致）", combined.draft_text)
@@ -1497,9 +1806,16 @@ class TicketThreeFiftyFourLastNGamesTests(unittest.TestCase):
         self.assertIsNotNone(cand)
         assert cand is not None
         self.assertIn("直近5試合", cand.draft_text.split("\n")[1])
-        self.assertIn("規定打席5以上", cand.draft_text.split("\n")[1])
+        self.assertIn("規定打席10以上", cand.draft_text.split("\n")[1])
         self.assertNotIn("5/11〜5/16", cand.draft_text.split("\n")[1])
         self.assertIn("直近5試合", cand.title)
+        # 429: DB ranking table is the actual post_text, not prose-only branding.
+        self.assertIn("📊", cand.post_text)
+        self.assertIn("TOP", cand.post_text)
+        self.assertIn("巨人最上位", cand.post_text)
+        self.assertIn("🟧巨人🟧", cand.post_text)
+        self.assertIn("この推移は追いたい。", cand.post_text)
+        self.assertNotIn("どう見ますか", cand.post_text)
 
     def test_monthly_draft_uses_month_record_label(self) -> None:
         """357: 月別は「7月成績」のように表示する。"""
@@ -1634,8 +1950,8 @@ class XPostMailEntrypointFreshnessTests(unittest.TestCase):
         players = [c.focus_player for c in merged]
         self.assertEqual(players, ["浦田俊輔", "平山 功太"])
 
-    def test_backfill_dedup_starved_stage_b_falls_back_when_too_sparse(self) -> None:
-        """397: Stage A で全部 player skip された場合、Stage B で詰める (mail 空回避)。"""
+    def test_backfill_dedup_starved_does_not_restore_history_when_sparse(self) -> None:
+        """436 follow-up: sparseでも24h履歴playerは戻さない。"""
         from src.tools import run_x_post_mail
 
         # 既存 0 件、relaxed は全部 history に居る player
@@ -1650,17 +1966,13 @@ class XPostMailEntrypointFreshnessTests(unittest.TestCase):
             relaxed,
             max_candidates=10,
             recent_player_counts={"浦田俊輔": 3, "平山 功太": 2},
-            min_candidates=3,  # Stage B threshold
+            min_candidates=3,
         )
-        # Stage A: 全部 skip → 0 件、Stage B: signature dedup だけ守って min_candidates まで詰める
-        self.assertEqual(len(merged), 3)
-        self.assertEqual(
-            [c.signature for c in merged],
-            ["sig-a", "sig-b", "sig-c"],
-        )
+        # 以前はここで Stage B が同じ選手を戻していた。今は候補数が少なくても戻さない。
+        self.assertEqual(merged, [])
 
-    def test_backfill_dedup_starved_stage_b_does_not_blow_past_min(self) -> None:
-        """397: Stage B は min_candidates で止まる (max_candidates まで埋めない)。"""
+    def test_backfill_dedup_starved_keeps_all_history_players_out(self) -> None:
+        """436 follow-up: 同一history player候補を複数戻さない。"""
         from src.tools import run_x_post_mail
 
         fresh: list = []
@@ -1678,8 +1990,7 @@ class XPostMailEntrypointFreshnessTests(unittest.TestCase):
             recent_player_counts={"浦田俊輔": 5},
             min_candidates=2,
         )
-        # Stage B は min_candidates=2 で止まる
-        self.assertEqual(len(merged), 2)
+        self.assertEqual(merged, [])
 
     def test_backfill_dedup_starved_no_history_no_change(self) -> None:
         """397: recent_player_counts=None 時、 signature dedup のみで従来挙動。"""
@@ -2101,6 +2412,47 @@ class XPostMailEntrypointFreshnessTests(unittest.TestCase):
         )
         # 382 系: no #巨人 hashtag in post bodies.
         self.assertNotIn("#巨人", request.text_body)
+
+    def test_news_priority_merge_prefers_short_mail_over_same_player_repeat(self) -> None:
+        """436 follow-up: 枠埋め目的で同じ選手を復活させない。"""
+        from src.tools import run_x_post_mail
+
+        news_cand = Candidate(
+            title="News A",
+            metric="NEWS_OPINION",
+            period_label="ニュース",
+            draft_text="根拠",
+            post_text="岸田行倫の話題",
+            char_count=7,
+            signature="news-a",
+            focus_player="岸田行倫",
+        )
+        data_same_player = Candidate(
+            title="DB same",
+            metric="OPS",
+            period_label="直近5試合",
+            draft_text="DB same",
+            post_text="DB same",
+            char_count=7,
+            signature="data-a",
+            focus_player="岸田行倫",
+        )
+        data_other_player = Candidate(
+            title="DB other",
+            metric="AVG",
+            period_label="直近5試合",
+            draft_text="DB other",
+            post_text="DB other",
+            char_count=8,
+            signature="data-b",
+            focus_player="岡本和真",
+        )
+        merged = run_x_post_mail._merge_news_priority_candidates(
+            [news_cand],
+            [data_same_player, data_other_player],
+            max_candidates=3,
+        )
+        self.assertEqual([c.focus_player for c in merged], ["岸田行倫", "岡本和真"])
 
     def test_news_opinion_fallback_skips_recent_history_player(self) -> None:
         """380 follow-up: news fallback も直近24h既出 player を補充しない。"""

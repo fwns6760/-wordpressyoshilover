@@ -28,7 +28,7 @@ from pathlib import Path as _Path
 import random as _random
 import re as _re
 import sqlite3 as _sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date as _date, datetime, timedelta, timezone as _tz
 from typing import Callable, Optional
 from urllib.parse import quote as _url_quote
@@ -784,6 +784,35 @@ _NOVELTY_WEIGHTS: dict[str, float] = {
     "low": 10.0,
 }
 
+_FAN_USEFUL_METRIC_WEIGHTS: dict[str, float] = {
+    "OPS": 1.25,
+    "OBP": 1.15,
+    "SLG": 1.12,
+    "AVG": 1.05,
+    "ERA": 1.18,
+    "K_per_9": 1.12,
+    "BB_per_9": 1.08,
+    "HR_per_9": 1.04,
+}
+
+
+def _combo_fan_usefulness_weight(combo: _MetricCombo) -> float:
+    """Deterministic usefulness score for Source B candidate ordering.
+
+    It is intentionally cheap and local: no LLM, no web, no extra DB
+    query. The score only changes how equal novelty combos are ordered.
+    """
+    weight = _FAN_USEFUL_METRIC_WEIGHTS.get(combo.metric, 1.0)
+    if combo.period_label in {"直近3試合", "直近5試合", "直近10試合", "直近20試合"}:
+        weight *= 1.16
+    elif combo.period_label in {"直近1週間", "今週"}:
+        weight *= 1.10
+    elif combo.period_label == "今月" or combo.period_label.endswith("月成績"):
+        weight *= 1.02
+    if combo.position:
+        weight *= 1.05
+    return max(weight, 0.1)
+
 
 def _select_with_diversity(
     combos: list[_MetricCombo],
@@ -811,7 +840,10 @@ def _select_with_diversity(
     rng = _random.Random(seed)
     keyed: list[tuple[float, _MetricCombo]] = []
     for combo in combos:
-        weight = _NOVELTY_WEIGHTS.get(combo.novelty, _NOVELTY_WEIGHTS["mid"])
+        weight = (
+            _NOVELTY_WEIGHTS.get(combo.novelty, _NOVELTY_WEIGHTS["mid"])
+            * _combo_fan_usefulness_weight(combo)
+        )
         u = rng.random()
         if u <= 0.0:
             u = 1e-12
@@ -851,6 +883,14 @@ class Candidate:
     db_fact_line: str = ""
     # Source-backed topic family for safe comment x DB merging.
     source_topic_family: str = ""
+    # 436: DB Top10 candidate metadata. These are deliberately optional
+    # so older tests / callers that construct Candidate directly keep
+    # working. Selection logic fills them when the DB row exposes facts.
+    team_level: str = ""
+    sample_size: int = 0
+    sample_label: str = ""
+    reason_tags: tuple[str, ...] = ()
+    selected_reason: str = ""
 
 
 _DEFAULT_PLAYER_MAX_PER_MAIL = 1
@@ -889,10 +929,17 @@ _RECORD_TERMS = (
 )
 _FARM_TERMS = (
     "2軍",
+    "２軍",
     "二軍",
     "ファーム",
     "イースタン",
+    "ウエスタン",
     "育成",
+)
+_THIRD_TEAM_TERMS = (
+    "3軍",
+    "３軍",
+    "三軍",
 )
 _BATTING_TOPIC_TERMS = (
     "打撃",
@@ -1002,28 +1049,36 @@ def _build_source_backed_post_text(player: str, material_type: str) -> str:
     """
     if material_type == "comment":
         body = (
-            "コメントは、数字より先に空気が出る。\n\n"
-            f"{player}の言葉は、今の状態を見直す材料になる。\n"
-            "強気なのか、課題を見ているのか。\n\n"
-            "巨人ファンとしては、次の出番で確かめたいところ。"
+            f"{player}のコメントは、結果だけでは見えないベンチの空気や本人の温度を拾える材料になる。"
+            "こういう言葉が出る時は、次の試合の見方も少し変わる。\n"
+            "確定しているのは本人の言葉が記事で出ていることなので、数字は足さず、"
+            "今の状態や準備の見方として受け止めたい。良し悪しを決めるより、材料として置く。\n"
+            "巨人ファンとしては、次の出番でその言葉が配球や打席の落ち着きにどう出るかを見たい。"
         )
     elif material_type == "record":
         body = (
-            "記録は、数字そのものより積み重ねが出る。\n\n"
-            f"{player}のこの話題は、あとで振り返る材料として残しておきたい。\n\n"
-            "巨人の中でどんな意味を持つかまで見たい。"
+            f"{player}の記録や節目の話題は、数字そのものだけでなく、"
+            "ここまで積み上げてきた役割まで見たくなる材料になる。"
+            "積み重ねが見えると、次の一打や一球の重みも変わる。\n"
+            "確定しているのは記事でその節目が扱われていることなので、"
+            "未確認の数字は足さず、巨人の中での意味を見たい。話題だけで終わらせない。\n"
+            "巨人ファンとしては、次の試合でその流れがもう一つ前に進む場面を期待したい。"
         )
     elif material_type == "farm":
         body = (
-            "ファームの話題は、今すぐの結論より次の準備として見たい。\n\n"
-            f"{player}の名前が出ているなら、一軍の流れとつなげて追っておきたい。\n\n"
-            "巨人の層を考える材料になる。"
+            f"ファームで{player}の名前が出ている時は、今すぐの結論より一軍につながる準備として見たい。"
+            "二軍の動きは、あとで起用の伏線になることもある。焦って持ち上げず、変化を追いたい。\n"
+            "確定しているのは記事でその動きが扱われていることなので、数字は足さず、"
+            "状態や役割の変化を見る材料にしたい。急がず、次の起用と合わせて見たい。\n"
+            "巨人ファンとしては、次に一軍の流れとどこで重なるかを追いたい。"
         )
     else:
         body = (
-            "名前が続けて出てくる時は、少し意味がある。\n\n"
-            f"{player}の話題は、結果だけでなく起用や立ち位置まで見たくなる。\n\n"
-            "今の巨人でどう扱われるか、次の流れを追いたい。"
+            f"{player}の話題が続く時は、結果だけではなく起用や立ち位置まで含めて見たくなる。"
+            "名前が出る理由を追うと、試合の見方も少し変わる。今の流れの中で見たい材料として残したい。\n"
+            "確定しているのは記事で名前が出ていることなので、未確認の数字は足さず、"
+            "今の文脈を整理しておきたい。印象だけで決めず、次の場面とつなげたい。\n"
+            "巨人ファンとしては、次の出番で何が変わるかを見たい。"
         )
     return _finalize_post_text(body)
 
@@ -1058,10 +1113,11 @@ def build_comment_numeric_candidate(
         return None
     fact_line = str(data_candidate.db_fact_line or "").strip().rstrip("。")
     body = (
-        "コメントは、数字より先に空気が出る。\n\n"
-        f"{player}の言葉を見たうえで、DBで確認できる数字も一つ。\n"
-        f"{fact_line}。\n\n"
-        "数字だけで決めず、次の出番でどう出るか見たい。"
+        f"{player}のコメントは、結果だけでは見えない空気や本人の温度を拾える材料になる。"
+        "言葉と数字を並べると、次の試合の見方も少し変わる。\n"
+        f"DBで確認できる数字は{fact_line}。"
+        "印象だけでなく、今の状態を見る根拠として置いておきたい。\n"
+        "巨人ファンとしては、次の出番でその言葉と数字がプレーにどうつながるかを見たい。"
     )
     post_text = _finalize_post_text(body)
     if not _is_safe_post_text(post_text):
@@ -1328,9 +1384,9 @@ def _scope_label(combo: _MetricCombo) -> str:
 def _sample_label_for_metric(metric: str) -> str:
     """Return the Japanese unit label used in the 規定打席 / 投球回 suffix.
 
-    Batting metrics use 打席 (PA). Pitching (ERA) uses 投球回 (IP).
+    Batting metrics use 打席 (PA). Pitching metrics use 投球回 (IP).
     """
-    if metric == "ERA":
+    if metric in _PITCHING_METRICS:
         return "投球回"
     return "打席"
 
@@ -1396,6 +1452,41 @@ def _format_period_label(combo: _MetricCombo, now: datetime) -> str:
 def _sample_threshold_label(metric: str, min_sample: int) -> str:
     sample_label = _sample_label_for_metric(metric)
     return f"規定{sample_label}{min_sample}以上"
+
+
+def _xpost_sample_floor(metric: str, period_label: str) -> int:
+    """436: minimum sample for X-facing Top10 credibility.
+
+    The upstream query may use a lower threshold to keep enough rows
+    available. Public X candidates should still avoid rate tables that
+    are driven by 1-2 plate appearances or a single relief outing.
+    """
+    if metric in _BATTING_METRICS:
+        if period_label == "直近3試合":
+            return 6
+        if period_label == "直近5試合":
+            return 10
+        if period_label == "直近10試合":
+            return 20
+        if period_label == "直近20試合":
+            return 30
+        if period_label in {"直近1週間", "今週"}:
+            return 10
+        if period_label == "今月" or period_label.endswith("月成績"):
+            return 30
+    if metric in _PITCHING_METRICS:
+        if period_label in {"直近3試合", "直近5試合", "直近10試合"}:
+            return 3
+        if period_label == "直近20試合":
+            return 5
+        if period_label == "今月" or period_label.endswith("月成績"):
+            return 5
+    return 0
+
+
+def _effective_xpost_min_sample(metric: str, period_label: str, min_sample: int) -> int:
+    floor = _xpost_sample_floor(metric, period_label)
+    return max(int(min_sample or 0), floor)
 
 
 def _format_metric_value(metric: str, value: object) -> str:
@@ -1468,10 +1559,10 @@ def _truncate_to_x_limit_top_n(text: str, top_n: int) -> str:
     kept: list[str] = []
     rank_seen = 0
     for line in lines:
-        is_ranking = bool(_re.match(r"^\d+\.\s", line))
+        is_ranking = bool(_re.match(r"^\d+(?:\.|位)\s", line))
         if is_ranking:
             rank_seen += 1
-            if rank_seen > top_n and "⭐巨人" not in line:
+            if rank_seen > top_n and "⭐巨人" not in line and "🟧巨人🟧" not in line:
                 continue  # drop rows beyond top_n
         kept.append(line)
     return "\n".join(kept)
@@ -1575,6 +1666,199 @@ def _build_branded_post_text(
     return _finalize_post_text(body)
 
 
+def _db_table_fan_view_line(combo: _MetricCombo) -> str:
+    """Return a short, low-temperature fan-view line for Source B tables."""
+    if combo.position:
+        return "数字で見ると、この比較は追いたい。"
+    if combo.metric in {"ERA", "K_per_9", "BB_per_9", "HR_per_9"}:
+        return "次の登板で見たい数字。"
+    if combo.period_label in {"直近3試合", "直近5試合", "直近10試合", "直近1週間", "今週"}:
+        return "この推移は追いたい。"
+    return "数字で見るとここは期待したい。"
+
+
+def _build_db_table_post_text(draft_text: str, combo: _MetricCombo) -> str:
+    """429: keep the DB ranking table as the actual public post text.
+
+    ``draft_text`` is already the 418 case B table.  Earlier versions put
+    a branded prose paragraph in ``post_text`` and kept the table only as
+    proof.  For Yoshilover X, Source B is the brand axis, so the table must
+    survive in the X intent ``text=`` value.  The fan-view line is optional:
+    add it only when it fits without truncating the table.
+    """
+    base = "\n".join(
+        line for line in draft_text.strip().splitlines()
+        if not line.strip().startswith("#")
+    ).strip()
+    if not base:
+        return ""
+    fan_line = _db_table_fan_view_line(combo)
+    with_line = f"{base}\n{fan_line}"
+    if len(with_line) <= X_CHAR_LIMIT:
+        return with_line
+    return base if len(base) <= X_CHAR_LIMIT else _finalize_post_text(base)
+
+
+def _normalize_team_level(value: object) -> str:
+    raw = str(value or "").strip().lower()
+    if not raw:
+        return ""
+    if raw in {"first", "first_team", "ichi", "1", "npb", "central", "ce", "セ"}:
+        return "first"
+    if raw in {"farm2", "farm", "2", "2gun", "ni", "eastern", "western"}:
+        return "farm2"
+    if raw in {"farm3", "third", "third_team", "3", "3gun", "san"}:
+        return "farm3"
+    if raw in {"unknown", "不明"}:
+        return "unknown"
+    if any(term.lower() in raw for term in _THIRD_TEAM_TERMS):
+        return "farm3"
+    if any(term.lower() in raw for term in _FARM_TERMS):
+        return "farm2"
+    if "一軍" in raw or "1軍" in raw or "１軍" in raw:
+        return "first"
+    return ""
+
+
+def _infer_team_level_from_text(text: str) -> str:
+    if any(term in text for term in _THIRD_TEAM_TERMS):
+        return "farm3"
+    if any(term in text for term in _FARM_TERMS):
+        return "farm2"
+    if "一軍" in text or "1軍" in text or "１軍" in text:
+        return "first"
+    return ""
+
+
+_TEAM_LEVEL_ROW_FIELDS = (
+    "team_level",
+    "league_level",
+    "level",
+    "league_label",
+    "source_kind",
+    "source_label",
+    "competition",
+    "scope",
+)
+
+
+def _row_team_level(row: dict) -> str:
+    for key in _TEAM_LEVEL_ROW_FIELDS:
+        level = _normalize_team_level(row.get(key))
+        if level:
+            return level
+    haystack = " ".join(
+        str(row.get(key) or "")
+        for key in (
+            "title",
+            "label",
+            "source_title",
+            "league_label",
+            "team_code",
+            "team_name",
+        )
+    )
+    return _infer_team_level_from_text(haystack) or "first"
+
+
+def _candidate_team_level(candidate: Candidate) -> str:
+    level = _normalize_team_level(candidate.team_level)
+    if level:
+        return level
+    if _candidate_source_kind(candidate) not in {"B", "C"}:
+        return ""
+    haystack = " ".join(
+        str(part or "")
+        for part in (
+            candidate.title,
+            candidate.period_label,
+            candidate.draft_text,
+            candidate.post_text,
+            candidate.source_material_type,
+        )
+    )
+    return _infer_team_level_from_text(haystack) or "first"
+
+
+def _row_sample_size(row: dict) -> Optional[int]:
+    for key in ("sample_size", "sample", "pa", "PA", "ip", "IP"):
+        value = row.get(key)
+        if value is None or value == "":
+            continue
+        try:
+            return int(float(value))
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _sample_size_for_candidate(candidate: Candidate) -> Optional[int]:
+    if candidate.sample_size:
+        return int(candidate.sample_size)
+    return None
+
+
+def _filter_first_team_rows(rows: list[dict], combo: _MetricCombo) -> list[dict]:
+    kept: list[dict] = []
+    for row in rows:
+        level = _row_team_level(row)
+        if level != "first":
+            LOG.info(
+                "team_level_separated metric=%s period=%s player=%s level=%s",
+                combo.metric,
+                combo.period_label,
+                row.get("player_canonical"),
+                level,
+            )
+            continue
+        kept.append(row)
+    return kept
+
+
+def _filter_rows_by_xpost_sample_gate(
+    rows: list[dict],
+    combo: _MetricCombo,
+    *,
+    min_sample: int,
+) -> list[dict]:
+    floor = _effective_xpost_min_sample(combo.metric, combo.period_label, min_sample)
+    if floor <= 0:
+        return rows
+    kept: list[dict] = []
+    for row in rows:
+        sample = _row_sample_size(row)
+        if sample is None:
+            LOG.info(
+                "sample_unknown_keep metric=%s period=%s player=%s floor=%d",
+                combo.metric,
+                combo.period_label,
+                row.get("player_canonical"),
+                floor,
+            )
+            kept.append(row)
+            continue
+        if sample < floor:
+            LOG.info(
+                "sample_too_small_skip metric=%s period=%s player=%s sample=%d floor=%d",
+                combo.metric,
+                combo.period_label,
+                row.get("player_canonical"),
+                sample,
+                floor,
+            )
+            continue
+        kept.append(row)
+    return kept
+
+
+def _has_candidate_giants_row(
+    rows: list[dict],
+    *,
+    focus_player_names: Optional[set[str]] = None,
+) -> bool:
+    return _top_giants_row(rows, focus_player_names=focus_player_names) is not None
+
+
 def _is_safe_post_text(text: str) -> bool:
     if not text.strip():
         return False
@@ -1587,6 +1871,287 @@ def _candidate_post_text(candidate: Candidate) -> str:
 
 def _candidate_char_count(candidate: Candidate) -> int:
     return len(_candidate_post_text(candidate))
+
+
+_SOURCE_A_METRICS = {_NEWS_OPINION_METRIC, _COMMENT_DB_METRIC, _FAN_VOICE_METRIC}
+_DB_TABLE_REQUIRED_TOKENS = ("📊", "TOP", "巨人最上位", "🟧巨人🟧")
+_SOURCE_C_CONDITION_TOKENS = ("規定", "条件", "対象", "sample", "サンプル", "打席", "登板", "投球回")
+_SOURCE_C_SLICE_TOKENS = ("対左", "対右", "左右", "打順", "守備", "走者", "カウント", "状況", "起用")
+
+
+def _candidate_source_kind(candidate: Candidate) -> str:
+    if candidate.source_material_type == "specialized_db":
+        return "C"
+    if candidate.metric in _SOURCE_A_METRICS:
+        return "A"
+    return "B"
+
+
+_SELECTED_REASON_LABELS = {
+    "source_a_news": "RSS/コメント材料",
+    "source_b_db_table": "DB表",
+    "source_c_db_slice": "DB slice",
+    "metric_family:batting": "打撃指標",
+    "metric_family:pitching": "投手指標",
+    "metric_family:fielding": "守備指標",
+    "metric_family:news": "ニュース材料",
+    "period:short_window": "短期変化",
+    "period:monthly": "月別",
+    "period:calendar": "カレンダー期間",
+    "period:other": "期間あり",
+    "first_team": "一軍",
+    "sample_ok": "sample確認",
+    "sample_checked": "sample確認",
+    "sample_low_fallback": "低sample参考",
+    "player_diversity": "選手分散",
+    "fan_useful:central_rank": "セ順位で有用",
+    "surprise:short_window": "短期の意外性",
+}
+
+
+def _candidate_metric_family_tag(candidate: Candidate) -> str:
+    if candidate.metric in _BATTING_METRICS:
+        return "metric_family:batting"
+    if candidate.metric in _PITCHING_METRICS:
+        return "metric_family:pitching"
+    if candidate.metric in _FIELDING_METRICS:
+        return "metric_family:fielding"
+    if _candidate_source_kind(candidate) == "A":
+        return "metric_family:news"
+    return "metric_family:other"
+
+
+def _candidate_period_tag(candidate: Candidate) -> str:
+    label = candidate.period_label or ""
+    if "直近" in label or label == "今週":
+        return "period:short_window"
+    if label == "今月" or label.endswith("月成績"):
+        return "period:monthly"
+    if label:
+        return "period:other"
+    return ""
+
+
+def _dedupe_reason_tags(tags: list[str]) -> tuple[str, ...]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for tag in tags:
+        normalized = str(tag or "").strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        out.append(normalized)
+    return tuple(out)
+
+
+def _candidate_selected_reason_tags(candidate: Candidate) -> tuple[str, ...]:
+    tags = list(candidate.reason_tags)
+    source_kind = _candidate_source_kind(candidate)
+    if source_kind == "A":
+        tags.append("source_a_news")
+    elif source_kind == "C":
+        tags.append("source_c_db_slice")
+    else:
+        tags.append("source_b_db_table")
+    tags.append(_candidate_metric_family_tag(candidate))
+    period_tag = _candidate_period_tag(candidate)
+    if period_tag:
+        tags.append(period_tag)
+    if _candidate_team_level(candidate) == "first":
+        tags.append("first_team")
+    if candidate.sample_size or candidate.sample_label:
+        tags.append("sample_checked")
+    if _normalize_player_name(candidate.focus_player):
+        tags.append("player_diversity")
+    return _dedupe_reason_tags(tags)
+
+
+def _candidate_selected_reason_text(candidate: Candidate) -> str:
+    if candidate.selected_reason:
+        return candidate.selected_reason
+    labels: list[str] = []
+    for tag in _candidate_selected_reason_tags(candidate):
+        labels.append(_SELECTED_REASON_LABELS.get(tag, tag))
+    return " / ".join(labels)
+
+
+def _with_selected_reason(candidate: Candidate) -> Candidate:
+    return replace(candidate, selected_reason=_candidate_selected_reason_text(candidate))
+
+
+def _selection_reason_summary(candidates: list[Candidate]) -> str:
+    counts: dict[str, int] = {}
+    for candidate in candidates:
+        for tag in _candidate_selected_reason_tags(candidate):
+            if tag == "first_team":
+                continue
+            counts[tag] = counts.get(tag, 0) + 1
+    if not counts:
+        return "採用理由: none"
+    ordered = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+    return "採用理由: " + " / ".join(
+        f"{_SELECTED_REASON_LABELS.get(tag, tag)}={count}"
+        for tag, count in ordered
+    )
+
+
+def _source_a_voice_flags(text: str) -> list[str]:
+    # 2026-05-25 user 確定: ヨシラバー voice 短文化 (180-280→100-180 字)。
+    # hard NG: <60 字 (極端に短い)、 warn: <100 字 (目標下限割れ)、
+    # X over: >280 字 (X char limit 不変)。
+    flags: list[str] = []
+    public_lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if len(text) < 60:
+        flags.append("hard:source_a_under_60")
+    elif len(text) < 100:
+        flags.append("warn:source_a_under_100")
+    if len(text) > X_CHAR_LIMIT:
+        flags.append("hard:source_a_over_280")
+    if not 2 <= len(public_lines) <= 3:
+        flags.append(f"warn:source_a_line_count:{len(public_lines)}")
+    return flags
+
+
+def _source_c_slice_flags(text: str) -> list[str]:
+    flags: list[str] = []
+    if "巨人" not in text:
+        flags.append("hard:source_c_giants_row_missing")
+    if not any(token in text for token in _SOURCE_C_CONDITION_TOKENS):
+        flags.append("hard:source_c_sample_condition_missing")
+    if not any(token in text for token in _SOURCE_C_SLICE_TOKENS):
+        flags.append("warn:source_c_slice_label_missing")
+    if len(text) > X_CHAR_LIMIT:
+        flags.append("hard:source_c_over_280")
+    return flags
+
+
+def _team_level_flags(candidate: Candidate) -> list[str]:
+    if _candidate_source_kind(candidate) not in {"B", "C"}:
+        return []
+    level = _candidate_team_level(candidate)
+    if level == "first" or not level:
+        return []
+    if level == "farm2":
+        return ["hard:team_level_farm2_separated"]
+    if level == "farm3":
+        return ["hard:team_level_farm3_separated"]
+    if level == "unknown":
+        return ["hard:team_level_unknown"]
+    return [f"hard:team_level_unsupported:{level}"]
+
+
+def _sample_gate_flags(candidate: Candidate) -> list[str]:
+    if _candidate_source_kind(candidate) not in {"B", "C"}:
+        return []
+    floor = _xpost_sample_floor(candidate.metric, candidate.period_label)
+    if floor <= 0:
+        return []
+    sample = _sample_size_for_candidate(candidate)
+    if sample is None:
+        return [f"warn:sample_unknown:floor={floor}"]
+    if sample < floor:
+        return [f"hard:sample_too_small:{sample}<{floor}"]
+    return []
+
+
+def _candidate_anomaly_flags(candidate: Candidate) -> list[str]:
+    """434 phase 1: deterministic flags only, no ML and no live calls."""
+    text = _candidate_post_text(candidate)
+    flags: list[str] = []
+    for term in _FORBIDDEN_POST_TERMS:
+        if term in text:
+            flags.append(f"hard:ng_word:{term}")
+            break
+
+    source_kind = _candidate_source_kind(candidate)
+    if source_kind == "A":
+        flags.extend(_source_a_voice_flags(text))
+    if source_kind == "B":
+        missing = [token for token in _DB_TABLE_REQUIRED_TOKENS if token not in text]
+        if missing:
+            flags.append("hard:source_b_table_token_missing:" + ",".join(missing))
+        if "どう見ますか" in text or "数字だけで語り切る" in text:
+            flags.append("hard:source_b_prose_overwrite")
+    if source_kind == "C":
+        flags.extend(_source_c_slice_flags(text))
+    flags.extend(_team_level_flags(candidate))
+    flags.extend(_sample_gate_flags(candidate))
+    return flags
+
+
+def _source_mix_summary(candidates: list[Candidate]) -> tuple[list[str], list[str]]:
+    counts = {"A": 0, "B": 0, "C": 0}
+    level_counts = {"first": 0, "farm2": 0, "farm3": 0, "unknown": 0}
+    player_counts: dict[str, int] = {}
+    metric_counts: dict[str, int] = {}
+    period_counts: dict[str, int] = {}
+    warning_flags: list[str] = []
+    hard_flags: list[str] = []
+    for idx, candidate in enumerate(candidates, start=1):
+        kind = _candidate_source_kind(candidate)
+        counts[kind] = counts.get(kind, 0) + 1
+        if kind in {"B", "C"}:
+            level = _candidate_team_level(candidate) or "unknown"
+            level_counts[level] = level_counts.get(level, 0) + 1
+            player_key = _normalize_player_name(candidate.focus_player)
+            if player_key:
+                player_counts[player_key] = player_counts.get(player_key, 0) + 1
+            if candidate.metric:
+                metric_counts[candidate.metric] = metric_counts.get(candidate.metric, 0) + 1
+            if candidate.period_label:
+                period_counts[candidate.period_label] = period_counts.get(candidate.period_label, 0) + 1
+        for flag in _candidate_anomaly_flags(candidate):
+            label = f"候補{idx}:{flag}"
+            if flag.startswith("hard:"):
+                hard_flags.append(label)
+            else:
+                warning_flags.append(label)
+
+    total = len(candidates)
+    if total < 5:
+        warning_flags.append(f"candidate_count_low:{total}")
+    if total > 8:
+        warning_flags.append(f"candidate_count_high:{total}")
+    if total and counts["B"] <= total / 2:
+        warning_flags.append(f"source_b_ratio_low:{counts['B']}/{total}")
+    duplicate_players = {k: v for k, v in player_counts.items() if v > 1}
+    duplicate_metrics = {k: v for k, v in metric_counts.items() if v > 2}
+    duplicate_periods = {k: v for k, v in period_counts.items() if v > 3}
+    if duplicate_players:
+        warning_flags.append(
+            "duplicate_player:" + ",".join(
+                f"{name}x{count}" for name, count in sorted(duplicate_players.items())
+            )
+        )
+    if duplicate_metrics:
+        warning_flags.append(
+            "duplicate_metric:" + ",".join(
+                f"{name}x{count}" for name, count in sorted(duplicate_metrics.items())
+            )
+        )
+    if duplicate_periods:
+        warning_flags.append(
+            "duplicate_period:" + ",".join(
+                f"{name}x{count}" for name, count in sorted(duplicate_periods.items())
+            )
+        )
+
+    lines = [
+        f"Source構成: A(RSS観戦)={counts['A']} / B(DB表)={counts['B']} / C(DB slice)={counts['C']} / total={total}",
+        (
+            "Data構成: "
+            f"first={level_counts.get('first', 0)} / "
+            f"farm2={level_counts.get('farm2', 0)} / "
+            f"farm3={level_counts.get('farm3', 0)} / "
+            f"unknown={level_counts.get('unknown', 0)}"
+        ),
+        _selection_reason_summary(candidates),
+    ]
+    if warning_flags:
+        lines.append("flags: " + "; ".join(warning_flags))
+    if hard_flags:
+        lines.append("hard_drop_candidates: " + "; ".join(hard_flags))
+    return lines, warning_flags + hard_flags
 
 
 # ---------------------------------------------------------------------------
@@ -1984,6 +2549,7 @@ def _format_one(
     focus_player_names: Optional[set[str]] = None,
     avoid_player_names: Optional[set[str]] = None,
     context_label: str = "",
+    sample_gate_relaxed: bool = False,
 ) -> Optional[Candidate]:
     focus_row = _top_giants_row(
         rows,
@@ -2020,7 +2586,17 @@ def _format_one(
     text = formatted["draft_text"]
     lines = text.split("\n")
     period_label = _format_period_label(combo, now)
-    threshold_label = _sample_threshold_label(combo.metric, min_sample)
+    effective_xpost_min_sample = _effective_xpost_min_sample(
+        combo.metric,
+        combo.period_label,
+        min_sample,
+    )
+    base_threshold_label = _sample_threshold_label(combo.metric, effective_xpost_min_sample)
+    threshold_label = (
+        f"参考値・通常目安={base_threshold_label}"
+        if sample_gate_relaxed
+        else base_threshold_label
+    )
     period_suffix = f"（{period_label}・{threshold_label}）"
     metric_jp = _METRIC_LABELS_JP.get(combo.metric, combo.metric)
     header_emoji = _METRIC_HEADER_EMOJI.get(combo.metric, "📊")
@@ -2062,20 +2638,10 @@ def _format_one(
         draft_text = _truncate_to_x_limit_top_n(draft_text, top_n=5)
         if len(draft_text) > X_CHAR_LIMIT:
             draft_text = draft_text[: X_CHAR_LIMIT - 1] + "…"
-    post_text = _build_branded_post_text(
-        combo,
-        focus_row,
-        metric_jp=metric_jp,
-        period_label=period_label,
-        threshold_label=threshold_label,
-        scope_label=scope_label,
-        rank=focus_rank,
-        total=focus_total,
-        context_label=context_label,
-    )
+    post_text = _build_db_table_post_text(draft_text, combo)
     if not _is_safe_post_text(post_text):
         LOG.warning(
-            "unsafe branded X post text skipped for %s/%s",
+            "unsafe Source B table X post text skipped for %s/%s",
             combo.metric,
             combo.period_label,
         )
@@ -2086,7 +2652,15 @@ def _format_one(
         f"{scope_label} {focus_rank}/{focus_total}位"
         f"（{value_text}、{threshold_label}）"
     )
-    return Candidate(
+    reason_tags = (
+        "first_team",
+        "fan_useful:central_rank",
+        "surprise:short_window"
+        if ("直近" in combo.period_label or combo.period_label == "今週")
+        else "",
+        "sample_low_fallback" if sample_gate_relaxed else "sample_ok",
+    )
+    candidate = Candidate(
         title=title,
         metric=combo.metric,
         period_label=combo.period_label,
@@ -2097,7 +2671,12 @@ def _format_one(
         context_label=context_label,
         focus_player=str(focus_name or ""),
         db_fact_line=db_fact_line,
+        team_level="first",
+        sample_size=_row_sample_size(focus_row) or 0,
+        sample_label=threshold_label,
+        reason_tags=_dedupe_reason_tags(list(reason_tags)),
     )
+    return _with_selected_reason(candidate)
 
 
 def pick_candidates(
@@ -2272,6 +2851,59 @@ def pick_candidates(
                 rows = _active_filtered
             except Exception as _exc:  # noqa: BLE001
                 LOG.info("active_roster_filter_skip_exception err=%r", _exc)
+        rows = _filter_first_team_rows(rows, combo)
+        first_team_rows = rows
+        sample_strict_rows = _filter_rows_by_xpost_sample_gate(
+            first_team_rows,
+            combo,
+            min_sample=effective_min_sample,
+        )
+        sample_gate_relaxed = False
+        strict_rows_enough = len(sample_strict_rows) >= min_central_rows
+        strict_has_giants = _has_candidate_giants_row(
+            sample_strict_rows,
+            focus_player_names=focus_names,
+        )
+        if not strict_rows_enough:
+            LOG.info(
+                "sample_gate_hard_skip metric=%s period=%s reason=too_few_sample_rows "
+                "strict_rows=%d required=%d first_team_rows=%d",
+                combo.metric,
+                combo.period_label,
+                len(sample_strict_rows),
+                min_central_rows,
+                len(first_team_rows),
+            )
+            continue
+        if not strict_has_giants:
+            fallback_top = _top_giants_row(
+                first_team_rows,
+                focus_player_names=focus_names,
+            )
+            if (
+                sample_strict_rows != first_team_rows
+                and fallback_top is not None
+            ):
+                LOG.info(
+                    "sample_gate_hard_skip metric=%s period=%s player=%s "
+                    "reason=focus_row_below_sample_floor strict_rows=%d first_team_rows=%d",
+                    combo.metric,
+                    combo.period_label,
+                    fallback_top.get("player_canonical"),
+                    len(sample_strict_rows),
+                    len(first_team_rows),
+                )
+            else:
+                LOG.info(
+                    "sample_gate_hard_skip metric=%s period=%s reason=no_sample_qualified_giants "
+                    "strict_rows=%d first_team_rows=%d",
+                    combo.metric,
+                    combo.period_label,
+                    len(sample_strict_rows),
+                    len(first_team_rows),
+                )
+            continue
+        rows = sample_strict_rows
         min_rows_required = min_central_rows
         if len(rows) < min_rows_required:
             LOG.info("Too few rows (%d < %d) for %s/%s (position=%s) — skip",
@@ -2322,6 +2954,7 @@ def pick_candidates(
             focus_player_names=focus_names,
             avoid_player_names=avoid_names,
             context_label=context_label if focus_names else "",
+            sample_gate_relaxed=sample_gate_relaxed,
         )
         if candidate:
             focus_player_key = _normalize_player_name(candidate.focus_player)
@@ -2503,11 +3136,15 @@ def _compose_text_body(
     ]
     if context_note:
         parts.extend([context_note, ""])
+    summary_lines, _ = _source_mix_summary(candidates)
+    parts.extend(["【Source / flags】", *summary_lines, ""])
     for idx, cand in enumerate(candidates, start=1):
         post_text = _candidate_post_text(cand)
         parts.append("━" * 40)
         parts.append(f"■ 候補 {idx}: {cand.title}")
         parts.append("━" * 40)
+        parts.append("")
+        parts.append(f"【採用理由】{_candidate_selected_reason_text(cand)}")
         parts.append("")
         parts.append(post_text)
         parts.append("")
@@ -2531,6 +3168,15 @@ def _compose_html_body(
 ) -> str:
     band = time_band_label(now.hour)
     header_label = _mail_header_label(candidates)
+    summary_lines, _ = _source_mix_summary(candidates)
+    summary_html = (
+        "<div style=\"font-size:12px;color:#444;background:#f6f8fa;"
+        "border:1px solid #d0d7de;border-radius:4px;padding:8px 10px;"
+        "margin:0 0 12px;\">"
+        "<div style=\"font-weight:600;margin-bottom:4px;\">Source / flags</div>"
+        + "".join(f"<div>{_html.escape(line)}</div>" for line in summary_lines)
+        + "</div>"
+    )
     rows_html: list[str] = []
     for idx, cand in enumerate(candidates, start=1):
         post_text = _candidate_post_text(cand)
@@ -2539,6 +3185,7 @@ def _compose_html_body(
         over = char_count > X_CHAR_LIMIT
         counter_color = "#b71c1c" if over else "#666"
         counter_suffix = " ⚠️ 超過" if over else ""
+        selected_reason = _candidate_selected_reason_text(cand)
         proof_html = ""
         if cand.post_text and cand.draft_text and cand.post_text != cand.draft_text:
             proof_html = (
@@ -2557,6 +3204,8 @@ def _compose_html_body(
             "border-radius:4px;\">"
             f"<div style=\"font-weight:600;font-size:14px;color:#5d4037;"
             f"margin:0 0 8px;\">■ 候補 {idx}: {_html.escape(cand.title)}</div>"
+            "<div style=\"font-size:12px;color:#5d4037;margin:0 0 8px;\">"
+            f"採用理由: {_html.escape(selected_reason)}</div>"
             "<pre style=\"white-space:pre-wrap;word-break:keep-all;"
             "font-family:-apple-system,BlinkMacSystemFont,'Hiragino Sans',"
             "'Yu Gothic',monospace;font-size:13px;line-height:1.5;"
@@ -2594,6 +3243,7 @@ def _compose_html_body(
             f"{_html.escape(context_note)}</p>"
             if context_note else ""
         )
+        + summary_html
         + "\n".join(rows_html)
         + "</body></html>"
     )

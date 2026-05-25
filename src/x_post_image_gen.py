@@ -145,6 +145,17 @@ def build_ranking_data(
     }
 
 
+def _eyecatch_slug(metric: str, focus: str) -> str:
+    """437: (metric, focus) から ASCII-safe な stable slug を生成。
+
+    WP が CJK filename を URL-encode するのを避け、 dedup lookup が確実に効くよう
+    hash で固定化する。 同じ (metric, focus) → 同じ slug → WP 1 個に統一。
+    """
+    import hashlib
+    raw = f"437-eyecatch-{metric}-{focus}".encode("utf-8")
+    return "437eyc-" + hashlib.md5(raw).hexdigest()[:16]
+
+
 def attach_ranking_image(wp_client_obj: Any, article: dict[str, Any]) -> int:
     """ranking article → PNG eyecatch → WP media upload → media_id。
 
@@ -155,6 +166,9 @@ def attach_ranking_image(wp_client_obj: Any, article: dict[str, Any]) -> int:
       - image_metric_name: str (e.g. "OPS")
       - image_period_label: str (e.g. "直近 10 試合")
       - focus_player: str
+
+    437 dedup: 同じ (metric, focus_player) の既存 PNG を upload 前に delete し、
+    WP メディアライブラリに 1 個だけ保持する (累積防止)。
     """
     try:
         rows = article.get("image_rows") or []
@@ -181,8 +195,15 @@ def attach_ranking_image(wp_client_obj: Any, article: dict[str, Any]) -> int:
         png = generate_png("ranking_table", data)
         if not png:
             return 0
-        safe_focus = "".join(c for c in focus if c.isalnum() or c in "_-")[:32] or "giants"
-        filename = f"yoshilover-ranking-{metric.lower()}-{safe_focus}.png"
+        # 437 dedup: 既存同名 PNG を消してから upload (累積防止)
+        slug = _eyecatch_slug(metric, focus)
+        try:
+            old_id = wp_client_obj.find_media_by_slug(slug)
+            if old_id:
+                wp_client_obj.delete_media(old_id)
+        except Exception as exc:  # dedup 失敗は upload を止めない
+            logger.warning("[437] eyecatch dedup pre-delete failed slug=%s err=%s", slug, exc)
+        filename = f"{slug}.png"
         media_id = wp_client_obj.upload_generated_image(png, filename, "image/png")
         return int(media_id or 0)
     except Exception as exc:

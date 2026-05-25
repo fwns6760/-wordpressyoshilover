@@ -958,6 +958,53 @@ class WPClient:
     def media_already_uploaded_for_url(self, image_url: str) -> bool:
         return bool(self.find_uploaded_media_id_for_url(image_url))
 
+    def find_media_by_slug(self, slug: str) -> int:
+        """437: slug 検索で既存 media id を返す。 無ければ 0。
+
+        WP は filename を slug に正規化する (例: ``437eyc-abc.png`` → slug
+        ``437eyc-abc``)。 ``upload_generated_image`` 前に call して既存
+        eyecatch を見つけ、 ``delete_media`` で消すと累積を防げる。
+        """
+        try:
+            normalized_slug = (slug or "").strip()
+            if not normalized_slug:
+                return 0
+            resp = requests.get(
+                f"{self.api}/media",
+                params={"slug": normalized_slug, "_fields": "id"},
+                auth=self.auth,
+                timeout=8,
+            )
+            if resp.status_code != 200:
+                return 0
+            rows = resp.json() or []
+            if not rows:
+                return 0
+            return int(rows[0].get("id") or 0)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[WP] find_media_by_slug failed slug={slug!r}: {exc}")
+            return 0
+
+    def delete_media(self, media_id: int) -> bool:
+        """437: WP media を完全削除する (?force=true で trash 経由しない)。
+
+        返り値: 成功時 True、 失敗時 False (caller 側は upload 続行可)。
+        """
+        try:
+            mid = int(media_id or 0)
+            if mid <= 0:
+                return False
+            resp = self._request_with_retry(
+                requests.delete,
+                f"{self.api}/media/{mid}",
+                action=f"delete_media id={mid}",
+                params={"force": "true"},
+            )
+            return resp.status_code in (200, 204)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[WP] delete_media failed media_id={media_id}: {exc}")
+            return False
+
     def upload_image_from_url(self, image_url: str, filename: str = None, source_url: str = "") -> int:
         """
         外部画像URLをダウンロードしてWPメディアライブラリにアップロード。

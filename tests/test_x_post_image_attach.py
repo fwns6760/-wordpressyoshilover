@@ -5,12 +5,13 @@ mock WP client + article dict で:
 - empty image_rows → 0
 - WP upload 失敗 → 0
 - 例外 → 0 (caller 側 publish 続行)
+- dedup: 既存 slug PNG を pre-delete してから upload (累積防止)
 """
 from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from src.x_post_image_gen import attach_ranking_image
+from src.x_post_image_gen import _eyecatch_slug, attach_ranking_image
 
 
 def _giants_focus_article():
@@ -33,6 +34,7 @@ def _giants_focus_article():
 
 def test_happy_path_calls_upload_and_returns_media_id():
     wp = MagicMock()
+    wp.find_media_by_slug.return_value = 0  # no existing
     wp.upload_generated_image.return_value = 12345
     media_id = attach_ranking_image(wp, _giants_focus_article())
     assert media_id == 12345
@@ -45,10 +47,14 @@ def test_happy_path_calls_upload_and_returns_media_id():
     content_type = call_args.args[2]
     # PNG signature
     assert png_bytes[:8] == b"\x89PNG\r\n\x1a\n"
-    # filename に metric / focus 名が含まれる
-    assert "ops" in filename.lower()
+    # 437 dedup: filename は slug ベース (ASCII safe + hash)
+    assert filename.startswith("437eyc-")
     assert filename.endswith(".png")
     assert content_type == "image/png"
+    # find_media_by_slug が pre-delete 確認のため 1 回呼ばれる
+    wp.find_media_by_slug.assert_called_once()
+    # 既存無しなので delete_media は呼ばれない
+    wp.delete_media.assert_not_called()
 
 
 def test_empty_image_rows_returns_zero():
@@ -58,6 +64,8 @@ def test_empty_image_rows_returns_zero():
     assert media_id == 0
     # WP upload は呼ばれない
     wp.upload_generated_image.assert_not_called()
+    # dedup find も skip (image_rows 空で early return)
+    wp.find_media_by_slug.assert_not_called()
 
 
 def test_missing_image_rows_returns_zero():
@@ -70,6 +78,7 @@ def test_missing_image_rows_returns_zero():
 
 def test_wp_upload_returns_zero_then_attach_returns_zero():
     wp = MagicMock()
+    wp.find_media_by_slug.return_value = 0
     wp.upload_generated_image.return_value = 0
     media_id = attach_ranking_image(wp, _giants_focus_article())
     assert media_id == 0
@@ -77,6 +86,7 @@ def test_wp_upload_returns_zero_then_attach_returns_zero():
 
 def test_wp_upload_raises_exception_then_attach_returns_zero():
     wp = MagicMock()
+    wp.find_media_by_slug.return_value = 0
     wp.upload_generated_image.side_effect = RuntimeError("WP 500")
     # exception caught internally → caller 側 publish 続行可
     media_id = attach_ranking_image(wp, _giants_focus_article())
@@ -86,6 +96,7 @@ def test_wp_upload_raises_exception_then_attach_returns_zero():
 def test_hook_line_says_2giants_when_2_in_top10():
     """巨人選手 2 名が rows にいる時、 hook line が「巨人 2 名」 になる。"""
     wp = MagicMock()
+    wp.find_media_by_slug.return_value = 0
     captured_png = []
     def capture(png, filename, ct):
         captured_png.append((png, filename))
@@ -94,12 +105,11 @@ def test_hook_line_says_2giants_when_2_in_top10():
     article = _giants_focus_article()
     attach_ranking_image(wp, article)
     assert len(captured_png) == 1
-    # hook line check は PNG 内では困難なので、 SVG 経由で確認 (別 unit test)
-    # 本 test では「upload 成功」 だけ確認、 hook 詳細は test_x_post_image_gen.py 側
 
 
 def test_no_giants_hook_falls_back_to_metric_label():
     wp = MagicMock()
+    wp.find_media_by_slug.return_value = 0
     wp.upload_generated_image.return_value = 555
     article = {
         "image_rows": [
@@ -119,6 +129,7 @@ def test_no_giants_hook_falls_back_to_metric_label():
 def test_focus_player_special_chars_safe_filename():
     """focus_player に special chars / 全角があっても filename が壊れない。"""
     wp = MagicMock()
+    wp.find_media_by_slug.return_value = 0
     wp.upload_generated_image.return_value = 1
     article = _giants_focus_article()
     article["focus_player"] = "坂本勇人/test\\xss"
@@ -129,3 +140,68 @@ def test_focus_player_special_chars_safe_filename():
     assert "/" not in filename
     assert "\\" not in filename
     assert filename.endswith(".png")
+    # slug ベース (ASCII only)
+    assert filename.startswith("437eyc-")
+
+
+# ----- 437 dedup (slug-based pre-delete) -----
+
+
+def test_eyecatch_slug_stable_same_input_same_output():
+    """同じ (metric, focus) は何度呼んでも同じ slug を返す。"""
+    s1 = _eyecatch_slug("OPS", "坂本勇人")
+    s2 = _eyecatch_slug("OPS", "坂本勇人")
+    assert s1 == s2
+    assert s1.startswith("437eyc-")
+    # ASCII-only (URL-safe)
+    assert all(c.isascii() for c in s1)
+
+
+def test_eyecatch_slug_different_metric_different_slug():
+    s_ops = _eyecatch_slug("OPS", "坂本勇人")
+    s_avg = _eyecatch_slug("AVG", "坂本勇人")
+    assert s_ops != s_avg
+
+
+def test_eyecatch_slug_different_focus_different_slug():
+    s_sakamoto = _eyecatch_slug("OPS", "坂本勇人")
+    s_okamoto = _eyecatch_slug("OPS", "岡本和真")
+    assert s_sakamoto != s_okamoto
+
+
+def test_dedup_pre_deletes_existing_media_before_upload():
+    """既存 slug PNG があれば upload 前に delete される。"""
+    wp = MagicMock()
+    wp.find_media_by_slug.return_value = 99999  # 既存 media id
+    wp.upload_generated_image.return_value = 12346
+    media_id = attach_ranking_image(wp, _giants_focus_article())
+    assert media_id == 12346
+    # 既存を find → delete → upload の順
+    wp.find_media_by_slug.assert_called_once()
+    wp.delete_media.assert_called_once_with(99999)
+    wp.upload_generated_image.assert_called_once()
+
+
+def test_dedup_delete_failure_does_not_block_upload():
+    """delete_media が False を返しても upload は続行 (publish 守る)。"""
+    wp = MagicMock()
+    wp.find_media_by_slug.return_value = 88888
+    wp.delete_media.return_value = False  # delete 失敗
+    wp.upload_generated_image.return_value = 12347
+    media_id = attach_ranking_image(wp, _giants_focus_article())
+    # upload は実行される
+    assert media_id == 12347
+    wp.upload_generated_image.assert_called_once()
+
+
+def test_dedup_find_raises_exception_still_uploads():
+    """find_media_by_slug が例外を投げても upload を止めない。"""
+    wp = MagicMock()
+    wp.find_media_by_slug.side_effect = RuntimeError("WP search failed")
+    wp.upload_generated_image.return_value = 12348
+    media_id = attach_ranking_image(wp, _giants_focus_article())
+    # upload は実行 + media_id 返却
+    assert media_id == 12348
+    wp.upload_generated_image.assert_called_once()
+    # delete は呼ばれない (find が失敗したので)
+    wp.delete_media.assert_not_called()

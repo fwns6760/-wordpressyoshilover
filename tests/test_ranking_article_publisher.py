@@ -26,10 +26,11 @@ TODAY = dt.date.today().isoformat()
 
 
 def test_default_publish_cap_is_conservative():
-    """DATA_INSIGHT_PUBLISH_MAX_PER_RUN 未指定時は 1 run 3 本に抑える。"""
+    """DATA_INSIGHT_PUBLISH_MAX_PER_RUN 未指定時は 1 run 5 本に抑える
+    (2026-05-25 user 確定: 3 → 5 に引き上げ、 巨人選手 分散 publish 対応)。"""
     from src.analysis import anomaly_article_publisher as anomaly_pub
 
-    assert rap.DEFAULT_MAX_PER_RUN == 3
+    assert rap.DEFAULT_MAX_PER_RUN == 5
     assert anomaly_pub.DEFAULT_MAX_PER_RUN == 3
 
 
@@ -234,6 +235,53 @@ def test_render_returns_none_when_no_giants_in_top_n(tmp_path):
         conn.close()
 
 
+def test_render_uses_wider_candidate_window_but_keeps_display_table_tight(tmp_path):
+    """表示は TOP10 のまま、候補発見は TOP30 まで広げられる。"""
+    db = tmp_path / "test.db"
+    conn = insight_etl.open_db(db_path=db, schema_path=insight_etl.DEFAULT_SCHEMA)
+    try:
+        ranking = [
+            (f"他球団{i}", "t", 1.000 - i * 0.01, 90, i, 30)
+            for i in range(1, 11)
+        ]
+        ranking.append(("巨人A", "g", 0.880, 90, 11, 30))
+        _seed_snapshots(
+            conn,
+            snapshot_date=TODAY,
+            scope="last_5_games",
+            metric="OPS",
+            ranking=ranking,
+        )
+
+        strict_result = rap.render_giants_centric_ranking(
+            conn,
+            metric_name="OPS",
+            scope="last_5_games",
+            snapshot_date=TODAY,
+            top_n=10,
+        )
+        wide_result = rap.render_giants_centric_ranking(
+            conn,
+            metric_name="OPS",
+            scope="last_5_games",
+            snapshot_date=TODAY,
+            top_n=10,
+            candidate_top_n=30,
+        )
+
+        assert strict_result is None
+        assert wide_result is not None
+        assert wide_result["focus_player"] == "巨人A"
+        assert wide_result["focus_rank"] == 11
+        assert wide_result["top_n"] == 10
+        assert wide_result["candidate_top_n"] == 30
+        assert wide_result["selection_tier"] == "extended_candidate_window"
+        assert "巨人A" in wide_result["body_md"]
+        assert "<strong>11</strong>" in wide_result["body_md"]
+    finally:
+        conn.close()
+
+
 def test_publish_dry_run_returns_article_dict(tmp_path):
     """dry_run=True で WP 投入せず article 内容を返す."""
     db = tmp_path / "test.db"
@@ -356,11 +404,12 @@ def test_publish_default_set_respects_max_per_run(tmp_path):
         # default_jobs に含まれる全 metric × scope を seed して
         # max_per_run cap が published_count を制限することを verify。
         # 403 (2026-05-20): default_jobs は last_7d → last_5_games cutover。
+        # 2026-05-25 user 確定: バッター=last_10_games / 投手=last_5_games に分離。
         for metric, scope in [
-            ("OPS", "last_5_games"),
-            ("AVG", "last_5_games"),
-            ("OBP", "last_5_games"),
-            ("SLG", "last_5_games"),
+            ("OPS", "last_10_games"),
+            ("AVG", "last_10_games"),
+            ("OBP", "last_10_games"),
+            ("SLG", "last_10_games"),
             ("ERA", "last_5_games"),
             ("K_per_9", "last_5_games"),
         ]:
@@ -380,12 +429,103 @@ def test_publish_default_set_respects_max_per_run(tmp_path):
         conn.close()
 
 
-def test_publish_default_set_uses_last_5_games_only_by_default(tmp_path):
-    """default auto run は OPS の season / 30d / last_7d を出さず last_5_games だけ使う (403 cutover)。"""
+def test_publish_default_set_prefers_balanced_data_variety_with_default_cap(tmp_path):
+    """max_per_run=3 でも打者だけに寄せず、投手指標を 2 番目に挟む。"""
     db = tmp_path / "test.db"
     conn = insight_etl.open_db(db_path=db, schema_path=insight_etl.DEFAULT_SCHEMA)
     try:
-        for scope in ["last_5_games", "last_7d", "last_30d", "season"]:
+        # 2026-05-25 user 確定: バッター=last_10_games / 投手=last_5_games に分離。
+        for metric, scope, player in [
+            ("OPS", "last_10_games", "巨人A"),
+            ("ERA", "last_5_games", "巨人投手A"),
+            ("AVG", "last_10_games", "巨人B"),
+            ("K_per_9", "last_5_games", "巨人投手B"),
+        ]:
+            _seed_snapshots(
+                conn,
+                snapshot_date=TODAY,
+                scope=scope,
+                metric=metric,
+                ranking=_central_ranking(player=player, value=0.5, sample=90, total=30),
+            )
+        wp_mock = MagicMock()
+        wp_mock.create_category.return_value = 671
+        wp_mock.create_post.return_value = 12345
+
+        results = rap.publish_default_set(conn, wp_mock, max_per_run=3)
+
+        published_metrics = [
+            r["metric_name"] for r in results
+            if r.get("status") == "published_draft"
+        ]
+        assert published_metrics == ["OPS", "ERA", "AVG"]
+        assert all(
+            r.get("selection_reason", "").startswith("balanced_default_order:")
+            for r in results
+        )
+    finally:
+        conn.close()
+
+
+def test_publish_default_set_uses_display_and_candidate_windows(monkeypatch):
+    """default run は表示窓と候補探索窓を分け、採用理由を結果に残す。
+    2026-05-25 user 確定: バッター=last_10_games / 投手=last_5_games に分離 +
+    metric ごとに巨人選手全員 inner loop。 _discover_giants_in_candidates は
+    monkey-patch で 1 名 ("巨人A") を返すよう固定し、 metric 順序 / scope /
+    top_n / candidate_top_n の組合せを verify する。"""
+    calls = []
+
+    def fake_publish(conn, wp_client_obj, **kwargs):
+        calls.append(kwargs)
+        return {
+            "status": "dry_run",
+            "metric_name": kwargs["metric_name"],
+            "scope": kwargs["scope"],
+            "focus_player": kwargs.get("focus_player") or "巨人A",
+        }
+
+    monkeypatch.setattr(rap, "publish_giants_centric_ranking_draft", fake_publish)
+    monkeypatch.setattr(rap, "_discover_giants_in_candidates", lambda *a, **k: ["巨人A"])
+
+    results = rap.publish_default_set(MagicMock(), MagicMock(), dry_run=True, max_per_run=6)
+
+    assert [
+        (
+            call["metric_name"], call["scope"], call["top_n"],
+            call["candidate_top_n"],
+        )
+        for call in calls
+    ] == [
+        ("OPS", "last_10_games", 10, 30),
+        ("ERA", "last_5_games", 5, 15),
+        ("AVG", "last_10_games", 10, 30),
+        ("K_per_9", "last_5_games", 5, 15),
+        ("OBP", "last_10_games", 10, 30),
+        ("SLG", "last_10_games", 10, 30),
+    ]
+    published_results = [r for r in results if r.get("status") == "dry_run"]
+    assert [
+        (r["metric_name"], r["job_family"], r["top_n"], r["candidate_top_n"])
+        for r in published_results
+    ] == [
+        ("OPS", "batting_rate", 10, 30),
+        ("ERA", "pitching_rate", 5, 15),
+        ("AVG", "batting_rate", 10, 30),
+        ("K_per_9", "pitching_per9", 5, 15),
+        ("OBP", "batting_rate", 10, 30),
+        ("SLG", "batting_rate", 10, 30),
+    ]
+    assert all("candidate_top" in r["selection_reason"] for r in results)
+
+
+def test_publish_default_set_uses_last_10_games_for_batters_by_default(tmp_path):
+    """default auto run は OPS / AVG / OBP / SLG (バッター指標) を last_10_games で
+    実行する (2026-05-25 user 確定、 403 cutover の改修)。 season / 30d / last_7d /
+    last_5_games には match しない。"""
+    db = tmp_path / "test.db"
+    conn = insight_etl.open_db(db_path=db, schema_path=insight_etl.DEFAULT_SCHEMA)
+    try:
+        for scope in ["last_5_games", "last_10_games", "last_7d", "last_30d", "season"]:
             _seed_snapshots(
                 conn,
                 snapshot_date=TODAY,
@@ -405,9 +545,9 @@ def test_publish_default_set_uses_last_5_games_only_by_default(tmp_path):
             and r.get("status") in ("published", "published_draft")
         ]
         assert len(ops_created) == 1
-        assert ops_created[0]["scope"] == "last_5_games"
+        assert ops_created[0]["scope"] == "last_10_games"
         assert all(
-            r.get("scope") not in {"last_7d", "last_30d", "season"}
+            r.get("scope") not in {"last_7d", "last_30d", "season", "last_5_games"}
             for r in results
             if r.get("metric_name") == "OPS"
         )

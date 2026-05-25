@@ -595,7 +595,83 @@ def _team_name_to_code(team_name: Optional[str]) -> str:
 SUBTYPE_DATA_RANKING_PREFIX = "data_ranking_"
 
 # 1 trigger で publish する最大 article 数 (暴走防止、env で override 可)
-DEFAULT_MAX_PER_RUN = int(os.environ.get("DATA_INSIGHT_PUBLISH_MAX_PER_RUN", "3") or "3")
+DEFAULT_MAX_PER_RUN = int(os.environ.get("DATA_INSIGHT_PUBLISH_MAX_PER_RUN", "5") or "5")
+
+_DEFAULT_DATA_RANKING_SCOPE = "last_5_games"  # legacy (一部 caller 互換)
+_BATTER_DEFAULT_SCOPE = "last_10_games"  # 2026-05-25 user 確定 (バッター直近 10 試合)
+_PITCHER_DEFAULT_SCOPE = "last_5_games"  # 2026-05-25 user 確定 (投手直近 5 試合)
+_BATTER_DEFAULT_TOP_N = 10
+_PITCHER_DEFAULT_TOP_N = 5
+_BATTER_CANDIDATE_TOP_N = 30
+_PITCHER_CANDIDATE_TOP_N = 15
+
+
+def _default_ranking_job(
+    metric_name: str,
+    *,
+    family: str,
+    top_n: int,
+    candidate_top_n: int,
+    scope: str = _DEFAULT_DATA_RANKING_SCOPE,
+) -> dict[str, Any]:
+    return {
+        "metric_name": metric_name,
+        "scope": scope,
+        "top_n": top_n,
+        "candidate_top_n": candidate_top_n,
+        "job_family": family,
+        "selection_reason": (
+            f"balanced_default_order:{family}:display_top{top_n}:"
+            f"candidate_top{candidate_top_n}:"
+            f"{scope}"
+        ),
+    }
+
+
+def _default_ranking_jobs() -> list[dict[str, Any]]:
+    """Default data article candidates in fan-useful balanced order.
+
+    The per-run cap stays conservative. Candidate discovery stays wider than
+    the display table so the run does not starve when Giants players sit just
+    outside the public TOP window.
+    """
+    return [
+        _default_ranking_job(
+            "OPS", family="batting_rate", top_n=_BATTER_DEFAULT_TOP_N,
+            candidate_top_n=_BATTER_CANDIDATE_TOP_N, scope=_BATTER_DEFAULT_SCOPE,
+        ),
+        _default_ranking_job(
+            "ERA", family="pitching_rate", top_n=_PITCHER_DEFAULT_TOP_N,
+            candidate_top_n=_PITCHER_CANDIDATE_TOP_N, scope=_PITCHER_DEFAULT_SCOPE,
+        ),
+        _default_ranking_job(
+            "AVG", family="batting_rate", top_n=_BATTER_DEFAULT_TOP_N,
+            candidate_top_n=_BATTER_CANDIDATE_TOP_N, scope=_BATTER_DEFAULT_SCOPE,
+        ),
+        _default_ranking_job(
+            "K_per_9", family="pitching_per9", top_n=_PITCHER_DEFAULT_TOP_N,
+            candidate_top_n=_PITCHER_CANDIDATE_TOP_N, scope=_PITCHER_DEFAULT_SCOPE,
+        ),
+        _default_ranking_job(
+            "OBP", family="batting_rate", top_n=_BATTER_DEFAULT_TOP_N,
+            candidate_top_n=_BATTER_CANDIDATE_TOP_N, scope=_BATTER_DEFAULT_SCOPE,
+        ),
+        _default_ranking_job(
+            "SLG", family="batting_rate", top_n=_BATTER_DEFAULT_TOP_N,
+            candidate_top_n=_BATTER_CANDIDATE_TOP_N, scope=_BATTER_DEFAULT_SCOPE,
+        ),
+    ]
+
+
+def _attach_default_job_metadata(result: dict[str, Any], job: dict[str, Any]) -> dict[str, Any]:
+    """Expose why a default candidate was selected or skipped."""
+    result.setdefault("metric_name", job["metric_name"])
+    result.setdefault("scope", job["scope"])
+    result["top_n"] = job["top_n"]
+    result["candidate_top_n"] = job["candidate_top_n"]
+    result["job_family"] = job["job_family"]
+    result["selection_reason"] = job["selection_reason"]
+    return result
 
 # Legacy auto-publish env flags. 2026-05-21 user lock:
 # article creation must land as draft; publishing happens only via mail/manual
@@ -700,6 +776,14 @@ def find_giants_top(rows: list[RankRow]) -> Optional[str]:
         if r.team_code == "g":
             return r.player_canonical
     return None
+
+
+def find_all_giants_in_candidates(rows: list[RankRow]) -> list[str]:
+    """``rows`` 内の全巨人選手 ``player_canonical`` を上位順で返す (2026-05-25
+    user 「巨人選手 全員拾う」 user 確定)。 1 名でなく list を返すことで
+    publish_default_set が metric ごとに巨人選手分散 draft を生成可能になる。
+    """
+    return [r.player_canonical for r in rows if r.team_code == "g"]
 
 
 # ─── markdown → HTML 簡易 converter ─────────────────────────────────────────
@@ -816,7 +900,9 @@ def render_giants_centric_ranking(
     scope: str = "last_30d",
     snapshot_date: Optional[str] = None,
     top_n: int = 30,
+    candidate_top_n: Optional[int] = None,
     sample_window_label: Optional[str] = None,
+    focus_player: Optional[str] = None,
 ) -> Optional[dict]:
     """巨人中心 + セ・リーグ ranking article を render (user 指示「セとパ別」)。
 
@@ -828,10 +914,11 @@ def render_giants_centric_ranking(
         snapshot_date=snapshot_date, top_n=200,
     )
     rows_central = [r for r in rows_all if (r.team_code or "") in _CENTRAL_TEAMS]
+    discovery_top_n = max(int(top_n), int(candidate_top_n or top_n))
     # rank 再付与
     from src.analysis.insight_article_generator import RankRow
     rows = []
-    for i, r in enumerate(rows_central[:top_n], start=1):
+    for i, r in enumerate(rows_central[:discovery_top_n], start=1):
         rows.append(RankRow(
             player_canonical=r.player_canonical, team_code=r.team_code,
             metric_value=r.metric_value, sample_size=r.sample_size,
@@ -840,24 +927,44 @@ def render_giants_centric_ranking(
     if not rows:
         return None
 
-    focus_player = find_giants_top(rows)
+    # 2026-05-25 user 「巨人選手 全員拾う」: focus_player 明示時はそれを採用、
+    # 未指定なら legacy (巨人最上位 1 名) fallback。
+    if focus_player is None:
+        focus_player = find_giants_top(rows)
     if focus_player is None:
         # 巨人選手不在の場合は本 module で記事化しない (focus 取れない)
         return None
+    focus_row_obj = next((r for r in rows if r.player_canonical == focus_player), None)
+    if focus_row_obj is None:
+        # focus_player 指定したが rows に該当無し (= candidate 圏外) → skip
+        return None
+    table_rows = list(rows[:top_n])
+    focus_is_in_display_window = bool(
+        focus_row_obj and focus_row_obj.player_canonical in {
+            r.player_canonical for r in table_rows
+        }
+    )
+    if focus_row_obj and not focus_is_in_display_window:
+        table_rows.append(focus_row_obj)
+    selection_tier = (
+        "public_top_window"
+        if focus_is_in_display_window
+        else "extended_candidate_window"
+    )
 
     if sample_window_label is None:
         sample_window_label = title_guard.period_label_for_scope(scope) or scope
 
     ctx = ArticleContext(
         metric_name=metric_name,
-        rows=rows,
+        rows=table_rows,
         focus_player=focus_player,
         sample_window_label=sample_window_label,
     )
     # insight_article_generator は text 多めの body を生成するため、本実装では
     # title のみ流用、body は table-only で組み立て直す (user 指示「文字少なめ、
     # 表が目立つ感じ」)
-    result = insight_article_generator.render_article(ctx, top_n=top_n)
+    result = insight_article_generator.render_article(ctx, top_n=len(table_rows))
     base_title = result["title"]
     # insight_article_generator は「12 球団中」固定文言、セ・リーグ用に置換
     base_title = base_title.replace("12 球団中", "セ・リーグ").replace("全 30 人中", "セ・リーグ")
@@ -894,11 +1001,8 @@ def render_giants_centric_ranking(
         f"| 順位 | 選手 | チーム | {metric_name} | サンプル |",
         "|---|---|---|---|---|",
     ]
-    focus_row_obj = None
-    for r in rows[:top_n]:
+    for r in table_rows:
         is_focus = (r.player_canonical == focus_player)
-        if is_focus:
-            focus_row_obj = r
         team_disp = team_label_map.get(r.team_code or "", r.team_code or "?")
         val = f"{r.metric_value:.3f}" if r.metric_value is not None else "-"
         if is_focus:
@@ -970,6 +1074,9 @@ def render_giants_centric_ranking(
         "focus_player": focus_player,
         "metric_name": metric_name,
         "scope": scope,
+        "top_n": top_n,
+        "candidate_top_n": discovery_top_n,
+        "selection_tier": selection_tier,
         "focus_value": focus_row_obj.metric_value if focus_row_obj else None,
         "focus_rank": focus_row_obj.rank if focus_row_obj else None,
         "focus_total": focus_row_obj.total if focus_row_obj else None,
@@ -984,8 +1091,10 @@ def publish_giants_centric_ranking_draft(
     scope: str = "last_30d",
     snapshot_date: Optional[str] = None,
     top_n: int = 30,
+    candidate_top_n: Optional[int] = None,
     category_name: str = DEFAULT_CATEGORY_NAME,
     dry_run: bool = False,
+    focus_player: Optional[str] = None,
 ) -> dict:
     """巨人中心 ranking article を WP draft として投入 (idempotent)。
 
@@ -997,6 +1106,7 @@ def publish_giants_centric_ranking_draft(
         scope: 'last_7d' / 'last_30d' / 'season'
         snapshot_date: 省略時は最新 snapshot を採用
         top_n: ranking 表示行数
+        candidate_top_n: focus 検出用の候補探索行数。None なら top_n と同じ。
         category_name: 投入先 WP category (idempotent 作成)
         dry_run: ``True`` なら WP 投入せず article dict を返す
 
@@ -1019,6 +1129,8 @@ def publish_giants_centric_ranking_draft(
     article = render_giants_centric_ranking(
         conn, metric_name=metric_name, scope=scope,
         snapshot_date=snapshot_date, top_n=top_n,
+        candidate_top_n=candidate_top_n,
+        focus_player=focus_player,
     )
     if article is None:
         return {
@@ -1026,6 +1138,8 @@ def publish_giants_centric_ranking_draft(
             "reason": "no_data_or_giants_not_in_top_n",
             "metric_name": metric_name,
             "scope": scope,
+            "top_n": top_n,
+            "candidate_top_n": candidate_top_n or top_n,
         }
     title_check = title_guard.ensure_title_period(article["title"], scope=scope)
     if not title_check.ok:
@@ -1080,6 +1194,10 @@ def publish_giants_centric_ranking_draft(
             "focus_player": article["focus_player"],
             "metric_name": metric_name,
             "scope": scope,
+            "top_n": article.get("top_n"),
+            "candidate_top_n": article.get("candidate_top_n"),
+            "selection_tier": article.get("selection_tier"),
+            "focus_rank": article.get("focus_rank"),
         }
 
     # category 作成 (idempotent)
@@ -1169,6 +1287,10 @@ def publish_giants_centric_ranking_draft(
         "focus_player": article["focus_player"],
         "metric_name": metric_name,
         "scope": scope,
+        "top_n": article.get("top_n"),
+        "candidate_top_n": article.get("candidate_top_n"),
+        "selection_tier": article.get("selection_tier"),
+        "focus_rank": article.get("focus_rank"),
         "dedup_history_id": dedup_history_id,
         "dedup_record_error": dedup_record_error,
     }
@@ -2615,6 +2737,36 @@ def publish_player_counting_draft(
         return {"status": "error", "error": f"{type(e).__name__}: {e}"}
 
 
+def _discover_giants_in_candidates(
+    conn: sqlite3.Connection,
+    *,
+    metric_name: str,
+    scope: str,
+    snapshot_date: Optional[str],
+    top_n: int,
+    candidate_top_n: Optional[int],
+) -> list[str]:
+    """metric × scope の candidate window 内の巨人選手全員を上位順で返す。
+    2026-05-25 user 「巨人選手 全員拾う」 用、 render_giants_centric_ranking と
+    同じ row 取得 logic で discovery のみ実行。
+    """
+    rows_all = fetch_ranking_rows(
+        conn, metric_name=metric_name, scope=scope,
+        snapshot_date=snapshot_date, top_n=200,
+    )
+    rows_central = [r for r in rows_all if (r.team_code or "") in _CENTRAL_TEAMS]
+    discovery_top_n = max(int(top_n), int(candidate_top_n or top_n))
+    from src.analysis.insight_article_generator import RankRow
+    rows = []
+    for i, r in enumerate(rows_central[:discovery_top_n], start=1):
+        rows.append(RankRow(
+            player_canonical=r.player_canonical, team_code=r.team_code,
+            metric_value=r.metric_value, sample_size=r.sample_size,
+            rank=i, total=len(rows_central),
+        ))
+    return find_all_giants_in_candidates(rows)
+
+
 def publish_default_set(
     conn: sqlite3.Connection,
     wp_client_obj: Any,
@@ -2635,50 +2787,66 @@ def publish_default_set(
     # 2026-05-15 user 指示「サバメトリクスはいらない」適用、wOBA / FIP 除外。
     # 348 step 1 defense-in-depth (2026-05-16): WHIP も × metric なので除外
     # (publish_giants_centric_ranking_draft 内 gate と二重防御)。
-    # 残す指標: OPS / AVG / OBP / SLG / ERA / K_per_9。
-    # 403 (2026-05-20): last_7d (= 直近7日) → last_5_games (直近5試合) cutover
-    # 試合のない日でも sample が確保され、 publish 過疎を回避。 audit 確定値。
-    default_jobs = [
-        # batter (last_5_games、 audit min_sample 12 AB / 7 名達成)
-        {"metric_name": "OPS", "scope": "last_5_games", "top_n": 50},
-        {"metric_name": "AVG", "scope": "last_5_games", "top_n": 50},
-        {"metric_name": "OBP", "scope": "last_5_games", "top_n": 50},
-        {"metric_name": "SLG", "scope": "last_5_games", "top_n": 50},
-        # pitcher (last_5_games、 audit OK) — WHIP は × で削除済
-        {"metric_name": "ERA", "scope": "last_5_games", "top_n": 30},
-        {"metric_name": "K_per_9", "scope": "last_5_games", "top_n": 30},
-    ]
+    # 403 (2026-05-20): last_7d (= 直近7日) → last_5_games (直近5試合) cutover。
+    # 423-P0: 同じ打者指標ばかりを先に消化しないよう、打者/投手を交互に並べる。
+    # また top_n=50/30 の広い拾い上げをやめ、打者 TOP10 / 投手 TOP5 に絞る。
+    default_jobs = _default_ranking_jobs()
     results: list[dict] = []
     published = 0
     seen_metric_periods: set[str] = set()
     for job in default_jobs:
         if published >= max_per_run:
-            results.append({
+            results.append(_attach_default_job_metadata({
                 "status": "skip_max_per_run",
                 "metric_name": job["metric_name"],
                 "scope": job["scope"],
-            })
+            }, job))
             continue
         metric_key = str(job["metric_name"])
         if metric_key in seen_metric_periods:
-            results.append({
+            results.append(_attach_default_job_metadata({
                 "status": "skip_duplicate_metric_period",
                 "metric_name": job["metric_name"],
                 "scope": job["scope"],
-            })
+            }, job))
             continue
-        result = publish_giants_centric_ranking_draft(
-            conn, wp_client_obj,
+        # 2026-05-25 user 「巨人選手 全員拾う」: metric × candidate 内の巨人選手
+        # 全員を 上位順に loop し、 1 player 1 draft を生成。 max_per_run 達したら
+        # 中断。 dedup_gate.evaluate_metric_cooldown が時間分散を担保。
+        giants_players = _discover_giants_in_candidates(
+            conn,
             metric_name=job["metric_name"],
             scope=job["scope"],
+            snapshot_date=None,
             top_n=job["top_n"],
-            dry_run=dry_run,
+            candidate_top_n=job["candidate_top_n"],
         )
-        results.append(result)
-        if result.get("status") in ("published", "published_draft", "dry_run"):
+        if not giants_players:
+            results.append(_attach_default_job_metadata({
+                "status": "skip_no_giants_in_candidates",
+                "metric_name": job["metric_name"],
+                "scope": job["scope"],
+            }, job))
+            continue
+        metric_published_count = 0
+        for focus_player in giants_players:
+            if published >= max_per_run:
+                break
+            result = publish_giants_centric_ranking_draft(
+                conn, wp_client_obj,
+                metric_name=job["metric_name"],
+                scope=job["scope"],
+                top_n=job["top_n"],
+                candidate_top_n=job["candidate_top_n"],
+                focus_player=focus_player,
+                dry_run=dry_run,
+            )
+            results.append(_attach_default_job_metadata(result, job))
+            if result.get("status") in ("published", "published_draft", "dry_run"):
+                published += 1
+                metric_published_count += 1
+        if metric_published_count > 0:
             seen_metric_periods.add(metric_key)
-        if result.get("status") in ("published", "published_draft", "dry_run"):
-            published += 1
     return results
 
 

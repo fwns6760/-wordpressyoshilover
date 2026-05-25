@@ -11,3 +11,8 @@ youtube-transcript-api
 # google-generativeai (older SDK) is kept for other lanes that depend on it.
 google-genai
 fastmcp
+# 437: SVG → PNG dynamic eyecatch / X-post image generation
+# cairosvg renders SVG to PNG via cairo system lib (libcairo2 in Dockerfile)
+# jinja2 renders SVG templates with publisher data (autoescape XML special chars)
+cairosvg
+jinja2

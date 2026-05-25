@@ -1,9 +1,11 @@
 FROM python:3.11-slim
 
-# Node.js + Gemini CLI
+# Node.js + Gemini CLI + 437 SVG→PNG runtime (cairo + Noto CJK fonts)
 RUN apt-get update && apt-get install -y curl && \
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
-    apt-get install -y nodejs && \
+    apt-get install -y nodejs \
+        libcairo2 libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf-2.0-0 \
+        fonts-noto-cjk fonts-noto-cjk-extra && \
     npm install -g @google/gemini-cli && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 

@@ -146,9 +146,15 @@ memo: data-insight fire 後 5 分 (publish-notice-trigger) と 10 分 (burst-tai
 
 ## 5. 削除 / 整理 判断 record (user)
 
-(user が判断したら下に追記)
-
-- 2026-05-25 audit 実施 (Claude)。 削除 GO 待ち。
+- 2026-05-25 audit 実施 (Claude)。
+- **2026-05-25 14 個削除実行** (user GO、 GH Issue #111):
+  - A. codex-shadow-trigger
+  - B. giants-weekday-lineup-a / -b / pre / post
+  - C. giants-weekend-lineup-day-a / -b / late-a / -b / pre / eve / post / post-late
+  - D. yoshilover-fetcher-job
+  - 全 14/14 削除成功、 backup は `backup/scheduler-deleted-2026-05-25/*.yaml` に保存。 復元は `gcloud scheduler jobs create http <name> --schedule=... --uri=... ` を yaml から手動。
+  - **削除後 jobs 総数: 40** (前 54 - 14)
+- E (audit-notify-6x / family-fetch-gsc / publish-notice-peak-followup) は **未削除**、 user 判断待ち。
 
 ---
 

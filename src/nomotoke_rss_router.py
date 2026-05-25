@@ -38,6 +38,7 @@ Hard rules
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import re
 from dataclasses import dataclass, field, asdict
@@ -1360,7 +1361,13 @@ _TITLE_SANITIZE_TRAILING_PHRASES: Tuple[str, ...] = (
     "詳細はリプライから",
     "リンクはこちら",
 )
-TITLE_MAX_CHARS_SHORT_NEWS = 50
+_TITLE_LOGGER = logging.getLogger(__name__)
+
+# 2026-05-25 user 仕様: 旧 50 字は SNS preview 用 display cap として狭すぎ
+# (post 71488「📺GIANTS TV📺 …「GI…」 等 中途切り事故)。
+# title_seo_polisher の DB cap (200) より小さく、 報知 typical 記事 title
+# (~80 字) を切らない 100 字に拡大。 trim 発火時は WARN log で silent 防止。
+TITLE_MAX_CHARS_SHORT_NEWS = 100
 
 
 def sanitize_short_news_title(title: str) -> str:
@@ -1396,6 +1403,12 @@ def sanitize_short_news_title(title: str) -> str:
     idx = cut.rfind("。")
     if 0 < idx <= TITLE_MAX_CHARS_SHORT_NEWS:
         return cut[: idx + 1]
+    _TITLE_LOGGER.warning(
+        "short_news_title_truncated title_len=%d cap=%d head=%r",
+        len(s),
+        TITLE_MAX_CHARS_SHORT_NEWS,
+        s[:60],
+    )
     return cut.rstrip() + "…"
 
 

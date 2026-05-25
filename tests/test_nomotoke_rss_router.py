@@ -1018,13 +1018,14 @@ class ShortNewsTitleSanitizerTests(unittest.TestCase):
         self.assertIn("巨人速報", out)
         self.assertIn("続報", out)
 
-    def test_caps_at_50_chars(self):
+    def test_caps_at_max_chars(self):
         from src.nomotoke_rss_router import (
             TITLE_MAX_CHARS_SHORT_NEWS,
             sanitize_short_news_title,
         )
 
-        long_input = "巨人" * 40  # 80 chars, no period
+        # cap > 100 を超える長さで truncation を発火させる。
+        long_input = "巨人" * (TITLE_MAX_CHARS_SHORT_NEWS // 2 + 10)
         out = sanitize_short_news_title(long_input)
         self.assertLessEqual(len(out), TITLE_MAX_CHARS_SHORT_NEWS + 1)
         self.assertTrue(out.endswith("…"))

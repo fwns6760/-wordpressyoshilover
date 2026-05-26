@@ -478,10 +478,13 @@ def _run_publish_and_tweet(
     method: str,
     post_id_raw: str,
     token: str,
+    *,
+    format: str = "",
 ) -> tuple[int, str, dict]:
     """379-OPS (GH #53): mail 内「公開してX投稿画面へ」ボタンの handler 本体。
 
     Returns ``(status_code, body, extra_headers)``。
+    ``format="json"`` を渡すと POST 成功時に JSON を返す (437 Phase 2A AJAX flow 用)。
     """
     log = logging.getLogger("server.publish_and_tweet")
     try:
@@ -522,6 +525,154 @@ def _run_publish_and_tweet(
         token=token,
         fetch_post=_fetch,
         update_post_status=_update,
+        format=format,
+    )
+
+
+def _run_share_x_get(
+    post_id_raw: str,
+    token: str,
+) -> tuple[int, str, dict]:
+    """437 Phase 2A (2026-05-26): GET /share-x handler 本体。
+
+    publish-and-tweet と同じ ``WPClient`` を使い、 post を取得して
+    share page HTML (Web Share API trigger + fallback) を返す。
+    """
+    log = logging.getLogger("server.share_x_get")
+    try:
+        from src.share_x_handler import handle_share_get
+    except Exception as exc:  # noqa: BLE001
+        log.warning("share_x_handler_import_failed err=%s", exc)
+        return 500, "<h2>内部エラー</h2><p>share_x_handler import 失敗</p>", {}
+    try:
+        from src.wp_client import WPClient
+    except Exception as exc:  # noqa: BLE001
+        log.warning("share_x_wp_client_import_failed err=%s", exc)
+        return 500, "<h2>内部エラー</h2><p>wp_client import 失敗</p>", {}
+
+    wp = WPClient()
+
+    def _fetch(pid: int):
+        try:
+            return wp.get_post(pid)
+        except Exception:
+            return None
+
+    # 既存 publish_button_url 生成側 (publish_notice_scanner / rss_fetcher) と
+    # 同じ env を使う。空なら relative URL で動く (同一 origin)。
+    fetcher_base_url = os.environ.get("FETCHER_PUBLIC_BASE_URL", "").strip().rstrip("/")
+    return handle_share_get(
+        post_id_raw=post_id_raw,
+        token=token,
+        fetch_post=_fetch,
+        fetcher_base_url=fetcher_base_url,
+    )
+
+
+# WP media REST: 5MB を超える image は proxy しない (mail プレビュー用なので不要)
+_SHARE_X_IMAGE_MAX_BYTES = 5 * 1024 * 1024
+# WP media REST + source_url の image bytes fetch の timeout
+_SHARE_X_IMAGE_FETCH_TIMEOUT = 10
+
+
+def _run_share_x_image_proxy(
+    post_id_raw: str,
+    token: str,
+) -> tuple[int, bytes, str, dict]:
+    """437 Phase 2A (2026-05-26): GET /share-x-image-proxy handler 本体。
+
+    post から featured_media id を取得 → WP media REST で source_url 取得 →
+    image bytes を fetch して bytes を返す。 caller (Handler._respond_bytes) が
+    Content-Type / Cache-Control を set する。
+    """
+    log = logging.getLogger("server.share_x_image_proxy")
+    try:
+        from src.share_x_handler import handle_image_proxy
+    except Exception as exc:  # noqa: BLE001
+        log.warning("share_x_image_proxy_handler_import_failed err=%s", exc)
+        return 500, b"share_x_handler import failed", "text/plain; charset=utf-8", {}
+    try:
+        from src.wp_client import WPClient
+    except Exception as exc:  # noqa: BLE001
+        log.warning("share_x_image_proxy_wp_client_import_failed err=%s", exc)
+        return 500, b"wp_client import failed", "text/plain; charset=utf-8", {}
+    try:
+        import requests
+    except Exception as exc:  # noqa: BLE001
+        log.warning("share_x_image_proxy_requests_import_failed err=%s", exc)
+        return 500, b"requests import failed", "text/plain; charset=utf-8", {}
+
+    wp = WPClient()
+
+    def _fetch(pid: int):
+        try:
+            return wp.get_post(pid)
+        except Exception:
+            return None
+
+    def _fetch_media_bytes(media_id: int):
+        """WP media REST → source_url → image bytes (max 5MB) を返す。
+
+        WP REST の ``/wp-json/wp/v2/media/{id}`` は metadata のみ返すので、
+        ``source_url`` を取って別 ``requests.get`` で image を取る。
+        失敗時 / 5MB 超 / source_url 不在 → None。
+        """
+        try:
+            media = wp.get_post(int(media_id))
+        except Exception as exc:  # noqa: BLE001
+            log.warning("share_x_image_proxy_media_get_failed media_id=%s err=%s", media_id, exc)
+            return None
+        if not media:
+            return None
+        source_url = str(media.get("source_url") or "").strip()
+        if not source_url:
+            return None
+        # mime_type が WP metadata にあれば preferred、 なければ HTTP response から。
+        meta_mime = str(media.get("mime_type") or "").strip()
+        try:
+            resp = requests.get(source_url, timeout=_SHARE_X_IMAGE_FETCH_TIMEOUT, stream=True)
+        except Exception as exc:  # noqa: BLE001
+            log.warning(
+                "share_x_image_proxy_image_get_failed media_id=%s source_url=%s err=%s",
+                media_id,
+                source_url[:120],
+                exc,
+            )
+            return None
+        if resp.status_code != 200:
+            log.warning(
+                "share_x_image_proxy_image_get_non200 media_id=%s status=%s",
+                media_id,
+                resp.status_code,
+            )
+            return None
+        # Content-Length が分かれば事前に reject
+        try:
+            cl = int(resp.headers.get("Content-Length") or 0)
+        except (TypeError, ValueError):
+            cl = 0
+        if cl and cl > _SHARE_X_IMAGE_MAX_BYTES:
+            log.info("share_x_image_proxy_too_large media_id=%s bytes=%s", media_id, cl)
+            return None
+        # stream で読みつつ 5MB cap
+        buf = bytearray()
+        for chunk in resp.iter_content(chunk_size=64 * 1024):
+            if not chunk:
+                continue
+            buf.extend(chunk)
+            if len(buf) > _SHARE_X_IMAGE_MAX_BYTES:
+                log.info("share_x_image_proxy_stream_exceeded media_id=%s", media_id)
+                return None
+        content_type = meta_mime or str(resp.headers.get("Content-Type") or "").split(";")[0].strip()
+        if not content_type:
+            content_type = "image/jpeg"
+        return (bytes(buf), content_type)
+
+    return handle_image_proxy(
+        post_id_raw=post_id_raw,
+        token=token,
+        fetch_post=_fetch,
+        fetch_media_bytes=_fetch_media_bytes,
     )
 
 
@@ -611,6 +762,23 @@ class Handler(BaseHTTPRequestHandler):
             token = (qs.get("token", [""])[0] or "").strip()
             code, body, extra_headers = _run_publish_and_tweet("GET", post_id_raw, token)
             self._respond(code, body, content_type="text/html; charset=utf-8", extra_headers=extra_headers)
+        elif parsed.path == "/share-x":
+            # 437 Phase 2A (2026-05-26): Web Share API page (Pixel / Android で
+            # eyecatch を X app に画像つきで直接転送するための endpoint)。
+            qs = parse_qs(parsed.query or "")
+            post_id_raw = (qs.get("post_id", [""])[0] or "").strip()
+            token = (qs.get("token", [""])[0] or "").strip()
+            code, body, extra_headers = _run_share_x_get(post_id_raw, token)
+            self._respond(code, body, content_type="text/html; charset=utf-8", extra_headers=extra_headers)
+        elif parsed.path == "/share-x-image-proxy":
+            # 437 Phase 2A (2026-05-26): featured_media 画像 bytes proxy
+            # (同一 origin で fetch.blob() するため、CORS を避けて mail 側 link
+            # を経由 server-side で取得する)。
+            qs = parse_qs(parsed.query or "")
+            post_id_raw = (qs.get("post_id", [""])[0] or "").strip()
+            token = (qs.get("token", [""])[0] or "").strip()
+            code, body_bytes, content_type, extra_headers = _run_share_x_image_proxy(post_id_raw, token)
+            self._respond_bytes(code, body_bytes, content_type=content_type, extra_headers=extra_headers)
         elif parsed.path == "/x-intent":
             # 2026-05-22: x_post_mail X button.
             # iOS / Android Universal Link intercepts x.com taps from
@@ -682,13 +850,29 @@ class Handler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/publish-and-tweet":
             # 379-OPS (GH #53): confirmation page から submit された publish + X intent。
+            # 437 Phase 2A (2026-05-26): /share-x の AJAX flow が FormData に
+            # ``format=json`` を入れて POST する → JSON response を返す
+            # (既存 form (format 未指定) は 302 redirect を維持)。
             length = int(self.headers.get("Content-Length", 0))
             raw_body = self.rfile.read(length).decode() if length else ""
             form = parse_qs(raw_body)
             post_id_raw = (form.get("post_id", [""])[0] or "").strip()
             token = (form.get("token", [""])[0] or "").strip()
-            code, body, extra_headers = _run_publish_and_tweet("POST", post_id_raw, token)
-            self._respond(code, body, content_type="text/html; charset=utf-8", extra_headers=extra_headers)
+            response_format = (form.get("format", [""])[0] or "").strip().lower()
+            code, body, extra_headers = _run_publish_and_tweet(
+                "POST", post_id_raw, token, format=response_format
+            )
+            # JSON mode のときは Content-Type を JSON にする (handler 側 headers にも入っているが
+            # _respond の content_type 引数を優先するため明示的に分岐)。
+            if response_format == "json" and code == 200:
+                self._respond(
+                    code,
+                    body,
+                    content_type="application/json; charset=utf-8",
+                    extra_headers={k: v for k, v in extra_headers.items() if k.lower() != "content-type"},
+                )
+            else:
+                self._respond(code, body, content_type="text/html; charset=utf-8", extra_headers=extra_headers)
             return
         if self.path != "/run":
             self._respond(404, "Not Found")
@@ -723,6 +907,25 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header(name, value)
         self.end_headers()
         self.wfile.write(body.encode())
+
+    def _respond_bytes(self, code, body_bytes, content_type="application/octet-stream", extra_headers=None):
+        """437 Phase 2A (2026-05-26): bytes body 用 response (image proxy で必要)。
+
+        ``_respond`` は ``body.encode()`` を呼ぶので bytes を渡せない。
+        image proxy は WP source_url から取った image bytes をそのまま返したいので
+        別 method を用意 (既存 ``_respond`` 挙動には touch しない)。
+        """
+        self.send_response(code)
+        self.send_header("Content-Type", content_type)
+        if not isinstance(body_bytes, (bytes, bytearray)):
+            # 想定外 (text fallback) は encode して bytes に揃える
+            body_bytes = str(body_bytes).encode("utf-8")
+        self.send_header("Content-Length", str(len(body_bytes)))
+        if extra_headers:
+            for name, value in extra_headers.items():
+                self.send_header(name, value)
+        self.end_headers()
+        self.wfile.write(bytes(body_bytes))
 
 
 if __name__ == "__main__":

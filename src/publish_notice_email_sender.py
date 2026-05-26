@@ -2823,6 +2823,42 @@ def build_body_html_per_post(
             '🚀 公開してX投稿画面へ</a>'
             '</td></tr>'
         )
+
+    # 437 Phase 2A (2026-05-26): share-x (Web Share API) button + 画像プレビュー。
+    # publish_button_url から path だけ書き換えて share-x / image-proxy URL を導出
+    # (PublishNoticeRequest field 追加なし、 minimum-diff)。
+    # default OFF (ENABLE_SHARE_X_BUTTON 未設定) のとき mail HTML は完全に既存と同じ。
+    _enable_share_x = os.environ.get("ENABLE_SHARE_X_BUTTON", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    share_x_button_html = ""
+    image_preview_html = ""
+    if publish_button_url_raw and _enable_share_x:
+        share_x_url_raw = publish_button_url_raw.replace("/publish-and-tweet?", "/share-x?", 1)
+        image_proxy_url_raw = publish_button_url_raw.replace(
+            "/publish-and-tweet?", "/share-x-image-proxy?", 1
+        )
+        safe_share_x = html.escape(share_x_url_raw)
+        safe_image_proxy = html.escape(image_proxy_url_raw)
+        image_preview_html = (
+            '<tr><td align="center" style="padding:0 22px 14px;">'
+            f'<img src="{safe_image_proxy}" alt="eyecatch" '
+            'style="display:block;width:100%;max-width:300px;border-radius:6px;" />'
+            '</td></tr>'
+        )
+        share_x_button_html = (
+            '<tr><td align="center" style="padding:0 22px 14px;">'
+            f'<a href="{safe_share_x}" target="_blank" rel="noopener" '
+            'style="display:inline-block;width:100%;max-width:300px;'
+            'padding:13px 20px;background:#ef6c00;color:#ffffff;'
+            'text-decoration:none;border-radius:6px;font-size:15px;'
+            'font-weight:700;text-align:center;">'
+            '📱 画像つきで X に投稿 (おすすめ)</a>'
+            '</td></tr>'
+        )
     admin_edit_url_raw = str(getattr(request, "admin_edit_url", "") or "").strip()
     admin_edit_button_html = ""
     if admin_edit_url_raw:
@@ -2863,6 +2899,7 @@ def build_body_html_per_post(
         f'color:#666;word-break:break-all;">🔗 {safe_url}</p>'
         '</td></tr>'
         f'{body_excerpt_html_block}'
+        f'{image_preview_html}'
         '<tr><td align="center" style="padding:0 22px 14px;">'
         f'<a href="{safe_url}" target="_blank" rel="noopener" '
         'style="display:inline-block;width:100%;max-width:300px;'
@@ -2870,6 +2907,7 @@ def build_body_html_per_post(
         'text-decoration:none;border-radius:6px;font-size:15px;'
         'font-weight:700;text-align:center;">📰 記事を見る</a>'
         '</td></tr>'
+        f'{share_x_button_html}'
         f'{publish_button_html}'
         f'{admin_edit_button_html}'
         '<tr><td style="padding:14px 22px 20px;border-top:1px solid #eee;'

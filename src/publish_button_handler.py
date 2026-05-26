@@ -10,6 +10,7 @@ publish 自動投稿は行わない (X intent 画面 = user が「ポスト」�
 from __future__ import annotations
 
 import html
+import json
 import logging
 from urllib.parse import quote, urlencode
 
@@ -154,6 +155,7 @@ def handle_post(
     now: int | float | None = None,
     is_consumed=None,
     mark_consumed=None,
+    format: str = "",
 ) -> tuple[int, str, dict]:
     """POST /publish-and-tweet: token 検証 → draft なら publish → X intent URL に 302 redirect。
 
@@ -271,6 +273,29 @@ def handle_post(
             success=False,
         ), {}
     x_intent_url = _build_x_intent_url(title=post_title, article_url=post_link)
+    if format == "json":
+        # 437 Phase 2A (2026-05-26): /share-x の AJAX flow から呼ばれる JSON mode。
+        # 既存挙動 (302 redirect) は format 未指定時の default で維持されるため
+        # /publish-and-tweet の HTML form flow には影響しない。
+        compact_title = (post_title or "").strip()
+        if len(compact_title) > _TITLE_MAX_CHARS_FOR_X:
+            compact_title = compact_title[: _TITLE_MAX_CHARS_FOR_X - 1] + "…"
+        x_text = (
+            f"{compact_title}{_X_INTENT_BRAND_TAG}"
+            if compact_title
+            else _X_INTENT_BRAND_TAG.strip()
+        )
+        payload = {
+            "status": "already_published" if current_status == "publish" else "published",
+            "article_url": post_link,
+            "x_text": x_text,
+            "x_intent_url": x_intent_url,
+        }
+        return (
+            200,
+            json.dumps(payload, ensure_ascii=False),
+            {"Content-Type": "application/json; charset=utf-8"},
+        )
     return 302, "", {"Location": x_intent_url}
 
 

@@ -3163,21 +3163,35 @@ def _compose_text_body(
 RANKING_IMAGE_CID_PREFIX = "giants-ranking-cand-"
 
 
+# 437 Phase 5 fix: production draft_text は「{rank}位 {name}（{team}）{value} 🟧巨人🟧」
+# 形式 (`format_as_x_post` 出力)。 旧 `_RANKING_ROW_PATTERN` (1. {name}…) と併用する。
+_RANKING_ROW_PATTERN_V2 = _re.compile(
+    r"^(?P<rank>\d+)位\s+"
+    r"(?P<name>[^（]+?)"
+    r"（(?P<team>[^）]+)）"
+    r"(?P<value>\S+?)"
+    r"(?P<marker>\s+🟧巨人🟧)?$"
+)
+
+
 def _extract_ranking_rows_from_draft(
     draft_text: str, *, focus_player: str = "", max_rows: int = 8
 ) -> list[dict]:
-    """draft_text の各行を _RANKING_ROW_PATTERN で parse して image 用 rows 化。
+    """draft_text の各行を ranking 行として parse。
 
-    1 行 = `{rank}. {name}（{team}）{value}{marker}` 形式。
-    marker (' ← 巨人') か focus_player との name 一致を is_giants 判定に使う。
-    解析できる行が無ければ [] を返し、 caller は画像をスキップする。
+    対応 format:
+      旧: `1. {name}（{team}）{value} ← 巨人`
+      新 (production): `1位 {name}（{team}）{value} 🟧巨人🟧`
+
+    marker (` ← 巨人` / `🟧巨人🟧`) または focus_player 名一致で is_giants=True。
+    解析行 0 なら [] を返し caller は画像 skip。
     """
     rows: list[dict] = []
     for raw_line in draft_text.splitlines():
         line = raw_line.strip()
         if not line:
             continue
-        m = _RANKING_ROW_PATTERN.match(line)
+        m = _RANKING_ROW_PATTERN_V2.match(line) or _RANKING_ROW_PATTERN.match(line)
         if not m:
             continue
         name = m.group("name").strip()

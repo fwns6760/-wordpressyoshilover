@@ -3160,6 +3160,74 @@ def _compose_text_body(
     return "\n".join(parts)
 
 
+def _generate_ranking_image_data_uri() -> str:
+    """437 Phase 4: TOP 8 OPS ranking PNG を base64 data URI で返す。
+
+    失敗時は空文字を返し、 mail は画像なしで通常 send される (publish 止めない)。
+    user は mail から画像を ドラッグ で X compose に落として手動添付する想定。
+    """
+    try:
+        import base64
+
+        from src.x_post_image_gen_v2 import build_ranking_data, generate_png
+    except Exception as exc:
+        logger.warning(
+            "[437 phase4] image gen import failed (%s): %s — mail skips image",
+            type(exc).__name__,
+            exc,
+        )
+        return ""
+
+    # static sample data (Phase 4 MVP): DB query への置換は次便。
+    rows = [
+        {"rank": 1, "name": "佐藤輝明", "team": "阪神", "value": ".961", "is_giants": False},
+        {"rank": 2, "name": "坂倉将吾", "team": "広島", "value": ".882", "is_giants": False},
+        {"rank": 3, "name": "坂本勇人", "team": "巨人", "value": ".867", "is_giants": True},
+        {"rank": 4, "name": "村松開人", "team": "中日", "value": ".831", "is_giants": False},
+        {"rank": 5, "name": "武岡龍世", "team": "ヤクルト", "value": ".812", "is_giants": False},
+        {"rank": 6, "name": "大山悠輔", "team": "阪神", "value": ".798", "is_giants": False},
+        {"rank": 7, "name": "森下翔太", "team": "阪神", "value": ".785", "is_giants": False},
+        {"rank": 8, "name": "岡本和真", "team": "巨人", "value": ".772", "is_giants": True},
+    ]
+    try:
+        data = build_ranking_data(
+            title="セ・リーグ OPS ランキング",
+            subtitle="直近 10 試合 / 規定打席 20 以上",
+            hook_line="★ 巨人 2 名 トップ 10 入り ★",
+            rows=rows,
+        )
+        png = generate_png("ranking_table", data)
+    except Exception as exc:
+        logger.warning(
+            "[437 phase4] image gen failed (%s): %s — mail skips image",
+            type(exc).__name__,
+            exc,
+        )
+        return ""
+    if not png:
+        logger.warning("[437 phase4] image gen returned None — mail skips image")
+        return ""
+    b64 = base64.b64encode(png).decode("ascii")
+    return f"data:image/png;base64,{b64}"
+
+
+def _render_ranking_image_html() -> str:
+    """画像 data URI を mail body 用 HTML に整形 (失敗時は空)。"""
+    data_uri = _generate_ranking_image_data_uri()
+    if not data_uri:
+        return ""
+    return (
+        "<div style=\"text-align:center;margin:0 0 14px;\">"
+        f"<img src=\"{data_uri}\" alt=\"giants ranking\" "
+        "style=\"max-width:540px;width:100%;height:auto;border:1px solid #ddd;"
+        "border-radius:6px;display:inline-block;\" "
+        "draggable=\"true\"/>"
+        "<div style=\"font-size:11px;color:#777;margin-top:4px;\">"
+        "↑ X compose にドラッグして添付 (PC) / 長押し保存して添付 (スマホ)"
+        "</div></div>"
+    )
+
+
 def _compose_html_body(
     candidates: list[Candidate],
     now: datetime,
@@ -3244,6 +3312,7 @@ def _compose_html_body(
             if context_note else ""
         )
         + summary_html
+        + _render_ranking_image_html()
         + "\n".join(rows_html)
         + "</body></html>"
     )

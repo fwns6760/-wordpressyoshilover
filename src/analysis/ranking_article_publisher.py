@@ -1258,13 +1258,19 @@ def publish_giants_centric_ranking_draft(
         article["title"], _BANNER_SOURCE_LABEL, category_name
     )
     # 437: SVG eyecatch 生成 + WP media upload (失敗しても publish 続行)
+    # 既定 OFF。cairosvg は CJK font fallback が効かず日本語が全部 tofu になる
+    # ため (post 72079 / 72076 事例)、ENABLE_437_SVG_EYECATCH=1 が明示された
+    # ときだけ走らせる。OFF のときは image_media_id=0 のまま流れ、
+    # wp_client.create_post の player_eyecatch_resolver fallback が選手写真を
+    # featured_media に attach する (= 437 前の挙動)。
     image_media_id = 0
-    try:
-        from src.x_post_image_gen import attach_ranking_image
-        image_media_id = attach_ranking_image(wp_client_obj, article)
-    except Exception as exc:  # noqa: BLE001
-        print(f"[437] eyecatch attach failed (continuing without image): {exc}")
-        image_media_id = 0
+    if os.environ.get("ENABLE_437_SVG_EYECATCH", "0").strip().lower() in {"1", "true", "yes"}:
+        try:
+            from src.x_post_image_gen import attach_ranking_image
+            image_media_id = attach_ranking_image(wp_client_obj, article)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[437] eyecatch attach failed (continuing without image): {exc}")
+            image_media_id = 0
     dedup_history_id = 0
     dedup_record_error = ""
     try:

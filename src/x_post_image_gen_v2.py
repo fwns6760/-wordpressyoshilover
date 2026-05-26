@@ -557,6 +557,348 @@ def _pillow_image_to_png_bytes(img, size: int) -> bytes:
     return buf.getvalue()
 
 
+def _draw_header_block(canvas, draw, title: str, subtitle: str, hook_line: str, *, size: int = DEFAULT_SIZE, header_h: int = 250):
+    """共通: 黒 stripe + orange gradient header + hook / title / subtitle。
+
+    上から: 黒 14px → gradient header_h px → 黒 8px。
+    header 内は hook (上端) / title (中央) / subtitle (下端) に縦割で配置し、
+    font サイズは header_h に応じて clamp する (短い header でも overlap させない)。
+    """
+    from PIL import Image
+
+    canvas.paste(Image.new("RGB", (size, 14), COLOR_BLACK), (0, 0))
+    canvas.paste(
+        _make_vertical_gradient(size, header_h, COLOR_HEADER_TOP, COLOR_HEADER_BOT),
+        (0, 14),
+    )
+    canvas.paste(Image.new("RGB", (size, 8), COLOR_BLACK), (0, 14 + header_h))
+
+    # header_h に応じて font サイズと baseline 位置を線形補間
+    hook_size = max(28, min(42, int(header_h * 0.18)))
+    title_size = max(48, min(74, int(header_h * 0.30)))
+    sub_size = max(22, min(30, int(header_h * 0.12)))
+
+    hook_y = 14 + int(header_h * 0.22)
+    title_y = 14 + int(header_h * 0.60)
+    sub_y = 14 + int(header_h * 0.92)
+
+    if hook_line:
+        font_hook, path = _find_font(size=hook_size)
+        _draw_text_with_emoji(
+            draw, canvas, (size // 2, hook_y),
+            hook_line, main_font=font_hook, main_font_path=path,
+            fill=COLOR_GOLD, anchor="ms",
+            stroke_width=1 if _is_bold_font_path(path) else 2,
+            stroke_fill=COLOR_GOLD,
+        )
+    if title:
+        font_title, _ = _find_font(size=title_size)
+        draw.text(
+            (size // 2, title_y),
+            title, font=font_title, fill=COLOR_WHITE, anchor="ms",
+            stroke_width=2, stroke_fill=COLOR_WHITE,
+        )
+    if subtitle:
+        font_sub, _ = _find_font(size=sub_size)
+        draw.text(
+            (size // 2, sub_y),
+            subtitle, font=font_sub, fill=COLOR_WHITE, anchor="ms",
+        )
+
+
+def _draw_footer_block(canvas, draw, handle: str, meta: str, *, size: int = DEFAULT_SIZE):
+    """共通: 下部の orange handle + 灰 meta。"""
+    font_handle = _find_font(size=26)[0]
+    draw.text(
+        (size // 2, 1035), handle, font=font_handle, fill=COLOR_GIANTS_ROW_LEFT,
+        anchor="ms", stroke_width=1, stroke_fill=COLOR_GIANTS_ROW_LEFT,
+    )
+    font_meta = _find_font(size=20)[0]
+    draw.text((size // 2, 1065), meta, font=font_meta, fill=COLOR_GRAY_TEAM, anchor="ms")
+
+
+def _render_player_spotlight(data: dict[str, Any], size: int = DEFAULT_SIZE):
+    """1 選手の hero stat を巨大表示。"""
+    from PIL import Image, ImageDraw
+
+    canvas = Image.new("RGBA", (size, size), COLOR_BG)
+    draw = ImageDraw.Draw(canvas)
+    _draw_header_block(
+        canvas, draw, str(data.get("title", "")), str(data.get("subtitle", "")),
+        str(data.get("hook_line", "")), size=size, header_h=180,
+    )
+
+    # player name + team
+    player_name = str(data.get("player_name", ""))
+    player_team = str(data.get("player_team", ""))
+    if player_name:
+        font_pn, _ = _find_font(size=82)
+        draw.text(
+            (size // 2, 305), f"{player_name} ★",
+            font=font_pn, fill=COLOR_BLACK, anchor="ms",
+            stroke_width=2, stroke_fill=COLOR_BLACK,
+        )
+    if player_team:
+        font_team, _ = _find_font(size=30)
+        draw.text(
+            (size // 2, 350), player_team,
+            font=font_team, fill=COLOR_GIANTS_ROW_LEFT, anchor="ms",
+            stroke_width=1, stroke_fill=COLOR_GIANTS_ROW_LEFT,
+        )
+
+    # metric label
+    metric_label = str(data.get("metric_label", ""))
+    if metric_label:
+        font_ml, _ = _find_font(size=44)
+        draw.text(
+            (size // 2, 450), metric_label,
+            font=font_ml, fill=COLOR_BLACK, anchor="ms",
+            stroke_width=2, stroke_fill=COLOR_BLACK,
+        )
+
+    # huge hero value
+    hero_value = str(data.get("hero_value", ""))
+    if hero_value:
+        font_hv, _ = _find_font(size=240)
+        draw.text(
+            (size // 2, 720), hero_value,
+            font=font_hv, fill=COLOR_GIANTS_ROW_LEFT, anchor="ms",
+            stroke_width=4, stroke_fill=COLOR_BLACK,
+        )
+
+    # optional sub stats (up to 2 small boxes)
+    sub_stats = data.get("sub_stats", []) or []
+    if sub_stats:
+        font_sl, _ = _find_font(size=28)
+        font_sv, _ = _find_font(size=56)
+        col_w = 960 // len(sub_stats[:2])
+        for i, s in enumerate(sub_stats[:2]):
+            x_center = 60 + col_w * i + col_w // 2
+            draw.text(
+                (x_center, 800), str(s.get("label", "")),
+                font=font_sl, fill=COLOR_GIANTS_ROW_LEFT, anchor="ms",
+                stroke_width=1, stroke_fill=COLOR_GIANTS_ROW_LEFT,
+            )
+            draw.text(
+                (x_center, 880), str(s.get("value", "")),
+                font=font_sv, fill=COLOR_BLACK, anchor="ms",
+                stroke_width=2, stroke_fill=COLOR_BLACK,
+            )
+
+    _draw_footer_block(
+        canvas, draw,
+        str(data.get("footer_handle", DEFAULT_FOOTER_HANDLE)),
+        str(data.get("footer_meta", DEFAULT_FOOTER_META)),
+        size=size,
+    )
+    return canvas
+
+
+def _render_pitcher_card(data: dict[str, Any], size: int = DEFAULT_SIZE):
+    """投手の名前 + stat grid (3 cols × 2 rows max 6 stats)。"""
+    from PIL import Image, ImageDraw
+
+    canvas = Image.new("RGBA", (size, size), COLOR_BG)
+    draw = ImageDraw.Draw(canvas)
+    _draw_header_block(
+        canvas, draw, str(data.get("title", "")), str(data.get("subtitle", "")),
+        str(data.get("hook_line", "")), size=size, header_h=200,
+    )
+
+    player_name = str(data.get("player_name", ""))
+    player_team = str(data.get("player_team", ""))
+    if player_name:
+        font_pn, _ = _find_font(size=70)
+        draw.text(
+            (size // 2, 315), f"{player_name} ★",
+            font=font_pn, fill=COLOR_BLACK, anchor="ms",
+            stroke_width=2, stroke_fill=COLOR_BLACK,
+        )
+    if player_team:
+        font_team, _ = _find_font(size=28)
+        draw.text(
+            (size // 2, 360), f"{player_team} / 投手",
+            font=font_team, fill=COLOR_GIANTS_ROW_LEFT, anchor="ms",
+        )
+
+    # stat grid 3x2 max 6
+    stats = (data.get("stats", []) or [])[:6]
+    cell_w = 320
+    cell_h = 200
+    grid_x = (size - cell_w * 3) // 2
+    grid_y = 420
+    font_label, _ = _find_font(size=28)
+    font_value, _ = _find_font(size=90)
+    for i, st in enumerate(stats):
+        col = i % 3
+        row = i // 3
+        cx = grid_x + col * cell_w
+        cy = grid_y + row * cell_h
+        if st.get("highlight"):
+            grad = _make_vertical_gradient(cell_w - 10, cell_h - 10, COLOR_HEADER_TOP, COLOR_HEADER_BOT)
+            canvas.paste(grad, (cx + 5, cy + 5))
+            draw = ImageDraw.Draw(canvas)
+            label_fill = COLOR_WHITE
+            value_fill = COLOR_GOLD
+        else:
+            draw.rectangle(
+                (cx + 5, cy + 5, cx + cell_w - 5, cy + cell_h - 5),
+                outline=COLOR_BLACK, width=3,
+            )
+            label_fill = COLOR_BLACK
+            value_fill = COLOR_BLACK
+        draw.text(
+            (cx + cell_w // 2, cy + 50), str(st.get("label", "")),
+            font=font_label, fill=label_fill, anchor="ms",
+            stroke_width=1, stroke_fill=label_fill,
+        )
+        draw.text(
+            (cx + cell_w // 2, cy + cell_h - 35), str(st.get("value", "")),
+            font=font_value, fill=value_fill, anchor="ms",
+            stroke_width=2, stroke_fill=COLOR_BLACK if st.get("highlight") else COLOR_BLACK,
+        )
+
+    _draw_footer_block(
+        canvas, draw,
+        str(data.get("footer_handle", DEFAULT_FOOTER_HANDLE)),
+        str(data.get("footer_meta", DEFAULT_FOOTER_META)),
+        size=size,
+    )
+    return canvas
+
+
+def _render_standings(data: dict[str, Any], size: int = DEFAULT_SIZE):
+    """12 team 順位表 (勝-敗-分 / 勝率 / ゲーム差)。"""
+    from PIL import Image, ImageDraw
+
+    canvas = Image.new("RGBA", (size, size), COLOR_BG)
+    draw = ImageDraw.Draw(canvas)
+    _draw_header_block(
+        canvas, draw, str(data.get("title", "")), str(data.get("subtitle", "")),
+        str(data.get("hook_line", "")), size=size, header_h=200,
+    )
+
+    rows = data.get("rows", []) or []
+    row_h = 60
+    start_y = 290
+    font_rank, _ = _find_font(size=36)
+    font_team, _ = _find_font(size=32)
+    font_record, _ = _find_font(size=28)
+    font_pct, _ = _find_font(size=32)
+    font_gap, _ = _find_font(size=32)
+    for i, row in enumerate(rows[:6]):
+        y = start_y + i * row_h
+        if row.get("is_giants"):
+            grad = _make_horizontal_gradient(960, row_h - 6, COLOR_GIANTS_ROW_LEFT, "#FF9100")
+            canvas.paste(grad, (60, y - 3))
+            draw = ImageDraw.Draw(canvas)
+            color_main = COLOR_WHITE
+            color_rank = COLOR_GOLD
+        else:
+            draw.line(((60, y + row_h - 3), (size - 60, y + row_h - 3)), fill=COLOR_GRAY_ROW_SEP, width=1)
+            color_main = COLOR_BLACK
+            color_rank = COLOR_GIANTS_ROW_LEFT
+        draw.text((100, y + row_h // 2), str(row.get("rank", i + 1)),
+                  font=font_rank, fill=color_rank, anchor="mm",
+                  stroke_width=1, stroke_fill=color_rank)
+        draw.text((280, y + row_h // 2), str(row.get("team", "")),
+                  font=font_team, fill=color_main, anchor="mm",
+                  stroke_width=1, stroke_fill=color_main)
+        draw.text((500, y + row_h // 2), str(row.get("record", "")),
+                  font=font_record, fill=color_main, anchor="mm")
+        draw.text((690, y + row_h // 2), str(row.get("win_pct", "")),
+                  font=font_pct, fill=color_main, anchor="mm",
+                  stroke_width=1, stroke_fill=color_main)
+        draw.text((900, y + row_h // 2), str(row.get("games_back", "")),
+                  font=font_gap, fill=color_main, anchor="mm",
+                  stroke_width=1, stroke_fill=color_main)
+
+    _draw_footer_block(
+        canvas, draw,
+        str(data.get("footer_handle", DEFAULT_FOOTER_HANDLE)),
+        str(data.get("footer_meta", DEFAULT_FOOTER_META)),
+        size=size,
+    )
+    return canvas
+
+
+def _render_12team_bar(data: dict[str, Any], size: int = DEFAULT_SIZE):
+    """12 球団の値を水平バーで比較。"""
+    from PIL import Image, ImageDraw
+
+    canvas = Image.new("RGBA", (size, size), COLOR_BG)
+    draw = ImageDraw.Draw(canvas)
+    _draw_header_block(
+        canvas, draw, str(data.get("title", "")), str(data.get("subtitle", "")),
+        str(data.get("hook_line", "")), size=size, header_h=170,
+    )
+
+    teams = data.get("teams", []) or []
+    if not teams:
+        _draw_footer_block(canvas, draw,
+            str(data.get("footer_handle", DEFAULT_FOOTER_HANDLE)),
+            str(data.get("footer_meta", DEFAULT_FOOTER_META)), size=size)
+        return canvas
+
+    values = [float(t.get("value", 0) or 0) for t in teams]
+    max_v = max(values) if values else 1.0
+    max_v = max_v if max_v > 0 else 1.0
+    row_h = 60
+    start_y = 240
+    bar_max_w = 680
+    font_rank, _ = _find_font(size=24)
+    font_team, _ = _find_font(size=30)
+    font_val, _ = _find_font(size=36)
+    for i, t in enumerate(teams[:12]):
+        y = start_y + i * row_h
+        bar_w = max(2, int(float(t.get("value", 0) or 0) / max_v * bar_max_w))
+        if t.get("is_giants"):
+            color_bar_l = COLOR_GIANTS_ROW_LEFT
+            color_bar_r = "#FF9100"
+            color_team = COLOR_GIANTS_ROW_LEFT
+            color_val = COLOR_GIANTS_ROW_LEFT
+            color_rank = COLOR_GOLD
+            grad = _make_horizontal_gradient(bar_w, 38, color_bar_l, color_bar_r)
+            canvas.paste(grad, (210, y - 14))
+            draw = ImageDraw.Draw(canvas)
+            draw.rectangle((210, y - 14, 210 + bar_w, y + 24), outline=COLOR_BLACK, width=3)
+            team_text = f"{t.get('name', '')} ★"
+            stroke_w = 1
+        else:
+            color_team = COLOR_BLACK
+            color_val = COLOR_BLACK
+            color_rank = COLOR_GIANTS_ROW_LEFT
+            draw.rectangle((210, y - 14, 210 + bar_w, y + 24), fill="#666666", outline=COLOR_BLACK, width=2)
+            team_text = str(t.get("name", ""))
+            stroke_w = 0
+        draw.text((155, y + 5), str(i + 1), font=font_rank, fill=color_rank, anchor="rs",
+                  stroke_width=1, stroke_fill=color_rank)
+        draw.text((200, y + 5), team_text, font=font_team, fill=color_team, anchor="rs",
+                  stroke_width=stroke_w, stroke_fill=color_team)
+        draw.text((210 + bar_w + 10, y + 5), str(t.get("value_label", t.get("value", ""))),
+                  font=font_val, fill=color_val, anchor="ls",
+                  stroke_width=1 if t.get("is_giants") else 0,
+                  stroke_fill=color_val)
+
+    _draw_footer_block(
+        canvas, draw,
+        str(data.get("footer_handle", DEFAULT_FOOTER_HANDLE)),
+        str(data.get("footer_meta", DEFAULT_FOOTER_META)),
+        size=size,
+    )
+    return canvas
+
+
+# 各 template_key → render function dispatch table
+TEMPLATE_RENDERERS = {
+    "ranking_table": _render_ranking_table,
+    "player_spotlight": _render_player_spotlight,
+    "pitcher_card": _render_pitcher_card,
+    "standings": _render_standings,
+    "12team_bar": _render_12team_bar,
+}
+
+
 def generate_png(
     template_key: str,
     data: dict[str, Any],
@@ -564,24 +906,28 @@ def generate_png(
 ) -> bytes | None:
     """Pillow + CJK font で PNG bytes を生成する entry point。
 
-    Phase 2A scope: template_key="ranking_table" のみ実装。 他 key は将来追加。
+    対応 template_key:
+      - ranking_table (Phase 2A)
+      - player_spotlight / pitcher_card / standings / 12team_bar (Phase 6)
+    未対応 key は WARN log + None で caller fallback。
 
     Args:
-        template_key: "ranking_table" など。
-        data: build_ranking_data() の出力。
+        template_key: 上記いずれか。
+        data: build_*_data() の出力 dict。
         size: PNG 出力 size (default 1080x1080)。
 
     Returns:
         PNG bytes on success, None on any failure (caller fallback)。
     """
     try:
-        if template_key != "ranking_table":
+        renderer = TEMPLATE_RENDERERS.get(template_key)
+        if renderer is None:
             logger.warning(
-                "[437v2] generate_png unknown template_key=%s (Phase 2A: ranking_table only)",
-                template_key,
+                "[437v2] generate_png unknown template_key=%s (supported=%s)",
+                template_key, list(TEMPLATE_RENDERERS),
             )
             return None
-        img = _render_ranking_table(data, size=size)
+        img = renderer(data, size=size)
         png_bytes = _pillow_image_to_png_bytes(img, size=size)
     except Exception as exc:
         logger.warning(
@@ -617,6 +963,97 @@ def build_ranking_data(
         "subtitle": subtitle,
         "hook_line": hook_line,
         "rows": rows,
+        "footer_handle": footer_handle,
+        "footer_meta": footer_meta,
+    }
+
+
+def build_player_spotlight_data(
+    *,
+    title: str,
+    subtitle: str,
+    hook_line: str,
+    player_name: str,
+    player_team: str,
+    metric_label: str,
+    hero_value: str,
+    sub_stats: list[dict[str, Any]] | None = None,
+    footer_handle: str = DEFAULT_FOOTER_HANDLE,
+    footer_meta: str = DEFAULT_FOOTER_META,
+) -> dict[str, Any]:
+    return {
+        "title": title,
+        "subtitle": subtitle,
+        "hook_line": hook_line,
+        "player_name": player_name,
+        "player_team": player_team,
+        "metric_label": metric_label,
+        "hero_value": hero_value,
+        "sub_stats": sub_stats or [],
+        "footer_handle": footer_handle,
+        "footer_meta": footer_meta,
+    }
+
+
+def build_pitcher_card_data(
+    *,
+    title: str,
+    subtitle: str,
+    hook_line: str,
+    player_name: str,
+    player_team: str,
+    stats: list[dict[str, Any]],
+    footer_handle: str = DEFAULT_FOOTER_HANDLE,
+    footer_meta: str = DEFAULT_FOOTER_META,
+) -> dict[str, Any]:
+    """投手 stat grid 用 data。 stats[i] = {label, value, highlight?}。最大 6 件。"""
+    return {
+        "title": title,
+        "subtitle": subtitle,
+        "hook_line": hook_line,
+        "player_name": player_name,
+        "player_team": player_team,
+        "stats": stats,
+        "footer_handle": footer_handle,
+        "footer_meta": footer_meta,
+    }
+
+
+def build_standings_data(
+    *,
+    title: str,
+    subtitle: str,
+    hook_line: str,
+    rows: list[dict[str, Any]],
+    footer_handle: str = DEFAULT_FOOTER_HANDLE,
+    footer_meta: str = DEFAULT_FOOTER_META,
+) -> dict[str, Any]:
+    """順位表 data。 rows[i] = {rank, team, record, win_pct, games_back, is_giants?}。"""
+    return {
+        "title": title,
+        "subtitle": subtitle,
+        "hook_line": hook_line,
+        "rows": rows,
+        "footer_handle": footer_handle,
+        "footer_meta": footer_meta,
+    }
+
+
+def build_12team_bar_data(
+    *,
+    title: str,
+    subtitle: str,
+    hook_line: str,
+    teams: list[dict[str, Any]],
+    footer_handle: str = DEFAULT_FOOTER_HANDLE,
+    footer_meta: str = DEFAULT_FOOTER_META,
+) -> dict[str, Any]:
+    """12 球団 bar chart data。 teams[i] = {name, value, value_label?, is_giants?}。"""
+    return {
+        "title": title,
+        "subtitle": subtitle,
+        "hook_line": hook_line,
+        "teams": teams,
         "footer_handle": footer_handle,
         "footer_meta": footer_meta,
     }

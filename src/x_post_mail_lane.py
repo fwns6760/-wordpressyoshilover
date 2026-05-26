@@ -3231,19 +3231,105 @@ def _build_candidate_hook_and_title(
     return title, subtitle, hook
 
 
+# 437 Phase 6: 候補 metric から最適 template を自動選択するための分類。
+_PITCHER_METRIC_KEYWORDS = (
+    "防御率", "ERA", "WHIP", "K_per_9", "BB_per_9", "HR_per_9",
+    "奪三振率", "与四球率", "被本塁打率", "投球", "登板", "K/BB",
+)
+_PLAYER_SPOTLIGHT_RANK_THRESHOLD = 1  # 1 位の時だけ spotlight
+
+
+def _is_pitcher_metric(metric: str) -> bool:
+    if not metric:
+        return False
+    return any(kw in metric for kw in _PITCHER_METRIC_KEYWORDS)
+
+
+def _select_template_and_data(candidate, rows: list[dict]):
+    """候補と抽出済 rows から、 使う template_key と data dict を返す。
+
+    Returns:
+        (template_key: str, data: dict) — generate_png にそのまま渡せる組。
+    """
+    from src.x_post_image_gen_v2 import (
+        build_pitcher_card_data,
+        build_player_spotlight_data,
+        build_ranking_data,
+    )
+
+    metric = getattr(candidate, "metric", "") or ""
+    period_label = getattr(candidate, "period_label", "") or ""
+    focus_player = getattr(candidate, "focus_player", "") or ""
+    title, subtitle, hook = _build_candidate_hook_and_title(
+        metric, period_label, focus_player, rows
+    )
+
+    # 1) focus_player が rank 1 で投手指標 → pitcher_card で集中表示
+    focus_row = next(
+        (r for r in rows if r.get("name") == focus_player and r.get("is_giants")),
+        None,
+    )
+    if (
+        focus_row is not None
+        and _is_pitcher_metric(metric)
+        and focus_row.get("rank", 99) <= _PLAYER_SPOTLIGHT_RANK_THRESHOLD
+    ):
+        stats: list[dict] = [
+            {
+                "label": metric,
+                "value": str(focus_row.get("value", "")),
+                "highlight": True,
+            }
+        ]
+        for r in rows[:5]:
+            if r.get("name") == focus_player:
+                continue
+            stats.append(
+                {"label": str(r.get("name", "")), "value": str(r.get("value", ""))}
+            )
+            if len(stats) >= 6:
+                break
+        data = build_pitcher_card_data(
+            title=title, subtitle=subtitle, hook_line=hook,
+            player_name=focus_player, player_team=str(focus_row.get("team", "")),
+            stats=stats,
+        )
+        return "pitcher_card", data
+
+    # 2) focus_player が rank 1 → player_spotlight で hero 表示
+    if focus_row is not None and focus_row.get("rank", 99) == _PLAYER_SPOTLIGHT_RANK_THRESHOLD:
+        sub_stats = [
+            {"label": str(r.get("name", "")), "value": str(r.get("value", ""))}
+            for r in rows[1:3]
+        ]
+        data = build_player_spotlight_data(
+            title=title, subtitle=subtitle, hook_line=hook,
+            player_name=focus_player, player_team=str(focus_row.get("team", "")),
+            metric_label=metric, hero_value=str(focus_row.get("value", "")),
+            sub_stats=sub_stats,
+        )
+        return "player_spotlight", data
+
+    # 3) default: ranking_table
+    data = build_ranking_data(
+        title=title, subtitle=subtitle, hook_line=hook, rows=rows
+    )
+    return "ranking_table", data
+
+
 def _generate_candidate_image_png(
     candidate, *, sample_rows: list[dict] | None = None
 ) -> bytes | None:
     """1 候補の metric / period / focus_player + draft_text から PNG bytes 生成。
 
-    draft_text に ranking 行が無い (news / fan voice 系) と sample_rows も無い場合は
-    None。 caller (compose_mail) は None 候補に画像を付けず HTML から img を省く。
+    候補 metric に応じて template を自動選択する (pitcher_card / player_spotlight /
+    ranking_table)。 draft_text に ranking 行が無いと None (image skip)。
     """
     try:
-        from src.x_post_image_gen_v2 import build_ranking_data, generate_png
+        from src.x_post_image_gen_v2 import generate_png
     except Exception as exc:
         logger.warning(
-            "[437 phase5] image gen import failed (%s): %s — mail skips image",
+            "[437 phase6] image gen import failed (%s): %s — mail skips image",
             type(exc).__name__,
             exc,
         )
@@ -3256,20 +3342,12 @@ def _generate_candidate_image_png(
         rows = sample_rows
     if not rows:
         return None
-    metric = getattr(candidate, "metric", "") or ""
-    period_label = getattr(candidate, "period_label", "") or ""
-    focus_player = getattr(candidate, "focus_player", "") or ""
-    title, subtitle, hook = _build_candidate_hook_and_title(
-        metric, period_label, focus_player, rows
-    )
     try:
-        data = build_ranking_data(
-            title=title, subtitle=subtitle, hook_line=hook, rows=rows
-        )
-        png = generate_png("ranking_table", data)
+        template_key, data = _select_template_and_data(candidate, rows)
+        png = generate_png(template_key, data)
     except Exception as exc:
         logger.warning(
-            "[437 phase5] image gen failed (%s): %s — mail skips image",
+            "[437 phase6] image gen failed (%s): %s — mail skips image",
             type(exc).__name__,
             exc,
         )

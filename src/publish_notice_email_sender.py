@@ -61,6 +61,8 @@ _REPLAY_WINDOW_MINUTES_DEFAULT = 10
 _PUBLISH_NOTICE_HISTORY_STRICT_STAMP_ENV_FLAG = "ENABLE_PUBLISH_NOTICE_HISTORY_STRICT_STAMP"
 _DISABLE_BURST_SUMMARY_MAIL_ENV_FLAG = "DISABLE_BURST_SUMMARY_MAIL"
 _PUBLISH_ONLY_MAIL_PREFIX = "【公開済】"
+_DRAFT_NOTICE_RECORD_TYPE = "draft_notice"
+_DRAFT_NOTICE_ORIGINS = frozenset({"fetcher_inline_draft_notice"})
 _DIRECT_PUBLISH_NOTICE_ORIGIN = "direct_publish_scan"
 _PUBLISH_NOTICE_24H_BUDGET_SUMMARY_ONLY_RECORD_TYPE = "24h_budget_summary_only"
 _PUBLISH_ONLY_MAIL_FILTER_SUPPRESSION_REASON = "PUBLISH_ONLY_FILTER"
@@ -242,6 +244,11 @@ _MAIL_CLASS_CONFIGS = {
     "publish": {
         "prefix": "【公開済】",
         "action": "check_article",
+        "priority": "normal",
+    },
+    "draft": {
+        "prefix": "【下書き】",
+        "action": "review_draft",
         "priority": "normal",
     },
     "x_candidate": {
@@ -1828,6 +1835,8 @@ def _format_next_action_line(mail_class: str, reason: str | None) -> str:
         return "次アクション: 後で確認。急ぎ投稿不要"
     if normalized_class == "publish":
         return "次アクション: 問題なければ放置"
+    if normalized_class == "draft":
+        return "次アクション: WPで確認して公開判断"
     if normalized_class == "x_candidate":
         return "次アクション: 内容確認後 X 投稿候補から選んで投稿"
     if normalized_class == "urgent":
@@ -2004,6 +2013,10 @@ def _per_post_mail_state(
         mail_class = "review"
         reason = farm_review_reason
 
+    if _is_draft_notice_request(request) and mail_class == "publish":
+        mail_class = "draft"
+        reason = "draft_notice_default"
+
     mail_config = _mail_class_config(mail_class)
     return {
         "mail_type": "per_post",
@@ -2018,6 +2031,14 @@ def _per_post_mail_state(
         "manual_x_display_candidates": display_manual_x_candidates,
         "suppression_reason": suppression_reason,
     }
+
+
+def _is_draft_notice_request(request: PublishNoticeRequest) -> bool:
+    record_type = str(getattr(request, "record_type", "") or "").strip()
+    if record_type == _DRAFT_NOTICE_RECORD_TYPE:
+        return True
+    notice_origin = str(getattr(request, "notice_origin", "") or "").strip()
+    return notice_origin in _DRAFT_NOTICE_ORIGINS
 
 
 def _classify_mail(

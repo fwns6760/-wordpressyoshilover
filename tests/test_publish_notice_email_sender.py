@@ -166,6 +166,36 @@ class PublishNoticeEmailSenderTests(unittest.TestCase):
             "【公開済】巨人が接戦を制した | YOSHILOVER",
         )
 
+    def test_subject_prefix_draft_notice_does_not_use_publish_label(self):
+        request = self._request(summary=None, record_type="draft_notice")
+        classification = sender._classify_mail(request)
+
+        self.assertEqual(classification["mail_class"], "draft")
+        self.assertEqual(classification["reason"], "draft_notice_default")
+        self.assertEqual(
+            sender.build_subject(request.title, classification=classification),
+            "【下書き】巨人が接戦を制した | YOSHILOVER",
+        )
+
+    def test_send_draft_notice_default_is_labeled_as_draft(self):
+        bridge_send = MagicMock(return_value=self._bridge_result())
+        request = self._request(summary=None, record_type="draft_notice")
+
+        with patch.dict(
+            "os.environ",
+            {
+                "PUBLISH_NOTICE_EMAIL_TO": "notice@example.com",
+                sender._MINIMAL_BODY_ENV: "0",
+                sender._SUBJECT_DETAIL_ENV: "0",
+            },
+            clear=True,
+        ):
+            result = sender.send(request, dry_run=False, send_enabled=True, bridge_send=bridge_send)
+
+        self.assertEqual(result.status, "sent")
+        self.assertEqual(result.subject, "【下書き】巨人が接戦を制した | YOSHILOVER")
+        bridge_send.assert_called_once()
+
     def test_subject_prefix_review_dirty_summary(self):
         request = self._request(
             subtype="default",

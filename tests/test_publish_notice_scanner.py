@@ -122,6 +122,7 @@ class PublishNoticeScannerTests(unittest.TestCase):
         self.assertEqual(captured_after.get("after"), "2026-04-24T09:00:00+09:00")
         self.assertEqual(len(result.emitted), 1)
         self.assertEqual(result.emitted[0].post_id, 901)
+        self.assertEqual(result.emitted[0].record_type, "draft_notice")
         # Cursor advances to the post's modified time, not the date.
         self.assertEqual(result.cursor_after, "2026-04-24T11:00:00+09:00")
 
@@ -161,6 +162,7 @@ class PublishNoticeScannerTests(unittest.TestCase):
             )
 
         self.assertEqual([request.post_id for request in result.emitted], [904])
+        self.assertIsNone(result.emitted[0].record_type)
         self.assertEqual(result.cursor_after, "2026-04-24T11:00:00+09:00")
 
     def test_scan_skips_published_data_insight_when_flag_disabled(self):

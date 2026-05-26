@@ -46,6 +46,7 @@ _PUBLISH_NOTICE_HISTORY_STRICT_STAMP_ENV_FLAG = "ENABLE_PUBLISH_NOTICE_HISTORY_S
 _DATA_INSIGHT_PUBLISHED_NOTICE_ENV_FLAG = "ENABLE_DATA_INSIGHT_PUBLISHED_NOTICE"
 _DATA_INSIGHT_TITLE_PREFIX = "【巨人データ】"
 _PUBLISH_ONLY_MAIL_PREFIX = "【公開済】"
+_DRAFT_NOTICE_RECORD_TYPE = "draft_notice"
 _DIRECT_PUBLISH_NOTICE_ORIGIN = "direct_publish_scan"
 _PUBLISH_NOTICE_24H_BUDGET_SOFT_THRESHOLD_ENV = "PUBLISH_NOTICE_24H_BUDGET_SOFT_THRESHOLD"
 _PUBLISH_NOTICE_24H_BUDGET_HARD_THRESHOLD_ENV = "PUBLISH_NOTICE_24H_BUDGET_HARD_THRESHOLD"
@@ -1568,6 +1569,7 @@ def _request_from_post(
     # 377-OPS Phase 1C (GH #51): mail card に「本文 600-1000 字」と「WP 編集 / 公開 link」を出す。
     # 379-OPS (GH #53): さらに「公開してX投稿画面へ」ボタン用 URL を populate する。
     post_id = post.get("id", "")
+    post_status = str(post.get("status") or "").strip().lower()
     content_html = _extract_rendered(post.get("content"))
     excerpt_html = _extract_rendered(post.get("excerpt"))
     body_html = content_html or excerpt_html
@@ -1582,6 +1584,7 @@ def _request_from_post(
         publish_time_iso=_isoformat_jst(post.get("date")),
         summary=_extract_summary(post),
         notice_origin=notice_origin,
+        record_type=_DRAFT_NOTICE_RECORD_TYPE if post_status == "draft" else None,
         body_excerpt=body_excerpt,
         admin_edit_url=admin_edit_url,
         publish_button_url=publish_button_url,

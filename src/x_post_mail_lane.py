@@ -898,6 +898,7 @@ _DEFAULT_PLAYER_MAX_PER_MAIL = 1
 _NEWS_OPINION_METRIC = "NEWS_OPINION"
 _COMMENT_DB_METRIC = "COMMENT_DB"
 _FAN_VOICE_METRIC = "FAN_VOICE"
+_GEMMA_BRANDING_METRIC = "GEMMA_BRANDING"
 _COMMENT_TERMS = (
     "コメント",
     "語った",
@@ -3109,8 +3110,22 @@ def build_subject(
     )
 
 
+_NEWS_DERIVED_METRICS = frozenset(
+    {
+        _NEWS_OPINION_METRIC,
+        _COMMENT_DB_METRIC,
+        _FAN_VOICE_METRIC,
+        _GEMMA_BRANDING_METRIC,
+    }
+)
+
+
 def _has_news_opinion_candidate(candidates: list[Candidate]) -> bool:
-    return any(c.metric in {_NEWS_OPINION_METRIC, _COMMENT_DB_METRIC} for c in candidates)
+    # 仕様: 画像 (= DB ranking) のある候補だけを「巨人データXポスト案」と
+    # 呼ぶ。 news 派生 (NEWS_OPINION / COMMENT_DB / FAN_VOICE /
+    # GEMMA_BRANDING) は draft_text に ranking 行が無く画像生成 skip
+    # されるため、 1 件でも混ざれば「巨人Xポスト案」表示に倒す。
+    return any(c.metric in _NEWS_DERIVED_METRICS for c in candidates)
 
 
 def _mail_header_label(candidates: list[Candidate]) -> str:

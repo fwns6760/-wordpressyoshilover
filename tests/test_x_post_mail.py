@@ -1220,6 +1220,37 @@ class ComposeMailTests(unittest.TestCase):
         self.assertNotIn("📮 巨人データXポスト案", mail.text_body)
         self.assertIn("📮 巨人Xポスト案", mail.html_body)
 
+    def test_gemma_branding_mix_uses_news_label(self) -> None:
+        # 仕様: news 派生候補 (article_info_branding=GEMMA_BRANDING) は
+        # 画像なし、 1 件でも混ざれば「巨人Xポスト案」表示。
+        ts = datetime(2026, 5, 26, 22, 0, tzinfo=JST)
+        branding = Candidate(
+            title="X-post branding｜則本昂大 (gemini-3.1-flash-lite)",
+            metric="GEMMA_BRANDING",
+            period_label="LLM 生成 (queue 417)",
+            draft_text="【根拠: gemini】\n対象選手: 則本昂大",
+            char_count=120,
+            post_text="則本昂大コメント",
+        )
+        mail = compose_mail([self._make_cand(1), branding], now=ts)
+        self.assertIn("📮 巨人Xポスト案", mail.text_body)
+        self.assertNotIn("📮 巨人データXポスト案", mail.text_body)
+        self.assertIn("📮 巨人Xポスト案", mail.html_body)
+
+    def test_fan_voice_mix_uses_news_label(self) -> None:
+        # 仕様: fan_voice も news 派生 (画像なし)、 混合 mail は「巨人Xポスト案」。
+        ts = datetime(2026, 5, 26, 22, 30, tzinfo=JST)
+        fan = Candidate(
+            title="(参考) ファン投稿｜@xyz｜...",
+            metric="FAN_VOICE",
+            period_label="(参考) ファン投稿",
+            draft_text="【根拠: 巨人ファン X 投稿 (参考)】",
+            char_count=180,
+        )
+        mail = compose_mail([self._make_cand(1), fan], now=ts)
+        self.assertIn("📮 巨人Xポスト案", mail.text_body)
+        self.assertNotIn("📮 巨人データXポスト案", mail.text_body)
+
     def test_comment_numeric_candidate_uses_same_player_db_fact_only(self) -> None:
         ts = datetime(2026, 5, 18, 7, 0, tzinfo=JST)
         news = build_news_opinion_candidate(

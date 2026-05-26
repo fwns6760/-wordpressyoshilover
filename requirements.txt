@@ -16,3 +16,8 @@ fastmcp
 # jinja2 renders SVG templates with publisher data (autoescape XML special chars)
 cairosvg
 jinja2
+# 437 Phase 2: Pillow-based X-post image generator (replaces cairosvg path for CJK)
+# Pillow reads TrueType fonts (IPAGothic / Noto Sans CJK) directly to avoid the
+# font fallback chain that produced tofu in Phase 1 (post 72079 / 72076).
+# CJK fonts are installed via apt: fonts-ipafont-gothic (added in Phase 2D).
+Pillow

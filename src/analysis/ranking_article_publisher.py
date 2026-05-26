@@ -937,11 +937,17 @@ def render_giants_centric_ranking(
         snapshot_date=snapshot_date, top_n=200,
     )
     rows_central = [r for r in rows_all if (r.team_code or "") in _CENTRAL_TEAMS]
-    discovery_top_n = max(int(top_n), int(candidate_top_n or top_n))
-    # rank 再付与
+    # 2026-05-26 user 「際立ってる成績だけ」+「巨人以外も通していい」:
+    # discovery (focus 候補抽出) は candidate_top_n で狭く (CL TOP 1)、
+    # display (ranking 表) は top_n で広く (TOP 10) 維持する。
+    # 旧 max(top_n, candidate_top_n) は candidate_top_n=1 を無効化していた。
+    display_top_n = int(top_n)
+    candidate_top_n_eff = int(candidate_top_n or top_n)
+    pool_size = max(display_top_n, candidate_top_n_eff)
+    # rank 再付与 (display + candidate を含む広い pool)
     from src.analysis.insight_article_generator import RankRow
     rows = []
-    for i, r in enumerate(rows_central[:discovery_top_n], start=1):
+    for i, r in enumerate(rows_central[:pool_size], start=1):
         rows.append(RankRow(
             player_canonical=r.player_canonical, team_code=r.team_code,
             metric_value=r.metric_value, sample_size=r.sample_size,
@@ -949,19 +955,21 @@ def render_giants_centric_ranking(
         ))
     if not rows:
         return None
+    # focus 候補は狭い candidate_top_n pool でのみ評価 (= CL TOP candidate_top_n)
+    candidate_rows = rows[:candidate_top_n_eff]
 
-    # 2026-05-25 user 「巨人選手 全員拾う」: focus_player 明示時はそれを採用、
-    # 未指定なら legacy (巨人最上位 1 名) fallback。
+    # 2026-05-25「巨人選手 全員拾う」+ 2026-05-26「巨人以外も通していい」:
+    # focus_player 明示なし時、 candidate_rows (= CL TOP candidate_top_n)
+    # 内の巨人選手最上位 → 不在なら CL TOP 1 (どの球団でも) を採用。
     if focus_player is None:
-        focus_player = find_giants_top(rows)
+        focus_candidates = find_focus_candidates(candidate_rows)
+        focus_player = focus_candidates[0] if focus_candidates else None
     if focus_player is None:
-        # 巨人選手不在の場合は本 module で記事化しない (focus 取れない)
         return None
     focus_row_obj = next((r for r in rows if r.player_canonical == focus_player), None)
     if focus_row_obj is None:
-        # focus_player 指定したが rows に該当無し (= candidate 圏外) → skip
         return None
-    table_rows = list(rows[:top_n])
+    table_rows = list(rows[:display_top_n])
     focus_is_in_display_window = bool(
         focus_row_obj and focus_row_obj.player_canonical in {
             r.player_canonical for r in table_rows
@@ -1102,7 +1110,7 @@ def render_giants_centric_ranking(
         "metric_name": metric_name,
         "scope": scope,
         "top_n": top_n,
-        "candidate_top_n": discovery_top_n,
+        "candidate_top_n": candidate_top_n_eff,
         "selection_tier": selection_tier,
         "focus_value": focus_row_obj.metric_value if focus_row_obj else None,
         "focus_rank": focus_row_obj.rank if focus_row_obj else None,
@@ -2809,10 +2817,12 @@ def _discover_giants_in_candidates(
         snapshot_date=snapshot_date, top_n=200,
     )
     rows_central = [r for r in rows_all if (r.team_code or "") in _CENTRAL_TEAMS]
-    discovery_top_n = max(int(top_n), int(candidate_top_n or top_n))
+    # discovery は candidate_top_n で狭く (render_giants_centric_ranking と整合、
+    # 2026-05-26 user 「際立ってる成績だけ」)
+    candidate_top_n_eff = int(candidate_top_n or top_n)
     from src.analysis.insight_article_generator import RankRow
     rows = []
-    for i, r in enumerate(rows_central[:discovery_top_n], start=1):
+    for i, r in enumerate(rows_central[:candidate_top_n_eff], start=1):
         rows.append(RankRow(
             player_canonical=r.player_canonical, team_code=r.team_code,
             metric_value=r.metric_value, sample_size=r.sample_size,

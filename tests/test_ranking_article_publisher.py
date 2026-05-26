@@ -217,8 +217,9 @@ def test_render_giants_centric_ranking_auto_uses_japanese_period_for_last_5_game
         conn.close()
 
 
-def test_render_returns_none_when_no_giants_in_top_n(tmp_path):
-    """巨人選手が ranking 圏外なら focus 取れず None で skip."""
+def test_render_falls_back_to_top1_when_no_giants_in_candidates(tmp_path):
+    """2026-05-26 user 「巨人以外も通していい」: 巨人不在なら CL TOP 1 (= 非巨人) を focus にして
+    記事化する (title prefix は 【データ】、 旧挙動の None skip ではない)。"""
     db = tmp_path / "test.db"
     conn = insight_etl.open_db(db_path=db, schema_path=insight_etl.DEFAULT_SCHEMA)
     try:
@@ -230,13 +231,21 @@ def test_render_returns_none_when_no_giants_in_top_n(tmp_path):
         result = rap.render_giants_centric_ranking(
             conn, metric_name="OPS", scope="last_30d", snapshot_date="2026-05-14",
         )
-        assert result is None
+        assert result is not None
+        assert result["focus_player"] == "阪神A"
+        # title prefix が 【データ】 (非巨人) になっていること
+        assert result["title"].startswith("【データ】")
+        assert "【巨人データ】" not in result["title"]
     finally:
         conn.close()
 
 
 def test_render_uses_wider_candidate_window_but_keeps_display_table_tight(tmp_path):
-    """表示は TOP10 のまま、候補発見は TOP30 まで広げられる。"""
+    """表示は TOP10 のまま、候補発見は candidate_top_n で制御。
+
+    2026-05-26 cutover: candidate_top_n を狭くすると focus 候補が狭まり、
+    そこに巨人がいなければ CL TOP 1 fallback。 wide な candidate_top_n を
+    指定すると 巨人 (rank 11) も candidate に含まれ focus 採用可能。"""
     db = tmp_path / "test.db"
     conn = insight_etl.open_db(db_path=db, schema_path=insight_etl.DEFAULT_SCHEMA)
     try:
@@ -253,6 +262,7 @@ def test_render_uses_wider_candidate_window_but_keeps_display_table_tight(tmp_pa
             ranking=ranking,
         )
 
+        # candidate_top_n 未指定 = top_n=10 使用、 巨人A は rank 11 で圏外 → CL TOP 1 fallback
         strict_result = rap.render_giants_centric_ranking(
             conn,
             metric_name="OPS",
@@ -260,6 +270,7 @@ def test_render_uses_wider_candidate_window_but_keeps_display_table_tight(tmp_pa
             snapshot_date=TODAY,
             top_n=10,
         )
+        # candidate_top_n=30 = TOP 30 まで discovery、 巨人A rank 11 が含まれ focus 採用
         wide_result = rap.render_giants_centric_ranking(
             conn,
             metric_name="OPS",
@@ -269,12 +280,16 @@ def test_render_uses_wider_candidate_window_but_keeps_display_table_tight(tmp_pa
             candidate_top_n=30,
         )
 
-        assert strict_result is None
+        assert strict_result is not None
+        assert strict_result["focus_player"] == "他球団1"
+        assert strict_result["title"].startswith("【データ】")
+
         assert wide_result is not None
         assert wide_result["focus_player"] == "巨人A"
         assert wide_result["focus_rank"] == 11
         assert wide_result["top_n"] == 10
         assert wide_result["candidate_top_n"] == 30
+        assert wide_result["title"].startswith("【巨人データ】")
         assert wide_result["selection_tier"] == "extended_candidate_window"
         assert "巨人A" in wide_result["body_md"]
         assert "<strong>11</strong>" in wide_result["body_md"]

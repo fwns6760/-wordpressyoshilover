@@ -1257,20 +1257,10 @@ def publish_giants_centric_ranking_draft(
     _banner = _giants_news_banner_html(
         article["title"], _BANNER_SOURCE_LABEL, category_name
     )
-    # 437: SVG eyecatch 生成 + WP media upload (失敗しても publish 続行)
-    # 既定 OFF。cairosvg は CJK font fallback が効かず日本語が全部 tofu になる
-    # ため (post 72079 / 72076 事例)、ENABLE_437_SVG_EYECATCH=1 が明示された
-    # ときだけ走らせる。OFF のときは image_media_id=0 のまま流れ、
-    # wp_client.create_post の player_eyecatch_resolver fallback が選手写真を
-    # featured_media に attach する (= 437 前の挙動)。
-    image_media_id = 0
-    if os.environ.get("ENABLE_437_SVG_EYECATCH", "0").strip().lower() in {"1", "true", "yes"}:
-        try:
-            from src.x_post_image_gen import attach_ranking_image
-            image_media_id = attach_ranking_image(wp_client_obj, article)
-        except Exception as exc:  # noqa: BLE001
-            print(f"[437] eyecatch attach failed (continuing without image): {exc}")
-            image_media_id = 0
+    # eyecatch: data-insight 記事は元記事画像 (rule ①) を持たないため、
+    # featured_media は None で渡し、wp_client.create_post 内の auto-eyecatch
+    # fallback (rule ② 保存選手写真 → ③ team fallback 巨人マーク) に委ねる。
+    # rule 出典: commit 8f827c4 + src/rss_fetcher.py:28202-28228 の comment。
     dedup_history_id = 0
     dedup_record_error = ""
     try:
@@ -1279,7 +1269,7 @@ def publish_giants_centric_ranking_draft(
             content=_banner + article["body_html"],
             categories=[category_id],
             status=publish_status,
-            featured_media=image_media_id if image_media_id else None,
+            featured_media=None,
             caller="ranking_article_publisher",
         )
         # tag は別 PUT で post に attach (create_post に tags param がないため)

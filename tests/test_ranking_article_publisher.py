@@ -496,24 +496,25 @@ def test_publish_default_set_uses_display_and_candidate_windows(monkeypatch):
         )
         for call in calls
     ] == [
-        ("OPS", "last_10_games", 10, 30),
-        ("ERA", "last_5_games", 5, 15),
-        ("AVG", "last_10_games", 10, 30),
-        ("K_per_9", "last_5_games", 5, 15),
-        ("OBP", "last_10_games", 10, 30),
-        ("SLG", "last_10_games", 10, 30),
+        # 2026-05-26 candidate_top_n cutover (30→1 / 15→1): 際立ち gate 強化
+        ("OPS", "last_10_games", 10, 1),
+        ("ERA", "last_5_games", 5, 1),
+        ("AVG", "last_10_games", 10, 1),
+        ("K_per_9", "last_5_games", 5, 1),
+        ("OBP", "last_10_games", 10, 1),
+        ("SLG", "last_10_games", 10, 1),
     ]
     published_results = [r for r in results if r.get("status") == "dry_run"]
     assert [
         (r["metric_name"], r["job_family"], r["top_n"], r["candidate_top_n"])
         for r in published_results
     ] == [
-        ("OPS", "batting_rate", 10, 30),
-        ("ERA", "pitching_rate", 5, 15),
-        ("AVG", "batting_rate", 10, 30),
-        ("K_per_9", "pitching_per9", 5, 15),
-        ("OBP", "batting_rate", 10, 30),
-        ("SLG", "batting_rate", 10, 30),
+        ("OPS", "batting_rate", 10, 1),
+        ("ERA", "pitching_rate", 5, 1),
+        ("AVG", "batting_rate", 10, 1),
+        ("K_per_9", "pitching_per9", 5, 1),
+        ("OBP", "batting_rate", 10, 1),
+        ("SLG", "batting_rate", 10, 1),
     ]
     assert all("candidate_top" in r["selection_reason"] for r in results)
 

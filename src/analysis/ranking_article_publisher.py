@@ -602,8 +602,12 @@ _BATTER_DEFAULT_SCOPE = "last_10_games"  # 2026-05-25 user 確定 (バッター�
 _PITCHER_DEFAULT_SCOPE = "last_5_games"  # 2026-05-25 user 確定 (投手直近 5 試合)
 _BATTER_DEFAULT_TOP_N = 10
 _PITCHER_DEFAULT_TOP_N = 5
-_BATTER_CANDIDATE_TOP_N = 30
-_PITCHER_CANDIDATE_TOP_N = 15
+# 2026-05-26 user 指示「際立ってる成績だけ」: 中位 ranking 記事 (例: 巨人 11/12/13 位)
+# が量産されマンネリ化したため、candidate を CL 首位 1 名のみに絞る。 巨人選手が
+# 当該 metric の CL 1 位でない day はこの軸では 0 件、 anomaly / streak / vs-opponent
+# 等の他軸で拾う設計。 30 → 1 / 15 → 1 cutover。
+_BATTER_CANDIDATE_TOP_N = 1
+_PITCHER_CANDIDATE_TOP_N = 1
 
 
 def _default_ranking_job(

@@ -3160,15 +3160,17 @@ def _compose_text_body(
     return "\n".join(parts)
 
 
-def _generate_ranking_image_data_uri() -> str:
-    """437 Phase 4: TOP 8 OPS ranking PNG を base64 data URI で返す。
+RANKING_IMAGE_CID = "giants-ranking-437"
 
-    失敗時は空文字を返し、 mail は画像なしで通常 send される (publish 止めない)。
-    user は mail から画像を ドラッグ で X compose に落として手動添付する想定。
+
+def _generate_ranking_image_png() -> bytes | None:
+    """437 Phase 4: TOP 8 OPS ranking PNG bytes を返す (失敗時 None)。
+
+    Gmail / Apple Mail で base64 data URI が block される事例があるため、
+    bytes を返して mail_delivery_bridge.InlineImage 経由で multipart/related
+    として添付し、 HTML 側は `<img src="cid:RANKING_IMAGE_CID">` で参照する。
     """
     try:
-        import base64
-
         from src.x_post_image_gen_v2 import build_ranking_data, generate_png
     except Exception as exc:
         logger.warning(
@@ -3176,7 +3178,7 @@ def _generate_ranking_image_data_uri() -> str:
             type(exc).__name__,
             exc,
         )
-        return ""
+        return None
 
     # static sample data (Phase 4 MVP): DB query への置換は次便。
     rows = [
@@ -3203,22 +3205,20 @@ def _generate_ranking_image_data_uri() -> str:
             type(exc).__name__,
             exc,
         )
-        return ""
+        return None
     if not png:
         logger.warning("[437 phase4] image gen returned None — mail skips image")
-        return ""
-    b64 = base64.b64encode(png).decode("ascii")
-    return f"data:image/png;base64,{b64}"
+        return None
+    return png
 
 
-def _render_ranking_image_html() -> str:
-    """画像 data URI を mail body 用 HTML に整形 (失敗時は空)。"""
-    data_uri = _generate_ranking_image_data_uri()
-    if not data_uri:
+def _render_ranking_image_html(*, has_image: bool) -> str:
+    """画像 cid 参照を mail body 用 HTML に整形 (画像が無いなら空)。"""
+    if not has_image:
         return ""
     return (
         "<div style=\"text-align:center;margin:0 0 14px;\">"
-        f"<img src=\"{data_uri}\" alt=\"giants ranking\" "
+        f"<img src=\"cid:{RANKING_IMAGE_CID}\" alt=\"giants ranking\" "
         "style=\"max-width:540px;width:100%;height:auto;border:1px solid #ddd;"
         "border-radius:6px;display:inline-block;\" "
         "draggable=\"true\"/>"
@@ -3233,6 +3233,7 @@ def _compose_html_body(
     now: datetime,
     *,
     context_note: str = "",
+    has_image: bool = False,
 ) -> str:
     band = time_band_label(now.hour)
     header_label = _mail_header_label(candidates)
@@ -3312,7 +3313,7 @@ def _compose_html_body(
             if context_note else ""
         )
         + summary_html
-        + _render_ranking_image_html()
+        + _render_ranking_image_html(has_image=has_image)
         + "\n".join(rows_html)
         + "</body></html>"
     )
@@ -3324,6 +3325,7 @@ class ComposedMail:
     text_body: str
     html_body: str
     candidate_count: int
+    ranking_image_png: bytes | None = None  # 437 Phase 4: cid 添付 image
 
 
 def compose_mail(
@@ -3338,11 +3340,19 @@ def compose_mail(
     if not context_label and _has_news_opinion_candidate(candidates):
         context_label = "データ+ニュース意見"
     subject = build_subject(now, len(candidates), context_label=context_label)
+    # 437 Phase 4: 画像を 1 回だけ生成し、 HTML body と MailRequest 双方で再利用
+    ranking_image_png = _generate_ranking_image_png()
     text_body = _compose_text_body(candidates, now, context_note=context_note)
-    html_body = _compose_html_body(candidates, now, context_note=context_note)
+    html_body = _compose_html_body(
+        candidates,
+        now,
+        context_note=context_note,
+        has_image=ranking_image_png is not None,
+    )
     return ComposedMail(
         subject=subject,
         text_body=text_body,
         html_body=html_body,
         candidate_count=len(candidates),
+        ranking_image_png=ranking_image_png,
     )

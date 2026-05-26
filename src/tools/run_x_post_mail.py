@@ -569,15 +569,10 @@ def _backfill_dedup_starved_candidates(
     actual review queue, so duplicate suppression must become a soft
     preference instead of a hard skip.
 
-    397: player-level dedup を 2 段で適用する。
-    Stage A: signature dedup + player dedup ON (24h history と current mail
-    の両方を見て同一 player をスキップ)。これで浦田連発を抑止する。
-    Stage B: Stage A 終了後の candidate 数が ``min_candidates`` 未満で
-    残りに player_dedup_skipped 候補が残っているなら、最後の手段として
-    signature dedup だけ守って詰め直す。これは mail が「ほぼ空」に
-    なるよりは構造的 top player を再採用する方を優先する保険である。
-    Stage B のしきい値は caller の ``min_candidates`` (= dedup_min_candidates
-    と同じ意図、default 0 = Stage B 無効) で制御する。
+    397 originally allowed a Stage B override that put history players
+    back when the mail was sparse. 436 follow-up removes that override:
+    the user prefers fewer candidates over seeing the same player again
+    and again in pitcher-rate Top10 tables.
     """
     merged = list(candidates)
     seen_signatures = {c.signature for c in merged if c.signature}
@@ -613,31 +608,14 @@ def _backfill_dedup_starved_candidates(
             seen_signatures.add(cand.signature)
         if cand_key:
             seen_player_keys.add(cand_key)
-    if (
-        min_candidates > 0
-        and len(merged) < min_candidates
-        and player_dedup_skipped
-    ):
-        for cand in player_dedup_skipped:
-            if len(merged) >= max_candidates:
-                break
-            if cand.signature and cand.signature in seen_signatures:
-                continue
-            LOG.warning(
-                "dedup_fallback_player_skip_overridden metric=%s period=%s player=%s "
-                "(mail would otherwise be too sparse: %d < %d)",
-                cand.metric,
-                cand.period_label,
-                cand.focus_player,
-                len(merged),
-                min_candidates,
-            )
-            merged.append(cand)
-            if cand.signature:
-                seen_signatures.add(cand.signature)
-            if len(merged) >= min_candidates:
-                # Stage B fills up to min_candidates only; do not blow past.
-                break
+    if min_candidates > 0 and len(merged) < min_candidates and player_dedup_skipped:
+        LOG.warning(
+            "dedup_fallback_player_skip_kept count=%d current=%d min=%d "
+            "reason=prefer_fewer_candidates_over_repeat_players",
+            len(player_dedup_skipped),
+            len(merged),
+            min_candidates,
+        )
     return merged
 
 
@@ -1126,8 +1104,8 @@ def _merge_news_priority_candidates(
 
     This keeps the mail schedule and UI unchanged while shifting the
     content from repeated metric-only candidates toward RSS/comment
-    hooks. Player diversity is enforced first; if that would leave the
-    mail short, DB candidates may backfill as a second pass.
+    hooks. Player diversity is enforced as a hard mail-level gate; a
+    shorter mail is preferable to repeating the same player.
     """
     merged: list[lane.Candidate] = []
     seen_identities: set[str] = set()
@@ -1162,10 +1140,6 @@ def _merge_news_priority_candidates(
         if _candidate_identity(candidate) in consumed_data:
             continue
         add(candidate, enforce_player=True)
-    for candidate in data_candidates:
-        if _candidate_identity(candidate) in consumed_data:
-            continue
-        add(candidate, enforce_player=False)
     return merged[:max_candidates]
 
 
@@ -1313,6 +1287,18 @@ def _main_on_queue(args: argparse.Namespace, recipients: list[str]) -> int:
         sender=_resolve_sender(),
         reply_to=_resolve_reply_to(),
         metadata={"ticket": "417", "lane": "x_post_mail", "mode": "on-queue", "candidate_count": mail.candidate_count},
+        inline_images=(
+            [
+                mdb.InlineImage(
+                    content_id=lane.RANKING_IMAGE_CID,
+                    data=mail.ranking_image_png,
+                    mime_subtype="png",
+                    filename="giants-ranking.png",
+                )
+            ]
+            if mail.ranking_image_png
+            else []
+        ),
     )
     result = mdb.send(request, dry_run=False)
     LOG.info(
@@ -1525,7 +1511,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             else:
                 LOG.info(
                     "Gemma branding produced 0 candidates "
-                    "(silent skip on Tavily / Gemini errors or validator drops)."
+                    "(visible skip: Tavily / Gemini errors or validator drops)."
                 )
         # flag ON ルートでは template-based news_opinion fallback を呼ばない
         news_fallback_enabled = False
@@ -1760,6 +1746,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         sender=_resolve_sender(),
         reply_to=_resolve_reply_to(),
         metadata={"ticket": "347", "lane": "x_post_mail", "candidate_count": mail.candidate_count},
+        inline_images=(
+            [
+                mdb.InlineImage(
+                    content_id=lane.RANKING_IMAGE_CID,
+                    data=mail.ranking_image_png,
+                    mime_subtype="png",
+                    filename="giants-ranking.png",
+                )
+            ]
+            if mail.ranking_image_png
+            else []
+        ),
     )
     result = mdb.send(request, dry_run=False)
     LOG.info("mail send result: status=%s reason=%s refused=%s",

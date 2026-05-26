@@ -18,6 +18,21 @@ DEFAULT_SMTP_TIMEOUT_SECONDS = 20
 
 
 @dataclass(frozen=True)
+class InlineImage:
+    """437 Phase 4: HTML body から cid: 参照される inline 画像。
+
+    multipart/related part として送信され、 HTML 側で
+    `<img src="cid:{content_id}">` で参照される。 data URI と違って
+    Gmail / Apple Mail / Outlook いずれも確実に inline 表示する。
+    """
+
+    content_id: str
+    data: bytes
+    mime_subtype: str = "png"
+    filename: str | None = None
+
+
+@dataclass(frozen=True)
 class MailRequest:
     to: list[str]
     subject: str
@@ -26,6 +41,7 @@ class MailRequest:
     sender: str | None = None
     reply_to: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+    inline_images: list[InlineImage] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -236,6 +252,21 @@ def _build_message(request: MailRequest, *, sender: str, recipients: list[str]) 
     message.set_content(request.text_body)
     if request.html_body and request.html_body.strip():
         message.add_alternative(request.html_body, subtype="html")
+        # 437 Phase 4: inline 画像を multipart/related で添付。
+        # set_content / add_alternative 後に html part を取得して画像を attach
+        # することで、 Gmail / Apple Mail / Outlook で <img src="cid:..."> が
+        # 確実に inline 表示される (data URI は Gmail で頻繁に block される)。
+        if request.inline_images:
+            html_part = message.get_payload()[-1]  # 最後の alternative = html
+            for img in request.inline_images:
+                cid = img.content_id.lstrip("<").rstrip(">")
+                html_part.add_related(
+                    img.data,
+                    maintype="image",
+                    subtype=img.mime_subtype,
+                    cid=f"<{cid}>",
+                    filename=img.filename or f"{cid}.{img.mime_subtype}",
+                )
     return message
 
 

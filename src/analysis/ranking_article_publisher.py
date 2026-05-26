@@ -790,6 +790,25 @@ def find_all_giants_in_candidates(rows: list[RankRow]) -> list[str]:
     return [r.player_canonical for r in rows if r.team_code == "g"]
 
 
+def find_focus_candidates(rows: list[RankRow]) -> list[str]:
+    """focus_player 候補を返す (2026-05-26 user 「巨人以外も通していい」)。
+
+    優先順:
+      1. 巨人選手が rows 内に居れば、全 巨人選手 を上位順で返す (= 従来挙動)
+      2. 巨人選手 0 名なら、 rows の最上位 (= CL TOP 1) を返す (= 際立ち fallback)
+      3. rows 空なら空 list
+
+    publish 側 title prefix は focus_player の team_code で 【巨人データ】 /
+    【データ】 を切替 (render_giants_centric_ranking 参照)。
+    """
+    giants = find_all_giants_in_candidates(rows)
+    if giants:
+        return giants
+    if rows:
+        return [rows[0].player_canonical]
+    return []
+
+
 # ─── markdown → HTML 簡易 converter ─────────────────────────────────────────
 
 
@@ -973,7 +992,11 @@ def render_giants_centric_ranking(
     # insight_article_generator は「12 球団中」固定文言、セ・リーグ用に置換
     base_title = base_title.replace("12 球団中", "セ・リーグ").replace("全 30 人中", "セ・リーグ")
     if not base_title.startswith("【"):
-        base_title = f"【巨人データ】{base_title}"
+        # 2026-05-26 user 「巨人以外も通していい / title データでいい」:
+        # focus_player が巨人なら 【巨人データ】、非巨人 (CL TOP 1 fallback) なら 【データ】
+        focus_team_code = (focus_row_obj.team_code or "").lower() if focus_row_obj else ""
+        prefix = "【巨人データ】" if focus_team_code == "g" else "【データ】"
+        base_title = f"{prefix}{base_title}"
     title_check = title_guard.ensure_title_period(base_title, scope=scope)
     if not title_check.ok:
         return None
@@ -2771,9 +2794,15 @@ def _discover_giants_in_candidates(
     top_n: int,
     candidate_top_n: Optional[int],
 ) -> list[str]:
-    """metric × scope の candidate window 内の巨人選手全員を上位順で返す。
-    2026-05-25 user 「巨人選手 全員拾う」 用、 render_giants_centric_ranking と
-    同じ row 取得 logic で discovery のみ実行。
+    """metric × scope の candidate window 内の focus 候補を上位順で返す。
+
+    2026-05-25 user 「巨人選手 全員拾う」 + 2026-05-26 user 「巨人以外も通していい」:
+      1. 巨人選手が candidate に居れば、 全 巨人選手 を上位順 (= 従来挙動)
+      2. 巨人選手 0 名なら、 candidate の最上位 (= CL TOP 1) を 1 名 fallback
+
+    name は legacy 互換 (publish_default_set の caller 側 import 維持) で
+    `_discover_giants_in_candidates` のまま。 中身は `find_focus_candidates`
+    で巨人/非巨人 fallback 経路を統一。
     """
     rows_all = fetch_ranking_rows(
         conn, metric_name=metric_name, scope=scope,
@@ -2789,7 +2818,7 @@ def _discover_giants_in_candidates(
             metric_value=r.metric_value, sample_size=r.sample_size,
             rank=i, total=len(rows_central),
         ))
-    return find_all_giants_in_candidates(rows)
+    return find_focus_candidates(rows)
 
 
 def publish_default_set(

@@ -100,16 +100,25 @@ def min_sample_for_metric(
     403 (2026-05-20): 新 scope vocabulary (last_N_games / last_N_pa /
     last_N_appearances / last_N_ip) 対応。 scope 別の min_sample:
 
+    2026-05-26 user 指示「1軍と2軍で規定打席で分ける」: 緩い audit-based
+    threshold を **NPB 公式 規定打席 / 規定投球回** に切替。 cup-of-coffee
+    で 1軍に短期出場した 2軍中心選手を data 集計段階で除外。
+
     打者 metric (AVG / OBP / SLG / OPS / RISP):
-      - last_3_games: 8 AB (audit: 上位 5 名で達成)
-      - last_5_games: 12 AB (audit: 7 名達成)
-      - last_10_games: 20 AB (audit: 8 名達成)
+      - 規定打席 = 3.1 × team_games_played (NPB 公式)
+      - last_3_games: 9 PA (3.1 × 3 ≒ 9)
+      - last_5_games: 16 PA (3.1 × 5 ≒ 16)
+      - last_10_games: 31 PA (3.1 × 10 = 31)
       - last_N_pa: N そのもの (PA cumsum を threshold)
       - 既存 (last_7d / last_30d / season / monthly / weekly): 20 PA (不変)
 
     投手 metric (ERA / WHIP-ban 等):
+      - 規定投球回 = 1.0 × team_games_played (NPB 公式)
+      - last_3_games: 3 IP
+      - last_5_games: 5 IP
+      - last_10_games: 10 IP
       - last_N_appearances: 0 (登板数自体を threshold、 audit OK)
-      - last_5_ip: 5、 last_10_ip: 10
+      - last_5_ip / last_10_ip: そのまま
       - 既存: 10 IP (不変)
 
     fielding metric: scope 不問、 10 (不変)
@@ -123,13 +132,14 @@ def min_sample_for_metric(
     if is_fielding:
         return int(quality.get("min_sample_fielding", 10))
 
-    # 403 新 scope の audit-based min_sample (打者 / 投手)
+    # 2026-05-26 user 「規定打席で分ける」: NPB 公式 規定 で 1軍/2軍 分離
     if scope:
         if is_batter:
+            # 規定打席 = 3.1 × games (NPB 公式)
             scope_specific = {
-                "last_3_games": 8,
-                "last_5_games": 12,
-                "last_10_games": 20,
+                "last_3_games": 9,
+                "last_5_games": 16,
+                "last_10_games": 31,
             }
             if scope in scope_specific:
                 return scope_specific[scope]
@@ -139,13 +149,11 @@ def min_sample_for_metric(
                 except ValueError:
                     pass
         if is_pitcher:
-            # 413 (2026-05-20): 投手 last_N_games scope の min_sample gap fix。
-            # last_5_games で巨人 5 試合 window だが、 リリーフは 1-3 IP し
-            # か投げない。 audit 反映の小さな threshold (IP base):
+            # 規定投球回 = 1.0 × games (NPB 公式)
             pitcher_games_min = {
-                "last_3_games": 2,
-                "last_5_games": 3,
-                "last_10_games": 5,
+                "last_3_games": 3,
+                "last_5_games": 5,
+                "last_10_games": 10,
             }
             if scope in pitcher_games_min:
                 return pitcher_games_min[scope]

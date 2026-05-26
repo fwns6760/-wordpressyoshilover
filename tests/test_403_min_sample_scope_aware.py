@@ -52,20 +52,20 @@ def test_min_sample_existing_date_scope_unchanged():
 
 
 def test_min_sample_batter_last_3_games():
-    """打者 last_3_games: audit-based 8 AB。"""
-    assert qg.min_sample_for_metric("OPS", scope="last_3_games") == 8
-    assert qg.min_sample_for_metric("AVG", scope="last_3_games") == 8
+    """打者 last_3_games: 規定打席 3.1 × 3 ≒ 9 PA (2026-05-26 user 「1軍/2軍 規定で分ける」)。"""
+    assert qg.min_sample_for_metric("OPS", scope="last_3_games") == 9
+    assert qg.min_sample_for_metric("AVG", scope="last_3_games") == 9
 
 
 def test_min_sample_batter_last_5_games():
-    """打者 last_5_games: audit-based 12 AB。"""
-    assert qg.min_sample_for_metric("OPS", scope="last_5_games") == 12
-    assert qg.min_sample_for_metric("OBP", scope="last_5_games") == 12
+    """打者 last_5_games: 規定打席 3.1 × 5 ≒ 16 PA (2026-05-26 user 「1軍/2軍 規定で分ける」)。"""
+    assert qg.min_sample_for_metric("OPS", scope="last_5_games") == 16
+    assert qg.min_sample_for_metric("OBP", scope="last_5_games") == 16
 
 
 def test_min_sample_batter_last_10_games():
-    """打者 last_10_games: audit-based 20 AB。"""
-    assert qg.min_sample_for_metric("OPS", scope="last_10_games") == 20
+    """打者 last_10_games: 規定打席 3.1 × 10 = 31 PA (2026-05-26 user 「1軍/2軍 規定で分ける」)。"""
+    assert qg.min_sample_for_metric("OPS", scope="last_10_games") == 31
 
 
 def test_min_sample_batter_last_n_pa():
@@ -90,10 +90,12 @@ def test_min_sample_pitcher_last_n_ip():
 
 
 def test_min_sample_pitcher_last_n_games_413_fix():
-    """投手 last_N_games: 413 fix で IP base の小さな threshold (リリーフ救済)."""
-    # 413 fix: リリーフ (マルティネス 等) が 21:00 fire で skip 多発
-    # last_5_games で min=10 → 3 に下げ、 5 IP → publish 候補化
-    assert qg.min_sample_for_metric("ERA", scope="last_3_games") == 2
-    assert qg.min_sample_for_metric("ERA", scope="last_5_games") == 3
-    assert qg.min_sample_for_metric("ERA", scope="last_10_games") == 5
-    assert qg.min_sample_for_metric("K_per_9", scope="last_5_games") == 3
+    """投手 last_N_games: 規定投球回 1.0 × games (2026-05-26 user 「1軍/2軍 規定で分ける」)。
+
+    413 audit-based の緩い値 (2/3/5 IP) は 2026-05-26 で 規定投球回 (3/5/10 IP) に切替。
+    リリーフ救済 audit より 1軍/2軍 分離 (規定線) を優先。
+    """
+    assert qg.min_sample_for_metric("ERA", scope="last_3_games") == 3
+    assert qg.min_sample_for_metric("ERA", scope="last_5_games") == 5
+    assert qg.min_sample_for_metric("ERA", scope="last_10_games") == 10
+    assert qg.min_sample_for_metric("K_per_9", scope="last_5_games") == 5

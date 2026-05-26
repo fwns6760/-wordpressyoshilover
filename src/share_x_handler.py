@@ -344,4 +344,263 @@ def handle_image_proxy(
     )
 
 
-__all__ = ["handle_share_get", "handle_image_proxy"]
+# --------------------------------------------------------------------------
+# 437 Phase 8 (2026-05-26): x-post-mail-lane 候補ごと share-x-cand handler。
+# WP post を持たない X-post 候補 (DB 由来 ranking) を、 GCS 上の PNG を介して
+# Web Share API で X app に直送する。 publish 経路を持たないので、 page JS は
+# 単に navigator.share({files, text, url}) を呼び、 失敗時は X intent URL に
+# fallback するだけ。
+# --------------------------------------------------------------------------
+
+_SHARE_X_CAND_TITLE_MAX_CHARS = 200  # share page 表示用、 X 280字制限は別途
+# blob_key 経由で path traversal を防ぐ allowlist (prefix + 文字種制限)
+_SHARE_X_CAND_BLOB_PREFIX = "share_x_cand/"
+_SHARE_X_CAND_BLOB_ALLOWED_CHARS = (
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_./"
+)
+
+
+def _is_share_x_cand_blob_key_safe(blob_key: str) -> bool:
+    if not blob_key or len(blob_key) > 256:
+        return False
+    if not blob_key.startswith(_SHARE_X_CAND_BLOB_PREFIX):
+        return False
+    if ".." in blob_key or "//" in blob_key:
+        return False
+    return all(ch in _SHARE_X_CAND_BLOB_ALLOWED_CHARS for ch in blob_key)
+
+
+def _build_share_cand_x_intent_url(*, text: str, post_url: str) -> str:
+    """share-x-cand 用 X intent URL fallback。
+
+    publish-notice 側と違い、 text は既に candidate post_text (brand tag 含む) で
+    確定しているのでそのまま使う。 cap も candidate 側で済んでいる前提。
+    """
+    from urllib.parse import quote, urlencode
+
+    params = {"text": text or "", "url": post_url or ""}
+    return f"{_X_INTENT_BASE_URL}?{urlencode(params, quote_via=quote)}"
+
+
+def _build_share_cand_page_html(
+    *,
+    blob_key: str,
+    token: str,
+    text: str,
+    post_url: str,
+    image_proxy_url: str,
+    x_intent_url: str,
+) -> str:
+    """share-x-cand 用 HTML page。 publish 経路無しで navigator.share だけ呼ぶ。"""
+    display_title = (text or "").splitlines()[0].strip() if text else "X に投稿"
+    if len(display_title) > _SHARE_X_CAND_TITLE_MAX_CHARS:
+        display_title = display_title[: _SHARE_X_CAND_TITLE_MAX_CHARS - 1] + "…"
+    escaped_title = html.escape(display_title)
+    safe_image_proxy_attr = html.escape(image_proxy_url)
+    js_image_proxy = json.dumps(image_proxy_url)
+    js_x_intent = json.dumps(x_intent_url)
+    js_text = json.dumps(text or "")
+    js_url = json.dumps(post_url or "")
+
+    image_html = (
+        '<p style="text-align:center;margin:16px 0;">'
+        f'<img src="{safe_image_proxy_attr}" alt="ランキング画像" '
+        'style="max-width:100%;height:auto;border-radius:6px;'
+        'box-shadow:0 1px 3px rgba(0,0,0,0.1);" /></p>'
+    )
+
+    share_button_html = (
+        '<div style="margin-top:24px;text-align:center;">'
+        '<button type="button" id="share-x-cand-btn" '
+        'style="background:#000;color:#fff;border:0;padding:14px 32px;'
+        'font-size:16px;font-weight:700;cursor:pointer;border-radius:6px;'
+        'width:100%;max-width:320px;">'
+        '📱 画像つきで X に投稿</button>'
+        '<p style="margin-top:12px;color:#666;font-size:12px;">'
+        '※ ボタンを押すと X app の投稿画面 (画像 + 文 prefill) が開きます。 '
+        'Web Share 非対応の場合は X (text のみ) に切替わります。'
+        '</p></div>'
+    )
+
+    js_block = f"""
+<script>
+(function() {{
+  var IMAGE_URL = {js_image_proxy};
+  var X_INTENT_URL = {js_x_intent};
+  var POST_TEXT = {js_text};
+  var POST_URL = {js_url};
+  var preloadedFile = null;
+
+  function preloadImage() {{
+    fetch(IMAGE_URL, {{credentials: 'same-origin'}})
+      .then(function(r) {{
+        if (!r.ok) {{ throw new Error('image fetch failed: ' + r.status); }}
+        return r.blob();
+      }})
+      .then(function(blob) {{
+        var ext = 'png';
+        if (blob.type === 'image/jpeg') {{ ext = 'jpg'; }}
+        else if (blob.type === 'image/webp') {{ ext = 'webp'; }}
+        preloadedFile = new File([blob], 'yoshilover-ranking.' + ext, {{type: blob.type || 'image/png'}});
+      }})
+      .catch(function(err) {{
+        console.warn('share-x-cand preload image failed', err);
+        preloadedFile = null;
+      }});
+  }}
+  preloadImage();
+
+  var btn = document.getElementById('share-x-cand-btn');
+  if (!btn) {{ return; }}
+  btn.addEventListener('click', function() {{
+    var canShareFiles = false;
+    try {{
+      canShareFiles = !!(navigator.canShare && preloadedFile &&
+        navigator.canShare({{files: [preloadedFile]}}));
+    }} catch (e) {{
+      canShareFiles = false;
+    }}
+    if (!canShareFiles) {{
+      window.location.href = X_INTENT_URL;
+      return;
+    }}
+    navigator.share({{
+      files: [preloadedFile],
+      text: POST_TEXT,
+      url: POST_URL
+    }}).catch(function(err) {{
+      console.warn('share-x-cand share failed, falling back to X intent', err);
+      window.location.href = X_INTENT_URL;
+    }});
+  }});
+}})();
+</script>
+"""
+
+    return (
+        '<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1">'
+        '<title>画像つきで X に投稿</title></head>'
+        '<body style="font-family:-apple-system,BlinkMacSystemFont,'
+        '\'Hiragino Sans\',\'Yu Gothic\',sans-serif;padding:24px;'
+        'max-width:560px;margin:0 auto;color:#222;">'
+        '<h2 style="font-size:18px;margin:0 0 16px;">画像つきで X に投稿</h2>'
+        f'<p style="margin:0 0 8px;font-size:14px;color:#555;">{escaped_title}</p>'
+        f'{image_html}'
+        f'{share_button_html}'
+        f'{js_block}'
+        '</body></html>'
+    )
+
+
+def handle_share_cand_get(
+    *,
+    blob_key: str,
+    token: str,
+    text: str,
+    post_url: str,
+    now: int | float | None = None,
+    fetcher_base_url: str = "",
+) -> tuple[int, str, dict]:
+    """GET /share-x-cand: blob_key + token 検証 → share page HTML を返す。"""
+    try:
+        from src.share_x_cand_token import verify_share_x_cand_token
+    except Exception as exc:  # noqa: BLE001
+        _log.warning("share_x_cand_token import failed: %s", exc)
+        return 500, _result_page(
+            "共有ページ エラー", "token module import 失敗", success=False
+        ), {}
+    if not blob_key or not _is_share_x_cand_blob_key_safe(blob_key):
+        return 400, _result_page(
+            "共有ページ エラー", "blob key が不正です", success=False
+        ), {}
+    if not token:
+        return 400, _result_page(
+            "共有ページ エラー", "token が無いです", success=False
+        ), {}
+    if not verify_share_x_cand_token(blob_key, token, now=now):
+        return 403, _result_page(
+            "共有ページ エラー",
+            "token 検証失敗 (mail link が改ざん or 期限切れ、 X-post mail を再送してください)",
+            success=False,
+        ), {}
+
+    base = (fetcher_base_url or "").strip().rstrip("/")
+    from urllib.parse import urlencode
+
+    proxy_qs = urlencode({"key": blob_key, "token": token})
+    image_proxy_url = (
+        f"{base}/share-x-cand-image-proxy?{proxy_qs}"
+        if base
+        else f"/share-x-cand-image-proxy?{proxy_qs}"
+    )
+    x_intent_url = _build_share_cand_x_intent_url(text=text or "", post_url=post_url or "")
+
+    body = _build_share_cand_page_html(
+        blob_key=blob_key,
+        token=token,
+        text=text or "",
+        post_url=post_url or "",
+        image_proxy_url=image_proxy_url,
+        x_intent_url=x_intent_url,
+    )
+    return 200, body, {}
+
+
+# GCS bytes fetch の上限 (mail 経由 PNG なので 5MB 以下想定)
+_SHARE_X_CAND_IMAGE_MAX_BYTES = 5 * 1024 * 1024
+
+
+def handle_share_cand_image_proxy(
+    *,
+    blob_key: str,
+    token: str,
+    fetch_blob_bytes: Callable[[str], tuple[bytes, str] | None],
+    now: int | float | None = None,
+) -> tuple[int, bytes, str, dict]:
+    """GET /share-x-cand-image-proxy: blob_key + token 検証 → GCS bytes 返却。
+
+    ``fetch_blob_bytes(blob_key)`` は ``(bytes, content_type)`` を返すか、
+    対象が無ければ None。 caller (server.py) が GCS client を inject する。
+    """
+    try:
+        from src.share_x_cand_token import verify_share_x_cand_token
+    except Exception as exc:  # noqa: BLE001
+        _log.warning("share_x_cand_token import failed: %s", exc)
+        return 500, b"share_x_cand_token import failed", "text/plain; charset=utf-8", {}
+    if not blob_key or not _is_share_x_cand_blob_key_safe(blob_key):
+        return 400, b"blob key is invalid", "text/plain; charset=utf-8", {}
+    if not token:
+        return 400, b"token is missing", "text/plain; charset=utf-8", {}
+    if not verify_share_x_cand_token(blob_key, token, now=now):
+        return 403, b"token verification failed", "text/plain; charset=utf-8", {}
+    try:
+        result = fetch_blob_bytes(blob_key)
+    except Exception as exc:  # noqa: BLE001
+        _log.warning(
+            "share_x_cand_image_proxy_fetch_failed key=%s err=%s", blob_key, exc
+        )
+        return 502, f"fetch blob failed: {str(exc)[:120]}".encode("utf-8"), "text/plain; charset=utf-8", {}
+    if not result:
+        return 404, b"blob not found", "text/plain; charset=utf-8", {}
+    body_bytes, content_type = result
+    if not isinstance(body_bytes, (bytes, bytearray)) or not body_bytes:
+        return 502, b"fetch blob returned invalid bytes", "text/plain; charset=utf-8", {}
+    if len(body_bytes) > _SHARE_X_CAND_IMAGE_MAX_BYTES:
+        return 413, b"image too large", "text/plain; charset=utf-8", {}
+    if not content_type or not isinstance(content_type, str):
+        content_type = "image/png"
+    return (
+        200,
+        bytes(body_bytes),
+        content_type,
+        {"Cache-Control": "private, max-age=600"},
+    )
+
+
+__all__ = [
+    "handle_share_get",
+    "handle_image_proxy",
+    "handle_share_cand_get",
+    "handle_share_cand_image_proxy",
+]

@@ -24,6 +24,7 @@ import hashlib as _hashlib
 import json as _json
 import logging
 import math as _math
+import os
 from pathlib import Path as _Path
 import random as _random
 import re as _re
@@ -3416,6 +3417,87 @@ def _candidate_image_cid(index: int) -> str:
     return f"{RANKING_IMAGE_CID_PREFIX}{index}"
 
 
+# 437 Phase 8 (2026-05-26): share-x button (Web Share API) で候補 PNG を X app に
+# 直接送るための GCS upload + URL 生成。 inline CID は mail 内表示用、 GCS upload
+# は fetcher /share-x-cand 経由で外部 fetch 可能にするため。
+_SHARE_X_CAND_BLOB_PREFIX = "share_x_cand"
+
+
+def _resolve_share_x_cand_config() -> tuple[str, str, bool]:
+    """share-x-cand button を有効化する env 3 点を読む。
+
+    Returns (bucket_name, fetcher_base_url, enabled). enabled は env 必須 3 点
+    + ENABLE_SHARE_X_BUTTON が truthy のときのみ True。 1 つでも欠ければ False で
+    button URL は X intent fallback (現状動作) のまま。
+    """
+    bucket = (os.environ.get("INSIGHT_GCS_BUCKET") or "").strip()
+    fetcher_base = (os.environ.get("FETCHER_PUBLIC_BASE_URL") or "").strip().rstrip("/")
+    flag = (os.environ.get("ENABLE_SHARE_X_BUTTON") or "").strip().lower()
+    enabled = bool(bucket) and bool(fetcher_base) and flag in {"1", "true", "yes", "on"}
+    return bucket, fetcher_base, enabled
+
+
+def _share_x_cand_blob_key(run_id: str, index: int) -> str:
+    """GCS blob key (path within bucket)。 mail run + candidate idx で一意。"""
+    return f"{_SHARE_X_CAND_BLOB_PREFIX}/{run_id}/cand-{index:02d}.png"
+
+
+def _upload_candidate_image_to_gcs(
+    png: bytes, *, bucket_name: str, blob_key: str
+) -> bool:
+    """PNG bytes を GCS にアップロード。 成功 True、 失敗 False (mail は止めない)。"""
+    if not png or not bucket_name or not blob_key:
+        return False
+    try:
+        client = _get_storage_client()
+        bucket = client.bucket(bucket_name)
+        blob = bucket.blob(blob_key)
+        blob.upload_from_string(png, content_type="image/png")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[437 phase8] share-x-cand GCS upload failed key=%s err=%r",
+            blob_key, exc,
+        )
+        return False
+    return True
+
+
+def _build_share_x_cand_button_url(
+    blob_key: str,
+    *,
+    fetcher_base: str,
+    post_text: str,
+    post_url: str = "",
+) -> str:
+    """fetcher /share-x-cand への URL を組み立てる。
+
+    URL params:
+      - key: GCS blob key (URL-encoded)
+      - token: HMAC + expiry (24h)
+      - text: post_text (URL-encoded、 X compose 用)
+      - url: post_url (URL-encoded、 任意、 share に URL を添える場合)
+    """
+    if not blob_key or not fetcher_base:
+        return ""
+    try:
+        from src.share_x_cand_token import generate_share_x_cand_token
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[437 phase8] share_x_cand_token import failed: %r", exc)
+        return ""
+    token = generate_share_x_cand_token(blob_key)
+    if not token:
+        return ""
+    from urllib.parse import urlencode
+
+    params = {
+        "key": blob_key,
+        "token": token,
+        "text": post_text or "",
+        "url": post_url or "",
+    }
+    return f"{fetcher_base}/share-x-cand?{urlencode(params)}"
+
+
 def _render_candidate_image_html(cid: str | None) -> str:
     """候補の text の真上に置く <img cid:...> HTML フラグメント (画像無しなら空)。"""
     if not cid:
@@ -3437,6 +3519,7 @@ def _compose_html_body(
     *,
     context_note: str = "",
     candidate_image_cids: list[str | None] | None = None,
+    share_x_button_urls: list[str | None] | None = None,
 ) -> str:
     band = time_band_label(now.hour)
     header_label = _mail_header_label(candidates)
@@ -3475,6 +3558,14 @@ def _compose_html_body(
             image_html_for_candidate = _render_candidate_image_html(
                 candidate_image_cids[idx - 1]
             )
+        # 437 Phase 8: share-x-cand URL があれば、 ボタン href をそちらに置換。
+        # 画像つき Web Share API (Pixel / Android) で X app へ直送、 不支持 device
+        # では server 側 JS が X intent URL fallback。
+        share_x_url = ""
+        if share_x_button_urls and idx - 1 < len(share_x_button_urls):
+            share_x_url = share_x_button_urls[idx - 1] or ""
+        button_href = share_x_url or intent_url
+        button_label = "🐦 画像つきで X に投稿" if share_x_url else "🐦 X で投稿"
         rows_html.append(
             "<div style=\"border-left:3px solid #f57f17;"
             "padding:10px 14px;margin:14px 0;background:#fff8e1;"
@@ -3492,10 +3583,10 @@ def _compose_html_body(
             f"{proof_html}"
             "<div style=\"display:flex;gap:10px;align-items:center;"
             "margin-top:8px;flex-wrap:wrap;\">"
-            f"<a href=\"{_html.escape(intent_url)}\" "
+            f"<a href=\"{_html.escape(button_href)}\" "
             "style=\"display:inline-block;padding:8px 14px;background:#000;"
             "color:#fff;text-decoration:none;border-radius:6px;font-size:13px;"
-            "font-weight:600;\">🐦 X で投稿</a>"
+            f"font-weight:600;\">{button_label}</a>"
             f"<div style=\"font-size:11px;color:{counter_color};\">"
             f"{char_count} / {X_CHAR_LIMIT} 字{counter_suffix}</div>"
             "</div>"
@@ -3560,20 +3651,38 @@ def compose_mail(
     # round-robin
     candidate_images: list[CandidateImage] = []
     cids_for_html: list[str | None] = []
+    # 437 Phase 8: share-x-cand env が揃えば GCS upload + 候補ごと URL 生成。
+    bucket_name, fetcher_base, share_x_enabled = _resolve_share_x_cand_config()
+    run_id = now.strftime("%Y%m%d-%H%M%S")
+    share_x_urls: list[str | None] = []
     for idx, cand in enumerate(candidates):
         png = _generate_candidate_image_png(cand, candidate_index=idx)
         if not png:
             cids_for_html.append(None)
+            share_x_urls.append(None)
             continue
         cid = _candidate_image_cid(idx)
         candidate_images.append(CandidateImage(cid=cid, png=png))
         cids_for_html.append(cid)
+        share_x_url: str | None = None
+        if share_x_enabled:
+            blob_key = _share_x_cand_blob_key(run_id, idx)
+            if _upload_candidate_image_to_gcs(
+                png, bucket_name=bucket_name, blob_key=blob_key
+            ):
+                share_x_url = _build_share_x_cand_button_url(
+                    blob_key,
+                    fetcher_base=fetcher_base,
+                    post_text=_candidate_post_text(cand),
+                )
+        share_x_urls.append(share_x_url or None)
     text_body = _compose_text_body(candidates, now, context_note=context_note)
     html_body = _compose_html_body(
         candidates,
         now,
         context_note=context_note,
         candidate_image_cids=cids_for_html,
+        share_x_button_urls=share_x_urls,
     )
     return ComposedMail(
         subject=subject,

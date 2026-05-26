@@ -676,6 +676,97 @@ def _run_share_x_image_proxy(
     )
 
 
+# 437 Phase 8 (2026-05-26): /share-x-cand と /share-x-cand-image-proxy。
+# x-post-mail-lane の候補ごと ranking PNG (GCS 上) を Web Share API で
+# X app に直送するための endpoint。 publish 経路を持たない (X-post 候補は
+# WP post と紐付かない data 由来) ので、 share page は navigator.share を
+# 呼ぶだけで、 失敗時は X intent URL に fallback。
+
+_SHARE_X_CAND_IMAGE_MAX_BYTES = 5 * 1024 * 1024
+
+
+def _run_share_x_cand_get(
+    blob_key: str,
+    token: str,
+    text: str,
+    post_url: str,
+) -> tuple[int, str, dict]:
+    """437 Phase 8: GET /share-x-cand handler 本体。
+
+    blob_key + token を share_x_handler で検証し、 share page HTML を返す。
+    """
+    log = logging.getLogger("server.share_x_cand_get")
+    try:
+        from src.share_x_handler import handle_share_cand_get
+    except Exception as exc:  # noqa: BLE001
+        log.warning("share_x_handler_import_failed err=%s", exc)
+        return 500, "<h2>内部エラー</h2><p>share_x_handler import 失敗</p>", {}
+    fetcher_base_url = os.environ.get("FETCHER_PUBLIC_BASE_URL", "").strip().rstrip("/")
+    return handle_share_cand_get(
+        blob_key=blob_key,
+        token=token,
+        text=text,
+        post_url=post_url,
+        fetcher_base_url=fetcher_base_url,
+    )
+
+
+def _run_share_x_cand_image_proxy(
+    blob_key: str,
+    token: str,
+) -> tuple[int, bytes, str, dict]:
+    """437 Phase 8: GET /share-x-cand-image-proxy handler 本体。
+
+    GCS から blob (PNG) を fetch して bytes を返す。 bucket は INSIGHT_GCS_BUCKET。
+    """
+    log = logging.getLogger("server.share_x_cand_image_proxy")
+    try:
+        from src.share_x_handler import handle_share_cand_image_proxy
+    except Exception as exc:  # noqa: BLE001
+        log.warning("share_x_cand_handler_import_failed err=%s", exc)
+        return 500, b"share_x_handler import failed", "text/plain; charset=utf-8", {}
+    bucket_name = os.environ.get("INSIGHT_GCS_BUCKET", "").strip()
+    if not bucket_name:
+        return 500, b"INSIGHT_GCS_BUCKET not set", "text/plain; charset=utf-8", {}
+
+    def _fetch_blob_bytes(key: str):
+        try:
+            from google.cloud import storage  # noqa: WPS433
+        except Exception as exc:  # noqa: BLE001
+            log.warning("share_x_cand_image_proxy_storage_import_failed err=%s", exc)
+            return None
+        try:
+            client = storage.Client()
+            bucket = client.bucket(bucket_name)
+            blob = bucket.blob(key)
+            if not blob.exists():
+                return None
+            body = blob.download_as_bytes()
+        except Exception as exc:  # noqa: BLE001
+            log.warning(
+                "share_x_cand_image_proxy_gcs_fetch_failed key=%s err=%s",
+                key,
+                exc,
+            )
+            return None
+        if not body:
+            return None
+        content_type = "image/png"
+        try:
+            blob.reload()
+            if blob.content_type:
+                content_type = blob.content_type
+        except Exception:
+            pass
+        return (bytes(body), content_type)
+
+    return handle_share_cand_image_proxy(
+        blob_key=blob_key,
+        token=token,
+        fetch_blob_bytes=_fetch_blob_bytes,
+    )
+
+
 def _unpublish_html(status: str, message: str, post_id: int | None = None) -> str:
     """unpublish endpoint 用の簡易 HTML response。"""
     title = "非公開化 完了" if status == "success" else "非公開化 エラー"
@@ -778,6 +869,24 @@ class Handler(BaseHTTPRequestHandler):
             post_id_raw = (qs.get("post_id", [""])[0] or "").strip()
             token = (qs.get("token", [""])[0] or "").strip()
             code, body_bytes, content_type, extra_headers = _run_share_x_image_proxy(post_id_raw, token)
+            self._respond_bytes(code, body_bytes, content_type=content_type, extra_headers=extra_headers)
+        elif parsed.path == "/share-x-cand":
+            # 437 Phase 8 (2026-05-26): x-post-mail-lane 候補ごと share page。
+            # GCS 上の ranking PNG を Web Share API で X app に直送する。
+            qs = parse_qs(parsed.query or "")
+            blob_key = (qs.get("key", [""])[0] or "").strip()
+            token = (qs.get("token", [""])[0] or "").strip()
+            text = qs.get("text", [""])[0] or ""
+            post_url = (qs.get("url", [""])[0] or "").strip()
+            code, body, extra_headers = _run_share_x_cand_get(blob_key, token, text, post_url)
+            self._respond(code, body, content_type="text/html; charset=utf-8", extra_headers=extra_headers)
+        elif parsed.path == "/share-x-cand-image-proxy":
+            # 437 Phase 8 (2026-05-26): GCS blob bytes proxy (x-post-mail-lane の
+            # 候補ごと PNG)。 publish-notice 側 /share-x-image-proxy と区別する。
+            qs = parse_qs(parsed.query or "")
+            blob_key = (qs.get("key", [""])[0] or "").strip()
+            token = (qs.get("token", [""])[0] or "").strip()
+            code, body_bytes, content_type, extra_headers = _run_share_x_cand_image_proxy(blob_key, token)
             self._respond_bytes(code, body_bytes, content_type=content_type, extra_headers=extra_headers)
         elif parsed.path == "/x-intent":
             # 2026-05-22: x_post_mail X button.

@@ -1029,18 +1029,6 @@ def render_giants_centric_ranking(
     focus_rank = f"{focus_row_obj.rank}/{focus_row_obj.total}" if focus_row_obj else "-"
     focus_sample = f"{focus_row_obj.sample_size}" if focus_row_obj else "-"
 
-    # period date range (試合数削除、user 指示で全12球団合計は誤解招くため)
-    today = dt.date.today()
-    if scope == "last_7d":
-        start_d = today - dt.timedelta(days=6)
-    elif scope == "last_30d":
-        start_d = today - dt.timedelta(days=29)
-    elif scope == "season":
-        start_d = dt.date(today.year, 3, 27)
-    else:
-        start_d = today
-    period_full = f"{start_d.isoformat()} 〜 {today.isoformat()}"
-
     # 348 step 3 spec §2.5: 「大手にない」 banner 廃止 (全種類で省略)。
     # 同じ lock で SVG chart も廃止。本文は表形式だけで構成する。
     intro_banner = ""
@@ -1060,7 +1048,7 @@ def render_giants_centric_ranking(
 | 選手 | **{focus_player}({focus_team})** / サンプル {focus_sample} |
 | 指標 | {metric_name} = **{focus_val}** / セ・リーグ **{focus_rank} 位** |
 | データ元 | NPB 公式 box score(https://npb.jp/) |
-| 集計期間 | {period_full} |
+| 集計期間 | {sample_window_label} |
 | 計算式 | {formula} |
 | 比較 | この期間の セ・リーグ 6 球団 内 全選手 |
 """

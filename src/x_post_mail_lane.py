@@ -3245,16 +3245,35 @@ def _is_pitcher_metric(metric: str) -> bool:
     return any(kw in metric for kw in _PITCHER_METRIC_KEYWORDS)
 
 
-def _select_template_and_data(candidate, rows: list[dict]):
+# 437 Phase 7: rank 1 既定 router 以外は candidate index で round-robin に
+# template を振り分け、 mail 内 8 候補で 8 異なる visual を見せる。
+_ROUND_ROBIN_TEMPLATES = (
+    "ranking_table",
+    "chart_bars",
+    "data_sheet",
+    "monthly_summary",
+    "starting_lineup",
+    "12team_crown",
+    "12team_bar",
+    "scoreboard",
+    "standings",
+)
+
+
+def _select_template_and_data(candidate, rows: list[dict], *, candidate_index: int = 0):
     """候補と抽出済 rows から、 使う template_key と data dict を返す。
 
-    Returns:
-        (template_key: str, data: dict) — generate_png にそのまま渡せる組。
+    優先順位:
+      1. focus_player が TOP1 で投手指標 → pitcher_card
+      2. focus_player が TOP1 → player_spotlight
+      3. candidate_index に基づき _ROUND_ROBIN_TEMPLATES からピック
     """
     from src.x_post_image_gen_v2 import (
+        build_12team_bar_data,
         build_pitcher_card_data,
         build_player_spotlight_data,
         build_ranking_data,
+        build_standings_data,
     )
 
     metric = getattr(candidate, "metric", "") or ""
@@ -3264,7 +3283,7 @@ def _select_template_and_data(candidate, rows: list[dict]):
         metric, period_label, focus_player, rows
     )
 
-    # 1) focus_player が rank 1 で投手指標 → pitcher_card で集中表示
+    # 1) focus_player が rank 1 で投手指標 → pitcher_card
     focus_row = next(
         (r for r in rows if r.get("name") == focus_player and r.get("is_giants")),
         None,
@@ -3275,28 +3294,21 @@ def _select_template_and_data(candidate, rows: list[dict]):
         and focus_row.get("rank", 99) <= _PLAYER_SPOTLIGHT_RANK_THRESHOLD
     ):
         stats: list[dict] = [
-            {
-                "label": metric,
-                "value": str(focus_row.get("value", "")),
-                "highlight": True,
-            }
+            {"label": metric, "value": str(focus_row.get("value", "")), "highlight": True}
         ]
         for r in rows[:5]:
             if r.get("name") == focus_player:
                 continue
-            stats.append(
-                {"label": str(r.get("name", "")), "value": str(r.get("value", ""))}
-            )
+            stats.append({"label": str(r.get("name", "")), "value": str(r.get("value", ""))})
             if len(stats) >= 6:
                 break
         data = build_pitcher_card_data(
             title=title, subtitle=subtitle, hook_line=hook,
-            player_name=focus_player, player_team=str(focus_row.get("team", "")),
-            stats=stats,
+            player_name=focus_player, player_team=str(focus_row.get("team", "")), stats=stats,
         )
         return "pitcher_card", data
 
-    # 2) focus_player が rank 1 → player_spotlight で hero 表示
+    # 2) focus_player が rank 1 → player_spotlight
     if focus_row is not None and focus_row.get("rank", 99) == _PLAYER_SPOTLIGHT_RANK_THRESHOLD:
         sub_stats = [
             {"label": str(r.get("name", "")), "value": str(r.get("value", ""))}
@@ -3305,33 +3317,74 @@ def _select_template_and_data(candidate, rows: list[dict]):
         data = build_player_spotlight_data(
             title=title, subtitle=subtitle, hook_line=hook,
             player_name=focus_player, player_team=str(focus_row.get("team", "")),
-            metric_label=metric, hero_value=str(focus_row.get("value", "")),
-            sub_stats=sub_stats,
+            metric_label=metric, hero_value=str(focus_row.get("value", "")), sub_stats=sub_stats,
         )
         return "player_spotlight", data
 
-    # 3) default: ranking_table
-    data = build_ranking_data(
-        title=title, subtitle=subtitle, hook_line=hook, rows=rows
-    )
-    return "ranking_table", data
+    # 3) round-robin: candidate_index で template 切替
+    template_key = _ROUND_ROBIN_TEMPLATES[candidate_index % len(_ROUND_ROBIN_TEMPLATES)]
+
+    if template_key == "12team_bar":
+        # rows[].name を team として扱う簡易 mapping (TOP10 個別選手の絶対値 bar)
+        teams = [
+            {
+                "name": str(r.get("name", "")),
+                "value": _safe_float(r.get("value", 0)),
+                "value_label": str(r.get("value", "")),
+                "is_giants": bool(r.get("is_giants")),
+            }
+            for r in rows[:12]
+        ]
+        data = build_12team_bar_data(
+            title=title, subtitle=subtitle, hook_line=hook, teams=teams
+        )
+        return template_key, data
+
+    if template_key == "standings":
+        # ranking rows を順位表っぽく流用 (record / win_pct は値で代用)
+        standings_rows = [
+            {
+                "rank": r.get("rank", i + 1),
+                "team": str(r.get("team", "")) + (" / " + str(r.get("name", "")) if r.get("name") else ""),
+                "record": str(r.get("value", "")),
+                "win_pct": str(r.get("value", "")),
+                "games_back": "-" if i == 0 else f"{i}",
+                "is_giants": bool(r.get("is_giants")),
+            }
+            for i, r in enumerate(rows[:6])
+        ]
+        data = build_standings_data(
+            title=title, subtitle=subtitle, hook_line=hook, rows=standings_rows
+        )
+        return template_key, data
+
+    # その他 (ranking_table / chart_bars / data_sheet / monthly_summary /
+    # starting_lineup / 12team_crown / scoreboard): rows を共通 schema で渡す
+    data = build_ranking_data(title=title, subtitle=subtitle, hook_line=hook, rows=rows)
+    return template_key, data
+
+
+def _safe_float(v) -> float:
+    try:
+        return float(str(v).replace(",", ""))
+    except (ValueError, TypeError):
+        return 0.0
 
 
 def _generate_candidate_image_png(
-    candidate, *, sample_rows: list[dict] | None = None
+    candidate, *, sample_rows: list[dict] | None = None, candidate_index: int = 0
 ) -> bytes | None:
     """1 候補の metric / period / focus_player + draft_text から PNG bytes 生成。
 
-    候補 metric に応じて template を自動選択する (pitcher_card / player_spotlight /
-    ranking_table)。 draft_text に ranking 行が無いと None (image skip)。
+    候補 metric / index で template を自動選択 (pitcher_card / spotlight /
+    round-robin 7 種類)。 draft_text に ranking 行が無いと None (image skip)。
     """
     try:
         from src.x_post_image_gen_v2 import generate_png
     except Exception as exc:
         logger.warning(
-            "[437 phase6] image gen import failed (%s): %s — mail skips image",
-            type(exc).__name__,
-            exc,
+            "[437 phase7] image gen import failed (%s): %s — mail skips image",
+            type(exc).__name__, exc,
         )
         return None
     rows = _extract_ranking_rows_from_draft(
@@ -3343,13 +3396,14 @@ def _generate_candidate_image_png(
     if not rows:
         return None
     try:
-        template_key, data = _select_template_and_data(candidate, rows)
+        template_key, data = _select_template_and_data(
+            candidate, rows, candidate_index=candidate_index
+        )
         png = generate_png(template_key, data)
     except Exception as exc:
         logger.warning(
-            "[437 phase6] image gen failed (%s): %s — mail skips image",
-            type(exc).__name__,
-            exc,
+            "[437 phase7] image gen failed (%s): %s — mail skips image",
+            type(exc).__name__, exc,
         )
         return None
     if not png:
@@ -3502,11 +3556,12 @@ def compose_mail(
     if not context_label and _has_news_opinion_candidate(candidates):
         context_label = "データ+ニュース意見"
     subject = build_subject(now, len(candidates), context_label=context_label)
-    # 437 Phase 5: 候補ごとに draft_text から ranking を parse して image 生成
+    # 437 Phase 7: 候補ごとに draft_text から ranking parse + index で template
+    # round-robin
     candidate_images: list[CandidateImage] = []
     cids_for_html: list[str | None] = []
     for idx, cand in enumerate(candidates):
-        png = _generate_candidate_image_png(cand)
+        png = _generate_candidate_image_png(cand, candidate_index=idx)
         if not png:
             cids_for_html.append(None)
             continue

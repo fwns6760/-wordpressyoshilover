@@ -889,6 +889,379 @@ def _render_12team_bar(data: dict[str, Any], size: int = DEFAULT_SIZE):
     return canvas
 
 
+def _render_chart_bars(data: dict[str, Any], size: int = DEFAULT_SIZE):
+    """選手 TOP10 を水平 bar で大小比較 (12team_bar の選手版)。"""
+    from PIL import Image, ImageDraw
+
+    canvas = Image.new("RGBA", (size, size), COLOR_BG)
+    draw = ImageDraw.Draw(canvas)
+    _draw_header_block(canvas, draw, str(data.get("title", "")),
+                       str(data.get("subtitle", "")),
+                       str(data.get("hook_line", "")), size=size, header_h=180)
+    rows = data.get("rows", []) or []
+    if not rows:
+        _draw_footer_block(canvas, draw, str(data.get("footer_handle", DEFAULT_FOOTER_HANDLE)),
+                           str(data.get("footer_meta", DEFAULT_FOOTER_META)), size=size)
+        return canvas
+
+    def _val(r):
+        try:
+            return float(str(r.get("value", "0")).replace(",", ""))
+        except (ValueError, TypeError):
+            return 0.0
+
+    max_v = max(_val(r) for r in rows) or 1.0
+    row_h = 60
+    start_y = 240
+    bar_max_w = 660
+    font_rank, _ = _find_font(size=24)
+    font_name, _ = _find_font(size=28)
+    font_val, _ = _find_font(size=32)
+    for i, r in enumerate(rows[:10]):
+        y = start_y + i * row_h
+        bar_w = max(2, int(_val(r) / max_v * bar_max_w))
+        if r.get("is_giants"):
+            grad = _make_horizontal_gradient(bar_w, 36, COLOR_GIANTS_ROW_LEFT, "#FF9100")
+            canvas.paste(grad, (240, y - 14))
+            draw = ImageDraw.Draw(canvas)
+            draw.rectangle((240, y - 14, 240 + bar_w, y + 22), outline=COLOR_BLACK, width=3)
+            name_color = COLOR_GIANTS_ROW_LEFT
+            val_color = COLOR_GIANTS_ROW_LEFT
+            rank_color = COLOR_GOLD
+            name_text = f"{r.get('name', '')} ★"
+            stroke_w = 1
+        else:
+            draw.rectangle((240, y - 14, 240 + bar_w, y + 22), fill="#888888", outline=COLOR_BLACK, width=2)
+            name_color = COLOR_BLACK
+            val_color = COLOR_BLACK
+            rank_color = COLOR_GIANTS_ROW_LEFT
+            name_text = str(r.get("name", ""))
+            stroke_w = 0
+        draw.text((50, y + 5), str(r.get("rank", i + 1)), font=font_rank, fill=rank_color, anchor="ls",
+                  stroke_width=1, stroke_fill=rank_color)
+        draw.text((230, y + 5), name_text, font=font_name, fill=name_color, anchor="rs",
+                  stroke_width=stroke_w, stroke_fill=name_color)
+        draw.text((240 + bar_w + 10, y + 5), str(r.get("value", "")), font=font_val, fill=val_color, anchor="ls",
+                  stroke_width=1 if r.get("is_giants") else 0, stroke_fill=val_color)
+    _draw_footer_block(canvas, draw, str(data.get("footer_handle", DEFAULT_FOOTER_HANDLE)),
+                       str(data.get("footer_meta", DEFAULT_FOOTER_META)), size=size)
+    return canvas
+
+
+def _render_monthly_summary(data: dict[str, Any], size: int = DEFAULT_SIZE):
+    """上位 3 人 + 数値を大きく hero 表示 (週/月ハイライト風)。"""
+    from PIL import Image, ImageDraw
+
+    canvas = Image.new("RGBA", (size, size), COLOR_BG)
+    draw = ImageDraw.Draw(canvas)
+    _draw_header_block(canvas, draw, str(data.get("title", "")),
+                       str(data.get("subtitle", "")),
+                       str(data.get("hook_line", "")), size=size, header_h=200)
+    rows = (data.get("rows", []) or [])[:3]
+    if not rows:
+        _draw_footer_block(canvas, draw, str(data.get("footer_handle", DEFAULT_FOOTER_HANDLE)),
+                           str(data.get("footer_meta", DEFAULT_FOOTER_META)), size=size)
+        return canvas
+
+    # 3 段の hero card
+    card_y_start = 280
+    card_h = 220
+    card_gap = 16
+    for i, r in enumerate(rows):
+        cy = card_y_start + i * (card_h + card_gap)
+        if r.get("is_giants"):
+            grad = _make_horizontal_gradient(960, card_h, COLOR_GIANTS_ROW_LEFT, "#FF9100")
+            canvas.paste(grad, (60, cy))
+            draw = ImageDraw.Draw(canvas)
+            rank_color = COLOR_GOLD
+            name_color = COLOR_WHITE
+            val_color = COLOR_GOLD
+            team_color = COLOR_GOLD
+            star = " ★"
+        else:
+            draw.rectangle((60, cy, 60 + 960, cy + card_h), outline=COLOR_BLACK, width=3)
+            rank_color = COLOR_GIANTS_ROW_LEFT
+            name_color = COLOR_BLACK
+            val_color = COLOR_BLACK
+            team_color = COLOR_GIANTS_ROW_LEFT
+            star = ""
+        font_rank, _ = _find_font(size=120)
+        draw.text((140, cy + card_h // 2), str(r.get("rank", i + 1)),
+                  font=font_rank, fill=rank_color, anchor="mm",
+                  stroke_width=2, stroke_fill=rank_color)
+        font_name, _ = _find_font(size=58)
+        draw.text((280, cy + card_h // 2 - 25), f"{r.get('name', '')}{star}",
+                  font=font_name, fill=name_color, anchor="lm",
+                  stroke_width=2, stroke_fill=name_color)
+        font_team, _ = _find_font(size=26)
+        draw.text((280, cy + card_h // 2 + 35), str(r.get("team", "")),
+                  font=font_team, fill=team_color, anchor="lm",
+                  stroke_width=1, stroke_fill=team_color)
+        font_val, _ = _find_font(size=82)
+        draw.text((990, cy + card_h // 2), str(r.get("value", "")),
+                  font=font_val, fill=val_color, anchor="rm",
+                  stroke_width=2, stroke_fill=val_color)
+    _draw_footer_block(canvas, draw, str(data.get("footer_handle", DEFAULT_FOOTER_HANDLE)),
+                       str(data.get("footer_meta", DEFAULT_FOOTER_META)), size=size)
+    return canvas
+
+
+def _render_data_sheet(data: dict[str, Any], size: int = DEFAULT_SIZE):
+    """TOP10 を高密度表で。 ranking_table より行数多めで小さい font。"""
+    from PIL import Image, ImageDraw
+
+    canvas = Image.new("RGBA", (size, size), COLOR_BG)
+    draw = ImageDraw.Draw(canvas)
+    _draw_header_block(canvas, draw, str(data.get("title", "")),
+                       str(data.get("subtitle", "")),
+                       str(data.get("hook_line", "")), size=size, header_h=200)
+    rows = data.get("rows", []) or []
+    if not rows:
+        _draw_footer_block(canvas, draw, str(data.get("footer_handle", DEFAULT_FOOTER_HANDLE)),
+                           str(data.get("footer_meta", DEFAULT_FOOTER_META)), size=size)
+        return canvas
+
+    # 表ヘッダ
+    table_y = 270
+    draw.rectangle((40, table_y, size - 40, table_y + 50), fill=COLOR_BLACK)
+    font_h, _ = _find_font(size=24)
+    headers = [("順位", 100), ("選手", 380), ("球団", 660), ("数値", 980)]
+    for label, x in headers:
+        draw.text((x, table_y + 25), label, font=font_h, fill=COLOR_GIANTS_ROW_LEFT, anchor="mm",
+                  stroke_width=1, stroke_fill=COLOR_GIANTS_ROW_LEFT)
+
+    row_h = 62
+    font_rank, _ = _find_font(size=28)
+    font_name, _ = _find_font(size=30)
+    font_team, _ = _find_font(size=22)
+    font_val, _ = _find_font(size=38)
+    for i, r in enumerate(rows[:10]):
+        y = table_y + 50 + i * row_h
+        if r.get("is_giants"):
+            grad = _make_horizontal_gradient(size - 80, row_h - 4, COLOR_GIANTS_ROW_LEFT, "#FF9100")
+            canvas.paste(grad, (40, y + 2))
+            draw = ImageDraw.Draw(canvas)
+            rank_c = COLOR_GOLD
+            name_c = COLOR_WHITE
+            team_c = COLOR_GOLD
+            val_c = COLOR_GOLD
+            star = " ★"
+            stroke_w = 1
+        else:
+            draw.line(((40, y + row_h), (size - 40, y + row_h)), fill=COLOR_GRAY_ROW_SEP, width=1)
+            rank_c = COLOR_GIANTS_ROW_LEFT
+            name_c = COLOR_BLACK
+            team_c = COLOR_GRAY_TEAM
+            val_c = COLOR_BLACK
+            star = ""
+            stroke_w = 0
+        draw.text((100, y + row_h // 2), str(r.get("rank", i + 1)), font=font_rank, fill=rank_c, anchor="mm",
+                  stroke_width=1, stroke_fill=rank_c)
+        draw.text((380, y + row_h // 2), f"{r.get('name', '')}{star}", font=font_name, fill=name_c, anchor="mm",
+                  stroke_width=stroke_w, stroke_fill=name_c)
+        draw.text((660, y + row_h // 2), str(r.get("team", "")), font=font_team, fill=team_c, anchor="mm")
+        draw.text((980, y + row_h // 2), str(r.get("value", "")), font=font_val, fill=val_c, anchor="mm",
+                  stroke_width=1, stroke_fill=val_c)
+
+    _draw_footer_block(canvas, draw, str(data.get("footer_handle", DEFAULT_FOOTER_HANDLE)),
+                       str(data.get("footer_meta", DEFAULT_FOOTER_META)), size=size)
+    return canvas
+
+
+def _render_12team_crown(data: dict[str, Any], size: int = DEFAULT_SIZE):
+    """rows から球団別 TOP1 (冠) を集計して 12 球団 grid で表示。"""
+    from PIL import Image, ImageDraw
+
+    canvas = Image.new("RGBA", (size, size), COLOR_BG)
+    draw = ImageDraw.Draw(canvas)
+    _draw_header_block(canvas, draw, str(data.get("title", "")),
+                       str(data.get("subtitle", "")),
+                       str(data.get("hook_line", "")), size=size, header_h=200)
+
+    rows = data.get("rows", []) or []
+    # ユニーク 球団 list を順位順で取得 (TOP1, TOP2 ... を踏まえ)
+    team_to_best_rank: dict[str, dict] = {}
+    for r in rows[:10]:
+        team = str(r.get("team", "")).strip()
+        if not team:
+            continue
+        if team not in team_to_best_rank:
+            team_to_best_rank[team] = r
+    teams = list(team_to_best_rank.items())[:12]
+
+    # grid 3 cols × 4 rows
+    cols = 3
+    cell_w = (size - 100) // cols
+    cell_h = 150
+    start_y = 270
+    font_rank, _ = _find_font(size=72)
+    font_team, _ = _find_font(size=30)
+    font_pl, _ = _find_font(size=22)
+    for i, (team, r) in enumerate(teams):
+        col = i % cols
+        row_i = i // cols
+        cx = 50 + col * cell_w
+        cy = start_y + row_i * cell_h
+        is_giants = bool(r.get("is_giants")) or team == "巨人"
+        if is_giants:
+            grad = _make_horizontal_gradient(cell_w - 10, cell_h - 10, COLOR_GIANTS_ROW_LEFT, "#FF9100")
+            canvas.paste(grad, (cx + 5, cy + 5))
+            draw = ImageDraw.Draw(canvas)
+            rank_c = COLOR_GOLD
+            team_c = COLOR_WHITE
+            pl_c = COLOR_GOLD
+        else:
+            draw.rectangle((cx + 5, cy + 5, cx + cell_w - 5, cy + cell_h - 5),
+                           outline=COLOR_BLACK, width=2)
+            rank_c = COLOR_GIANTS_ROW_LEFT
+            team_c = COLOR_BLACK
+            pl_c = COLOR_GRAY_TEAM
+        rank_text = f"#{r.get('rank', '?')}"
+        draw.text((cx + cell_w // 2, cy + 60), rank_text, font=font_rank, fill=rank_c, anchor="mm",
+                  stroke_width=2, stroke_fill=rank_c)
+        draw.text((cx + cell_w // 2, cy + 110), team, font=font_team, fill=team_c, anchor="mm",
+                  stroke_width=1, stroke_fill=team_c)
+        draw.text((cx + cell_w // 2, cy + 138), str(r.get("name", "")), font=font_pl, fill=pl_c, anchor="mm")
+
+    _draw_footer_block(canvas, draw, str(data.get("footer_handle", DEFAULT_FOOTER_HANDLE)),
+                       str(data.get("footer_meta", DEFAULT_FOOTER_META)), size=size)
+    return canvas
+
+
+def _render_starting_lineup(data: dict[str, Any], size: int = DEFAULT_SIZE):
+    """TOP9 を打順表風 3×3 grid で。"""
+    from PIL import Image, ImageDraw
+
+    canvas = Image.new("RGBA", (size, size), COLOR_BG)
+    draw = ImageDraw.Draw(canvas)
+    _draw_header_block(canvas, draw, str(data.get("title", "")),
+                       str(data.get("subtitle", "")),
+                       str(data.get("hook_line", "")), size=size, header_h=200)
+
+    rows = (data.get("rows", []) or [])[:9]
+    cols = 3
+    cell_w = (size - 100) // cols
+    cell_h = 200
+    start_y = 270
+    font_num, _ = _find_font(size=84)
+    font_name, _ = _find_font(size=30)
+    font_val, _ = _find_font(size=42)
+    font_team, _ = _find_font(size=20)
+    for i, r in enumerate(rows):
+        col = i % cols
+        row_i = i // cols
+        cx = 50 + col * cell_w
+        cy = start_y + row_i * cell_h
+        if r.get("is_giants"):
+            grad = _make_horizontal_gradient(cell_w - 10, cell_h - 10, COLOR_GIANTS_ROW_LEFT, "#FF9100")
+            canvas.paste(grad, (cx + 5, cy + 5))
+            draw = ImageDraw.Draw(canvas)
+            num_c = COLOR_GOLD
+            name_c = COLOR_WHITE
+            val_c = COLOR_GOLD
+            team_c = COLOR_GOLD
+        else:
+            draw.rectangle((cx + 5, cy + 5, cx + cell_w - 5, cy + cell_h - 5),
+                           outline=COLOR_BLACK, width=2)
+            num_c = COLOR_GIANTS_ROW_LEFT
+            name_c = COLOR_BLACK
+            val_c = COLOR_BLACK
+            team_c = COLOR_GRAY_TEAM
+        draw.text((cx + cell_w // 2, cy + 60), str(r.get("rank", i + 1)),
+                  font=font_num, fill=num_c, anchor="mm", stroke_width=2, stroke_fill=num_c)
+        draw.text((cx + cell_w // 2, cy + 125), str(r.get("name", "")),
+                  font=font_name, fill=name_c, anchor="mm",
+                  stroke_width=1, stroke_fill=name_c)
+        draw.text((cx + cell_w // 2, cy + 160), str(r.get("value", "")),
+                  font=font_val, fill=val_c, anchor="mm", stroke_width=1, stroke_fill=val_c)
+        draw.text((cx + cell_w // 2, cy + 188), str(r.get("team", "")),
+                  font=font_team, fill=team_c, anchor="mm")
+
+    _draw_footer_block(canvas, draw, str(data.get("footer_handle", DEFAULT_FOOTER_HANDLE)),
+                       str(data.get("footer_meta", DEFAULT_FOOTER_META)), size=size)
+    return canvas
+
+
+def _render_scoreboard(data: dict[str, Any], size: int = DEFAULT_SIZE):
+    """TOP1 player と「残り合計」 をスコア風に対比表示。"""
+    from PIL import Image, ImageDraw
+
+    canvas = Image.new("RGBA", (size, size), COLOR_BG)
+    draw = ImageDraw.Draw(canvas)
+    _draw_header_block(canvas, draw, str(data.get("title", "")),
+                       str(data.get("subtitle", "")),
+                       str(data.get("hook_line", "")), size=size, header_h=220)
+
+    rows = data.get("rows", []) or []
+    if not rows:
+        _draw_footer_block(canvas, draw, str(data.get("footer_handle", DEFAULT_FOOTER_HANDLE)),
+                           str(data.get("footer_meta", DEFAULT_FOOTER_META)), size=size)
+        return canvas
+
+    def _val(r):
+        try:
+            return float(str(r.get("value", "0")).replace(",", ""))
+        except (ValueError, TypeError):
+            return 0.0
+
+    leader = rows[0]
+    rest = rows[1:10]
+    rest_sum = sum(_val(r) for r in rest)
+    rest_avg = rest_sum / len(rest) if rest else 0.0
+
+    # スコアボード 2 cells (leader vs rest avg)
+    sb_y = 320
+    sb_h = 380
+    half_w = (size - 100) // 2
+    # leader cell
+    if leader.get("is_giants"):
+        grad = _make_vertical_gradient(half_w - 10, sb_h, COLOR_HEADER_TOP, COLOR_HEADER_BOT)
+        canvas.paste(grad, (50, sb_y))
+        draw = ImageDraw.Draw(canvas)
+        leader_label_c = COLOR_GOLD
+        leader_val_c = COLOR_WHITE
+        leader_name_c = COLOR_WHITE
+    else:
+        draw.rectangle((50, sb_y, 50 + half_w - 10, sb_y + sb_h), outline=COLOR_BLACK, width=3)
+        leader_label_c = COLOR_GIANTS_ROW_LEFT
+        leader_val_c = COLOR_BLACK
+        leader_name_c = COLOR_BLACK
+
+    font_label, _ = _find_font(size=32)
+    font_name, _ = _find_font(size=44)
+    font_score, _ = _find_font(size=130)
+    draw.text((50 + (half_w - 10) // 2, sb_y + 50), "TOP", font=font_label, fill=leader_label_c, anchor="mm",
+              stroke_width=1, stroke_fill=leader_label_c)
+    draw.text((50 + (half_w - 10) // 2, sb_y + 110), str(leader.get("name", "")),
+              font=font_name, fill=leader_name_c, anchor="mm", stroke_width=2, stroke_fill=leader_name_c)
+    draw.text((50 + (half_w - 10) // 2, sb_y + 230), str(leader.get("value", "")),
+              font=font_score, fill=leader_val_c, anchor="mm", stroke_width=3, stroke_fill=COLOR_BLACK)
+    draw.text((50 + (half_w - 10) // 2, sb_y + sb_h - 30), str(leader.get("team", "")),
+              font=font_label, fill=leader_label_c, anchor="mm")
+
+    # rest cell
+    rx = 50 + half_w + 10
+    draw.rectangle((rx, sb_y, rx + half_w - 10, sb_y + sb_h), outline=COLOR_BLACK, width=3)
+    draw.text((rx + (half_w - 10) // 2, sb_y + 50), "他 平均", font=font_label,
+              fill=COLOR_GIANTS_ROW_LEFT, anchor="mm", stroke_width=1, stroke_fill=COLOR_GIANTS_ROW_LEFT)
+    draw.text((rx + (half_w - 10) // 2, sb_y + 110), f"{len(rest)} 人",
+              font=font_name, fill=COLOR_BLACK, anchor="mm")
+    avg_text = f"{rest_avg:.3f}" if rest_avg < 10 else f"{rest_avg:.1f}"
+    draw.text((rx + (half_w - 10) // 2, sb_y + 230), avg_text, font=font_score, fill=COLOR_BLACK, anchor="mm",
+              stroke_width=2, stroke_fill=COLOR_BLACK)
+    draw.text((rx + (half_w - 10) // 2, sb_y + sb_h - 30), "2-10位", font=font_label,
+              fill=COLOR_GRAY_TEAM, anchor="mm")
+
+    # VS 中央 (small overlay)
+    font_vs, _ = _find_font(size=42)
+    draw.text((size // 2, sb_y + sb_h + 30), "vs", font=font_vs, fill=COLOR_BLACK, anchor="mm",
+              stroke_width=1, stroke_fill=COLOR_BLACK)
+
+    _draw_footer_block(canvas, draw, str(data.get("footer_handle", DEFAULT_FOOTER_HANDLE)),
+                       str(data.get("footer_meta", DEFAULT_FOOTER_META)), size=size)
+    return canvas
+
+
 # 各 template_key → render function dispatch table
 TEMPLATE_RENDERERS = {
     "ranking_table": _render_ranking_table,
@@ -896,6 +1269,12 @@ TEMPLATE_RENDERERS = {
     "pitcher_card": _render_pitcher_card,
     "standings": _render_standings,
     "12team_bar": _render_12team_bar,
+    "chart_bars": _render_chart_bars,
+    "monthly_summary": _render_monthly_summary,
+    "data_sheet": _render_data_sheet,
+    "12team_crown": _render_12team_crown,
+    "starting_lineup": _render_starting_lineup,
+    "scoreboard": _render_scoreboard,
 }
 
 

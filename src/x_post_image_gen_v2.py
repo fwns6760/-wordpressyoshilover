@@ -25,15 +25,30 @@ DEFAULT_FOOTER_HANDLE = "@yoshilover_giants"
 DEFAULT_FOOTER_META = "巨人データ"
 
 # CJK 描画が確実な TTF を優先順に探索する。 production の Cloud Run image は
-# `fonts-ipafont-gothic` を apt install してこの path を保証する (Phase 2D)。
-FONT_CANDIDATES = (
+# `fonts-noto-cjk` (実 bold 字形) を主、 `fonts-ipafont-gothic` を fallback と
+# して apt install する (Phase 2D)。 Noto Sans CJK JP Bold が見つかれば真の
+# bold 字形になり、 stroke_width fake-bold (IPAGothic 用) を抑える。
+FONT_CANDIDATES_BOLD = (
     "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
+    "/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc",
+)
+FONT_CANDIDATES_REGULAR = (
     "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
     "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
     "/usr/share/fonts/opentype/ipafont-gothic/ipag.ttf",
     "/usr/share/fonts/truetype/fonts-japanese-gothic.ttf",
     "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
 )
+FONT_CANDIDATES = FONT_CANDIDATES_BOLD + FONT_CANDIDATES_REGULAR
+
+# 🔥 / 🏆 / ⚾ など Unicode 1F000+ の color emoji を tofu させないため、
+# 別 font (Noto Color Emoji) を fallback として保持する。 emoji codepoint だけ
+# こちらで描き、 CJK / 記号 (★ U+2605 等) は main font のまま。
+EMOJI_FONT_CANDIDATES = (
+    "/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf",
+    "/usr/share/fonts/truetype/noto-color-emoji/NotoColorEmoji.ttf",
+)
+EMOJI_CODEPOINT_THRESHOLD = 0x1F000  # ★ (U+2605) は CJK font 側、 🔥 (U+1F525) は emoji font 側
 
 # brand palette (2026-05-25 user lock)
 COLOR_BG = "#ffffff"
@@ -57,8 +72,8 @@ def _find_font(size: int):
 
     Raises:
         RuntimeError: 候補 path に CJK font が 1 つもない場合。
-            (Cloud Run image の Dockerfile で apt install fonts-ipafont-gothic
-            が抜けたケースを即検出する。)
+            (Cloud Run image の Dockerfile で apt install fonts-noto-cjk
+            または fonts-ipafont-gothic が抜けたケースを即検出する。)
     """
     from PIL import ImageFont
 
@@ -70,8 +85,191 @@ def _find_font(size: int):
             continue
     raise RuntimeError(
         f"No CJK font available. Searched: {FONT_CANDIDATES}. "
-        "Install `fonts-ipafont-gothic` or `fonts-noto-cjk` in the runtime image."
+        "Install `fonts-noto-cjk` (recommended) or `fonts-ipafont-gothic` "
+        "in the runtime image."
     )
+
+
+def _is_bold_font_path(path: str) -> bool:
+    """font path が真の bold 字形を持つ Noto Sans CJK Bold か判定。"""
+    return path in FONT_CANDIDATES_BOLD
+
+
+def _find_emoji_font(size: int):
+    """Noto Color Emoji を探して返す (見つからなければ None)。
+
+    color emoji font は bitmap 字形を持ち、 描画サイズが制限される (典型は 109)。
+    そのため Pillow が要求サイズに resize する。
+    """
+    from PIL import ImageFont
+
+    for path in EMOJI_FONT_CANDIDATES:
+        try:
+            # Noto Color Emoji は size 109 でしか load できない (bitmap font 制約)
+            font = ImageFont.truetype(path, size=109)
+            return font, path
+        except (OSError, IOError):
+            continue
+    return None, None
+
+
+def _split_text_by_emoji(text: str) -> list[tuple[str, bool]]:
+    """text を (segment, is_emoji) の連続 run に分割する。
+
+    is_emoji=True の run は codepoint >= EMOJI_CODEPOINT_THRESHOLD のみ。
+    ★ (U+2605) など CJK font が持つ記号は is_emoji=False のまま main font で描く。
+    """
+    runs: list[tuple[str, bool]] = []
+    buf = ""
+    cur_is_emoji = False
+    for ch in text:
+        ch_is_emoji = ord(ch) >= EMOJI_CODEPOINT_THRESHOLD
+        if not buf:
+            buf = ch
+            cur_is_emoji = ch_is_emoji
+        elif ch_is_emoji == cur_is_emoji:
+            buf += ch
+        else:
+            runs.append((buf, cur_is_emoji))
+            buf = ch
+            cur_is_emoji = ch_is_emoji
+    if buf:
+        runs.append((buf, cur_is_emoji))
+    return runs
+
+
+def _draw_text_with_emoji(
+    draw,
+    canvas,
+    xy: tuple[int, int],
+    text: str,
+    *,
+    main_font,
+    main_font_path: str,
+    fill,
+    anchor: str = "ls",
+    stroke_width: int = 0,
+    stroke_fill=None,
+    target_emoji_size: int | None = None,
+):
+    """text に color emoji が混ざっていても tofu させずに描画する。
+
+    実装:
+      1. text を CJK + emoji の run に分割
+      2. emoji が無ければ通常の draw.text に委譲 (高速 path)
+      3. emoji があれば run ごとに位置計算しつつ描画。
+         emoji は色付き bitmap font (embedded_color=True) で別途 paste、
+         サイズは main font の glyph height に揃える。
+
+    anchor は "ls" (left-baseline) / "ms" (middle-baseline) のみサポート。
+    他 anchor は安全側で main_font のみで描画 (emoji が tofu する可能性あり)。
+    """
+    from PIL import Image, ImageDraw
+
+    # 高速 path: emoji 無し
+    runs = _split_text_by_emoji(text)
+    has_emoji = any(is_e for _, is_e in runs)
+    emoji_font, _ = _find_emoji_font(0) if has_emoji else (None, None)
+    if not has_emoji or emoji_font is None:
+        draw.text(
+            xy,
+            text,
+            font=main_font,
+            fill=fill,
+            anchor=anchor,
+            stroke_width=stroke_width,
+            stroke_fill=stroke_fill,
+        )
+        return
+
+    # サポート anchor 制限
+    if anchor not in ("ls", "ms", "rs"):
+        draw.text(
+            xy,
+            text,
+            font=main_font,
+            fill=fill,
+            anchor=anchor,
+            stroke_width=stroke_width,
+            stroke_fill=stroke_fill,
+        )
+        return
+
+    # 横幅を測って anchor を解決
+    total_width = 0
+    for seg, is_e in runs:
+        if is_e:
+            # emoji は main_font の line height に合わせるので 1 glyph ≈ font.size * 1.0
+            total_width += int(main_font.size * 1.0 * len(seg))
+        else:
+            bbox = main_font.getbbox(seg)
+            total_width += bbox[2] - bbox[0]
+
+    x, y = xy
+    if anchor == "ms":
+        x = x - total_width // 2
+    elif anchor == "rs":
+        x = x - total_width
+    # baseline 揃え (Pillow の anchor "s" = baseline) は run ごとに保持
+
+    # Noto Color Emoji の bitmap native size (size=109 で load 時のキャンバス)
+    EMOJI_NATIVE = 136
+
+    cursor = x
+    for seg, is_e in runs:
+        if is_e:
+            # color emoji は native bitmap size (~136) で render してから target size に resize
+            try:
+                emoji_glyph_size = int(main_font.size * 1.0)
+                # 1 char ごとに描画 (paste 位置を確実にコントロール)
+                for ch in seg:
+                    native_img = Image.new(
+                        "RGBA", (EMOJI_NATIVE, EMOJI_NATIVE), (0, 0, 0, 0)
+                    )
+                    native_draw = ImageDraw.Draw(native_img)
+                    native_draw.text(
+                        (0, 0), ch, font=emoji_font, embedded_color=True
+                    )
+                    # crop tight bbox を取って余白除去
+                    bbox = native_img.getbbox()
+                    if bbox:
+                        native_img = native_img.crop(bbox)
+                    scaled = native_img.resize(
+                        (emoji_glyph_size, emoji_glyph_size), Image.LANCZOS
+                    )
+                    paste_y = y - emoji_glyph_size + 4  # baseline 補正
+                    canvas.alpha_composite(
+                        scaled, dest=(cursor, max(paste_y, 0))
+                    )
+                    cursor += emoji_glyph_size
+            except Exception as exc:
+                logger.warning(
+                    "[437v2] emoji paste failed seg=%r err=%s — fallback to main font",
+                    seg,
+                    exc,
+                )
+                draw.text(
+                    (cursor, y),
+                    seg,
+                    font=main_font,
+                    fill=fill,
+                    anchor="ls",
+                    stroke_width=stroke_width,
+                    stroke_fill=stroke_fill,
+                )
+                cursor += int(main_font.size * 1.0 * len(seg))
+        else:
+            draw.text(
+                (cursor, y),
+                seg,
+                font=main_font,
+                fill=fill,
+                anchor="ls",
+                stroke_width=stroke_width,
+                stroke_fill=stroke_fill,
+            )
+            bbox = main_font.getbbox(seg)
+            cursor += bbox[2] - bbox[0]
 
 
 def _make_vertical_gradient(width: int, height: int, top_hex: str, bot_hex: str):
@@ -151,16 +349,23 @@ def _render_ranking_table(data: dict[str, Any], size: int = DEFAULT_SIZE):
     draw = ImageDraw.Draw(canvas)
 
     # hook_line (金、 中央、 y=115 baseline 相当 → top y ≈ 95)
+    # color emoji (🔥 / 🏆 / ⚾ など U+1F000+) が混ざっても tofu しないよう、
+    # Noto Color Emoji fallback 経由で描く。 ★ (U+2605) は CJK font 側で描かれる。
     hook_line = str(data.get("hook_line", ""))
     if hook_line:
-        font_hook, _ = _find_font(size=42)
-        draw.text(
+        font_hook, hook_path = _find_font(size=42)
+        # 真の Bold 字形なら stroke_width で fake-bold 増し打ちを抑える
+        hook_stroke = 1 if _is_bold_font_path(hook_path) else 2
+        _draw_text_with_emoji(
+            draw,
+            canvas,
             (size // 2, 115),
             hook_line,
-            font=font_hook,
+            main_font=font_hook,
+            main_font_path=hook_path,
             fill=COLOR_GOLD,
             anchor="ms",
-            stroke_width=2,
+            stroke_width=hook_stroke,
             stroke_fill=COLOR_GOLD,
         )
 

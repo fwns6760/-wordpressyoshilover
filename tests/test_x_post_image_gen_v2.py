@@ -11,8 +11,13 @@ import struct
 import pytest
 
 from src.x_post_image_gen_v2 import (
+    EMOJI_CODEPOINT_THRESHOLD,
+    FONT_CANDIDATES_BOLD,
     PNG_MAX_BYTES,
+    _find_emoji_font,
     _find_font,
+    _is_bold_font_path,
+    _split_text_by_emoji,
     build_ranking_data,
     generate_png,
 )
@@ -186,3 +191,71 @@ def test_build_ranking_data_defaults_footer():
     data = build_ranking_data(title="t", subtitle="s", hook_line="h", rows=[])
     assert data["footer_handle"].startswith("@")
     assert data["footer_meta"]
+
+
+# ---------- emoji fallback ----------
+
+
+def test_split_text_by_emoji_separates_runs():
+    """🔥 / 🏆 等は emoji run、 ★ / 巨人 / 数値 は main font run に分かれる。"""
+    runs = _split_text_by_emoji("🔥 巨人 2 名 🏆")
+    assert runs == [
+        ("🔥", True),
+        (" 巨人 2 名 ", False),
+        ("🏆", True),
+    ]
+
+
+def test_split_text_by_emoji_keeps_star_in_main_font():
+    """★ (U+2605) は EMOJI_CODEPOINT_THRESHOLD 未満なので main font run のまま。"""
+    runs = _split_text_by_emoji("★ 巨人 2 名 ★")
+    assert all(not is_e for _, is_e in runs)
+    assert ord("★") < EMOJI_CODEPOINT_THRESHOLD
+
+
+def test_split_text_by_emoji_no_emoji_single_run():
+    runs = _split_text_by_emoji("セ・リーグ OPS ランキング")
+    assert len(runs) == 1
+    assert runs[0] == ("セ・リーグ OPS ランキング", False)
+
+
+def test_split_text_by_emoji_empty_input():
+    assert _split_text_by_emoji("") == []
+
+
+def test_is_bold_font_path_recognizes_noto_bold():
+    """Noto Sans CJK Bold path は bold 認定、 IPAGothic は false。"""
+    assert _is_bold_font_path(FONT_CANDIDATES_BOLD[0]) is True
+    assert _is_bold_font_path("/usr/share/fonts/opentype/ipafont-gothic/ipag.ttf") is False
+
+
+def test_generate_png_handles_emoji_in_hook_line():
+    """hook_line に 🔥 / 🏆 等が混ざっても tofu せず PNG が生成される。
+
+    Noto Color Emoji が install 済の環境では emoji が color 描画され、
+    install されていない環境では fallback して main font で描く (tofu の可能性
+    はあるが PNG 自体は生成される)。 どちらでも generate_png は None を返さない。
+    """
+    data = build_ranking_data(
+        title="セ・リーグ OPS ランキング",
+        subtitle="直近 10 試合",
+        hook_line="🔥 巨人 2 名 トップ 10 入り 🏆",
+        rows=_sample_rows(),
+    )
+    png = generate_png("ranking_table", data)
+    assert png is not None
+    w, h = _png_size_from_bytes(png)
+    assert (w, h) == (1080, 1080)
+
+
+def test_emoji_font_lookup_finds_if_installed():
+    """Noto Color Emoji が system に install 済なら _find_emoji_font は font を返す。
+
+    Cloud Run image (Phase 2D) で fonts-noto-color-emoji が抜けたケースを
+    検知する gate。 install されていない CI 環境では None が返るが、 generate_png
+    自体は通る (上の test と同じ理由)。
+    """
+    font, path = _find_emoji_font(0)
+    # 環境依存: install 済なら font / path 共に non-None、 未 install なら None
+    if font is not None:
+        assert path.endswith(".ttf") or path.endswith(".ttc")

@@ -502,6 +502,7 @@ class _BridgeMailRequest:
     sender: str | None = None
     reply_to: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+    inline_images: list[Any] = field(default_factory=list)
 
 
 BridgeSend = Callable[..., object]

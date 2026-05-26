@@ -1287,18 +1287,15 @@ def _main_on_queue(args: argparse.Namespace, recipients: list[str]) -> int:
         sender=_resolve_sender(),
         reply_to=_resolve_reply_to(),
         metadata={"ticket": "417", "lane": "x_post_mail", "mode": "on-queue", "candidate_count": mail.candidate_count},
-        inline_images=(
-            [
-                mdb.InlineImage(
-                    content_id=lane.RANKING_IMAGE_CID,
-                    data=mail.ranking_image_png,
-                    mime_subtype="png",
-                    filename="giants-ranking.png",
-                )
-            ]
-            if mail.ranking_image_png
-            else []
-        ),
+        inline_images=[
+            mdb.InlineImage(
+                content_id=ci.cid,
+                data=ci.png,
+                mime_subtype="png",
+                filename=f"{ci.cid}.png",
+            )
+            for ci in mail.candidate_images
+        ],
     )
     result = mdb.send(request, dry_run=False)
     LOG.info(
@@ -1746,18 +1743,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         sender=_resolve_sender(),
         reply_to=_resolve_reply_to(),
         metadata={"ticket": "347", "lane": "x_post_mail", "candidate_count": mail.candidate_count},
-        inline_images=(
-            [
-                mdb.InlineImage(
-                    content_id=lane.RANKING_IMAGE_CID,
-                    data=mail.ranking_image_png,
-                    mime_subtype="png",
-                    filename="giants-ranking.png",
-                )
-            ]
-            if mail.ranking_image_png
-            else []
-        ),
+        inline_images=[
+            mdb.InlineImage(
+                content_id=ci.cid,
+                data=ci.png,
+                mime_subtype="png",
+                filename=f"{ci.cid}.png",
+            )
+            for ci in mail.candidate_images
+        ],
     )
     result = mdb.send(request, dry_run=False)
     LOG.info("mail send result: status=%s reason=%s refused=%s",

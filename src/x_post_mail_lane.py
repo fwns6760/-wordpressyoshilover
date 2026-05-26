@@ -28,7 +28,7 @@ from pathlib import Path as _Path
 import random as _random
 import re as _re
 import sqlite3 as _sqlite3
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import date as _date, datetime, timedelta, timezone as _tz
 from typing import Callable, Optional
 from urllib.parse import quote as _url_quote
@@ -3160,70 +3160,127 @@ def _compose_text_body(
     return "\n".join(parts)
 
 
-RANKING_IMAGE_CID = "giants-ranking-437"
+RANKING_IMAGE_CID_PREFIX = "giants-ranking-cand-"
 
 
-def _generate_ranking_image_png() -> bytes | None:
-    """437 Phase 4: TOP 8 OPS ranking PNG bytes を返す (失敗時 None)。
+def _extract_ranking_rows_from_draft(
+    draft_text: str, *, focus_player: str = "", max_rows: int = 8
+) -> list[dict]:
+    """draft_text の各行を _RANKING_ROW_PATTERN で parse して image 用 rows 化。
 
-    Gmail / Apple Mail で base64 data URI が block される事例があるため、
-    bytes を返して mail_delivery_bridge.InlineImage 経由で multipart/related
-    として添付し、 HTML 側は `<img src="cid:RANKING_IMAGE_CID">` で参照する。
+    1 行 = `{rank}. {name}（{team}）{value}{marker}` 形式。
+    marker (' ← 巨人') か focus_player との name 一致を is_giants 判定に使う。
+    解析できる行が無ければ [] を返し、 caller は画像をスキップする。
+    """
+    rows: list[dict] = []
+    for raw_line in draft_text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        m = _RANKING_ROW_PATTERN.match(line)
+        if not m:
+            continue
+        name = m.group("name").strip()
+        is_giants = bool(m.group("marker"))
+        if not is_giants and focus_player and focus_player.strip() == name:
+            is_giants = True
+        rows.append(
+            {
+                "rank": int(m.group("rank")),
+                "name": name,
+                "team": m.group("team").strip(),
+                "value": m.group("value").strip(),
+                "is_giants": is_giants,
+            }
+        )
+        if len(rows) >= max_rows:
+            break
+    return rows
+
+
+def _build_candidate_hook_and_title(
+    metric: str, period_label: str, focus_player: str, rows: list[dict]
+) -> tuple[str, str, str]:
+    """画像 header の title / subtitle / hook_line を組む。"""
+    title = f"セ・リーグ {metric} ランキング" if metric else "セ・リーグ ランキング"
+    subtitle = period_label or ""
+    giants_in_top = [r for r in rows if r.get("is_giants")]
+    if focus_player and any(r.get("name") == focus_player for r in giants_in_top):
+        hook = f"★ {focus_player} {metric} ★"
+    elif len(giants_in_top) >= 2:
+        hook = f"★ 巨人 {len(giants_in_top)} 名 トップ {len(rows)} 入り ★"
+    elif len(giants_in_top) == 1:
+        only = giants_in_top[0]
+        hook = f"★ {only['name']} {metric} {only['value']} ★"
+    else:
+        hook = f"★ セ・リーグ {metric} ranking ★"
+    return title, subtitle, hook
+
+
+def _generate_candidate_image_png(
+    candidate, *, sample_rows: list[dict] | None = None
+) -> bytes | None:
+    """1 候補の metric / period / focus_player + draft_text から PNG bytes 生成。
+
+    draft_text に ranking 行が無い (news / fan voice 系) と sample_rows も無い場合は
+    None。 caller (compose_mail) は None 候補に画像を付けず HTML から img を省く。
     """
     try:
         from src.x_post_image_gen_v2 import build_ranking_data, generate_png
     except Exception as exc:
         logger.warning(
-            "[437 phase4] image gen import failed (%s): %s — mail skips image",
+            "[437 phase5] image gen import failed (%s): %s — mail skips image",
             type(exc).__name__,
             exc,
         )
         return None
-
-    # static sample data (Phase 4 MVP): DB query への置換は次便。
-    rows = [
-        {"rank": 1, "name": "佐藤輝明", "team": "阪神", "value": ".961", "is_giants": False},
-        {"rank": 2, "name": "坂倉将吾", "team": "広島", "value": ".882", "is_giants": False},
-        {"rank": 3, "name": "坂本勇人", "team": "巨人", "value": ".867", "is_giants": True},
-        {"rank": 4, "name": "村松開人", "team": "中日", "value": ".831", "is_giants": False},
-        {"rank": 5, "name": "武岡龍世", "team": "ヤクルト", "value": ".812", "is_giants": False},
-        {"rank": 6, "name": "大山悠輔", "team": "阪神", "value": ".798", "is_giants": False},
-        {"rank": 7, "name": "森下翔太", "team": "阪神", "value": ".785", "is_giants": False},
-        {"rank": 8, "name": "岡本和真", "team": "巨人", "value": ".772", "is_giants": True},
-    ]
+    rows = _extract_ranking_rows_from_draft(
+        getattr(candidate, "draft_text", "") or "",
+        focus_player=getattr(candidate, "focus_player", "") or "",
+    )
+    if not rows and sample_rows is not None:
+        rows = sample_rows
+    if not rows:
+        return None
+    metric = getattr(candidate, "metric", "") or ""
+    period_label = getattr(candidate, "period_label", "") or ""
+    focus_player = getattr(candidate, "focus_player", "") or ""
+    title, subtitle, hook = _build_candidate_hook_and_title(
+        metric, period_label, focus_player, rows
+    )
     try:
         data = build_ranking_data(
-            title="セ・リーグ OPS ランキング",
-            subtitle="直近 10 試合 / 規定打席 20 以上",
-            hook_line="★ 巨人 2 名 トップ 10 入り ★",
-            rows=rows,
+            title=title, subtitle=subtitle, hook_line=hook, rows=rows
         )
         png = generate_png("ranking_table", data)
     except Exception as exc:
         logger.warning(
-            "[437 phase4] image gen failed (%s): %s — mail skips image",
+            "[437 phase5] image gen failed (%s): %s — mail skips image",
             type(exc).__name__,
             exc,
         )
         return None
     if not png:
-        logger.warning("[437 phase4] image gen returned None — mail skips image")
         return None
     return png
 
 
-def _render_ranking_image_html(*, has_image: bool) -> str:
-    """画像 cid 参照を mail body 用 HTML に整形 (画像が無いなら空)。"""
-    if not has_image:
+def _candidate_image_cid(index: int) -> str:
+    """候補 index → cid (mail 単位で unique)。"""
+    return f"{RANKING_IMAGE_CID_PREFIX}{index}"
+
+
+def _render_candidate_image_html(cid: str | None) -> str:
+    """候補の text の真上に置く <img cid:...> HTML フラグメント (画像無しなら空)。"""
+    if not cid:
         return ""
     return (
-        "<div style=\"text-align:center;margin:0 0 14px;\">"
-        f"<img src=\"cid:{RANKING_IMAGE_CID}\" alt=\"giants ranking\" "
-        "style=\"max-width:540px;width:100%;height:auto;border:1px solid #ddd;"
-        "border-radius:6px;display:inline-block;\" "
-        "draggable=\"true\"/>"
+        "<div style=\"text-align:center;margin:0 0 10px;\">"
+        f"<img src=\"cid:{cid}\" alt=\"giants ranking\" "
+        "style=\"max-width:520px;width:100%;height:auto;border:1px solid #ddd;"
+        "border-radius:6px;display:inline-block;\" draggable=\"true\"/>"
         "<div style=\"font-size:11px;color:#777;margin-top:4px;\">"
-        "↑ X compose にドラッグして添付 (PC) / 長押し保存して添付 (スマホ)"
+        "↑ X compose にドラッグ (PC) / 長押し保存 (スマホ) で添付"
         "</div></div>"
     )
 
@@ -3233,7 +3290,7 @@ def _compose_html_body(
     now: datetime,
     *,
     context_note: str = "",
-    has_image: bool = False,
+    candidate_image_cids: list[str | None] | None = None,
 ) -> str:
     band = time_band_label(now.hour)
     header_label = _mail_header_label(candidates)
@@ -3267,12 +3324,18 @@ def _compose_html_body(
                 f"border-radius:4px;margin:6px 0 0;\">{_html.escape(cand.draft_text)}</pre>"
                 "</details>"
             )
+        image_html_for_candidate = ""
+        if candidate_image_cids and idx - 1 < len(candidate_image_cids):
+            image_html_for_candidate = _render_candidate_image_html(
+                candidate_image_cids[idx - 1]
+            )
         rows_html.append(
             "<div style=\"border-left:3px solid #f57f17;"
             "padding:10px 14px;margin:14px 0;background:#fff8e1;"
             "border-radius:4px;\">"
             f"<div style=\"font-weight:600;font-size:14px;color:#5d4037;"
             f"margin:0 0 8px;\">■ 候補 {idx}: {_html.escape(cand.title)}</div>"
+            f"{image_html_for_candidate}"
             "<div style=\"font-size:12px;color:#5d4037;margin:0 0 8px;\">"
             f"採用理由: {_html.escape(selected_reason)}</div>"
             "<pre style=\"white-space:pre-wrap;word-break:keep-all;"
@@ -3313,10 +3376,17 @@ def _compose_html_body(
             if context_note else ""
         )
         + summary_html
-        + _render_ranking_image_html(has_image=has_image)
         + "\n".join(rows_html)
         + "</body></html>"
     )
+
+
+@dataclass(frozen=True)
+class CandidateImage:
+    """437 Phase 5: 候補ごとの inline 画像。"""
+
+    cid: str
+    png: bytes
 
 
 @dataclass(frozen=True)
@@ -3325,7 +3395,7 @@ class ComposedMail:
     text_body: str
     html_body: str
     candidate_count: int
-    ranking_image_png: bytes | None = None  # 437 Phase 4: cid 添付 image
+    candidate_images: list[CandidateImage] = field(default_factory=list)
 
 
 def compose_mail(
@@ -3340,19 +3410,28 @@ def compose_mail(
     if not context_label and _has_news_opinion_candidate(candidates):
         context_label = "データ+ニュース意見"
     subject = build_subject(now, len(candidates), context_label=context_label)
-    # 437 Phase 4: 画像を 1 回だけ生成し、 HTML body と MailRequest 双方で再利用
-    ranking_image_png = _generate_ranking_image_png()
+    # 437 Phase 5: 候補ごとに draft_text から ranking を parse して image 生成
+    candidate_images: list[CandidateImage] = []
+    cids_for_html: list[str | None] = []
+    for idx, cand in enumerate(candidates):
+        png = _generate_candidate_image_png(cand)
+        if not png:
+            cids_for_html.append(None)
+            continue
+        cid = _candidate_image_cid(idx)
+        candidate_images.append(CandidateImage(cid=cid, png=png))
+        cids_for_html.append(cid)
     text_body = _compose_text_body(candidates, now, context_note=context_note)
     html_body = _compose_html_body(
         candidates,
         now,
         context_note=context_note,
-        has_image=ranking_image_png is not None,
+        candidate_image_cids=cids_for_html,
     )
     return ComposedMail(
         subject=subject,
         text_body=text_body,
         html_body=html_body,
         candidate_count=len(candidates),
-        ranking_image_png=ranking_image_png,
+        candidate_images=candidate_images,
     )

@@ -807,5 +807,60 @@ class BuildSystemPromptPersonaTests411(unittest.TestCase):
         self.assertIn("完勝！", prompt)
 
 
+class XImpressionPhase5OfficialHandleTests(unittest.TestCase):
+    """X インプ向上 Phase 5 (2026-05-27): source URL → 公式 X handle 解決 + 付与。"""
+
+    def test_resolve_hochi_news_to_hochi_giants(self) -> None:
+        self.assertEqual(
+            xbg._resolve_official_x_handle("https://hochi.news/articles/20260527.html"),
+            "@hochi_giants",
+        )
+
+    def test_resolve_twitter_hochi_giants(self) -> None:
+        self.assertEqual(
+            xbg._resolve_official_x_handle("https://twitter.com/hochi_giants/status/123"),
+            "@hochi_giants",
+        )
+
+    def test_resolve_sanspo(self) -> None:
+        self.assertEqual(
+            xbg._resolve_official_x_handle("https://www.sanspo.com/article/x"),
+            "@Sanspo_Giants",
+        )
+
+    def test_resolve_tokyo_giants_official_x(self) -> None:
+        self.assertEqual(
+            xbg._resolve_official_x_handle("https://twitter.com/TokyoGiants/status/x"),
+            "@TokyoGiants",
+        )
+
+    def test_resolve_unknown_returns_none(self) -> None:
+        self.assertIsNone(xbg._resolve_official_x_handle("https://example.com/article"))
+        self.assertIsNone(xbg._resolve_official_x_handle(""))
+
+    def test_append_handle_adds_attribution_line(self) -> None:
+        out = xbg._append_x_handle_to_post_text(
+            "巨人が勝った",
+            "https://hochi.news/articles/x",
+        )
+        self.assertEqual(out, "巨人が勝った\n\n(出典 @hochi_giants)")
+
+    def test_append_handle_unchanged_when_no_match(self) -> None:
+        out = xbg._append_x_handle_to_post_text(
+            "巨人が勝った",
+            "https://example.com/article",
+        )
+        self.assertEqual(out, "巨人が勝った")
+
+    def test_append_handle_skipped_when_exceeds_280(self) -> None:
+        # 270 字の本文に @ 付与で 280 超過 → 元 text のまま
+        long_body = "あ" * 270
+        out = xbg._append_x_handle_to_post_text(
+            long_body,
+            "https://hochi.news/articles/x",
+        )
+        self.assertEqual(out, long_body)
+
+
 if __name__ == "__main__":
     unittest.main()

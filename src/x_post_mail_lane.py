@@ -2609,26 +2609,33 @@ def _format_one(
     fact_metric_label = metric_jp
 
     # 351+353 follow-up: 守備位置別 / セ・リーグ ranking で header の prefix を切替。
-    # 346 format_as_x_post の output 1 行目は「セ・{metric_jp} ランキング 📊」固定
-    # なので、 1 行目を新 prefix + metric 別絵文字で置換する。
+    # X インプ向上 Phase 3 (2026-05-27): format_as_x_post output は
+    # "📊 セ {metric_jp} TOP{N} {emoji}" 形式。 position は _build_header 側で
+    # すでに反映済 (`📊 セ 投手 ERA TOP10 ⚡`)。 旧 ランキング 文字列前提の
+    # header rewrite は dead code だったため削除。 header 行は「📊」 を marker
+    # に検索し、 period_suffix / focus_line をその直後に挿入する。
     if combo.position:
         position_jp = _POSITION_DISPLAY_JP.get(combo.position, combo.position)
         fact_metric_label = f"{position_jp}{metric_jp}"
-        if lines and "ランキング" in lines[0]:
-            lines[0] = f"セ・{position_jp} {metric_jp} ランキング {header_emoji}"
-    else:
-        if lines and "ランキング" in lines[0]:
-            lines[0] = f"セ・リーグ {metric_jp} ランキング {header_emoji}"
+    header_idx = next((i for i, line in enumerate(lines) if "📊" in line), -1)
     context_prefix = f"{context_label} " if context_label else ""
     title = (
         f"{_angle_for_combo(combo)[0]} Xポスト案｜"
         f"{context_prefix}{focus_name} {metric_jp} {scope_label} {focus_rank}/{focus_total}位 "
         f"({period_label}・{threshold_label})"
     )
-    # 353: period_suffix を 1 行目 append から 2 行目挿入に変更。
-    lines.insert(1, period_suffix)
+    # 353: period_suffix と focus_line を header の直後に挿入。
+    # X インプ向上 Phase 3: hook line がある時は header_idx は 2 行目 (line[2])、
+    # 無い時は 0 行目。 どちらでも header_idx+1 / +2 に挿入で同じ semantics。
     focus_line_prefix = context_label or "巨人最上位"
-    lines.insert(2, f"{focus_line_prefix}: {focus_name} {scope_label} {focus_rank}/{focus_total}位")
+    focus_line = f"{focus_line_prefix}: {focus_name} {scope_label} {focus_rank}/{focus_total}位"
+    if header_idx >= 0:
+        lines.insert(header_idx + 1, period_suffix)
+        lines.insert(header_idx + 2, focus_line)
+    else:
+        # 念のため fallback (format_as_x_post output が前提崩れの場合)
+        lines.insert(1, period_suffix)
+        lines.insert(2, focus_line)
 
     # 353: ranking rows に medal / metric label / strong Giants marker を post-process。
     lines = _rewrite_ranking_rows(lines, metric_jp)

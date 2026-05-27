@@ -1448,7 +1448,9 @@ class TicketThreeFiftyThreeFormatTests(unittest.TestCase):
         })
 
     def test_period_line_separated_to_second_row(self) -> None:
-        """418 case B: header line 1 = 「📊 ... TOP{N} ⚾/⚡」、 line 2 = 期間 / サンプル。"""
+        """418 case B + X インプ向上 Phase 3 (2026-05-27): hook line → 📊 header
+        → 期間 / サンプル / focus_line の順で並ぶ。 hook line が無い場合 (巨人選手
+        が rows に居ない時) は header が line[0]。"""
         cands = pick_candidates(
             self._make_mock(),
             now=datetime(2026, 5, 16, 7, 0, tzinfo=JST),
@@ -1460,13 +1462,14 @@ class TicketThreeFiftyThreeFormatTests(unittest.TestCase):
         self.assertGreaterEqual(len(cands), 1)
         for c in cands:
             lines = c.draft_text.split("\n")
-            # 418 case B: lines[0] = 「📊 ... TOPN ⚾/⚡」、 lines[1] = 期間 / サンプル
-            self.assertIn("📊", lines[0])
-            self.assertIn("TOP", lines[0])
-            # 2 行目に期間 context が separate されている (空でない、 ranking 行でない)
+            # X インプ向上 Phase 3: header は「📊」 を含む行 (line[0] か line[2])
+            header_idx = next((i for i, line in enumerate(lines) if "📊" in line), -1)
+            self.assertGreaterEqual(header_idx, 0, msg=f"📊 header not found in {c.draft_text!r}")
+            self.assertIn("TOP", lines[header_idx])
+            # header 直後に期間 context (period_suffix) が separate されている
             self.assertFalse(
-                lines[1].startswith("1位") or lines[1].startswith("1."),
-                msg=f"period line missing, ranking starts at line 1: {lines[1]!r}",
+                lines[header_idx + 1].startswith("1位") or lines[header_idx + 1].startswith("1."),
+                msg=f"period line missing, ranking starts right after header: {lines[header_idx + 1]!r}",
             )
 
     def test_metric_header_emoji_batting_pitching(self) -> None:
@@ -1483,7 +1486,12 @@ class TicketThreeFiftyThreeFormatTests(unittest.TestCase):
         batter_cands = [c for c in cands if c.metric in ("OPS", "AVG", "OBP", "SLG")]
         self.assertGreaterEqual(len(batter_cands), 1)
         for c in batter_cands:
-            header = c.draft_text.split("\n", 1)[0]
+            # X インプ向上 Phase 3 (2026-05-27): line[0] が hook line に変わった。
+            # header は「📊」 を含む行で identify する。
+            header = next(
+                (line for line in c.draft_text.splitlines() if "📊" in line),
+                "",
+            )
             self.assertIn("⚾", header, msg=f"batter header missing ⚾: {header}")
             # 418 case B: 📊 が header に来る (旧 STEP1 では 📊 leak 禁止だったが、
             # 418 で 📊 + TOPN 形式に統一、 batter/pitcher emoji は維持)
@@ -1507,7 +1515,12 @@ class TicketThreeFiftyThreeFormatTests(unittest.TestCase):
         era_only = [c for c in era_cands if c.metric == "ERA"]
         self.assertGreaterEqual(len(era_only), 1)
         for c in era_only:
-            header = c.draft_text.split("\n", 1)[0]
+            # X インプ向上 Phase 3 (2026-05-27): hook line 追加後、 header は line[0]
+            # ではなくなる。「📊」 を含む header 行を search で見つける。
+            header = next(
+                (line for line in c.draft_text.splitlines() if "📊" in line),
+                "",
+            )
             self.assertIn("⚡", header, msg=f"pitcher header missing ⚡: {header}")
 
     def test_all_ranks_use_numeric_prefix(self) -> None:
@@ -1836,9 +1849,15 @@ class TicketThreeFiftyFourLastNGamesTests(unittest.TestCase):
         )
         self.assertIsNotNone(cand)
         assert cand is not None
-        self.assertIn("直近5試合", cand.draft_text.split("\n")[1])
-        self.assertIn("規定打席10以上", cand.draft_text.split("\n")[1])
-        self.assertNotIn("5/11〜5/16", cand.draft_text.split("\n")[1])
+        # X インプ向上 Phase 3 (2026-05-27): hook line 追加で period_suffix の
+        # 行 index がずれた。 period line を search で identify する。
+        period_line = next(
+            (line for line in cand.draft_text.splitlines() if "直近5試合" in line),
+            "",
+        )
+        self.assertIn("直近5試合", period_line)
+        self.assertIn("規定打席10以上", period_line)
+        self.assertNotIn("5/11〜5/16", period_line)
         self.assertIn("直近5試合", cand.title)
         # 429: DB ranking table is the actual post_text, not prose-only branding.
         self.assertIn("📊", cand.post_text)
@@ -1871,9 +1890,14 @@ class TicketThreeFiftyFourLastNGamesTests(unittest.TestCase):
         )
         self.assertIsNotNone(cand)
         assert cand is not None
-        self.assertIn("7月成績", cand.draft_text.split("\n")[1])
-        self.assertIn("規定打席30以上", cand.draft_text.split("\n")[1])
-        self.assertNotIn("7/1〜7/31", cand.draft_text.split("\n")[1])
+        # X インプ向上 Phase 3 (2026-05-27): period line を search で identify。
+        period_line = next(
+            (line for line in cand.draft_text.splitlines() if "7月成績" in line),
+            "",
+        )
+        self.assertIn("7月成績", period_line)
+        self.assertIn("規定打席30以上", period_line)
+        self.assertNotIn("7/1〜7/31", period_line)
 
     def test_min_sample_override_honoured_in_pick_candidates(self) -> None:
         """combo.min_sample_override が pick_candidates 内で min_sample より優先。"""

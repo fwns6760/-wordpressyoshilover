@@ -269,5 +269,140 @@ class FormatAsXPostLineBreakTests(unittest.TestCase):
         self.assertEqual(lines[1], "")
 
 
+class XImpressionPhase3HookLineTests(unittest.TestCase):
+    """X インプ向上 Phase 3 (2026-05-27): 「結論先出し」 hook line。"""
+
+    def test_hook_line_inserted_when_giants_in_ranking(self) -> None:
+        parsed = {"metric": "OPS", "top_n": 3, "league": "セ"}
+        result = format_as_x_post(
+            parsed,
+            _make_rank_result(
+                [
+                    _row(1, "岡本和真", "巨人", 0.950),
+                    _row(2, "佐藤輝明", "阪神", 0.910),
+                    _row(3, "坂本勇人", "巨人", 0.880),
+                ]
+            ),
+        )
+        self.assertTrue(result["ok"])
+        first = result["draft_text"].split("\n", 1)[0]
+        self.assertTrue(first.startswith("★"), msg=f"hook missing: {first!r}")
+        self.assertTrue(first.endswith("★"))
+        self.assertIn("岡本和真", first)
+        self.assertIn(".950", first)
+
+    def test_hook_line_omitted_when_no_giants(self) -> None:
+        parsed = {"metric": "OPS", "top_n": 3, "league": "セ"}
+        result = format_as_x_post(
+            parsed,
+            _make_rank_result(
+                [
+                    _row(1, "佐藤輝明", "阪神", 0.945),
+                    _row(2, "村上宗隆", "ヤクルト", 0.921),
+                ]
+            ),
+        )
+        self.assertTrue(result["ok"])
+        first = result["draft_text"].split("\n", 1)[0]
+        self.assertFalse(first.startswith("★"))
+        self.assertIn("📊", first)
+
+    def test_hook_line_uses_focus_player_when_present(self) -> None:
+        parsed = {"metric": "OPS", "league": "セ"}
+        rank_result = {
+            "ok": True,
+            "rows": [],
+            "count": 0,
+            "total": 30,
+            "focus_player": {
+                "player_canonical": "坂本勇人",
+                "team_code": "巨人",
+                "metric_value": 0.875,
+                "rank": 4,
+                "total": 30,
+                "sample_size": 50,
+            },
+        }
+        result = format_as_x_post(parsed, rank_result)
+        self.assertTrue(result["ok"])
+        first = result["draft_text"].split("\n", 1)[0]
+        self.assertTrue(first.startswith("★"))
+        self.assertIn("坂本勇人", first)
+        self.assertIn("4/30", first)
+
+
+class XImpressionPhase4DynamicHashtagsTests(unittest.TestCase):
+    """X インプ向上 Phase 4 (2026-05-27): 動的ハッシュタグ。"""
+
+    def test_dynamic_tags_include_giants_player_name(self) -> None:
+        parsed = {"metric": "OPS", "top_n": 3}
+        result = format_as_x_post(
+            parsed,
+            _make_rank_result(
+                [
+                    _row(1, "岡本和真", "巨人", 0.950),
+                    _row(2, "佐藤輝明", "阪神", 0.910),
+                    _row(3, "坂本勇人", "巨人", 0.880),
+                ]
+            ),
+        )
+        self.assertTrue(result["ok"])
+        last = result["draft_text"].rsplit("\n", 1)[-1]
+        self.assertIn("#巨人", last)
+        self.assertIn("#ジャイアンツ", last)
+        self.assertIn("#岡本和真", last)
+        self.assertIn("#坂本勇人", last)
+
+    def test_dynamic_tags_skip_non_giants_player_names(self) -> None:
+        parsed = {"metric": "OPS", "top_n": 3}
+        result = format_as_x_post(
+            parsed,
+            _make_rank_result(
+                [
+                    _row(1, "佐藤輝明", "阪神", 0.945),
+                    _row(2, "村上宗隆", "ヤクルト", 0.921),
+                ]
+            ),
+        )
+        self.assertTrue(result["ok"])
+        last = result["draft_text"].rsplit("\n", 1)[-1]
+        self.assertIn("#巨人", last)
+        self.assertNotIn("#佐藤輝明", last)
+        self.assertNotIn("#村上宗隆", last)
+
+    def test_dynamic_tags_add_baseball_tag_for_pitcher_metric(self) -> None:
+        parsed = {"metric": "ERA", "top_n": 2}
+        result = format_as_x_post(
+            parsed,
+            _make_rank_result(
+                [
+                    _row(1, "戸郷翔征", "巨人", 2.50),
+                    _row(2, "村上頌樹", "阪神", 2.80),
+                ]
+            ),
+        )
+        self.assertTrue(result["ok"])
+        last = result["draft_text"].rsplit("\n", 1)[-1]
+        self.assertIn("#戸郷翔征", last)
+        self.assertIn("#プロ野球", last)
+
+    def test_explicit_hashtags_override_still_works(self) -> None:
+        """既存挙動: hashtags="..." 引数で override すれば動的化が抑制される。"""
+        parsed = {"metric": "OPS", "top_n": 2}
+        result = format_as_x_post(
+            parsed,
+            _make_rank_result(
+                [
+                    _row(1, "岡本和真", "巨人", 0.950),
+                    _row(2, "佐藤輝明", "阪神", 0.910),
+                ]
+            ),
+            hashtags="#カスタム",
+        )
+        self.assertTrue(result["ok"])
+        last = result["draft_text"].rsplit("\n", 1)[-1]
+        self.assertEqual(last, "#カスタム")
+
+
 if __name__ == "__main__":
     unittest.main()

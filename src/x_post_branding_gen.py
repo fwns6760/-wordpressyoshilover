@@ -25,7 +25,7 @@ import hashlib as _hashlib
 import json as _json
 import logging as _logging
 import re as _re
-from typing import Optional
+from typing import Any, Optional
 
 # 既存 ``x_post_mail_lane`` の Candidate / 共通 helper を再利用する。
 from src.x_post_mail_lane import (
@@ -40,6 +40,65 @@ from src.x_post_mail_lane import (
 # Gemini API model id (2026-05-22 swap: gemma-4-31b-it → gemini-3.1-flash-lite、
 # 両方 free tier、 paid 切替禁止 lock 維持)。 変数 / metric 名は履歴互換のため温存。
 _GEMMA_BRANDING_METRIC = "GEMMA_BRANDING"
+
+# X インプ向上 Phase 5 (2026-05-27): source URL → 公式 X @ handle のマッピング。
+# 投稿候補本文に「(出典 @hochi_giants)」 を末尾付与することで、 公式 / 媒体の
+# 引用 RT / リプライ流入を狙う。 X intent や手動投稿に対する attribution として機能。
+# handle 一覧は x_api_client.py:90 の監視 query (`from:HANDLE`) と整合。
+_URL_TO_X_HANDLE_PATTERNS: tuple[tuple[Any, str], ...] = (
+    (_re.compile(r"twitter\.com/hochi_giants", _re.I), "@hochi_giants"),
+    (_re.compile(r"x\.com/hochi_giants", _re.I), "@hochi_giants"),
+    (_re.compile(r"hochi\.news", _re.I), "@hochi_giants"),
+    (_re.compile(r"twitter\.com/Sanspo_Giants", _re.I), "@Sanspo_Giants"),
+    (_re.compile(r"x\.com/Sanspo_Giants", _re.I), "@Sanspo_Giants"),
+    (_re.compile(r"sanspo\.com", _re.I), "@Sanspo_Giants"),
+    (_re.compile(r"twitter\.com/TokyoGiants", _re.I), "@TokyoGiants"),
+    (_re.compile(r"x\.com/TokyoGiants", _re.I), "@TokyoGiants"),
+    (_re.compile(r"twitter\.com/tospo_giants", _re.I), "@tospo_giants"),
+    (_re.compile(r"x\.com/tospo_giants", _re.I), "@tospo_giants"),
+    (_re.compile(r"tokyo-sports\.co\.jp", _re.I), "@tospo_giants"),
+    (_re.compile(r"twitter\.com/nikkansports", _re.I), "@nikkansports"),
+    (_re.compile(r"x\.com/nikkansports", _re.I), "@nikkansports"),
+    (_re.compile(r"nikkansports\.com", _re.I), "@nikkansports"),
+    (_re.compile(r"twitter\.com/koba_nikkan", _re.I), "@koba_nikkan"),
+    (_re.compile(r"x\.com/koba_nikkan", _re.I), "@koba_nikkan"),
+)
+# X post 280字制約のため、 @ mention 付与で超過する場合は付与をスキップする閾値。
+_X_POST_CHAR_LIMIT = 280
+
+
+def _resolve_official_x_handle(source_url: str) -> Optional[str]:
+    """X インプ向上 Phase 5: source URL から公式 / 媒体 X handle (@xxx) を解決する。
+
+    source_url が空 / マッピング非該当なら None。
+    """
+    if not source_url:
+        return None
+    url_str = str(source_url).strip()
+    if not url_str:
+        return None
+    for pattern, handle in _URL_TO_X_HANDLE_PATTERNS:
+        if pattern.search(url_str):
+            return handle
+    return None
+
+
+def _append_x_handle_to_post_text(post_text: str, source_url: str) -> str:
+    """X インプ向上 Phase 5: post_text 末尾に「(出典 @handle)」 を付加。
+
+    - source_url から handle を解決できれば末尾に追加
+    - 解決不能 → 元 text のまま
+    - 280 字超過する → 付加せず元 text のまま (X 投稿の cap を守る)
+    - 付加 format: ``"{text}\\n\\n(出典 @handle)"``
+    """
+    handle = _resolve_official_x_handle(source_url)
+    if not handle:
+        return post_text
+    suffix = f"\n\n(出典 {handle})"
+    combined = f"{post_text}{suffix}"
+    if len(combined) > _X_POST_CHAR_LIMIT:
+        return post_text
+    return combined
 _GEMMA_BRANDING_MODEL = "gemini-3.1-flash-lite"
 
 
@@ -1642,20 +1701,24 @@ def build_x_post_from_article_info(
         "【記事 literal 抜粋】",
         context,
     ]
+    # X インプ向上 Phase 5 (2026-05-27): source URL に対応する公式 / 媒体 X handle
+    # が解決できれば 「(出典 @handle)」 を post_text 末尾に付加。 280 字超過は skip。
+    post_text_with_handle = _append_x_handle_to_post_text(text, source_url)
     log.info(
-        "article_info_branding_candidate_built player=%s source_url=%s text_len=%d model=%s",
+        "article_info_branding_candidate_built player=%s source_url=%s text_len=%d model=%s handle=%s",
         player,
         source_url,
-        len(text),
+        len(post_text_with_handle),
         resolved_model_id,
+        _resolve_official_x_handle(source_url) or "-",
     )
     return Candidate(
         title=f"X-post branding｜{player} ({resolved_model_id})",
         metric=_GEMMA_BRANDING_METRIC,
         period_label="LLM 生成 (queue 417)",
         draft_text="\n".join(draft_lines),
-        post_text=text,
-        char_count=len(text),
+        post_text=post_text_with_handle,
+        char_count=len(post_text_with_handle),
         signature=f"article_info_branding|{signature_hash}|False|None",
         focus_player=player,
         source_material_type="article_info_branding",

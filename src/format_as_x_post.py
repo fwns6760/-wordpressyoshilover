@@ -155,6 +155,128 @@ _PITCHER_METRICS = frozenset({
 })
 
 
+def _find_top_giants_row(rows: list[dict]) -> Optional[dict]:
+    """X インプ向上 Phase 3 (2026-05-27): rows から最上位の巨人選手を返す。
+
+    rows は rank 昇順 (1 位 → 10 位) を想定。 最初に見つかった巨人選手 (team_code が
+    _GIANTS_TEAM_ALIASES に含まれる) を返す。 該当なし → None。
+    """
+    for r in rows:
+        if _is_giants(r.get("team_code")):
+            return r
+    return None
+
+
+def _build_hook_line(
+    metric: str,
+    league: Optional[str],
+    rows: list[dict],
+    focus_player: Optional[dict],
+) -> str:
+    """X インプ向上 Phase 3 (2026-05-27): 「結論先出し」 1 行目を組み立てる。
+
+    投稿の 1 行目で「★ {巨人選手} {metric} {value} {league} {rank} 位 ★」 と
+    結論を先出しすることで、 読み始め時点の離脱を抑えてインプ↑を狙う。
+
+    Returns:
+        - focus_player があれば player を主役にした hook
+        - ranking 結果に巨人選手が含まれていればそれを主役にした hook
+        - どちらもなければ "" (= hook line なし、 既存挙動)
+    """
+    metric_jp = _metric_label(metric)
+    league_label = (league or "").strip()
+    # focus mode: focus_player を主役に
+    if focus_player and focus_player.get("player_canonical"):
+        value = _format_value(metric, focus_player.get("metric_value"))
+        rank = focus_player.get("rank")
+        total = focus_player.get("total")
+        rank_phrase = f"{league_label} {rank} 位".strip() if rank else ""
+        if rank and total:
+            rank_phrase = f"{league_label} {rank}/{total} 位".strip()
+        parts = [
+            "★",
+            focus_player.get("player_canonical", ""),
+            metric_jp,
+            value,
+        ]
+        if rank_phrase:
+            parts.append(rank_phrase)
+        parts.append("★")
+        return " ".join(p for p in parts if p)
+    # ranking mode: 最上位巨人選手があれば hook 化
+    top_g = _find_top_giants_row(rows)
+    if not top_g:
+        return ""
+    value = _format_value(metric, top_g.get("metric_value"))
+    rank = top_g.get("rank")
+    rank_phrase = f"{league_label} {rank} 位".strip() if rank else ""
+    parts = [
+        "★",
+        top_g.get("player_canonical", ""),
+        metric_jp,
+        value,
+    ]
+    if rank_phrase:
+        parts.append(rank_phrase)
+    parts.append("★")
+    return " ".join(p for p in parts if p)
+
+
+def _build_dynamic_hashtags(
+    metric: str,
+    rows: list[dict],
+    focus_player: Optional[dict],
+    *,
+    base: str = DEFAULT_HASHTAGS,
+    max_extra: int = 2,
+) -> str:
+    """X インプ向上 Phase 4 (2026-05-27): hashtag を動的に追加する。
+
+    base (`#巨人 #ジャイアンツ`) に加え:
+    - 巨人選手が rows / focus に含まれる時、 ==その選手名 hashtag== を 1-2 件追加
+    - metric が投手系なら `#プロ野球` を 1 件追加 (検索 reach)
+
+    max_extra で追加 hashtag の数を上限管理 (X の 280 字制約と読みやすさのため
+    既定 2 件まで)。 重複 / 空名は除外。
+    """
+    extras: list[str] = []
+    seen: set[str] = set()
+
+    def _add(tag: str) -> None:
+        tag = tag.strip()
+        if not tag or tag in seen:
+            return
+        if len(extras) >= max_extra:
+            return
+        seen.add(tag)
+        extras.append(tag)
+
+    # focus_player があれば優先
+    if focus_player:
+        name = str(focus_player.get("player_canonical") or "").strip()
+        if name:
+            _add(f"#{name}")
+
+    # ranking rows から巨人選手の名前 hashtag を 1-2 件
+    for r in rows:
+        if len(extras) >= max_extra:
+            break
+        if not _is_giants(r.get("team_code")):
+            continue
+        name = str(r.get("player_canonical") or "").strip()
+        if not name:
+            continue
+        _add(f"#{name}")
+
+    # 投手系 metric の時は #プロ野球 を追加 (検索流入の幅広 reach)
+    if metric in _PITCHER_METRICS and len(extras) < max_extra:
+        _add("#プロ野球")
+
+    if extras:
+        return f"{base} " + " ".join(extras)
+    return base
+
+
 def _build_header(parsed: dict, focus_player: Optional[dict], *, top_n: Optional[int] = None) -> str:
     """Compose header. 418 case B: 📊 リーグ metric TOPN ⚾/⚡ + 期間 / サンプル を 2 段で."""
     metric = parsed.get("metric") or ""
@@ -296,10 +418,23 @@ def format_as_x_post(
     else:
         body = _build_ranking_body(rows, top_n_int, metric)
 
-    tags = DEFAULT_HASHTAGS if hashtags is None else hashtags
+    # X インプ向上 Phase 3 (2026-05-27): 「結論先出し」 hook line を 1 行目に。
+    # 巨人選手が含まれる時のみ生成、 含まれなければ既存挙動 (header 始まり)。
+    league_for_hook = parsed.get("league") or ""
+    hook = _build_hook_line(metric, league_for_hook, rows, focus)
+
+    # X インプ向上 Phase 4 (2026-05-27): hashtag を動的化。 caller が override
+    # (`hashtags=`) を渡せば従来通りそれが優先。 None なら動的構築。
+    if hashtags is None:
+        tags = _build_dynamic_hashtags(metric, rows, focus)
+    else:
+        tags = hashtags
 
     # Compose with blank lines between blocks for X readability.
-    sections = [header, "", body]
+    sections: list[str] = []
+    if hook:
+        sections.extend([hook, ""])
+    sections.extend([header, "", body])
     if tags:
         sections.extend(["", tags])
     draft = "\n".join(sections)

@@ -33,6 +33,7 @@ from src.x_post_mail_lane import (
     X_CHAR_LIMIT,
     _finalize_post_text,
     _is_safe_post_text,
+    _is_verified_full_giants_member_name,
     _is_verified_full_giants_player_name,
 )
 
@@ -1203,8 +1204,8 @@ def build_gemma_branding_candidate(
     if not player or not gemini_api_key or not tavily_api_key:
         log.info("gemma_branding_skip reason=missing_input player=%r", player)
         return None
-    if not _is_verified_full_giants_player_name(player):
-        log.info("gemma_branding_skip reason=not_verified_giants_player player=%r", player)
+    if not _is_verified_full_giants_member_name(player):
+        log.info("gemma_branding_skip reason=not_verified_giants_member player=%r", player)
         return None
 
     # 411 / 414 axis C9: persona 自動選択。 試合日 18-21時 = 缶詰、 他 = フーガ。
@@ -1434,20 +1435,25 @@ def build_gemma_branding_candidate(
 
 
 def _find_first_giants_player_in_text(text: str) -> str:
-    """text 中で最初に出現する Giants roster 選手の canonical name を返す.
+    """text 中で最初に出現する Giants roster member の canonical name を返す.
 
-    aliases (giants_roster.json) と alias を全件 substring match で照合し、
-    text 内の最も早い位置に出る選手を選ぶ。 該当無しは ""。 normalize なし
-    (literal substring) で OK — roster alias 側を そのまま使う。
+    aliases (giants_roster.json、 player + manager + coach の active member)
+    と alias を全件 substring match で照合し、 text 内の最も早い位置に出る
+    member を選ぶ。 該当無しは ""。 normalize なし (literal substring) で OK
+    — roster alias 側を そのまま使う。
+
+    2026-05-27: 関数名は player 表記のまま (caller 互換) だが、 内部は
+    _load_giants_member_aliases (manager / coach 含む) に拡張済。 user 明示
+    「監督やコーチもいれていいんだよ。 巨人なら」。
     """
     if not isinstance(text, str) or not text:
         return ""
     try:
-        from src.x_post_mail_lane import _load_giants_player_aliases  # local import to avoid cycle at module top
+        from src.x_post_mail_lane import _load_giants_member_aliases  # local import to avoid cycle at module top
     except Exception:  # noqa: BLE001
         return ""
     try:
-        aliases = _load_giants_player_aliases()
+        aliases = _load_giants_member_aliases()
     except Exception:  # noqa: BLE001
         return ""
     best_pos = -1
@@ -1522,16 +1528,18 @@ def build_x_post_from_article_info(
             title[:60],
         )
     else:
-        # 1. player 抽出 (roster 内 player を title から、 ダメなら summary から、
-        # それでもダメなら article_info.player_canonical の先頭、 全部空なら skip)
+        # 1. member 抽出 (roster 内 player + manager + coach を title から、 ダメなら
+        # summary から、 それでもダメなら article_info.player_canonical の先頭、
+        # 全部空なら skip)。 2026-05-27 user「監督やコーチもいれていい、 巨人なら」
+        # で player → member gate へ拡張。
         player = _find_first_giants_player_in_text(title) or _find_first_giants_player_in_text(summary)
         if not player:
             canonical_list = getattr(article_info, "player_canonical", None) or []
             if canonical_list:
                 player = str(canonical_list[0] or "").strip()
-        if not player or not _is_verified_full_giants_player_name(player):
+        if not player or not _is_verified_full_giants_member_name(player):
             log.info(
-                "article_info_branding_skip reason=no_giants_player_in_article source_url=%s title=%r",
+                "article_info_branding_skip reason=no_giants_member_in_article source_url=%s title=%r",
                 source_url,
                 title[:60],
             )

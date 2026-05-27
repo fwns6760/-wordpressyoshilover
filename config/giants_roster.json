@@ -4,6 +4,8 @@
     "aliases": [
       "阿部慎之助",
       "阿部慎之助監督",
+      "阿部慎之助前監督",
+      "阿部前監督",
       "阿部監督",
       "阿部 慎之助"
     ],
@@ -16,11 +18,15 @@
     "name": "橋上秀樹",
     "aliases": [
       "橋上秀樹",
+      "橋上秀樹監督代行",
+      "橋上秀樹監督",
+      "橋上監督代行",
+      "橋上監督",
       "橋上秀樹コーチ",
       "橋上コーチ"
     ],
     "role": "coach",
-    "position": "オフェンスチーフコーチ",
+    "position": "監督代行",
     "jersey_number": "73",
     "active": true
   },
@@ -1188,6 +1194,116 @@
     "role": "coach",
     "position": "二軍投手コーチ",
     "jersey_number": "72",
+    "active": true
+  },
+  {
+    "name": "会田有志",
+    "aliases": [
+      "会田有志",
+      "会田有志監督",
+      "会田監督",
+      "会田有志コーチ",
+      "会田コーチ"
+    ],
+    "role": "coach",
+    "position": "三軍監督",
+    "jersey_number": "70",
+    "active": true
+  },
+  {
+    "name": "橋本到",
+    "aliases": [
+      "橋本到",
+      "橋本到コーチ",
+      "橋本コーチ"
+    ],
+    "role": "coach",
+    "position": "三軍オフェンスコーチ",
+    "jersey_number": "103",
+    "active": true
+  },
+  {
+    "name": "若林晃弘",
+    "aliases": [
+      "若林晃弘",
+      "若林晃弘コーチ",
+      "若林コーチ"
+    ],
+    "role": "coach",
+    "position": "三軍ディフェンスコーチ",
+    "jersey_number": "106",
+    "active": true
+  },
+  {
+    "name": "市川友也",
+    "aliases": [
+      "市川友也",
+      "市川友也コーチ",
+      "市川コーチ"
+    ],
+    "role": "coach",
+    "position": "三軍バッテリーコーチ",
+    "jersey_number": "102",
+    "active": true
+  },
+  {
+    "name": "立岡宗一郎",
+    "aliases": [
+      "立岡宗一郎",
+      "立岡宗一郎コーチ",
+      "立岡コーチ"
+    ],
+    "role": "coach",
+    "position": "三軍外野守備兼走塁コーチ",
+    "jersey_number": "107",
+    "active": true
+  },
+  {
+    "name": "野上亮磨",
+    "aliases": [
+      "野上亮磨",
+      "野上亮磨コーチ",
+      "野上コーチ"
+    ],
+    "role": "coach",
+    "position": "三軍投手チーフコーチ",
+    "jersey_number": "104",
+    "active": true
+  },
+  {
+    "name": "西村健太朗",
+    "aliases": [
+      "西村健太朗",
+      "西村健太朗コーチ",
+      "西村コーチ"
+    ],
+    "role": "coach",
+    "position": "三軍投手コーチ",
+    "jersey_number": "101",
+    "active": true
+  },
+  {
+    "name": "矢野謙次",
+    "aliases": [
+      "矢野謙次",
+      "矢野謙次コーチ",
+      "矢野コーチ"
+    ],
+    "role": "coach",
+    "position": "巡回打撃コーチ",
+    "jersey_number": "80",
+    "active": true
+  },
+  {
+    "name": "久保康生",
+    "aliases": [
+      "久保康生",
+      "久保康生コーチ",
+      "久保コーチ"
+    ],
+    "role": "coach",
+    "position": "巡回投手コーチ",
+    "jersey_number": "84",
     "active": true
   },
   {

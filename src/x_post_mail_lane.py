@@ -339,6 +339,64 @@ def _is_verified_full_giants_player_name(player_name: object) -> bool:
     return len(key) >= 3
 
 
+# 2026-05-27: ヨシラバー風コメント (GEMMA_BRANDING) X-post 候補 gate を player
+# だけでなく manager / coach にも開放するための member 版 loader。
+# user 明示「監督やコーチもいれていいんだよ。 巨人なら」 2026-05-27。
+# lineup focus 系 (試合 lineup matching) は player 限定のままにするため、
+# _load_giants_player_aliases / _active_giants_canonical_player_keys には
+# 触らず、 別関数として並列に置く。
+def _load_giants_member_aliases(
+    roster_path: _Path = _ROSTER_PATH,
+) -> dict[str, str]:
+    """Return normalized active Giants member aliases -> canonical name.
+
+    Member = active roster の player + manager + coach。 ikusei (育成) /
+    shihaikako (支配下) は除外 (ヨシラバー voice 候補は支配下登録選手 + コーチ陣
+    に限定するため)。
+    """
+    if not roster_path.exists():
+        return {}
+    try:
+        roster = _json.loads(roster_path.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("failed to load Giants roster aliases (member): %r", exc)
+        return {}
+
+    out: dict[str, str] = {}
+    for row in roster:
+        if not row.get("active"):
+            continue
+        if row.get("role") not in {"player", "manager", "coach"}:
+            continue
+        canonical = str(row.get("name") or "").strip()
+        if not canonical:
+            continue
+        aliases = [canonical, *(row.get("aliases") or [])]
+        for alias in aliases:
+            key = _normalize_player_name(alias)
+            if key:
+                out.setdefault(key, canonical)
+    return out
+
+
+def _active_giants_canonical_member_keys() -> set[str]:
+    return {
+        _normalize_player_name(canonical)
+        for canonical in _load_giants_member_aliases().values()
+        if _normalize_player_name(canonical)
+    }
+
+
+def _is_verified_full_giants_member_name(member_name: object) -> bool:
+    key = _normalize_player_name(member_name)
+    if not key:
+        return False
+    canonical_keys = _active_giants_canonical_member_keys()
+    if canonical_keys:
+        return key in canonical_keys
+    return len(key) >= 3
+
+
 def normalize_focus_player_names(
     names: Optional[list[str] | tuple[str, ...] | set[str]],
     *,
@@ -3266,7 +3324,10 @@ def _subject_purpose_label(now: datetime, band: str, context_label: str) -> str:
     if context_label:
         return context_label
     timing = x_impression_timing_label(now)
-    if timing != _X_IMPRESSION_TIMING_LABELS["standard"]:
+    if timing not in {
+        _X_IMPRESSION_TIMING_LABELS["standard"],
+        _X_IMPRESSION_TIMING_LABELS["morning_catchup"],
+    }:
         return timing
     return _TIME_BAND_PURPOSE.get(band, "Xポスト案")
 

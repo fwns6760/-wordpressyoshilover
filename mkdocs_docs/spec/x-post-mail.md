@@ -33,10 +33,53 @@
 
 === ":material-newspaper-variant: GEMMA_BRANDING (画像なし)"
 
-    **metric**: `GEMMA_BRANDING`
+    **metric**: `GEMMA_BRANDING` (`_GEMMA_BRANDING_METRIC` 定数、 `src/x_post_branding_gen.py:43`)
 
-    報知 / サンスポ記事を Gemini で要約して投稿候補にしたもの。
-    出典: `src/x_post_branding_gen.py:1654` で metric 付与。
+    報知 / サンスポ記事を Gemini で要約して「==ヨシラバー風コメント==」 X 投稿候補にしたもの。 voice prompt は ==`_SYSTEM_PROMPT_YOSHILOVER`== (`src/x_post_branding_gen.py:152`)。
+
+    生成 entry point は 2 つ:
+
+    - **`build_gemma_branding_candidate`** (`src/x_post_branding_gen.py:1170`): Tavily REST 検索 → Gemini で生成。 player を caller が指定する。
+    - **`build_x_post_from_article_info`** (`src/x_post_branding_gen.py:1473`): 報知 / サンスポ の article_info (queue 経由) を入力に、 Tavily を呼ばずに Gemini 生成。 player は title / summary から `_find_first_giants_player_in_text` で抽出。
+
+    #### persona 自動選択 (`select_branding_persona`, `src/x_post_branding_gen.py:345`)
+
+    | 条件 | persona | 性質 |
+    | --- | --- | --- |
+    | 試合日 + 18-21 時 JST | `kandume` (缶詰) | 試合中実況 voice、 当日 only |
+    | 上記以外 (非試合日 / 時間外) | `fuuga` (フーガ) | 長文分析 voice、 直近 5 日 streak 拾える |
+
+    !!! note "#95 統合"
+
+        `_SYSTEM_PROMPT_KANDUME` / `_SYSTEM_PROMPT_FUUGA` は #95 で同一 prompt `_SYSTEM_PROMPT_YOSHILOVER` (180-280 字目安、 短文+改行、 3 軸圧縮) に統合済 (`src/x_post_branding_gen.py:256-262`)。 persona キーは履歴互換のため温存。
+
+    #### 5 型分離 (`_POST_TYPES`, `src/x_post_branding_gen.py:365`)
+
+    `flash` (速報) / `emotion` (感情) / `data` (データ) / `next` (展開予想) / `positive` (前向き締め) の 5 型から caller / 自動 select で選ぶ。
+
+    #### 巨人 member gate (player + manager + coach、 2026-05-27)
+
+    候補生成の入口で 「giants_roster.json の **active member**」 に該当しない人物を skip する。
+
+    - 対象 role: `player` / `manager` / `coach` (active=True のみ、 ikusei / shihaikako は除外)
+    - 実装: ==`_is_verified_full_giants_member_name`== (`src/x_post_mail_lane.py:390`) + `_load_giants_member_aliases` (`src/x_post_mail_lane.py:348`)
+    - text 抽出: `_find_first_giants_player_in_text` (`src/x_post_branding_gen.py:1437`、 関数名は player のままだが内部で member aliases を使用)
+
+    !!! info "2026-05-27 拡張"
+
+        旧 gate は `_is_verified_full_giants_player_name` (role=player のみ) で、 阿部監督 / 橋上監督代行 / 川相コーチ 等のコメント記事を全件 skip していた。 user 明示「監督やコーチもいれていい、 巨人なら」 で member gate へ拡張。 NEWS_OPINION / COMMENT_DB は player gate 据え置き (DB 統計が選手のみのため)。
+
+    #### postgame 救済 path (`is_postgame_team_wide`)
+
+    `article_subtype` が `postgame` / `postgame_digest` / `team_roundup` の試合総括記事は、 個別 player gate を skip し player=「巨人」 でチーム視点として fuuga voice で生成する (`src/x_post_branding_gen.py:1519`)。
+
+    #### よくある skip reason (log)
+
+    | log line | 意味 |
+    | --- | --- |
+    | `article_info_branding_skip reason=no_giants_member_in_article` | title / summary に active member 該当が無い (gate 拡張前は `no_giants_player_in_article`) |
+    | `gemma_branding_skip reason=not_verified_giants_member` | caller 指定 player が active member でない (gate 拡張前は `not_verified_giants_player`) |
+    | `Gemma branding produced 0 candidates` | gate 通過 0 件 / Gemini error / validator drop |
 
 === ":material-comment-quote: NEWS_OPINION (画像なし)"
 

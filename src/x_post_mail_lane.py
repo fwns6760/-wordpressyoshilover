@@ -956,6 +956,14 @@ class Candidate:
     # dropped candidates are not rendered in the mail.
     why_now: str = ""
     dedup_reason: str = ""
+    # 438 Phase 1 (2026-05-27): comment 系候補 (GEMMA_BRANDING) の og:image
+    # 添付。 ``image_bytes`` が空でなければ既存 437 image gen path を bypass
+    # して この bytes をそのまま GCS upload + share-x-cand に乗せる。
+    # ``image_alt_text`` は X media_upload の alt 属性として渡す (出典担保)。
+    # ``image_source_url`` は debug / log 用 (実 fetch した og:image の URL)。
+    image_bytes: bytes = b""
+    image_alt_text: str = ""
+    image_source_url: str = ""
 
 
 _DEFAULT_PLAYER_MAX_PER_MAIL = 1
@@ -3695,7 +3703,15 @@ def _generate_candidate_image_png(
 
     候補 metric / index で template を自動選択 (pitcher_card / spotlight /
     round-robin 7 種類)。 draft_text に ranking 行が無いと None (image skip)。
+
+    438 Phase 1 (2026-05-27): 候補に ``image_bytes`` が直接乗っていれば
+    (= GEMMA_BRANDING の og:image fetch 済) その bytes をそのまま返し、
+    既存 ranking image gen path を bypass する。
     """
+    # 438: 直接 og:image bytes が乗っている候補は そのまま返す
+    direct_image = getattr(candidate, "image_bytes", None)
+    if direct_image:
+        return direct_image
     try:
         from src.x_post_image_gen_v2 import generate_png
     except Exception as exc:
@@ -3814,13 +3830,18 @@ def _build_share_x_cand_button_url(
     return f"{fetcher_base}/share-x-cand?{urlencode(params)}"
 
 
-def _render_candidate_image_html(cid: str | None) -> str:
-    """候補の text の真上に置く <img cid:...> HTML フラグメント (画像無しなら空)。"""
+def _render_candidate_image_html(cid: str | None, *, alt_text: str = "") -> str:
+    """候補の text の真上に置く <img cid:...> HTML フラグメント (画像無しなら空).
+
+    438 Phase 1 (2026-05-27): comment 系候補 (og:image attach) は alt_text に
+    「引用元: 媒体名」 が乗っている。 ranking 系は alt_text 空で従来通り。
+    """
     if not cid:
         return ""
+    alt_value = (alt_text or "").strip() or "giants ranking"
     return (
         "<div style=\"text-align:center;margin:0 0 10px;\">"
-        f"<img src=\"cid:{cid}\" alt=\"giants ranking\" "
+        f"<img src=\"cid:{cid}\" alt=\"{_html.escape(alt_value)}\" "
         "style=\"max-width:520px;width:100%;height:auto;border:1px solid #ddd;"
         "border-radius:6px;display:inline-block;\" draggable=\"true\"/>"
         "<div style=\"font-size:11px;color:#777;margin-top:4px;\">"
@@ -3880,7 +3901,8 @@ def _compose_html_body(
         image_html_for_candidate = ""
         if candidate_image_cids and idx - 1 < len(candidate_image_cids):
             image_html_for_candidate = _render_candidate_image_html(
-                candidate_image_cids[idx - 1]
+                candidate_image_cids[idx - 1],
+                alt_text=getattr(cand, "image_alt_text", "") or "",
             )
         # 437 Phase 8: share-x-cand URL があれば、 ボタン href をそちらに置換。
         # 画像つき Web Share API (Pixel / Android) で X app へ直送、 不支持 device

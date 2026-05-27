@@ -1434,6 +1434,42 @@ def build_gemma_branding_candidate(
 # ----------------------------------------------------------------------------
 
 
+def _try_fetch_og_image_for_candidate(
+    *,
+    source_url: str,
+    source_name: str,
+    log,
+) -> tuple[bytes, str, str]:
+    """438 Phase 1: source URL から og:image を fetch して image_bytes / alt_text /
+    image_source_url の 3 つを返す.
+
+    失敗時は (b"", "", "") を返し、 caller 側で image なし候補として扱う。
+    例外は全て catch する (network / parse / X.com 認証要求 等)。
+    """
+    if not source_url:
+        return b"", "", ""
+    # twitter / x.com は login wall で og:image が取れないため skip (silent)
+    lowered = source_url.lower()
+    if "twitter.com/" in lowered or "x.com/" in lowered:
+        return b"", "", ""
+    try:
+        from src.og_image_fetcher import fetch_og_image
+    except Exception as exc:  # noqa: BLE001
+        log.info("og_image_fetch_skip reason=import_failed err=%r", exc)
+        return b"", "", ""
+    try:
+        result = fetch_og_image(source_url, logger=log)
+    except Exception as exc:  # noqa: BLE001
+        log.info("og_image_fetch_skip reason=unexpected_exception err=%r", exc)
+        return b"", "", ""
+    if result is None:
+        return b"", "", ""
+    # alt text: 出典担保のため媒体名を入れる。 source_name 空なら fallback。
+    media_label = (source_name or "").strip() or "媒体"
+    alt_text = f"引用元: {media_label}"
+    return result.image_bytes, alt_text, result.image_url
+
+
 def _find_first_giants_player_in_text(text: str) -> str:
     """text 中で最初に出現する Giants roster member の canonical name を返す.
 
@@ -1712,13 +1748,21 @@ def build_x_post_from_article_info(
     # X インプ向上 Phase 5 (2026-05-27): source URL に対応する公式 / 媒体 X handle
     # が解決できれば 「(出典 @handle)」 を post_text 末尾に付加。 280 字超過は skip。
     post_text_with_handle = _append_x_handle_to_post_text(text, source_url)
+    # 438 Phase 1 (2026-05-27): 反応元 article の og:image を fetch して
+    # Candidate に乗せる。 失敗時は image なし候補のまま (text only)。
+    image_bytes, image_alt_text, image_source_url = _try_fetch_og_image_for_candidate(
+        source_url=source_url,
+        source_name=source_name,
+        log=log,
+    )
     log.info(
-        "article_info_branding_candidate_built player=%s source_url=%s text_len=%d model=%s handle=%s",
+        "article_info_branding_candidate_built player=%s source_url=%s text_len=%d model=%s handle=%s og_image=%s",
         player,
         source_url,
         len(post_text_with_handle),
         resolved_model_id,
         _resolve_official_x_handle(source_url) or "-",
+        "yes" if image_bytes else "no",
     )
     return Candidate(
         title=f"X-post branding｜{player} ({resolved_model_id})",
@@ -1730,4 +1774,7 @@ def build_x_post_from_article_info(
         signature=f"article_info_branding|{signature_hash}|False|None",
         focus_player=player,
         source_material_type="article_info_branding",
+        image_bytes=image_bytes,
+        image_alt_text=image_alt_text,
+        image_source_url=image_source_url,
     )

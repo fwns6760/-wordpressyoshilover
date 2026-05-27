@@ -79,7 +79,10 @@ def fetch_og_image(
     headers = {"User-Agent": user_agent}
 
     try:
-        resp = requests.get(url, headers=headers, timeout=timeout_seconds, stream=True)
+        # stream=False で content-encoding (gzip/br) を requests に自動 decompress
+        # させる。 stream=True + raw.read() は 圧縮 bytes をそのまま返すため
+        # og:image meta が見えない事故になる (sanspo / hochi 等は gzip 配信)。
+        resp = requests.get(url, headers=headers, timeout=timeout_seconds)
     except Exception as exc:  # noqa: BLE001
         log.info("og_image_fetcher_skip reason=html_fetch_failed url=%s err=%r", url, exc)
         return None
@@ -88,10 +91,15 @@ def fetch_og_image(
             "og_image_fetcher_skip reason=html_http_%d url=%s",
             resp.status_code, url,
         )
+        try:
+            resp.close()
+        except Exception:  # noqa: BLE001
+            pass
         return None
 
     try:
-        content = resp.raw.read(_HTML_BYTE_LIMIT + 1) if hasattr(resp, "raw") else resp.content[: _HTML_BYTE_LIMIT]
+        # resp.content は decompress 済 bytes。 上限で truncate。
+        content = resp.content[:_HTML_BYTE_LIMIT]
     except Exception as exc:  # noqa: BLE001
         log.info("og_image_fetcher_skip reason=html_read_failed url=%s err=%r", url, exc)
         return None
@@ -116,7 +124,9 @@ def fetch_og_image(
     image_url = urljoin(url, _html.unescape(image_url))
 
     try:
-        img_resp = requests.get(image_url, headers=headers, timeout=_IMAGE_TIMEOUT_SECONDS, stream=True)
+        # 画像は通常 binary でそのまま (Content-Encoding なし) だが、 念のため
+        # stream=False で auto decompress に任せる (CDN が変な gzip 付けても安全)。
+        img_resp = requests.get(image_url, headers=headers, timeout=_IMAGE_TIMEOUT_SECONDS)
     except Exception as exc:  # noqa: BLE001
         log.info("og_image_fetcher_skip reason=image_fetch_failed image_url=%s err=%r", image_url, exc)
         return None
@@ -132,7 +142,7 @@ def fetch_og_image(
         return None
 
     try:
-        image_bytes = img_resp.raw.read(_IMAGE_BYTE_LIMIT + 1) if hasattr(img_resp, "raw") else img_resp.content
+        image_bytes = img_resp.content
     except Exception as exc:  # noqa: BLE001
         log.info("og_image_fetcher_skip reason=image_read_failed url=%s err=%r", image_url, exc)
         return None

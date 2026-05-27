@@ -1833,9 +1833,12 @@ def build_x_post_from_article_info(
         "【記事 literal 抜粋】",
         context,
     ]
-    # X インプ向上 Phase 5 (2026-05-27): source URL に対応する公式 / 媒体 X handle
-    # が解決できれば 「(出典 @handle)」 を post_text 末尾に付加。 280 字超過は skip。
-    post_text_with_handle = _append_x_handle_to_post_text(text, source_url)
+    # 438 (2026-05-27): user 仕様「post に外部リンクは張らない」 確定により
+    # X インプ向上 Phase 5 で末尾付与していた「(出典 @handle)」 を停止。 X 上で
+    # @handle が mention link 化して「リンク」 として見えるため。 出典担保は alt
+    # text (引用元: 媒体名) に維持。
+    # 旧 path: post_text_with_handle = _append_x_handle_to_post_text(text, source_url)
+    post_text_without_handle = text
     # 438 Phase 1 (2026-05-27): 反応元 article の og:image を fetch して
     # Candidate に乗せる。 失敗時は image なし候補のまま (text only)。
     image_bytes, image_alt_text, image_source_url, html_text = _try_fetch_og_image_for_candidate(
@@ -1846,7 +1849,7 @@ def build_x_post_from_article_info(
     # 438 Phase 2 (2026-05-27): html_text + speaker から long quote 抽出 →
     # Pillow で image に overlay 焼き込み. 成立時は Pattern B として post_text
     # を 人物名のみに切替 (画像が主、 post text の重複を避ける)。
-    final_post_text = post_text_with_handle
+    final_post_text = post_text_without_handle
     pattern_label = "A"
     if image_bytes and html_text and player and not is_postgame_team_wide:
         overlay_bytes, extracted_quote = _try_apply_pattern_b_quote_overlay(

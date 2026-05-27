@@ -28,9 +28,15 @@ Cost: Wikipedia / Commons API は無料、 rate limit は 1 req / sec を厳守
 (``--sleep`` で調整可)。
 
 Out of scope:
-- 巨人公式 / NPB 公式 image scrape (著作権懸念)
 - Twitter / Instagram (肖像権 / TOS)
 - 既に non-null cache hit がある entry の上書き
+
+Out-of-scope override (2026-05-27 user 判断):
+- Yahoo スポーツナビ / 一球速報 portrait は若手 quota の visual variety
+  目的で OK (source URL を WP /media caption に必ず記録、 後追い差し替え可)。
+- 当該 override 実装は scripts/scrape_player_eyecatches_yahoo.py。
+- 本 script は引き続き Wikipedia / Wikimedia Commons CC のみを扱う
+  (license 自動 verify path はこちらに残す)。
 """
 
 from __future__ import annotations

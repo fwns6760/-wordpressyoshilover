@@ -31,7 +31,7 @@ import re as _re
 import sqlite3 as _sqlite3
 from dataclasses import dataclass, field, replace
 from datetime import date as _date, datetime, timedelta, timezone as _tz
-from typing import Callable, Optional
+from typing import Callable, Optional, Sequence
 from urllib.parse import quote as _url_quote
 from zoneinfo import ZoneInfo
 
@@ -892,6 +892,12 @@ class Candidate:
     sample_label: str = ""
     reason_tags: tuple[str, ...] = ()
     selected_reason: str = ""
+    # X impression policy metadata. ``why_now`` is shown in the mail so
+    # the operator can decide quickly whether this candidate fits the
+    # current posting window. ``dedup_reason`` is mostly for tests/logging;
+    # dropped candidates are not rendered in the mail.
+    why_now: str = ""
+    dedup_reason: str = ""
 
 
 _DEFAULT_PLAYER_MAX_PER_MAIL = 1
@@ -1909,6 +1915,160 @@ _SELECTED_REASON_LABELS = {
     "fan_useful:central_rank": "セ順位で有用",
     "surprise:short_window": "短期の意外性",
 }
+
+_X_IMPRESSION_TIMING_LABELS = {
+    "morning_catchup": "朝 catchup",
+    "pregame_db": "試合前DBカード",
+    "lineup": "スタメン/先発直後",
+    "in_game_strong": "試合中強イベント枠",
+    "postgame_peak": "試合後ピーク",
+    "lunch_data": "昼データ枠",
+    "afternoon_data": "午後データ枠",
+    "standard": "通常データ枠",
+}
+
+
+def x_impression_timing_label(now: datetime) -> str:
+    """Return the human-facing posting window label for the given JST time.
+
+    This is intentionally schedule-agnostic: game existence is decided by
+    the caller / scheduler, while this helper only labels the window that
+    the current fire falls into.
+    """
+    if now.tzinfo is None:
+        now_jst = now.replace(tzinfo=JST)
+    else:
+        now_jst = now.astimezone(JST)
+    minute_of_day = now_jst.hour * 60 + now_jst.minute
+    if 4 * 60 <= minute_of_day < 8 * 60:
+        return _X_IMPRESSION_TIMING_LABELS["morning_catchup"]
+    if 11 * 60 <= minute_of_day < 13 * 60:
+        return _X_IMPRESSION_TIMING_LABELS["lunch_data"]
+    if 15 * 60 <= minute_of_day < 16 * 60:
+        return _X_IMPRESSION_TIMING_LABELS["afternoon_data"]
+    if 16 * 60 <= minute_of_day < 17 * 60 + 15:
+        return _X_IMPRESSION_TIMING_LABELS["pregame_db"]
+    if 17 * 60 + 15 <= minute_of_day < 19 * 60:
+        return _X_IMPRESSION_TIMING_LABELS["lineup"]
+    if 19 * 60 <= minute_of_day < 21 * 60 + 45:
+        return _X_IMPRESSION_TIMING_LABELS["in_game_strong"]
+    if 21 * 60 + 45 <= minute_of_day < 23 * 60 + 30:
+        return _X_IMPRESSION_TIMING_LABELS["postgame_peak"]
+    return _X_IMPRESSION_TIMING_LABELS["standard"]
+
+
+def _candidate_why_now(candidate: Candidate, now: datetime) -> str:
+    timing = x_impression_timing_label(now)
+    if candidate.why_now:
+        return candidate.why_now
+    source_kind = _candidate_source_kind(candidate)
+    player = (candidate.focus_player or "").strip()
+    subject = player or "巨人"
+    if source_kind == "A":
+        return f"{timing}: ニュース/コメントの鮮度がある"
+    if source_kind == "C":
+        return f"{timing}: {subject}の条件別データを1枚画像で見せられる"
+    metric = _METRIC_LABELS_JP.get(candidate.metric, candidate.metric)
+    period = candidate.period_label or "直近データ"
+    return f"{timing}: {subject}の{period} {metric}を1枚画像で見せられる"
+
+
+def _normalize_candidate_post_text(text: str) -> str:
+    return _re.sub(r"\s+", "", text or "").lower()
+
+
+def _candidate_post_text_hash(candidate: Candidate) -> str:
+    normalized = _normalize_candidate_post_text(_candidate_post_text(candidate))
+    if not normalized:
+        return ""
+    return _hashlib.sha1(normalized.encode("utf-8")).hexdigest()
+
+
+def _candidate_image_payload_hash(candidate: Candidate) -> str:
+    payload = "|".join(
+        (
+            candidate.metric or "",
+            candidate.period_label or "",
+            candidate.focus_player or "",
+            candidate.draft_text or "",
+        )
+    )
+    normalized = _normalize_candidate_post_text(payload)
+    if not normalized:
+        return ""
+    return _hashlib.sha1(normalized.encode("utf-8")).hexdigest()
+
+
+def _candidate_topic_key(candidate: Candidate) -> str:
+    player = _normalize_player_name(candidate.focus_player)
+    metric = str(candidate.metric or "").strip()
+    period = str(candidate.period_label or "").strip()
+    if not player or not metric or not period:
+        return ""
+    return f"{player}|{metric}|{period}"
+
+
+def apply_x_impression_policy(
+    candidates: list[Candidate],
+    *,
+    now: Optional[datetime] = None,
+    max_candidates: Optional[int] = None,
+) -> tuple[list[Candidate], list[tuple[Candidate, str]]]:
+    """Apply final API-free X impression policy before composing mail.
+
+    This is the concrete version of ``spec/x-impression-plan``:
+    keep existing 437 media/share behavior, but gate final candidates by
+    same-mail duplicates and annotate kept candidates with ``why_now``.
+    """
+    if now is None:
+        now = datetime.now(JST)
+    limit = max_candidates if max_candidates is not None else len(candidates)
+    limit = max(0, int(limit))
+    kept: list[Candidate] = []
+    dropped: list[tuple[Candidate, str]] = []
+    seen_signatures: set[str] = set()
+    seen_topics: set[str] = set()
+    seen_text_hashes: set[str] = set()
+    seen_image_hashes: set[str] = set()
+    seen_players: set[str] = set()
+
+    for candidate in candidates:
+        reason = ""
+        signature = (candidate.signature or "").strip()
+        topic_key = _candidate_topic_key(candidate)
+        text_hash = _candidate_post_text_hash(candidate)
+        image_hash = _candidate_image_payload_hash(candidate)
+        player_key = _normalize_player_name(candidate.focus_player)
+        if len(kept) >= limit:
+            reason = "over_candidate_limit"
+        elif signature and signature in seen_signatures:
+            reason = "dedup_signature"
+        elif topic_key and topic_key in seen_topics:
+            reason = "dedup_player_metric_period"
+        elif text_hash and text_hash in seen_text_hashes:
+            reason = "dedup_post_text_hash"
+        elif image_hash and image_hash in seen_image_hashes:
+            reason = "dedup_image_payload_hash"
+        elif player_key and player_key in seen_players:
+            reason = "dedup_player_in_mail"
+
+        if reason:
+            dropped.append((replace(candidate, dedup_reason=reason), reason))
+            continue
+
+        kept_candidate = replace(candidate, why_now=_candidate_why_now(candidate, now))
+        kept.append(kept_candidate)
+        if signature:
+            seen_signatures.add(signature)
+        if topic_key:
+            seen_topics.add(topic_key)
+        if text_hash:
+            seen_text_hashes.add(text_hash)
+        if image_hash:
+            seen_image_hashes.add(image_hash)
+        if player_key:
+            seen_players.add(player_key)
+    return kept, dropped
 
 
 def _candidate_metric_family_tag(candidate: Candidate) -> str:
@@ -3102,6 +3262,15 @@ def time_band_label(hour: int) -> str:
     return "夜"  # fall-through (should not happen with TIME_BANDS coverage)
 
 
+def _subject_purpose_label(now: datetime, band: str, context_label: str) -> str:
+    if context_label:
+        return context_label
+    timing = x_impression_timing_label(now)
+    if timing != _X_IMPRESSION_TIMING_LABELS["standard"]:
+        return timing
+    return _TIME_BAND_PURPOSE.get(band, "Xポスト案")
+
+
 def build_subject(
     now: datetime,
     n_candidates: int,
@@ -3110,7 +3279,7 @@ def build_subject(
 ) -> str:
     band = time_band_label(now.hour)
     band_emoji = _TIME_BAND_EMOJI.get(band, "")
-    purpose = context_label or _TIME_BAND_PURPOSE.get(band, "Xポスト案")
+    purpose = _subject_purpose_label(now, band, context_label)
     return (
         f"🟠🐦📮【Xポスト案 {n_candidates}件】"
         f"{band_emoji}{band}｜{purpose} {now.strftime('%H:%M')} JST"
@@ -3141,16 +3310,76 @@ def _mail_header_label(candidates: list[Candidate]) -> str:
     return "巨人データXポスト案"
 
 
+_DROPPED_REASON_JA = {
+    "over_candidate_limit": "候補上限超え",
+    "dedup_signature": "重複 (signature)",
+    "dedup_player_metric_period": "重複 (同選手×同指標×同期間)",
+    "dedup_post_text_hash": "重複 (本文 hash)",
+    "dedup_image_payload_hash": "重複 (画像 hash)",
+    "dedup_player_in_mail": "重複 (同 mail 内 同選手)",
+}
+
+
+def _format_dropped_section_text(
+    dropped: "Sequence[tuple[Candidate, str]] | None",
+) -> list[str]:
+    """spec/x-impression-plan item 4「止めた理由を残す」: text mail 用 section."""
+    if not dropped:
+        return []
+    lines = [
+        "━" * 40,
+        f"【止めた候補】{len(dropped)} 件 (重複防止)",
+        "━" * 40,
+        "",
+    ]
+    for cand, reason in dropped:
+        player = (cand.focus_player or "").strip() or "?"
+        metric = (str(cand.metric or "")).strip() or "?"
+        period = (cand.period_label or "").strip() or "?"
+        reason_ja = _DROPPED_REASON_JA.get(reason, reason)
+        lines.append(f"- {player} ({metric} / {period}): {reason_ja}")
+    lines.append("")
+    return lines
+
+
+def _format_dropped_section_html(
+    dropped: "Sequence[tuple[Candidate, str]] | None",
+) -> str:
+    if not dropped:
+        return ""
+    rows: list[str] = []
+    for cand, reason in dropped:
+        player = _html.escape((cand.focus_player or "").strip() or "?")
+        metric = _html.escape((str(cand.metric or "")).strip() or "?")
+        period = _html.escape((cand.period_label or "").strip() or "?")
+        reason_ja = _html.escape(_DROPPED_REASON_JA.get(reason, reason))
+        rows.append(
+            f"<li>{player} ({metric} / {period}) — <code>{reason_ja}</code></li>"
+        )
+    return (
+        "<div style=\"font-size:12px;color:#5d4037;background:#f6f8fa;"
+        "border:1px solid #d0d7de;border-radius:4px;padding:8px 10px;"
+        "margin:14px 0 4px;\">"
+        f"<div style=\"font-weight:600;margin-bottom:4px;\">"
+        f"止めた候補 {len(dropped)} 件 (重複防止)</div>"
+        f"<ul style=\"margin:0;padding-left:18px;\">{''.join(rows)}</ul>"
+        "</div>"
+    )
+
+
 def _compose_text_body(
     candidates: list[Candidate],
     now: datetime,
     *,
     context_note: str = "",
+    dropped: "Sequence[tuple[Candidate, str]] | None" = None,
 ) -> str:
     band = time_band_label(now.hour)
+    timing = x_impression_timing_label(now)
     header_label = _mail_header_label(candidates)
     parts = [
         f"📮 {header_label} — {band} / {now.strftime('%Y-%m-%d %H:%M')} JST",
+        f"現在の投稿枠: {timing}",
         "",
         "公開通知ではありません。X に手動投稿するための候補メールです。",
         "各候補のテキストをコピーして X アプリに貼り付けて投稿してください。",
@@ -3168,6 +3397,9 @@ def _compose_text_body(
         parts.append("━" * 40)
         parts.append("")
         parts.append(f"【採用理由】{_candidate_selected_reason_text(cand)}")
+        why_now = _candidate_why_now(cand, now)
+        if why_now:
+            parts.append(f"【今出す理由】{why_now}")
         parts.append("")
         parts.append(post_text)
         parts.append("")
@@ -3180,6 +3412,7 @@ def _compose_text_body(
         parts.append("🐦 X 投稿 URL:")
         parts.append(encode_x_intent_url(post_text))
         parts.append("")
+    parts.extend(_format_dropped_section_text(dropped))
     return "\n".join(parts)
 
 
@@ -3542,8 +3775,10 @@ def _compose_html_body(
     context_note: str = "",
     candidate_image_cids: list[str | None] | None = None,
     share_x_button_urls: list[str | None] | None = None,
+    dropped: "Sequence[tuple[Candidate, str]] | None" = None,
 ) -> str:
     band = time_band_label(now.hour)
+    timing = x_impression_timing_label(now)
     header_label = _mail_header_label(candidates)
     summary_lines, _ = _source_mix_summary(candidates)
     summary_html = (
@@ -3563,6 +3798,12 @@ def _compose_html_body(
         counter_color = "#b71c1c" if over else "#666"
         counter_suffix = " ⚠️ 超過" if over else ""
         selected_reason = _candidate_selected_reason_text(cand)
+        why_now = _candidate_why_now(cand, now)
+        why_now_html = (
+            "<div style=\"font-size:12px;color:#5d4037;margin:0 0 8px;\">"
+            f"今出す理由: {_html.escape(why_now)}</div>"
+            if why_now else ""
+        )
         proof_html = ""
         if cand.post_text and cand.draft_text and cand.post_text != cand.draft_text:
             proof_html = (
@@ -3597,6 +3838,7 @@ def _compose_html_body(
             f"{image_html_for_candidate}"
             "<div style=\"font-size:12px;color:#5d4037;margin:0 0 8px;\">"
             f"採用理由: {_html.escape(selected_reason)}</div>"
+            f"{why_now_html}"
             "<pre style=\"white-space:pre-wrap;word-break:keep-all;"
             "font-family:-apple-system,BlinkMacSystemFont,'Hiragino Sans',"
             "'Yu Gothic',monospace;font-size:13px;line-height:1.5;"
@@ -3623,6 +3865,9 @@ def _compose_html_body(
         "max-width:680px;margin:0 auto;padding:18px;\">"
         f"<h2 style=\"font-size:17px;margin:0 0 8px;\">📮 {_html.escape(header_label)} — {band} / "
         f"{now.strftime('%Y-%m-%d %H:%M')} JST</h2>"
+        "<div style=\"font-size:12px;color:#5d4037;background:#fff8e1;"
+        "border-left:3px solid #f57f17;padding:7px 10px;margin:0 0 12px;\">"
+        f"現在の投稿枠: {_html.escape(timing)}</div>"
         "<p style=\"font-size:13px;color:#555;margin:0 0 14px;\">"
         "公開通知ではなく、X に手動投稿するための候補メールです。"
         "各候補の <strong>🐦 X で投稿</strong> ボタンを押すと X アプリ "
@@ -3636,6 +3881,7 @@ def _compose_html_body(
         )
         + summary_html
         + "\n".join(rows_html)
+        + _format_dropped_section_html(dropped)
         + "</body></html>"
     )
 
@@ -3663,6 +3909,7 @@ def compose_mail(
     now: Optional[datetime] = None,
     context_label: str = "",
     context_note: str = "",
+    dropped: "Sequence[tuple[Candidate, str]] | None" = None,
 ) -> ComposedMail:
     if now is None:
         now = datetime.now(JST)
@@ -3698,13 +3945,16 @@ def compose_mail(
                     post_text=_candidate_post_text(cand),
                 )
         share_x_urls.append(share_x_url or None)
-    text_body = _compose_text_body(candidates, now, context_note=context_note)
+    text_body = _compose_text_body(
+        candidates, now, context_note=context_note, dropped=dropped
+    )
     html_body = _compose_html_body(
         candidates,
         now,
         context_note=context_note,
         candidate_image_cids=cids_for_html,
         share_x_button_urls=share_x_urls,
+        dropped=dropped,
     )
     return ComposedMail(
         subject=subject,

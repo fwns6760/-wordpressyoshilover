@@ -1692,30 +1692,34 @@ def main(argv: Sequence[str] | None = None) -> int:
         LOG.warning("No candidates generated — skip send (insight.db likely sparse).")
         return 0
 
-    # 425: per-mail 1-player-1-candidate cap. queue 417 drain と data ranking が
-    # 同じ選手を別 source から拾うと「平山 ×2」「岡田 ×3」 のように同一選手
-    # の重複候補が並ぶ。 mail 直前で focus_player 単位の dedup を 1 回挟む
-    # (順序は維持、 最初の出現を残す)。 focus_player 空の候補は dedup 対象外。
-    seen_players: set[str] = set()
-    deduped: list[lane.Candidate] = []
-    dropped_for_player_dup = 0
-    for cand in candidates:
-        player_key = (cand.focus_player or "").strip()
-        if player_key and player_key in seen_players:
-            dropped_for_player_dup += 1
-            continue
-        if player_key:
-            seen_players.add(player_key)
-        deduped.append(cand)
-    if dropped_for_player_dup:
+    # 2026-05-27 x-impression-plan: final API-free policy gate.
+    # Keep the 437 media/share path unchanged; only prune same-mail
+    # duplicates and annotate kept candidates with "why now" timing.
+    before_policy = len(candidates)
+    candidates, policy_drops = lane.apply_x_impression_policy(
+        candidates,
+        now=now_jst,
+        max_candidates=args.max_candidates,
+    )
+    for dropped, reason in policy_drops:
         LOG.info(
-            "per_mail_player_dedup: dropped %d duplicate-player candidates "
-            "(before=%d after=%d)",
-            dropped_for_player_dup,
-            len(candidates),
-            len(deduped),
+            "x_impression_policy_drop reason=%s title=%s player=%s metric=%s period=%s",
+            reason,
+            dropped.title,
+            dropped.focus_player,
+            dropped.metric,
+            dropped.period_label,
         )
-    candidates = deduped
+    if policy_drops:
+        LOG.info(
+            "x_impression_policy: dropped=%d before=%d after=%d",
+            len(policy_drops),
+            before_policy,
+            len(candidates),
+        )
+    if not candidates:
+        LOG.warning("X impression policy left 0 candidates — skip send.")
+        return 0
 
     LOG.info("Composing mail with %d candidates…", len(candidates))
     context_note = ""
@@ -1725,6 +1729,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         candidates,
         context_label=context_label,
         context_note=context_note,
+        dropped=policy_drops,
     )
 
     if args.dry_run:

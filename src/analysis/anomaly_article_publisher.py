@@ -95,6 +95,123 @@ def _is_higher_better(metric_name: str) -> bool:
     return metric_name not in _LOWER_IS_BETTER_METRICS
 
 
+def _compute_league_cohort_stats(
+    conn: sqlite3.Connection,
+    *,
+    metric_name: str,
+    scope: str,
+    snapshot_date: Optional[str],
+    league: Optional[str],
+) -> dict[str, Any]:
+    """439 Phase B (cohort 比較 enrichment): league 全体平均 + 1 位を返す。
+
+    既存 _fetch_ranking_context は top_n 切り取りだけだが、 本 helper は
+    AVG(metric_value) と MAX/MIN を 1 query で取り、 比較記事化に使える
+    cohort 統計を返す。 失敗 / data 不足時は空 dict。
+
+    Returns:
+        {} on miss, else {
+            "league_mean": float,
+            "league_size": int,
+            "top1_value": float,
+            "top1_player": str,
+            "top1_team": str,
+        }
+    """
+    if not snapshot_date:
+        latest = conn.execute(
+            "SELECT MAX(snapshot_date) FROM advanced_metric_snapshots "
+            "WHERE metric_name = ? AND scope = ?",
+            (metric_name, scope),
+        ).fetchone()
+        snapshot_date = latest[0] if latest else None
+    if not snapshot_date:
+        return {}
+    teams = _league_team_filter(league or "")
+    order = "ASC" if not _is_higher_better(metric_name) else "DESC"
+    if teams:
+        placeholders = ",".join("?" * len(teams))
+        agg_sql = (
+            f"SELECT AVG(metric_value), COUNT(*) "
+            f"FROM advanced_metric_snapshots "
+            f"WHERE metric_name = ? AND scope = ? AND snapshot_date = ? "
+            f"AND team_code IN ({placeholders}) AND metric_value IS NOT NULL"
+        )
+        top1_sql = (
+            f"SELECT player_canonical, team_code, metric_value "
+            f"FROM advanced_metric_snapshots "
+            f"WHERE metric_name = ? AND scope = ? AND snapshot_date = ? "
+            f"AND team_code IN ({placeholders}) AND metric_value IS NOT NULL "
+            f"ORDER BY metric_value {order} LIMIT 1"
+        )
+        agg_params = (metric_name, scope, snapshot_date, *teams)
+        top1_params = (metric_name, scope, snapshot_date, *teams)
+    else:
+        agg_sql = (
+            "SELECT AVG(metric_value), COUNT(*) "
+            "FROM advanced_metric_snapshots "
+            "WHERE metric_name = ? AND scope = ? AND snapshot_date = ? "
+            "AND metric_value IS NOT NULL"
+        )
+        top1_sql = (
+            f"SELECT player_canonical, team_code, metric_value "
+            f"FROM advanced_metric_snapshots "
+            f"WHERE metric_name = ? AND scope = ? AND snapshot_date = ? "
+            f"AND metric_value IS NOT NULL "
+            f"ORDER BY metric_value {order} LIMIT 1"
+        )
+        agg_params = (metric_name, scope, snapshot_date)
+        top1_params = (metric_name, scope, snapshot_date)
+    try:
+        avg_row = conn.execute(agg_sql, agg_params).fetchone()
+        top1_row = conn.execute(top1_sql, top1_params).fetchone()
+    except sqlite3.Error:
+        return {}
+    if not avg_row or avg_row[0] is None or not top1_row:
+        return {}
+    return {
+        "league_mean": float(avg_row[0]),
+        "league_size": int(avg_row[1] or 0),
+        "top1_player": str(top1_row[0] or ""),
+        "top1_team": str(top1_row[1] or "?"),
+        "top1_value": float(top1_row[2]) if top1_row[2] is not None else None,
+    }
+
+
+def _format_cohort_diff_rows(
+    *,
+    player_value: Optional[float],
+    cohort: dict[str, Any],
+    metric_label: str,
+    league_label: str,
+) -> list[str]:
+    """439 Phase B: 「対 league mean ±X」「対 1 位 ±X (相手名)」 の
+    markdown table 行 (2 行) を返す。 cohort 空 / 値欠損なら []。
+    """
+    if not cohort or player_value is None:
+        return []
+    rows: list[str] = []
+    league_mean = cohort.get("league_mean")
+    if league_mean is not None:
+        diff = player_value - float(league_mean)
+        sign = "+" if diff >= 0 else "−"
+        rows.append(
+            f"| {league_label} 平均との差 | {sign}{abs(diff):.3f}"
+            f" ({league_label} 平均 {league_mean:.3f}) |"
+        )
+    top1_value = cohort.get("top1_value")
+    top1_player = cohort.get("top1_player") or ""
+    top1_team = cohort.get("top1_team") or "?"
+    if top1_value is not None and top1_player:
+        diff = player_value - float(top1_value)
+        sign = "+" if diff >= 0 else "−"
+        rows.append(
+            f"| 1 位との差 | {sign}{abs(diff):.3f}"
+            f" (1 位: {top1_player}({top1_team}) {top1_value:.3f}) |"
+        )
+    return rows
+
+
 def _fetch_ranking_context(
     conn: sqlite3.Connection,
     *,
@@ -393,6 +510,26 @@ def _render_unified_article(
         extra_focus = player_rank_info
         extra_focus["player"] = player
 
+    # 439 Phase B (cohort 比較 enrichment): league 平均 + 1位を取得し、
+    # 後段「このデータについて」 table に「平均との差」「1位との差」 を足す。
+    # data 不足時は空 list で no-op。
+    player_value_for_cohort: Optional[float] = (
+        player_rank_info.get("value") if player_rank_info else None
+    )
+    cohort_stats = _compute_league_cohort_stats(
+        conn,
+        metric_name=metric_name,
+        scope=scope,
+        snapshot_date=None,
+        league=league,
+    )
+    cohort_rows = _format_cohort_diff_rows(
+        player_value=player_value_for_cohort,
+        cohort=cohort_stats,
+        metric_label=metric_label,
+        league_label=league_label,
+    )
+
     # 2026-05-15 user 指示「人間にわかりやすいタイトル」適用、title には
     # 日時 prefix を入れない (集計日時は body の 集計期間 row に表記)。
     # 同 title 重複時は wp_client.create_post の reuse 機構に委ねる。
@@ -411,6 +548,7 @@ def _render_unified_article(
     )
 
     sample_str = str(player_rank_info['sample']) if player_rank_info else '-'
+    cohort_rows_block = ("\n".join(cohort_rows) + "\n") if cohort_rows else ""
     simple_line = simple_explanation or why_notable_text or ""
     # 1 文目だけに truncate (素人向け 1-2 line max)
     simple_line = simple_line.split("。")[0] + ("。" if simple_line else "")
@@ -437,7 +575,7 @@ def _render_unified_article(
 |---|---|
 | 選手 | **{player}({team})** / サンプル {sample_str} |
 | 指標 | {metric_label} = **{value_str}** / {league_label} **{rank_str} 位** |
-| データ元 | NPB 公式 box score(https://npb.jp/) |
+{cohort_rows_block}| データ元 | NPB 公式 box score(https://npb.jp/) |
 | 集計期間 | {period_full_label} |
 | 計算式 | {_metric_formula(metric_name)} |
 | 比較 | この期間の {league_label} 内 全選手 |

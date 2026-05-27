@@ -101,5 +101,35 @@ class ExtractLongQuoteTests(unittest.TestCase):
         self.assertIn("『内側』", out)
 
 
+class SpeakerProximityTests(unittest.TestCase):
+    def test_speaker_present_returns_quote(self) -> None:
+        text = "巨人の戸郷翔征が「" + "今日は" * 25 + "」と話した"
+        out = extract_long_quote(text, speaker_aliases=("戸郷翔征", "戸郷"))
+        self.assertIn("今日は", out)
+
+    def test_speaker_absent_returns_empty(self) -> None:
+        # speaker は 戸郷 として渡すが、 実際の文は 菅野 が話している
+        text = "ロッキーズの菅野智之が「" + "シーズン中だから" * 15 + "」とコメント"
+        out = extract_long_quote(text, speaker_aliases=("戸郷翔征", "戸郷"))
+        self.assertEqual(out, "")
+
+    def test_speaker_too_far_returns_empty(self) -> None:
+        # speaker と quote の距離が 40 文字超 → proximity 外
+        far_text = "戸郷翔征" + ("x" * 100) + "「" + ("長い発言" * 20) + "」"
+        out = extract_long_quote(far_text, speaker_aliases=("戸郷翔征",))
+        self.assertEqual(out, "")
+
+    def test_partial_alias_surname_only(self) -> None:
+        text = "戸郷が「" + "今日も投げきった" * 10 + "」と話した"
+        out = extract_long_quote(text, speaker_aliases=("戸郷",))
+        self.assertGreater(len(out), 0)
+
+    def test_no_aliases_skips_proximity_check(self) -> None:
+        """speaker_aliases 空なら proximity check スキップ (backward compat)。"""
+        text = "誰かが「" + "発言" * 30 + "」と言った"
+        out = extract_long_quote(text, speaker_aliases=())
+        self.assertGreater(len(out), 0)
+
+
 if __name__ == "__main__":
     unittest.main()

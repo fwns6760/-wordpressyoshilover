@@ -1480,7 +1480,10 @@ def _try_apply_pattern_b_quote_overlay(
     html_text: str,
     log,
 ) -> tuple[bytes, str]:
-    """438 Phase 2: html_text から long quote 抽出 → image に焼き込み.
+    """438 Phase 2: html_text から speaker の long quote 抽出 → image に焼き込み.
+
+    speaker の roster alias 全部 (姓名 / 姓 / 役職付き等) を proximity check に
+    使い、 mis-attribution (発言者の取り違え) を防ぐ。
 
     Returns:
         (overlay_image_bytes, extracted_quote) — Pattern B 成立時
@@ -1493,13 +1496,18 @@ def _try_apply_pattern_b_quote_overlay(
     except Exception as exc:  # noqa: BLE001
         log.info("pattern_b_skip reason=extractor_import_failed err=%r", exc)
         return b"", ""
+    # roster から speaker の aliases を取得 (姓 / 姓名 / 役職付き等)
+    speaker_aliases = _resolve_speaker_aliases(speaker)
     try:
-        quote = extract_long_quote(html_text)
+        quote = extract_long_quote(html_text, speaker_aliases=speaker_aliases)
     except Exception as exc:  # noqa: BLE001
         log.info("pattern_b_skip reason=extract_exception err=%r", exc)
         return b"", ""
     if not quote:
-        log.info("pattern_b_skip reason=no_long_quote_found speaker=%s", speaker)
+        log.info(
+            "pattern_b_skip reason=no_long_quote_found speaker=%s alias_count=%d",
+            speaker, len(speaker_aliases),
+        )
         return b"", ""
     try:
         from src.image_quote_overlay import apply_quote_overlay
@@ -1521,6 +1529,33 @@ def _try_apply_pattern_b_quote_overlay(
         speaker, len(quote), len(out_bytes),
     )
     return out_bytes, quote
+
+
+def _resolve_speaker_aliases(canonical_name: str) -> tuple[str, ...]:
+    """canonical name (例: 戸郷翔征 / 橋上秀樹) → roster の aliases 全部を返す.
+
+    roster JSON が読めない / 一致しない場合は canonical name + 姓 のみの
+    minimal set を返す (proximity check の degrade fallback)。
+    """
+    if not canonical_name:
+        return ()
+    try:
+        from src.x_post_mail_lane import _load_giants_member_aliases  # local import (cycle 回避)
+    except Exception:  # noqa: BLE001
+        return (canonical_name,)
+    try:
+        aliases_map = _load_giants_member_aliases()
+    except Exception:  # noqa: BLE001
+        return (canonical_name,)
+    out: set[str] = {canonical_name}
+    # canonical → multiple aliases (map は alias → canonical なので逆引き)
+    for alias, canon in aliases_map.items():
+        if canon == canonical_name and alias:
+            out.add(alias)
+    # 姓 (canonical の先頭 2-3 文字) を append (proximity で姓だけ言及される場合)
+    if len(canonical_name) >= 2:
+        out.add(canonical_name[:2])
+    return tuple(out)
 
 
 def _find_first_giants_player_in_text(text: str) -> str:

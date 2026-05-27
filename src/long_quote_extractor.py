@@ -34,17 +34,23 @@ _WHITESPACE_RE = _re.compile(r"\s+")
 def extract_long_quote(
     text: str,
     *,
+    speaker_aliases: Iterable[str] = (),
     min_chars: int = _DEFAULT_MIN_CHARS,
     max_chars: int = _DEFAULT_MAX_CHARS,
+    speaker_proximity_chars: int = 40,
 ) -> str:
-    """plain text or HTML から最長の「」 quote 内容を取り出す.
+    """plain text or HTML から「」 quote 内容を取り出す.
 
     入力が HTML なら自動で tag 剥がし → quote 抽出。 plain text でもそのまま動く。
     返り値は **「」 を含まない** 内側の string。 caller 側で「」 を再付与する。
 
     成立条件:
-    - 抽出した最長 quote が ``min_chars`` 以上
+    - ``speaker_aliases`` が指定されている場合、 「 開始位置の直前 N 文字以内に
+      speaker_aliases のいずれかが現れる quote のみ対象 (mis-attribution 防止)
+    - 抽出した quote が ``min_chars`` 以上
     - 180 字超過時は ``max_chars`` 以下に句読点境界で truncate
+
+    speaker_aliases が空のときは proximity check を skip (汎用 fallback)。
 
     成立しない時は "" を返す (caller 側 Pattern A フォールバック)。
     """
@@ -53,20 +59,29 @@ def extract_long_quote(
     plain = _strip_html_to_plain(text)
     if not plain:
         return ""
-    candidates = _QUOTE_PATTERN.findall(plain)
-    if not candidates:
+
+    aliases = tuple(a.strip() for a in speaker_aliases if a and a.strip())
+    candidates_with_pos: list[tuple[str, int]] = []
+    for m in _QUOTE_PATTERN.finditer(plain):
+        inner = _WHITESPACE_RE.sub(" ", m.group(1)).strip()
+        if not inner:
+            continue
+        candidates_with_pos.append((inner, m.start()))
+
+    if not candidates_with_pos:
         return ""
-    # 「」 内の前後 whitespace を整理
-    cleaned: list[str] = []
-    for q in candidates:
-        normalized = _WHITESPACE_RE.sub(" ", q).strip()
-        if normalized:
-            cleaned.append(normalized)
-    if not cleaned:
-        return ""
-    # 長さ降順で見て、 最初に min_chars 以上のものを採用
-    cleaned.sort(key=len, reverse=True)
-    for candidate in cleaned:
+
+    if aliases:
+        candidates_with_pos = [
+            (q, pos) for q, pos in candidates_with_pos
+            if _has_speaker_nearby(plain, pos, aliases, speaker_proximity_chars)
+        ]
+        if not candidates_with_pos:
+            return ""
+
+    # 長さ降順で、 最初に min_chars 以上を採用
+    candidates_with_pos.sort(key=lambda qp: len(qp[0]), reverse=True)
+    for candidate, _pos in candidates_with_pos:
         if len(candidate) < min_chars:
             return ""  # 最長 < min → どれも届かない
         if len(candidate) <= max_chars:
@@ -75,6 +90,20 @@ def extract_long_quote(
         if truncated:
             return truncated
     return ""
+
+
+def _has_speaker_nearby(text: str, quote_start: int, aliases: tuple[str, ...], window: int) -> bool:
+    """quote_start 直前 ``window`` 文字以内に aliases のどれかが現れるか.
+
+    typical 形式: "{speaker}が「..." / "{speaker}は「..." / "{speaker}（職位）「..."
+    """
+    if quote_start <= 0:
+        return False
+    head = text[max(0, quote_start - window):quote_start]
+    for alias in aliases:
+        if alias and alias in head:
+            return True
+    return False
 
 
 def _strip_html_to_plain(text: str) -> str:

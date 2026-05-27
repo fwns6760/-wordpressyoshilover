@@ -375,10 +375,15 @@ def _build_share_cand_x_intent_url(*, text: str, post_url: str) -> str:
 
     publish-notice 側と違い、 text は既に candidate post_text (brand tag 含む) で
     確定しているのでそのまま使う。 cap も candidate 側で済んでいる前提。
+
+    438: post_url が空のとき `url=` を URL に乗せると X compose 側が prefill 失敗
+    or 空 URL を tweet body に混ぜる挙動になるため、 非空時のみ `url` を含める。
     """
     from urllib.parse import quote, urlencode
 
-    params = {"text": text or "", "url": post_url or ""}
+    params: dict[str, str] = {"text": text or ""}
+    if post_url:
+        params["url"] = post_url
     return f"{_X_INTENT_BASE_URL}?{urlencode(params, quote_via=quote)}"
 
 
@@ -464,11 +469,17 @@ def _build_share_cand_page_html(
       window.location.href = X_INTENT_URL;
       return;
     }}
-    navigator.share({{
+    // 438: POST_URL が空のときに `url:` を渡すと iOS Safari が現在 page URL を
+    // 共有 URL として勝手に渡してくる事故になる (X compose に share-x-cand の
+    // https URL が貼り付く)。 POST_URL が非空のときだけ key を含める。
+    var sharePayload = {{
       files: [preloadedFile],
-      text: POST_TEXT,
-      url: POST_URL
-    }}).catch(function(err) {{
+      text: POST_TEXT
+    }};
+    if (POST_URL && POST_URL.length > 0) {{
+      sharePayload.url = POST_URL;
+    }}
+    navigator.share(sharePayload).catch(function(err) {{
       console.warn('share-x-cand share failed, falling back to X intent', err);
       window.location.href = X_INTENT_URL;
     }});

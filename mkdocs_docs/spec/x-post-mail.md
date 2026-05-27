@@ -1,0 +1,166 @@
+# :material-twitter: X 投稿候補メール (x-post-mail)
+
+!!! info "これは何のメール"
+
+    「今日 X に投稿するならこの内容がおすすめです」 を user に提案するメール。
+    公開通知ではなく、 ==user が手動で X 投稿するための材料== (タイトル / 本文 / 投稿ボタン) を 1 通にまとめて配信する。
+
+## :material-clock-outline: 発火タイミング (JST)
+
+スケジューラで時間ごとに起動する (`gcloud scheduler jobs list` 2026-05-27 実行結果)。
+
+| スケジューラ | 発火タイミング |
+| --- | --- |
+| `x-post-mail-flush` | 6〜22 時の毎時 0 分 |
+| `x-post-mail-flush-game-1` | 19,20 時の 15 / 30 / 45 分 |
+| `x-post-mail-flush-game-2` | 21 時の 15 / 30 / 45 分 |
+
+実行場所: Cloud Run job `x-post-mail-lane`。
+
+候補が 0 件のときはメールを送らない (空メール抑止)。
+最低候補数を下回るときは 24 時間 dedup を一時的に緩めて補充する fallback あり (`24h dedup left only ...` log)。
+
+## :material-format-list-bulleted-type: 候補は 5 種類
+
+`Candidate` dataclass (`src/x_post_mail_lane.py:859`) の `metric` フィールドで区別される。
+
+=== ":material-chart-bar: 通常データ指標 (画像つき)"
+
+    **metric**: AVG / OBP / SLG / OPS / ERA / WIN_PCT / K_per_9 / BB_per_9 / HR_per_9 / FIELDING_PCT / UZR_proxy / WAR / RISP
+
+    DB のランキングから「巨人選手の数値が際立った瞬間」 を抽出。
+    ==draft_text にランキング行を持つ== 唯一の種類 (`{rank}位 {name}（{team}）{value} 🟧巨人🟧` 形式)。 画像生成器が `_RANKING_ROW_PATTERN_V2` でこれを parse して PNG を作る。
+
+=== ":material-newspaper-variant: GEMMA_BRANDING (画像なし)"
+
+    **metric**: `GEMMA_BRANDING`
+
+    報知 / サンスポ記事を Gemini で要約して投稿候補にしたもの。
+    出典: `src/x_post_branding_gen.py:1654` で metric 付与。
+
+=== ":material-comment-quote: NEWS_OPINION (画像なし)"
+
+    **metric**: `NEWS_OPINION` (`_NEWS_OPINION_METRIC` 定数 = `"NEWS_OPINION"`、 `src/x_post_mail_lane.py:898`)
+
+    RSS ニュース記事から「コメント案」 を抽出。
+
+=== ":material-database-check: COMMENT_DB (画像なし)"
+
+    **metric**: `COMMENT_DB` (`src/x_post_mail_lane.py:899`)
+
+    NEWS_OPINION と DB の ==同一選手 + 同論点== を結合した複合候補。
+    title フォーマット例: `DB照合済: フルネーム+論点一致｜コメント×DB｜{選手}｜{metric} {期間}`。
+
+=== ":material-account-voice: FAN_VOICE (画像なし)"
+
+    **metric**: `FAN_VOICE` (`src/x_post_mail_lane.py:900`)
+
+    巨人ファン X 投稿を参考引用 (user メモ用、 literal コピー禁止)。
+    title フォーマット例: `(参考) ファン投稿｜{handle or 匿名}｜{text preview 40字}`。
+
+## :material-tag-text: メールヘッダーの label 切替
+
+`_mail_header_label` (`src/x_post_mail_lane.py:3116`) が決定する。
+
+判定: `_has_news_opinion_candidate` が 1 件でも True なら 「巨人Xポスト案」、 そうでなければ 「巨人データXポスト案」。
+
+`_has_news_opinion_candidate` は ==news-derived 4 種== (NEWS_OPINION / COMMENT_DB / FAN_VOICE / GEMMA_BRANDING) のどれかが混入していれば True を返す (`src/x_post_mail_lane.py:3113`)。
+
+!!! success "全候補が DB ランキング (画像つき) のみ"
+
+    → ==「巨人データXポスト案」==
+
+!!! note "ニュース派生が 1 件でも混ざる"
+
+    → ==「巨人Xポスト案」==
+
+「巨人データ」 = 「全部に画像あり」 という意味で使う仕様。
+
+## :material-view-list: 候補 1 件あたりの表示
+
+`_compose_html_body` (`src/x_post_mail_lane.py:3516`) が組み立てる。
+候補ごとに以下の順で表示。
+
+1. **候補タイトル** (`■ 候補 N: {title}`)
+2. **画像** (`image_html_for_candidate`、 あれば inline 表示で cid embed)
+3. **採用理由** (`selected_reason`)
+4. **投稿テキスト** (`post_text` を pre 要素にコピペ用で出す)
+5. **根拠データ** (折りたたみ details 要素、 draft_text が post_text と異なる時)
+6. **投稿ボタン**:
+    - **🐦 画像つきで X に投稿** (share-x-cand URL がある時、 黒地白文字)
+    - **🐦 X で投稿** (share-x-cand URL が無い時、 黒地白文字)
+7. **文字数表示** (`{N} / 280 字`、 280 超過なら警告色 `#b71c1c`)
+
+## :material-image-multiple: 画像生成 (`_generate_candidate_image_png`)
+
+`src/x_post_mail_lane.py:3375`。
+
+1. `src/x_post_image_gen_v2.py` の `generate_png` を呼ぶ
+2. candidate の `draft_text` から `_extract_ranking_rows_from_draft` でランキング行を parse
+3. parse 行が 0 なら ==None を返して画像 skip==
+4. `_select_template_and_data` で template を選択 (focus_player + 投手指標 → `pitcher_card`、 focus_player TOP1 → `player_spotlight`、 それ以外は round-robin で `ranking_table` / `chart_bars` / `data_sheet` / `monthly_summary` / `starting_lineup` / `12team_crown` / `12team_bar` / `scoreboard` / `standings` の 9 種類から index で選択)
+5. PNG bytes 1080x1080 を生成
+
+画像生成は Pillow + Noto Sans CJK JP Bold ベース (`x_post_image_gen_v2.py`)。 CJK tofu 事故対策として SVG ではなく TTF 直描画。
+
+## :material-image-multiple: 画像つき X 投稿の仕組み (2 経路)
+
+=== ":material-web: 経路 A: Web Share API (現状の mail ボタン)"
+
+    フロー:
+
+    1. mail のボタン押下
+    2. fetcher の `/share-x-cand` ページが開く
+    3. JS が GCS 上の PNG を fetch
+    4. `navigator.share()` で X アプリに画像つき share
+
+    必要 env: `ENABLE_SHARE_X_BUTTON` truthy + `INSIGHT_GCS_BUCKET` + `FETCHER_PUBLIC_BASE_URL`。
+
+    !!! warning "端末次第"
+
+        Web Share API が file 共有未対応の環境では text-only にフォールバックする。
+
+=== ":material-server: 経路 B: server-side X API (CLI 有り、 mail 未配線)"
+
+    `src/tools/post_x_with_image.py` ツール経由で:
+
+    1. 画像を `generate_png` で生成
+    2. tweepy v1.1 の `media_upload` (`src/x_post_image_attach_x.py:attach_x_post_image`)
+    3. tweepy v2 の `create_tweet(text=, media_ids=[...])` で投稿
+
+    必要 env: X_API_KEY / X_API_SECRET / X_ACCESS_TOKEN / X_ACCESS_TOKEN_SECRET。
+
+    端末に依存せず ==確実に画像つき投稿== になる (X API Free tier でも `media_upload` は使用可)。
+
+    !!! note "現状"
+
+        CLI のみ。 mail ボタンには未配線。
+
+## :material-content-duplicate: 候補の重複抑止
+
+- **per_mail_player_dedup**: 同じ選手 1 名につき同じメール内で ==1 候補まで== (`_DEFAULT_PLAYER_MAX_PER_MAIL=1`、 `src/x_post_mail_lane.py:897`)
+- 過去 24 時間以内に同 signature を送っていれば skip
+- 24h dedup で候補が空に近いときは relaxation して最低数を確保 (`dedup_fallback_player_skip_kept` log)
+
+## :material-cog: 主な環境変数 (x-post-mail-lane ジョブ)
+
+??? abstract "クリックで展開"
+
+    出典: `gcloud run jobs describe x-post-mail-lane` 2026-05-27 実行結果。
+
+    | env | 実値 | 用途 |
+    | --- | --- | --- |
+    | `INSIGHT_GCS_BUCKET` | `baseballsite-yoshilover-insight` | 候補 PNG の置き場 |
+    | `FETCHER_PUBLIC_BASE_URL` | yoshilover-fetcher の URL | share-x-cand button の URL ベース |
+    | `ENABLE_SHARE_X_BUTTON` | 1 | 候補 PNG を GCS upload + 画像つきボタン |
+    | `X_POST_MAIL_FAN_VOICE_ENABLED` | 0 | 1 で FAN_VOICE 候補を append (19-23 時のみ) |
+
+## :material-folder-file: 関連 file
+
+- メイン (候補組み立て + メール組み立て): `src/x_post_mail_lane.py`
+- 画像生成: `src/x_post_image_gen_v2.py` (Pillow + Noto Sans CJK)
+- 画像→X 投稿アップロード: `src/x_post_image_attach_x.py`
+- CLI 直接投稿ツール: `src/tools/post_x_with_image.py`
+- ランキング → X-post format: `src/format_as_x_post.py`
+- branding 候補生成: `src/x_post_branding_gen.py`
+- fan_voice 候補: `src/tools/run_x_post_mail.py:_build_fan_voice_candidates`

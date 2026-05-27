@@ -1467,10 +1467,10 @@ def _try_fetch_og_image_for_candidate(
         return b"", "", "", ""
     if result is None:
         return b"", "", "", ""
-    # alt text: 出典担保のため媒体名を入れる。 source_name 空なら fallback。
-    media_label = (source_name or "").strip() or "媒体"
-    alt_text = f"引用元: {media_label}"
-    return result.image_bytes, alt_text, result.image_url, result.html_text or ""
+    # 438 (2026-05-27): user 仕様「画像の引用も削除」 — alt text の
+    # 「引用元: 媒体名」 も停止 (mail HTML / X media_upload alt 表示で「引用」
+    # 文字が visible になる回避)。
+    return result.image_bytes, "", result.image_url, result.html_text or ""
 
 
 def _try_apply_pattern_b_quote_overlay(

@@ -165,7 +165,8 @@ class TryFetchOgImageForCandidateTests(unittest.TestCase):
                 log=self.log,
             )
         self.assertEqual(b, b"PNGDATA")
-        self.assertEqual(alt, "引用元: スポーツ報知")
+        # 438 (2026-05-27): user 仕様で alt_text 廃止 (画像の引用も削除)
+        self.assertEqual(alt, "")
         self.assertEqual(url, "https://example.com/img.jpg")
 
     def test_twitter_url_silently_skipped(self) -> None:
@@ -205,7 +206,8 @@ class TryFetchOgImageForCandidateTests(unittest.TestCase):
         )
         self.assertEqual((b, alt, url, html), (b"", "", "", ""))
 
-    def test_empty_source_name_fallback(self) -> None:
+    def test_empty_source_name_no_alt(self) -> None:
+        """438: alt_text 廃止後は source_name の有無に関わらず alt は空。"""
         from src import x_post_branding_gen as xbg
         with patch("src.og_image_fetcher.fetch_og_image", return_value=self._fake_result()):
             b, alt, url, html = xbg._try_fetch_og_image_for_candidate(
@@ -213,7 +215,7 @@ class TryFetchOgImageForCandidateTests(unittest.TestCase):
                 source_name="",
                 log=self.log,
             )
-        self.assertEqual(alt, "引用元: 媒体")
+        self.assertEqual(alt, "")
 
     def test_unexpected_exception_silent(self) -> None:
         from src import x_post_branding_gen as xbg

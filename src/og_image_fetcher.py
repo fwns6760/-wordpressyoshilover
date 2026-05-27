@@ -56,6 +56,9 @@ class OgImageResult:
     image_bytes: bytes
     content_type: str
     image_url: str
+    # 438 Phase 2: 同じ HTML fetch で取った body text (long quote 抽出用)。
+    # Phase 1 caller は無視して OK (default 空)。
+    html_text: str = ""
 
 
 def fetch_og_image(
@@ -163,7 +166,12 @@ def fetch_og_image(
         return None
 
     content_type = (img_resp.headers.get("Content-Type") or "image/jpeg").split(";")[0].strip().lower()
-    return OgImageResult(image_bytes=image_bytes, content_type=content_type, image_url=image_url)
+    return OgImageResult(
+        image_bytes=image_bytes,
+        content_type=content_type,
+        image_url=image_url,
+        html_text=text,
+    )
 
 
 def _extract_og_image_url(html_text: str) -> str:

@@ -1439,35 +1439,88 @@ def _try_fetch_og_image_for_candidate(
     source_url: str,
     source_name: str,
     log,
-) -> tuple[bytes, str, str]:
-    """438 Phase 1: source URL から og:image を fetch して image_bytes / alt_text /
-    image_source_url の 3 つを返す.
+) -> tuple[bytes, str, str, str]:
+    """438: source URL から og:image を fetch して image_bytes / alt_text /
+    image_source_url / html_text の 4 つを返す.
 
-    失敗時は (b"", "", "") を返し、 caller 側で image なし候補として扱う。
+    Phase 1 = image_bytes / alt_text / image_source_url を Pattern A image attach に使用。
+    Phase 2 = html_text を long quote 抽出 (Pattern B) に使用。
+
+    失敗時は (b"", "", "", "") を返し、 caller 側で image なし候補として扱う。
     例外は全て catch する (network / parse / X.com 認証要求 等)。
     """
     if not source_url:
-        return b"", "", ""
+        return b"", "", "", ""
     # twitter / x.com は login wall で og:image が取れないため skip (silent)
     lowered = source_url.lower()
     if "twitter.com/" in lowered or "x.com/" in lowered:
-        return b"", "", ""
+        return b"", "", "", ""
     try:
         from src.og_image_fetcher import fetch_og_image
     except Exception as exc:  # noqa: BLE001
         log.info("og_image_fetch_skip reason=import_failed err=%r", exc)
-        return b"", "", ""
+        return b"", "", "", ""
     try:
         result = fetch_og_image(source_url, logger=log)
     except Exception as exc:  # noqa: BLE001
         log.info("og_image_fetch_skip reason=unexpected_exception err=%r", exc)
-        return b"", "", ""
+        return b"", "", "", ""
     if result is None:
-        return b"", "", ""
+        return b"", "", "", ""
     # alt text: 出典担保のため媒体名を入れる。 source_name 空なら fallback。
     media_label = (source_name or "").strip() or "媒体"
     alt_text = f"引用元: {media_label}"
-    return result.image_bytes, alt_text, result.image_url
+    return result.image_bytes, alt_text, result.image_url, result.html_text or ""
+
+
+def _try_apply_pattern_b_quote_overlay(
+    *,
+    image_bytes: bytes,
+    speaker: str,
+    html_text: str,
+    log,
+) -> tuple[bytes, str]:
+    """438 Phase 2: html_text から long quote 抽出 → image に焼き込み.
+
+    Returns:
+        (overlay_image_bytes, extracted_quote) — Pattern B 成立時
+        (b"", "") — 不成立 (caller 側 Pattern A 維持)
+    """
+    if not image_bytes or not speaker or not html_text:
+        return b"", ""
+    try:
+        from src.long_quote_extractor import extract_long_quote
+    except Exception as exc:  # noqa: BLE001
+        log.info("pattern_b_skip reason=extractor_import_failed err=%r", exc)
+        return b"", ""
+    try:
+        quote = extract_long_quote(html_text)
+    except Exception as exc:  # noqa: BLE001
+        log.info("pattern_b_skip reason=extract_exception err=%r", exc)
+        return b"", ""
+    if not quote:
+        log.info("pattern_b_skip reason=no_long_quote_found speaker=%s", speaker)
+        return b"", ""
+    try:
+        from src.image_quote_overlay import apply_quote_overlay
+    except Exception as exc:  # noqa: BLE001
+        log.info("pattern_b_skip reason=overlay_import_failed err=%r", exc)
+        return b"", ""
+    try:
+        out_bytes = apply_quote_overlay(
+            image_bytes,
+            speaker=speaker,
+            quote=quote,
+            logger=log,
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.info("pattern_b_skip reason=overlay_exception err=%r", exc)
+        return b"", ""
+    log.info(
+        "pattern_b_applied speaker=%s quote_len=%d image_bytes=%d",
+        speaker, len(quote), len(out_bytes),
+    )
+    return out_bytes, quote
 
 
 def _find_first_giants_player_in_text(text: str) -> str:
@@ -1750,27 +1803,45 @@ def build_x_post_from_article_info(
     post_text_with_handle = _append_x_handle_to_post_text(text, source_url)
     # 438 Phase 1 (2026-05-27): 反応元 article の og:image を fetch して
     # Candidate に乗せる。 失敗時は image なし候補のまま (text only)。
-    image_bytes, image_alt_text, image_source_url = _try_fetch_og_image_for_candidate(
+    image_bytes, image_alt_text, image_source_url, html_text = _try_fetch_og_image_for_candidate(
         source_url=source_url,
         source_name=source_name,
         log=log,
     )
+    # 438 Phase 2 (2026-05-27): html_text + speaker から long quote 抽出 →
+    # Pillow で image に overlay 焼き込み. 成立時は Pattern B として post_text
+    # を 人物名のみに切替 (画像が主、 post text の重複を避ける)。
+    final_post_text = post_text_with_handle
+    pattern_label = "A"
+    if image_bytes and html_text and player and not is_postgame_team_wide:
+        overlay_bytes, extracted_quote = _try_apply_pattern_b_quote_overlay(
+            image_bytes=image_bytes,
+            speaker=player,
+            html_text=html_text,
+            log=log,
+        )
+        if overlay_bytes and extracted_quote:
+            image_bytes = overlay_bytes
+            # Pattern B 成立: post_text は 人物名のみ (image が long quote を持つ)
+            final_post_text = player
+            pattern_label = "B"
     log.info(
-        "article_info_branding_candidate_built player=%s source_url=%s text_len=%d model=%s handle=%s og_image=%s",
+        "article_info_branding_candidate_built player=%s source_url=%s text_len=%d model=%s handle=%s og_image=%s pattern=%s",
         player,
         source_url,
-        len(post_text_with_handle),
+        len(final_post_text),
         resolved_model_id,
         _resolve_official_x_handle(source_url) or "-",
         "yes" if image_bytes else "no",
+        pattern_label,
     )
     return Candidate(
-        title=f"X-post branding｜{player} ({resolved_model_id})",
+        title=f"X-post branding｜{player} ({resolved_model_id}) [{pattern_label}]",
         metric=_GEMMA_BRANDING_METRIC,
         period_label="LLM 生成 (queue 417)",
         draft_text="\n".join(draft_lines),
-        post_text=post_text_with_handle,
-        char_count=len(post_text_with_handle),
+        post_text=final_post_text,
+        char_count=len(final_post_text),
         signature=f"article_info_branding|{signature_hash}|False|None",
         focus_player=player,
         source_material_type="article_info_branding",

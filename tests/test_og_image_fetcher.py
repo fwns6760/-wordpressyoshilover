@@ -159,7 +159,7 @@ class TryFetchOgImageForCandidateTests(unittest.TestCase):
     def test_success(self) -> None:
         from src import x_post_branding_gen as xbg
         with patch("src.og_image_fetcher.fetch_og_image", return_value=self._fake_result()):
-            b, alt, url = xbg._try_fetch_og_image_for_candidate(
+            b, alt, url, html = xbg._try_fetch_og_image_for_candidate(
                 source_url="https://hochi.news/articles/test",
                 source_name="スポーツ報知",
                 log=self.log,
@@ -170,45 +170,45 @@ class TryFetchOgImageForCandidateTests(unittest.TestCase):
 
     def test_twitter_url_silently_skipped(self) -> None:
         from src import x_post_branding_gen as xbg
-        b, alt, url = xbg._try_fetch_og_image_for_candidate(
+        b, alt, url, html = xbg._try_fetch_og_image_for_candidate(
             source_url="https://twitter.com/hochi_giants/status/123",
             source_name="hochi_giants",
             log=self.log,
         )
-        self.assertEqual((b, alt, url), (b"", "", ""))
+        self.assertEqual((b, alt, url, html), (b"", "", "", ""))
 
     def test_x_com_url_silently_skipped(self) -> None:
         from src import x_post_branding_gen as xbg
-        b, alt, url = xbg._try_fetch_og_image_for_candidate(
+        b, alt, url, html = xbg._try_fetch_og_image_for_candidate(
             source_url="https://x.com/sanspo_giants/status/456",
             source_name="sanspo",
             log=self.log,
         )
-        self.assertEqual((b, alt, url), (b"", "", ""))
+        self.assertEqual((b, alt, url, html), (b"", "", "", ""))
 
     def test_fetch_returns_none(self) -> None:
         from src import x_post_branding_gen as xbg
         with patch("src.og_image_fetcher.fetch_og_image", return_value=None):
-            b, alt, url = xbg._try_fetch_og_image_for_candidate(
+            b, alt, url, html = xbg._try_fetch_og_image_for_candidate(
                 source_url="https://hochi.news/articles/missing",
                 source_name="報知",
                 log=self.log,
             )
-        self.assertEqual((b, alt, url), (b"", "", ""))
+        self.assertEqual((b, alt, url, html), (b"", "", "", ""))
 
     def test_empty_source_url(self) -> None:
         from src import x_post_branding_gen as xbg
-        b, alt, url = xbg._try_fetch_og_image_for_candidate(
+        b, alt, url, html = xbg._try_fetch_og_image_for_candidate(
             source_url="",
             source_name="",
             log=self.log,
         )
-        self.assertEqual((b, alt, url), (b"", "", ""))
+        self.assertEqual((b, alt, url, html), (b"", "", "", ""))
 
     def test_empty_source_name_fallback(self) -> None:
         from src import x_post_branding_gen as xbg
         with patch("src.og_image_fetcher.fetch_og_image", return_value=self._fake_result()):
-            b, alt, url = xbg._try_fetch_og_image_for_candidate(
+            b, alt, url, html = xbg._try_fetch_og_image_for_candidate(
                 source_url="https://hochi.news/articles/x",
                 source_name="",
                 log=self.log,
@@ -218,12 +218,12 @@ class TryFetchOgImageForCandidateTests(unittest.TestCase):
     def test_unexpected_exception_silent(self) -> None:
         from src import x_post_branding_gen as xbg
         with patch("src.og_image_fetcher.fetch_og_image", side_effect=RuntimeError("boom")):
-            b, alt, url = xbg._try_fetch_og_image_for_candidate(
+            b, alt, url, html = xbg._try_fetch_og_image_for_candidate(
                 source_url="https://hochi.news/articles/y",
                 source_name="報知",
                 log=self.log,
             )
-        self.assertEqual((b, alt, url), (b"", "", ""))
+        self.assertEqual((b, alt, url, html), (b"", "", "", ""))
 
 
 if __name__ == "__main__":

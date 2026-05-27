@@ -68,25 +68,35 @@ SIGNAL_STANDINGS_SHIFT = "anomaly_standings_shift"  # 球団順位変動
 SIGNAL_STAT_DELTA = "anomaly_stat_delta"  # snapshot 急変
 
 # 2026-05-15 user 指示「C(マニアック)D(サバメトリクス)はいらない、変化率も
-# title から消す」適用、publish 対象 signal_type を縮小。 backlog candidate
-# (status='NEW' で残った旧 signal) もこの list に無いものは publisher が
-# fetch せず、未配信のまま skip される。
+# title から消す」適用、publish 対象 signal_type を縮小。
 #
-# disabled 一覧 (DB に NEW 残ってても publish されない):
+# 2026-05-27 user 明示 override「全部」: data-insight 記事の「同じネタばかり」
+# (ポスト編 variety 不足) を解消するため、 2026-05-15 で drop した 7 signal
+# を ALL_ANOMALY_SIGNALS に復活。 ただし下記 3 種は metric whitelist
+# (insight_whitelist) で別途 block されている可能性があり、 publish 実件数は
+# next-day observe で確認:
 #   - SIGNAL_BABIP_DIVERGENCE / SIGNAL_FIP_ERA_DIVERGENCE (D サバメトリクス)
-#   - SIGNAL_STAT_DELTA (変化率 title が user 不可)
-#   - SIGNAL_GIANTS_TOP_OUTLIER / SIGNAL_PACE_HR_PROJECTION /
-#     SIGNAL_HIDDEN_OPS_LIMIT / SIGNAL_HIT_STREAK_RUN (C マニアック)
-#   - SIGNAL_DEFENSE_UZR_OUTLIER は user 2026-05-16「UZR はいる」で復帰
+#   - SIGNAL_STAT_DELTA (変化率 title)
+# whitelist 側の更新が必要なら別 ticket で扱う (439 follow-up)。
 ALL_ANOMALY_SIGNALS = (
     SIGNAL_ZSCORE_BATTER,
     SIGNAL_ZSCORE_PITCHER,
+    # 2026-05-27 user override 「全部」 で復活
+    SIGNAL_BABIP_DIVERGENCE,
+    SIGNAL_FIP_ERA_DIVERGENCE,
+    SIGNAL_GIANTS_TOP_OUTLIER,
+    SIGNAL_PACE_HR_PROJECTION,
+    SIGNAL_HIDDEN_OPS_LIMIT,
+    SIGNAL_HIT_STREAK_RUN,
+    # 既存 (5/15 lock 範囲内)
     SIGNAL_DEFENSE_UZR_OUTLIER,
     SIGNAL_DEFENSE_FIELDING_PCT,
     SIGNAL_GAME_HERO_BATTER,
     SIGNAL_GAME_PITCHER_PERF,
     SIGNAL_MILESTONE_CROSSED,
     SIGNAL_STANDINGS_SHIFT,
+    # 2026-05-27 user override で復活
+    SIGNAL_STAT_DELTA,
 )
 
 # default 閾値 (env で override 可能、user「もっと緩めていい、metric 多様化」適用、

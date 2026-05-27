@@ -31,11 +31,15 @@
     DB のランキングから「巨人選手の数値が際立った瞬間」 を抽出。
     ==draft_text にランキング行を持つ== 唯一の種類 (`{rank}位 {name}（{team}）{value} 🟧巨人🟧` 形式)。 画像生成器が `_RANKING_ROW_PATTERN_V2` でこれを parse して PNG を作る。
 
-=== ":material-newspaper-variant: GEMMA_BRANDING (画像なし)"
+=== ":material-newspaper-variant: GEMMA_BRANDING (画像あり、 2026-05-27 〜)"
 
     **metric**: `GEMMA_BRANDING` (`_GEMMA_BRANDING_METRIC` 定数、 `src/x_post_branding_gen.py:43`)
 
     報知 / サンスポ記事を Gemini で要約して「==ヨシラバー風コメント==」 X 投稿候補にしたもの。 voice prompt は ==`_SYSTEM_PROMPT_YOSHILOVER`== (`src/x_post_branding_gen.py:152`)。
+
+    !!! info "438 で画像対応 (2026-05-27)"
+
+        旧 GEMMA_BRANDING は text-only だったが、 ticket 438 で og:image fetch + X media attach に拡張。 詳細は本 section 末尾の 「438 画像添付」 を参照。
 
     生成 entry point は 2 つ:
 
@@ -80,6 +84,67 @@
     | `article_info_branding_skip reason=no_giants_member_in_article` | title / summary に active member 該当が無い (gate 拡張前は `no_giants_player_in_article`) |
     | `gemma_branding_skip reason=not_verified_giants_member` | caller 指定 player が active member でない (gate 拡張前は `not_verified_giants_player`) |
     | `Gemma branding produced 0 candidates` | gate 通過 0 件 / Gemini error / validator drop |
+    | `og_image_fetcher_skip reason=og_image_meta_missing` | source HTML に `<meta property="og:image">` が無い |
+    | `pattern_b_skip reason=no_long_quote_found` | source HTML に 60-180 字「」 quote が無い (or speaker proximity 外) → Pattern A fallback |
+
+    #### 438 画像添付 (2026-05-27)
+
+    ticket 438 で GEMMA_BRANDING に **og:image 自動添付** + Pillow overlay (Pattern B) を追加。 既存の毎時 fire (x-post-mail-flush + game lane) 内に組込み、 **新規 Cloud Scheduler / Cloud Run job 一切作らない** lock 維持。
+
+    ##### Pattern A (brand_opinion、 私の意見)
+
+    - 反応元 article の og:image を ==そのまま attach== (Pillow overlay なし)
+    - post_text: 既存 `_SYSTEM_PROMPT_YOSHILOVER` 生成 text (180-280 字)
+    - 出典: image alt_text / post_text どちらにも入れない (user 仕様 2026-05-27、 `(出典 @handle)` 付与も停止 `src/x_post_branding_gen.py:1839-1846`)
+
+    ##### Pattern B (brand_quote、 選手・コーチ literal 引用)
+
+    Pattern A の上に Pillow で 「人物名 + 「long quote」」 を写真下半分に焼き込む。 成立条件不足時は Pattern A に fallback。
+
+    | 項目 | 仕様 |
+    | --- | --- |
+    | 成立条件 | source HTML から 60-180 字「」 quote が抽出可 + speaker (focus_player) の roster alias が「 直前 40 文字以内に出現 (mis-attribution 防止) |
+    | 60 字未満の quote | 不採用 (Pattern A fallback) |
+    | 180 字超過 | 「。」 / 「、」 境界で truncate、 末尾「…」 禁止 (literal 引用 violation) |
+    | ネスト『』 | 対象外、 外側「」 のみ |
+    | post_text (B 時) | **人物名のみ** に切替 (image が long quote を持つため重複回避) |
+    | 画像 overlay | white text + 黒 stroke、 枠 / band / brand mark / 引用元 一切なし (user 仕様) |
+
+    ##### 主要 file (438)
+
+    - `src/og_image_fetcher.py:64` `fetch_og_image()` — HTML から og:image / twitter:image 抽出 + 画像 bytes fetch (timeout 5s、 size 上限 5MB、 gzip auto-decompress)
+    - `src/og_image_fetcher.py:55` `OgImageResult` — image_bytes / content_type / image_url / html_text (同一 fetch で本文も保持)
+    - `src/long_quote_extractor.py:34` `extract_long_quote()` — HTML/plain → 「」 抽出 → speaker proximity check
+    - `src/image_quote_overlay.py:37` `apply_quote_overlay()` — Pillow で 写真下半分に overlay (font は 437 の `_find_font`、 Noto Sans CJK JP)
+    - `src/x_post_branding_gen.py:1437` `_try_fetch_og_image_for_candidate()` — twitter.com / x.com は login wall で silent skip
+    - `src/x_post_branding_gen.py:1476` `_try_apply_pattern_b_quote_overlay()` — Pattern B 試行 + fallback
+    - `src/x_post_branding_gen.py:1534` `_resolve_speaker_aliases()` — canonical name → roster の全 alias を逆引き (姓 / 姓名 / 役職付き)
+
+    ##### log で pattern 判定
+
+    `article_info_branding_candidate_built ... pattern=A` または `pattern=B`。 `og_image=yes` で画像 attach 成功。
+
+    ##### commit chain (438)
+
+    1. `b63888c` Phase 1 og:image fetch + attach
+    2. `bdcba6a` gzip decompress bug fix (sanspo / hochi は gzip 配信)
+    3. `6a59de6` Phase 2 Pattern B 引用 overlay
+    4. `cae5066` speaker proximity check (mis-attribution 防止)
+    5. `5a0729b` navigator.share / X intent で空 URL omit (iOS Safari 漏出 fix)
+    6. `ea23382` post_text 末尾の `(出典 @handle)` 削除 (X 上で link 化問題)
+    7. `bf56300` image alt_text の「引用元: 媒体名」 も削除 (user 仕様)
+
+    ##### GCS lifecycle (share_x_cand prefix)
+
+    438 で画像 PNG が累積するため、 2026-05-27 に bucket lifecycle 設定:
+
+    ```json
+    {"rule": [{"action": {"type": "Delete"}, "condition": {"age": 7, "matchesPrefix": ["share_x_cand/"]}}]}
+    ```
+
+    効果: `gs://baseballsite-yoshilover-insight/share_x_cand/` 配下のみ **作成 7 日経過で自動削除**。 他 prefix (archives / digest / fan_voice / daily_snapshot / insight.db) は影響なし。 soft_delete_policy 7 日と組合せで実質 14 日保持 (削除後 7 日復元可能)。 reflection は GCS の lifecycle scan (1 日 1 回) 経由で最大 24h ラグ。
+
+    確認 cmd: `gsutil lifecycle get gs://baseballsite-yoshilover-insight`
 
 === ":material-comment-quote: NEWS_OPINION (画像なし)"
 
@@ -162,6 +227,12 @@
     !!! warning "端末次第"
 
         Web Share API が file 共有未対応の環境では text-only にフォールバックする。
+
+    !!! info "URL 漏出 fix (2026-05-27, commit `5a0729b`)"
+
+        iOS Safari は `navigator.share({files, text, url: ""})` で `url` key が存在する時、 空文字でも現在 page URL (share-x-cand の URL) を fallback で含めて共有する挙動。 X compose に fetcher 自身の https URL が貼り付く事故になっていた。
+
+        修正: ==`url` key を 非空時のみ ペイロードに含める== (`src/share_x_handler.py` 内 `_build_share_cand_page_html` の JS block)。 X intent URL fallback (`_build_share_cand_x_intent_url`) も同様に空 URL を omit。
 
 === ":material-server: 経路 B: server-side X API (CLI 有り、 mail 未配線)"
 

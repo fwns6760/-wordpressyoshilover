@@ -183,6 +183,7 @@ def build_pages(
 
     pages: List[Dict] = []
     counts_by_page: PageCounts = {}
+    updated_at_iso = now.strftime("%Y-%m-%dT%H:%M:00+09:00")
     for page in PAGES:
         page_posts: List[Dict] = []
         for level in page["levels"]:
@@ -198,11 +199,14 @@ def build_pages(
         )
 
         sections: List[Tuple[str, List[str]]] = []
+        # JSON-LD ItemList 用 (oEmbed と同じ順序 / 件数で抽出)
+        posts_for_listing: List[Dict] = []
         if len(page["levels"]) == 1:
             # 一軍 page = 単一 section、 max_per_section 件まで表示
             level = page["levels"][0]
             level_posts = by_level.get(level, [])
             sections.append(("最新の投稿", section_oembeds(level_posts, limit=page["max_per_section"])))
+            posts_for_listing = level_posts[: page["max_per_section"]]
         else:
             # farm page = 二軍 + 三軍 を別 section で
             for level in page["levels"]:
@@ -210,8 +214,21 @@ def build_pages(
                 blocks = section_oembeds(lvl_posts, limit=page["max_per_section"])
                 if blocks:
                     sections.append((level, blocks))
+                posts_for_listing.extend(lvl_posts[: page["max_per_section"]])
 
-        html = render_full_html(updated_at, trend_html, sections, SOURCE_HANDLES)
+        page_url = f"https://yoshilover.com/{page['slug']}/"
+        page_label = page["title_suffix"]  # "(一軍)" 等
+        html = render_full_html(
+            updated_at,
+            trend_html,
+            sections,
+            SOURCE_HANDLES,
+            page_label=page_label,
+            stats={"posts": len(page_posts), "trend": len(page_counts)},
+            page_url=page_url,
+            updated_at_iso=updated_at_iso,
+            posts_for_listing=posts_for_listing,
+        )
         title = f"巨人 SNS リアルタイム {page['title_suffix']} (最終更新: {updated_at} JST)"
         pages.append(
             {

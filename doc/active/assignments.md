@@ -31,6 +31,16 @@ doc: `doc/active/445-SNS-realtime-topic-daily.md` / spec: `mkdocs_docs/spec/sns-
 
 next: Claude 自律で 445 実装着手 (classifier → main → template → tests → fetcher hook → image rebuild → deploy)、 翌日 4 fire 観察で 受け入れ条件 verify。 GH Issue 作成は本 session で並行。
 
+**実装完了 2026-05-28 15:00 JST**:
+- impl commit `da588c8` (3 module 新規 + 5 test 新規 + fetcher hook、 23/23 unit tests PASS)
+- Cloud Build `a3cfa6cc` SUCCESS (2m36s)、 image `sns-realtime-da588c8`
+- Cloud Run revision `yoshilover-fetcher-00498-547` deploy 完了、 100% traffic、 `/health` 200
+- env `ENABLE_SNS_REALTIME_TOPIC=1` 設定済
+- 初回 fire = **2026-05-28 17:00 JST** (既存 `giants-realtime-trigger` の 17:00 fire に相乗り)
+- smoke (local): 過去 24h 59 件 / 一軍 54 / 二軍 2 / 三軍 3 / トレンド 27 名
+
+verify: 17:00 JST 以降 Cloud Logging で `event=sns_realtime_topic_result` 探す、 WP で slug `giants-sns-realtime-2026-05-28` の draft が作成されたか確認。
+
 ### 443 — 巨人選手データサイト (topical cluster 構造 / 毎日更新) (READY rev3 2026-05-28 PM2、 user GO 済)
 
 rev 履歴:

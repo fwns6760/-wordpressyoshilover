@@ -132,24 +132,31 @@ class SpeakerProximityTests(unittest.TestCase):
 
 
 class ThresholdRelaxationTests(unittest.TestCase):
-    """2026-05-28 緩和: min_chars 60→40 / speaker_proximity 40→100。"""
+    """2026-05-28 PM lock: min_chars 60 (一度 40 に緩和したが user 指示で逆戻し) /
+    speaker_proximity 40→100 (維持)。"""
 
-    def test_quote_40_to_59_chars_now_accepted(self) -> None:
-        # 「今日は最後まで集中して投げ切ることができた」 (22 字) + 「!」 ×20 (20字) = 42 字
-        # 旧 60 字閾値では reject、 新 40 字閾値では accept
+    def test_quote_40_to_59_chars_now_rejected(self) -> None:
+        # 42 字 quote → 60 字閾値では reject (5/28 PM user 指示「セリフ長め」 で
+        # 5/28 朝の 40 字緩和を逆戻し、 短文 quote 持ち article は Pattern A へ)
         quote_42 = "今日は最後まで集中して投げ切ることができた" + "!" * 20
         text = f"巨人の戸郷が「{quote_42}」と試合後コメント"
-        out = extract_long_quote(text)
-        self.assertGreaterEqual(len(out), 40)
-        self.assertLess(len(out), 60)
-        self.assertIn("集中して投げ切る", out)
+        self.assertEqual(extract_long_quote(text), "")
 
-    def test_quote_below_40_still_rejected(self) -> None:
-        # 30 字 quote → 新閾値でも reject
+    def test_quote_below_60_still_rejected(self) -> None:
+        # 30 字 quote → 60 字閾値でも reject
         quote_30 = "今日は良い結果になった本当に良かった" + "!" * 12
         self.assertEqual(len(quote_30), 30)
         text = f"戸郷が「{quote_30}」と話した"
         self.assertEqual(extract_long_quote(text), "")
+
+    def test_quote_60_chars_accepted(self) -> None:
+        # 60 字 quote → 閾値以上なので accept
+        quote_60 = "今日は最後まで集中して投げ切ることができた本当に良かった" + "!" * 32
+        self.assertEqual(len(quote_60), 60)
+        text = f"巨人の戸郷が「{quote_60}」と試合後コメント"
+        out = extract_long_quote(text)
+        self.assertGreaterEqual(len(out), 60)
+        self.assertIn("集中して投げ切る", out)
 
     def test_speaker_within_100_chars_now_accepted(self) -> None:
         # speaker と quote 間が 60 字 → 旧 40 字 window 外、 新 100 字 window 内

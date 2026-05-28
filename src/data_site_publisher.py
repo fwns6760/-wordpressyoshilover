@@ -32,6 +32,8 @@ from requests.auth import HTTPBasicAuth
 
 from src.data_site_query import (
     fetch_batting_stats_season,
+    fetch_contribution_streak,
+    fetch_hit_streak,
     fetch_lineup_slot_stats,
     fetch_opponent_split_stats,
     fetch_recent_games,
@@ -201,6 +203,13 @@ def _build_pillar_info(player_name: str) -> PillarPlayerInfo | None:
         (o.opponent, o.games, o.ab, o.hits, o.rbi, o.avg)
         for o in fetch_opponent_split_stats(player_name)
     ]
+    # Phase 1.0b1 streak
+    hit_streak = fetch_hit_streak(player_name)
+    info.hit_streak_active = hit_streak.active
+    info.hit_streak_season_max = hit_streak.season_max
+    contrib_streak = fetch_contribution_streak(player_name)
+    info.contribution_streak_active = contrib_streak.active
+    info.contribution_streak_season_max = contrib_streak.season_max
     return info
 
 

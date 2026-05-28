@@ -256,6 +256,13 @@ class OpponentSplitStat:
         return (self.hits / self.ab) if self.ab > 0 else None
 
 
+@dataclass
+class StreakInfo:
+    """連続記録 (Phase 1.0b1)。 active = 現在進行中、 season_max = 今シーズン最長."""
+    active: int  # 現在連続中 (直近試合から遡って continuous)
+    season_max: int  # 今シーズン最長 streak
+
+
 def _insight_db_path() -> str:
     """env INSIGHT_DB_PATH (override) or default cache path."""
     explicit = os.environ.get("INSIGHT_DB_PATH", "").strip()
@@ -463,12 +470,91 @@ def fetch_opponent_split_stats(player_canonical: str) -> list[OpponentSplitStat]
     ]
 
 
+def _compute_streak(values: list[int]) -> StreakInfo:
+    """0/1 配列から active streak (先頭から連続 1) と season max を計算.
+
+    values は 直近試合が先頭 (descending date)、 古い試合が末尾。 簡潔のため
+    1 つの pass で active と max を同時計算する。
+    """
+    active = 0
+    for v in values:
+        if v >= 1:
+            active += 1
+        else:
+            break
+    season_max = 0
+    cur = 0
+    for v in values:
+        if v >= 1:
+            cur += 1
+            if cur > season_max:
+                season_max = cur
+        else:
+            cur = 0
+    return StreakInfo(active=active, season_max=season_max)
+
+
+def fetch_hit_streak(player_canonical: str) -> StreakInfo:
+    """連続安打 streak (Phase 1.0b1 metric #3)。 batting_logs.H >= 1 連続."""
+    path = _ensure_insight_db_local()
+    if not path:
+        return StreakInfo(active=0, season_max=0)
+    try:
+        with sqlite3.connect(path) as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT b.H FROM batting_logs b
+                JOIN games g ON b.game_id = g.game_id
+                WHERE b.player_canonical = ?
+                ORDER BY g.game_date DESC, b.game_id DESC
+                """,
+                (player_canonical,),
+            )
+            rows = [int(r[0] or 0) for r in cur.fetchall()]
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("fetch_hit_streak err player=%s: %r", player_canonical, exc)
+        return StreakInfo(active=0, season_max=0)
+    return _compute_streak(rows)
+
+
+def fetch_contribution_streak(player_canonical: str) -> StreakInfo:
+    """連続得点関与 streak (Phase 1.0b1 metric #4)。 R + RBI >= 1 連続.
+
+    得点 + 打点 = チームの得点に絡んだ試合の連続。 0 安打でも犠飛 / 押し出し
+    で打点付けば 1 とカウント、 守備からの得点 (R) も含めて 「得点に関与」
+    した試合。
+    """
+    path = _ensure_insight_db_local()
+    if not path:
+        return StreakInfo(active=0, season_max=0)
+    try:
+        with sqlite3.connect(path) as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT (COALESCE(b.R, 0) + COALESCE(b.RBI, 0)) as contrib
+                FROM batting_logs b
+                JOIN games g ON b.game_id = g.game_id
+                WHERE b.player_canonical = ?
+                ORDER BY g.game_date DESC, b.game_id DESC
+                """,
+                (player_canonical,),
+            )
+            rows = [int(r[0] or 0) for r in cur.fetchall()]
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("fetch_contribution_streak err player=%s: %r", player_canonical, exc)
+        return StreakInfo(active=0, season_max=0)
+    return _compute_streak(rows)
+
+
 __all__ = [
     "RosterPlayer",
     "BattingStatsSeason",
     "BattingGameRow",
     "LineupSlotStat",
     "OpponentSplitStat",
+    "StreakInfo",
     "load_phase1_player_names",
     "load_roster_player",
     "find_player_tag_id",
@@ -478,4 +564,6 @@ __all__ = [
     "fetch_recent_games",
     "fetch_lineup_slot_stats",
     "fetch_opponent_split_stats",
+    "fetch_hit_streak",
+    "fetch_contribution_streak",
 ]

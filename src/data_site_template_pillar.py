@@ -50,6 +50,11 @@ class PillarPlayerInfo:
     # lineup_slot_stats = [(slot, G, AB, H, RBI, AVG), ...] (slot 1-9)
     opponent_split_stats: list[tuple[str, int, int, int, int, Optional[float]]] = field(default_factory=list)
     # opponent_split_stats = [(opp, G, AB, H, RBI, AVG), ...]
+    # Phase 1.0b1 streak (現在 active + 自己最長 season)
+    hit_streak_active: int = 0
+    hit_streak_season_max: int = 0
+    contribution_streak_active: int = 0
+    contribution_streak_season_max: int = 0
 
 
 CLUSTER_URL = "https://yoshilover.com/data/"
@@ -250,6 +255,50 @@ def _build_opponent_split_html(player: PillarPlayerInfo) -> str:
     )
 
 
+def _build_streak_html(player: PillarPlayerInfo) -> str:
+    """連続記録 (Phase 1.0b1 metric pack #3/#4)。 active streak がゼロでも season_max があれば section 出す。"""
+    if (player.hit_streak_active + player.hit_streak_season_max
+            + player.contribution_streak_active + player.contribution_streak_season_max) == 0:
+        return ""
+    hit_active_html = (
+        f'<span style="color:#d32f2f;font-weight:700;font-size:18px;">{player.hit_streak_active} 試合連続</span>'
+        if player.hit_streak_active > 0
+        else '<span style="color:#888;">途切れ</span>'
+    )
+    contrib_active_html = (
+        f'<span style="color:#d32f2f;font-weight:700;font-size:18px;">{player.contribution_streak_active} 試合連続</span>'
+        if player.contribution_streak_active > 0
+        else '<span style="color:#888;">途切れ</span>'
+    )
+    return (
+        '<section class="ys-pillar-streak" '
+        'style="background:#fff;border:1px solid #eee;padding:14px;margin:0 0 16px;border-radius:4px;">'
+        '<h2 style="font-size:16px;margin:0 0 6px;">連続記録 <span style="font-size:11px;color:#888;font-weight:normal;">(大手未掲載)</span></h2>'
+        '<p style="font-size:12px;color:#666;margin:0 0 10px;">'
+        '今シーズンの 連続安打 / 連続得点関与 を baseline で追跡。 「○○試合連続」 が記事になる前の段階で永続表示。'
+        '</p>'
+        '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
+        '<thead><tr style="background:#fafafa;text-align:center;">'
+        '<th style="padding:8px 6px;">指標</th>'
+        '<th style="padding:8px 6px;">現在</th>'
+        '<th style="padding:8px 6px;">今シーズン最長</th>'
+        '</tr></thead>'
+        '<tbody>'
+        '<tr style="text-align:center;border-bottom:1px solid #eee;">'
+        '<td style="padding:10px;font-weight:600;color:#5d4037;">連続安打</td>'
+        f'<td style="padding:10px;">{hit_active_html}</td>'
+        f'<td style="padding:10px;">{player.hit_streak_season_max} 試合</td>'
+        '</tr>'
+        '<tr style="text-align:center;">'
+        '<td style="padding:10px;font-weight:600;color:#5d4037;">連続得点関与 <span style="font-size:11px;color:#888;">(得点 + 打点 ≥ 1)</span></td>'
+        f'<td style="padding:10px;">{contrib_active_html}</td>'
+        f'<td style="padding:10px;">{player.contribution_streak_season_max} 試合</td>'
+        '</tr>'
+        '</tbody></table>'
+        '</section>'
+    )
+
+
 def _build_related_topic_html(player: PillarPlayerInfo) -> str:
     if not player.related_topic_links:
         return (
@@ -339,6 +388,7 @@ def render_pillar_html(player: PillarPlayerInfo) -> str:
         _build_featured_image_html(player),
         _build_short_review_html(player),
         _build_season_stats_html(player),
+        _build_streak_html(player),
         _build_recent_games_html(player),
         _build_lineup_slot_html(player),
         _build_opponent_split_html(player),

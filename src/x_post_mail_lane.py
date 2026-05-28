@@ -3773,22 +3773,53 @@ def _resolve_share_x_cand_config() -> tuple[str, str, bool]:
     return bucket, fetcher_base, enabled
 
 
-def _share_x_cand_blob_key(run_id: str, index: int) -> str:
-    """GCS blob key (path within bucket)。 mail run + candidate idx で一意。"""
-    return f"{_SHARE_X_CAND_BLOB_PREFIX}/{run_id}/cand-{index:02d}.png"
+def _detect_image_format(image_bytes: bytes) -> tuple[str, str]:
+    """bytes signature から (content_type, extension) を返す.
+
+    438 (2026-05-28 PM3): overlay (D) を廃止して raw og:image (C) に切替えた結果、
+    hochi/sanspo の JPEG og:image を image/png 扱いで GCS upload + .png blob key
+    していた mismatch が真のデグレ (share-x-cand で X app が画像 attach 拒否
+    する原因)。 bytes signature 検出で正しく png/jpeg/webp/gif 判定する。
+    """
+    if not image_bytes or len(image_bytes) < 4:
+        return "image/png", "png"
+    if image_bytes.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg", "jpg"
+    if image_bytes.startswith(b"\x89PNG"):
+        return "image/png", "png"
+    if image_bytes[:4] == b"RIFF" and len(image_bytes) >= 12 and image_bytes[8:12] == b"WEBP":
+        return "image/webp", "webp"
+    if image_bytes[:6] in (b"GIF87a", b"GIF89a"):
+        return "image/gif", "gif"
+    return "image/png", "png"
+
+
+def _share_x_cand_blob_key(run_id: str, index: int, *, ext: str = "png") -> str:
+    """GCS blob key (path within bucket)。 mail run + candidate idx + 実 ext で一意。"""
+    return f"{_SHARE_X_CAND_BLOB_PREFIX}/{run_id}/cand-{index:02d}.{ext}"
 
 
 def _upload_candidate_image_to_gcs(
-    png: bytes, *, bucket_name: str, blob_key: str
+    image_bytes: bytes,
+    *,
+    bucket_name: str,
+    blob_key: str,
+    content_type: str = "image/png",
 ) -> bool:
-    """PNG bytes を GCS にアップロード。 成功 True、 失敗 False (mail は止めない)。"""
-    if not png or not bucket_name or not blob_key:
+    """image bytes を GCS にアップロード。 成功 True、 失敗 False (mail は止めない).
+
+    content_type は caller が bytes signature から判定して渡す (default は
+    後方互換の image/png)。 share-x-cand JS は GCS content-type をそのまま
+    blob.type に反映し navigator.share に渡すため、 ここで誤ると X app で
+    画像 attach 拒否 (438 PM3 デグレ真因)。
+    """
+    if not image_bytes or not bucket_name or not blob_key:
         return False
     try:
         client = _get_storage_client()
         bucket = client.bucket(bucket_name)
         blob = bucket.blob(blob_key)
-        blob.upload_from_string(png, content_type="image/png")
+        blob.upload_from_string(image_bytes, content_type=content_type)
     except Exception as exc:  # noqa: BLE001
         logger.warning(
             "[437 phase8] share-x-cand GCS upload failed key=%s err=%r",
@@ -4022,9 +4053,17 @@ def compose_mail(
         cids_for_html.append(cid)
         share_x_url: str | None = None
         if share_x_enabled:
-            blob_key = _share_x_cand_blob_key(run_id, idx)
+            # 438 PM3 (2026-05-28): bytes signature から実フォーマット検出して
+            # content_type + blob 拡張子を一致させる。 raw og:image (JPEG/WebP) を
+            # image/png 扱いで upload すると share-x-cand JS の navigator.share で
+            # X app が画像 attach を拒否する mismatch デグレを修正。
+            content_type, ext = _detect_image_format(png)
+            blob_key = _share_x_cand_blob_key(run_id, idx, ext=ext)
             if _upload_candidate_image_to_gcs(
-                png, bucket_name=bucket_name, blob_key=blob_key
+                png,
+                bucket_name=bucket_name,
+                blob_key=blob_key,
+                content_type=content_type,
             ):
                 share_x_url = _build_share_x_cand_button_url(
                     blob_key,

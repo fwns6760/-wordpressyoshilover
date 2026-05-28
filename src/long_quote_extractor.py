@@ -23,6 +23,9 @@ Pattern A (voice text) に fallback。 speaker proximity 100 は維持。
 2026-05-28 PM2: user 指示「もっと文字数ふやしていい」 で min_chars 60→80 に
 更に引き上げ。 substantive な長 quote (見出し level でなく本文段落 level の
 発言) だけ Pattern B 化、 短文 quote 持つ article は Pattern A fallback 継続。
+
+2026-05-28 PM3: user 指示「文字数を増やす」 (デグレ fix と同 session) で
+80→100 に更に引き上げ。
 """
 
 from __future__ import annotations
@@ -31,7 +34,7 @@ import re as _re
 from typing import Iterable
 
 
-_DEFAULT_MIN_CHARS = 80
+_DEFAULT_MIN_CHARS = 100
 _DEFAULT_MAX_CHARS = 180
 
 # 「」 のみ抽出 (『』 はネストとみなして対象外)。 ネスト無し前提で内側 chars を取る。

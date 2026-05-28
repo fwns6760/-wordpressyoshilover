@@ -50,10 +50,10 @@ class TruncateTests(unittest.TestCase):
 
 class ExtractLongQuoteTests(unittest.TestCase):
     def test_simple_extract(self) -> None:
-        long_quote = "今日は最後まで集中して投げ切ることができた。" + "バッテリーともしっかり話して" * 5
+        long_quote = "今日は最後まで集中して投げ切ることができた。" + "バッテリーともしっかり話して" * 7
         text = f"巨人の戸郷が「{long_quote}」と試合後コメント"
         out = extract_long_quote(text)
-        self.assertGreaterEqual(len(out), 80)
+        self.assertGreaterEqual(len(out), 100)
         self.assertNotIn("「", out)
         self.assertNotIn("」", out)
 
@@ -82,11 +82,11 @@ class ExtractLongQuoteTests(unittest.TestCase):
         self.assertNotIn("」", out)
 
     def test_html_input(self) -> None:
-        # 14 字 + 「よかった」 ×20 (80 字) = 94 字 > 80 min
-        html = '<p>巨人の坂本勇人が<span>「最後まで集中して振り切れた' + 'よかった' * 20 + '」</span>と話した</p>'
+        # 14 字 + 「よかった」 ×25 (100 字) = 114 字 > 100 min
+        html = '<p>巨人の坂本勇人が<span>「最後まで集中して振り切れた' + 'よかった' * 25 + '」</span>と話した</p>'
         out = extract_long_quote(html)
         self.assertIn("最後まで集中して振り切れた", out)
-        self.assertGreaterEqual(len(out), 80)
+        self.assertGreaterEqual(len(out), 100)
 
     def test_multiple_quotes_pick_longest_above_min(self) -> None:
         text = "「短いやつ」「" + "長い発言" * 30 + "」"  # 短/長 2 quote
@@ -103,7 +103,7 @@ class ExtractLongQuoteTests(unittest.TestCase):
 
 class SpeakerProximityTests(unittest.TestCase):
     def test_speaker_present_returns_quote(self) -> None:
-        text = "巨人の戸郷翔征が「" + "今日は" * 30 + "」と話した"
+        text = "巨人の戸郷翔征が「" + "今日は" * 40 + "」と話した"
         out = extract_long_quote(text, speaker_aliases=("戸郷翔征", "戸郷"))
         self.assertIn("今日は", out)
 
@@ -120,19 +120,19 @@ class SpeakerProximityTests(unittest.TestCase):
         self.assertEqual(out, "")
 
     def test_partial_alias_surname_only(self) -> None:
-        text = "戸郷が「" + "今日も投げきった" * 10 + "」と話した"
+        text = "戸郷が「" + "今日も投げきった" * 14 + "」と話した"
         out = extract_long_quote(text, speaker_aliases=("戸郷",))
         self.assertGreater(len(out), 0)
 
     def test_no_aliases_skips_proximity_check(self) -> None:
         """speaker_aliases 空なら proximity check スキップ (backward compat)。"""
-        text = "誰かが「" + "発言" * 45 + "」と言った"
+        text = "誰かが「" + "発言" * 55 + "」と言った"
         out = extract_long_quote(text, speaker_aliases=())
         self.assertGreater(len(out), 0)
 
 
 class ThresholdRelaxationTests(unittest.TestCase):
-    """2026-05-28 PM2 lock: min_chars 80 (40→60→80 と段階引き上げ) /
+    """2026-05-28 PM3 lock: min_chars 100 (40→60→80→100 と段階引き上げ) /
     speaker_proximity 100 (維持)。"""
 
     def test_quote_below_60_rejected(self) -> None:
@@ -141,27 +141,26 @@ class ThresholdRelaxationTests(unittest.TestCase):
         text = f"戸郷が「{quote_30}」と話した"
         self.assertEqual(extract_long_quote(text), "")
 
-    def test_quote_60_to_79_chars_rejected(self) -> None:
-        # 60-79 字 quote → 80 字閾値では reject (5/28 PM2 user 指示「もっと文字数」
-        # で 60→80 引き上げ)。 60 字 fixture が短文として fall back する確認。
-        quote_60 = "今日は最後まで集中して投げ切ることができた本当に良かった" + "!" * 32
-        self.assertEqual(len(quote_60), 60)
-        text = f"巨人の戸郷が「{quote_60}」と試合後コメント"
-        self.assertEqual(extract_long_quote(text), "")
-
-    def test_quote_80_chars_accepted(self) -> None:
-        # 「集中して投げ切る」 8 字 × 10 回 = 80 字 (閾値ちょうど)
+    def test_quote_80_to_99_chars_rejected(self) -> None:
+        # 80 字 fixture → 100 字閾値では reject
         quote_80 = "集中して投げ切る" * 10
         self.assertEqual(len(quote_80), 80)
         text = f"巨人の戸郷が「{quote_80}」と試合後コメント"
+        self.assertEqual(extract_long_quote(text), "")
+
+    def test_quote_100_chars_accepted(self) -> None:
+        # 「集中して投げ切る」 8 字 × 13 回 = 104 字 ≥ 100 閾値
+        quote_104 = "集中して投げ切る" * 13
+        self.assertEqual(len(quote_104), 104)
+        text = f"巨人の戸郷が「{quote_104}」と試合後コメント"
         out = extract_long_quote(text)
-        self.assertGreaterEqual(len(out), 80)
+        self.assertGreaterEqual(len(out), 100)
         self.assertIn("集中して投げ切る", out)
 
     def test_speaker_within_100_chars_now_accepted(self) -> None:
         # speaker と quote 間が 60 字 → 旧 40 字 window 外、 新 100 字 window 内
         gap = "x" * 60
-        text = f"戸郷翔征{gap}「" + "今日は集中して投げきった" * 8 + "」"
+        text = f"戸郷翔征{gap}「" + "今日は集中して投げきった" * 11 + "」"
         out = extract_long_quote(text, speaker_aliases=("戸郷翔征",))
         self.assertGreater(len(out), 0)
         self.assertIn("今日は集中して投げきった", out)

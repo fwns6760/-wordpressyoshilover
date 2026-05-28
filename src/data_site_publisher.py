@@ -36,7 +36,9 @@ from src.data_site_query import (
     fetch_hit_streak,
     fetch_lineup_slot_stats,
     fetch_opponent_split_stats,
+    fetch_pitching_stats_season,
     fetch_recent_games,
+    fetch_recent_pitching_games,
     fetch_related_topic_links,
     find_player_featured_image_url,
     load_phase1_player_names,
@@ -216,6 +218,31 @@ def _build_pillar_info(player_name: str) -> PillarPlayerInfo | None:
     contrib_streak = fetch_contribution_streak(player_name)
     info.contribution_streak_active = contrib_streak.active
     info.contribution_streak_season_max = contrib_streak.season_max
+    # Phase 1.5+α 投手 stats (position=投手 のみ実際表示されるが、 全 player で
+    # query して dataclass に詰めておく — 投手じゃない player は値 0 で template
+    # 側で section omit される)
+    pitching = fetch_pitching_stats_season(player_name)
+    if pitching:
+        info.has_pitching_stats = True
+        info.pitch_games = pitching.games
+        info.pitch_wins = pitching.wins
+        info.pitch_losses = pitching.losses
+        info.pitch_ip = pitching.ip
+        info.pitch_k = pitching.k
+        info.pitch_bb = pitching.bb
+        info.pitch_h_allowed = pitching.h_allowed
+        info.pitch_hr_allowed = pitching.hr_allowed
+        info.pitch_er = pitching.er
+        info.pitch_era = pitching.era
+        info.pitch_whip = pitching.whip
+        info.pitch_k_per_9 = pitching.k_per_9
+        info.pitch_bb_per_9 = pitching.bb_per_9
+    pitching_recent = fetch_recent_pitching_games(player_name, limit=5)
+    if pitching_recent:
+        info.recent_pitching_games = [
+            (p.game_date, p.opponent, p.result_mark, p.ip, p.h_allowed, p.k, p.bb, p.er)
+            for p in pitching_recent
+        ]
     return info
 
 

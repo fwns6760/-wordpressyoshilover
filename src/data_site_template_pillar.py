@@ -55,6 +55,23 @@ class PillarPlayerInfo:
     hit_streak_season_max: int = 0
     contribution_streak_active: int = 0
     contribution_streak_season_max: int = 0
+    # Phase 1.5+α 投手 stats (position=投手 のみ。 None なら placeholder)
+    pitch_games: int = 0
+    pitch_wins: int = 0
+    pitch_losses: int = 0
+    pitch_ip: float = 0.0
+    pitch_k: int = 0
+    pitch_bb: int = 0
+    pitch_h_allowed: int = 0
+    pitch_hr_allowed: int = 0
+    pitch_er: int = 0
+    pitch_era: Optional[float] = None
+    pitch_whip: Optional[float] = None
+    pitch_k_per_9: Optional[float] = None
+    pitch_bb_per_9: Optional[float] = None
+    has_pitching_stats: bool = False
+    recent_pitching_games: list[tuple[str, str, str, float, int, int, int, int]] = field(default_factory=list)
+    # recent_pitching_games = [(date, opp, result_mark, ip, h, k, bb, er), ...]
 
 
 CLUSTER_URL = "https://yoshilover.com/data/"
@@ -255,6 +272,109 @@ def _build_opponent_split_html(player: PillarPlayerInfo) -> str:
     )
 
 
+def _fmt_era(v: Optional[float]) -> str:
+    if v is None:
+        return "-"
+    return f"{v:.2f}"
+
+
+def _fmt_ip(ip: float) -> str:
+    """投球回 表示 (NPB 0.1/0.2 形式)。 ip 内部は 1/3 表記の小数で持つ。"""
+    if ip <= 0:
+        return "-"
+    return f"{ip:.1f}"
+
+
+def _build_pitching_season_html(player: PillarPlayerInfo) -> str:
+    """投手 season summary (position=投手 only)."""
+    if not player.has_pitching_stats or player.pitch_games == 0:
+        return (
+            '<section class="ys-pillar-pitch-season" '
+            'style="background:#fff;border:1px solid #eee;padding:14px;margin:0 0 16px;border-radius:4px;">'
+            '<h2 style="font-size:16px;margin:0 0 10px;">今シーズン 通算 (投手)</h2>'
+            '<p style="font-size:13px;color:#888;margin:0;">'
+            '現在データ集計中 — 一軍登板の最新投手データが揃い次第ここに反映されます。'
+            '</p>'
+            '</section>'
+        )
+    return (
+        '<section class="ys-pillar-pitch-season" '
+        'style="background:#fff;border:1px solid #eee;padding:14px;margin:0 0 16px;border-radius:4px;">'
+        '<h2 style="font-size:16px;margin:0 0 10px;">今シーズン 通算 (投手)</h2>'
+        '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
+        '<thead><tr style="background:#fafafa;text-align:center;">'
+        '<th style="padding:8px 4px;">登板</th>'
+        '<th style="padding:8px 4px;">勝</th>'
+        '<th style="padding:8px 4px;">敗</th>'
+        '<th style="padding:8px 4px;">投球回</th>'
+        '<th style="padding:8px 4px;">奪三振</th>'
+        '<th style="padding:8px 4px;">与四球</th>'
+        '<th style="padding:8px 4px;">被安打</th>'
+        '<th style="padding:8px 4px;">被本塁打</th>'
+        '<th style="padding:8px 4px;">自責</th>'
+        '<th style="padding:8px 4px;">防御率</th>'
+        '<th style="padding:8px 4px;">WHIP</th>'
+        '</tr></thead>'
+        '<tbody><tr style="text-align:center;">'
+        f'<td style="padding:8px 4px;">{player.pitch_games}</td>'
+        f'<td style="padding:8px 4px;color:#d32f2f;font-weight:600;">{player.pitch_wins}</td>'
+        f'<td style="padding:8px 4px;">{player.pitch_losses}</td>'
+        f'<td style="padding:8px 4px;">{_fmt_ip(player.pitch_ip)}</td>'
+        f'<td style="padding:8px 4px;">{player.pitch_k}</td>'
+        f'<td style="padding:8px 4px;">{player.pitch_bb}</td>'
+        f'<td style="padding:8px 4px;">{player.pitch_h_allowed}</td>'
+        f'<td style="padding:8px 4px;">{player.pitch_hr_allowed}</td>'
+        f'<td style="padding:8px 4px;">{player.pitch_er}</td>'
+        f'<td style="padding:8px 4px;color:#1976d2;font-weight:600;">{_fmt_era(player.pitch_era)}</td>'
+        f'<td style="padding:8px 4px;color:#1976d2;font-weight:600;">{_fmt_era(player.pitch_whip)}</td>'
+        '</tr></tbody></table>'
+        '<p style="font-size:11px;color:#999;margin:8px 0 0;">'
+        '※ insight.db 集計 (NPB official box score 由来)、 毎朝 6:00 + 試合後 17:30 / 23:00 JST 更新'
+        '</p></section>'
+    )
+
+
+def _build_pitching_recent_html(player: PillarPlayerInfo) -> str:
+    if not player.recent_pitching_games:
+        return ""
+    rows_html = "\n".join(
+        '<tr style="text-align:center;border-bottom:1px solid #eee;">'
+        f'<td style="padding:6px;">{_esc(date)}</td>'
+        f'<td style="padding:6px;">{_esc(opp)}</td>'
+        f'<td style="padding:6px;font-weight:600;color:#d32f2f;">{_esc(mark)}</td>'
+        f'<td style="padding:6px;">{_fmt_ip(ip)}</td>'
+        f'<td style="padding:6px;">{h}</td>'
+        f'<td style="padding:6px;font-weight:600;">{k}</td>'
+        f'<td style="padding:6px;">{bb}</td>'
+        f'<td style="padding:6px;color:#1976d2;">{er}</td>'
+        '</tr>'
+        for (date, opp, mark, ip, h, k, bb, er) in player.recent_pitching_games
+    )
+    return (
+        '<section class="ys-pillar-pitch-recent" '
+        'style="background:#fff;border:1px solid #eee;padding:14px;margin:0 0 16px;border-radius:4px;">'
+        f'<h2 style="font-size:16px;margin:0 0 10px;">直近 {len(player.recent_pitching_games)} 登板</h2>'
+        '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
+        '<thead><tr style="background:#fafafa;text-align:center;">'
+        '<th style="padding:8px 4px;">日付</th>'
+        '<th style="padding:8px 4px;">相手</th>'
+        '<th style="padding:8px 4px;">結果</th>'
+        '<th style="padding:8px 4px;">投球回</th>'
+        '<th style="padding:8px 4px;">被安打</th>'
+        '<th style="padding:8px 4px;">奪三振</th>'
+        '<th style="padding:8px 4px;">与四球</th>'
+        '<th style="padding:8px 4px;">自責</th>'
+        '</tr></thead>'
+        f'<tbody>{rows_html}</tbody></table>'
+        '</section>'
+    )
+
+
+def _is_pitcher(player: PillarPlayerInfo) -> bool:
+    """position が「投手」 なら True (打撃 section omit)."""
+    return (player.position or "").strip() == "投手"
+
+
 def _build_streak_html(player: PillarPlayerInfo) -> str:
     """連続記録 (Phase 1.0b1 metric pack #3/#4)。 active streak がゼロでも season_max があれば section 出す。"""
     if (player.hit_streak_active + player.hit_streak_season_max
@@ -383,15 +503,25 @@ def render_pillar_html(player: PillarPlayerInfo) -> str:
     """
     if not player.name or not player.slug:
         raise ValueError("PillarPlayerInfo.name and .slug are required")
+    # position=投手 は投手 section、 その他は打撃 section に分岐
+    if _is_pitcher(player):
+        stats_sections = [
+            _build_pitching_season_html(player),
+            _build_pitching_recent_html(player),
+        ]
+    else:
+        stats_sections = [
+            _build_season_stats_html(player),
+            _build_streak_html(player),
+            _build_recent_games_html(player),
+            _build_lineup_slot_html(player),
+            _build_opponent_split_html(player),
+        ]
     sections = [
         _build_breadcrumb_html(player.name),
         _build_featured_image_html(player),
         _build_short_review_html(player),
-        _build_season_stats_html(player),
-        _build_streak_html(player),
-        _build_recent_games_html(player),
-        _build_lineup_slot_html(player),
-        _build_opponent_split_html(player),
+        *stats_sections,
         _build_related_topic_html(player),
         _build_back_link_html(),
         _build_jsonld(player),

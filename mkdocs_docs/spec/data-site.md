@@ -229,6 +229,66 @@ Cloud Run Job 新設、 既存 scheduler に追加せず別 job。 Phase 1.0 は
 - 2026-05-28 PM: rev2 全面書き換え (user 「データサイト作って index からしてく。 毎日更新のデータ記事。 選手全員の」)
 - 2026-05-28 PM2: rev3 topical cluster 構造 + 大手差別化 4 理由 + 内部 link 流量設計 を明文化 (user 「今あるデータベースから色々な記事をつくる。 球団の選手全体をクラスターページ。 選手をピラーページ。 日々の記事を速報ページでとぴくらをつくりたい」 + 「コンセプトは大手メディアではわからない」)。 Phase 1.0 player を 吉川尚輝 / 坂本勇人 / 丸佳浩 に変更 (user 指定)、 scope に Cluster page 追加 (4 page)
 - 2026-05-28 PM3: rev4 「大手にない data」 metric pack を §15 で明文化、 Phase 1.0a/b/c 段階追加 (user 「大手に乗らないデータとかない? データとして弱い」)
+- 2026-05-28 PM4: rev5 進捗 section §16 追加 (user 「仕様書と GH issues に進捗書いて」)、 全 phase 完了状況 + 残 ticket 445/446 へ link
+
+## 16. 進捗 (2026-05-28 PM4 時点)
+
+### 完了 (production live)
+
+| phase | 内容 | live URL / 状態 |
+|---|---|---|
+| **Phase 1.0 base** | Cluster 1 + Pillar 3 (吉川尚輝 / 坂本勇人 / 丸佳浩) base | `https://yoshilover.com/data/` + 3 Pillar |
+| **Phase 1.0a** | 打順別 + vs 球団 split (大手未掲載 metric pack #1, #2) | Pillar 内に section 表示 |
+| **Phase 1.0b1** | 連続安打 + 連続得点関与 streak (metric pack #3, #4) | Pillar 内 「連続記録」 table |
+| **Phase 1.5** | 31 player 拡大 (一軍 active player 全員、 insight.db 出場 record top 30 + 坂本) | `/data/{slug}/` × 31 |
+| **Phase 1.5+pitch** | 投手 stats section (戸郷 / 中川 / マルティネス 等 16 投手) | 投手 Pillar 内 「今シーズン 通算 (投手)」 + 直近登板 |
+| **Cluster split** | 野手 / 投手 別表 (背番号順、 各 col stats) | Cluster `/data/` で 2 表分離 |
+| **Phase 2** | 既存 publish 記事 301 件に Pillar back-link 自動注入 (topical authority 構造完成) | aside `ys-data-backlink` 注入済 |
+| **Daily back-link cron** | 新 publish 記事に daily 7:15 JST 自動 back-link 追加 | `data-site-backlink-daily` Job + Scheduler |
+| **Placeholder 具体化** | data 無 player の placeholder 文言を真の状況に合わせて明示 | 田中将大 / 坂本 等 |
+| **8 player WP tag 修復** | 姓名間空白 player の tag find 3 段 fallback | 松本剛 / 赤星 等 8 player tag 解決 |
+
+### Scheduler (live、 全 ENABLED、 Asia/Tokyo)
+
+| job | schedule | 役割 |
+|---|---|---|
+| data-site-publisher-daily | `0 6 * * *` | 朝 catchup (32 page upsert) |
+| data-site-publisher-daygame | `30 17 * * *` | デーゲーム後更新 |
+| data-site-publisher-nightgame | `0 23 * * *` | ナイトゲーム後更新 |
+| data-site-backlink-daily | `15 7 * * *` | 新 publish 記事 back-link 注入 (idempotent) |
+
+### コスト (実測)
+
+- Cloud Run 実行: 約 1 fire 10-15 秒 × 4 fire/日 = 60 秒/日 ≈ 30 分/月 (free tier 50 時間/月 内)
+- Cloud Scheduler: 4 job × $0.10/月 = ¥45/月 (固定 cost)
+- GCS / WP REST / Gemini: ¥0
+- **合計 ¥45/月** (Phase 1 full 拡大しても ¥50-100 程度)
+
+### 残 backlog (DRAFT、 user 判断後着手)
+
+| ticket | 内容 | 推奨判断 |
+|---|---|---|
+| `doc/active/445-DATA-SITE-phase1c-insight-lane-fix.md` | data-insight lane 修復 (at_bat_details.batter_canonical / games.home_away) → RISP / 球場別 / vs 左右 / count split / イニング別 5 metric 解放 | priority P2 (Phase 1.5 で MVP 充足、 観察後着手) |
+| `doc/active/446-DATA-SITE-phase1-full-slug-map.md` | Phase 1 full (84 player) 拡大、 54 player の slug 整備 | 推奨 option D (Phase 1.5 で MVP 充足、 SEO 流入観察後判断) |
+| noindex 適用 | Yoast REST 制約で page meta 反映不可、 theme hook or 手動設定要 | user 側 (Yoast 設定 5 分) |
+
+### 受け入れ試験 URL
+
+| URL | 確認 point |
+|---|---|
+| https://yoshilover.com/data/ | Cluster: 野手 15 + 投手 16 表、 背番号順、 stats 表示 |
+| https://yoshilover.com/data/yoshikawa-naoki/ | 打者 sample (吉川): 打順別 .083〜.400 / vs 球団 中日 .500 / 連続安打 3 試合 |
+| https://yoshilover.com/data/togo-shosei/ | 投手 sample (戸郷): G=4 W=2 IP=24.0 ERA=3.38 / 直近登板 表 |
+| https://yoshilover.com/data/nakagawa-kota/ | 中継ぎ sample (中川): G=16 W=1 ERA=0.69 |
+| https://yoshilover.com/data/sakamoto-hayato/ | data 無 sample (坂本): 具体化 placeholder「今シーズン 一軍出場記録なし...」 |
+| https://yoshilover.com/73041/ | back-link aside 「🐰 戸郷翔征 の data page を見る」 表示 |
+
+### GitHub Issues (本セッション 2026-05-28 PM4 作成)
+
+- [#115 (= ticket 443 master)](https://github.com/fwns6760/-wordpressyoshilover/issues/115) — 巨人選手データサイト master、 進捗 checkbox + live URL + cost
+- [#116 (= ticket 444 impl)](https://github.com/fwns6760/-wordpressyoshilover/issues/116) — Phase 1.0 / 1.5 実装、 完了 file list + live verify + blocker
+- [#117 (= ticket 445 defer)](https://github.com/fwns6760/-wordpressyoshilover/issues/117) — Phase 1.0c data-insight lane 修復 (5 metric block 解除)
+- [#118 (= ticket 446 defer)](https://github.com/fwns6760/-wordpressyoshilover/issues/118) — Phase 1 full 拡大 (54 player slug 整備)
 
 ## 15. 大手にない data metric pack (rev4 追加)
 

@@ -4,6 +4,33 @@
 
 ## 2026-05-28 session update
 
+### 445 — 巨人 SNS リアルタイム話題 daily aggregation (READY 2026-05-28 PM、 user GO 済)
+
+user 「SNSページをページにはしたいが、 コンテンツがたりない」 → Yahoo リアルタイム検索の **巨人専門 1軍/2軍/3軍 版** を作る方針 lock。
+
+**スコープ確定の流れ (本 session 圧縮)**:
+- 当初提案 = 公式アカウントの X 投稿を集約 (球団 + 報知 + サンスポ + ...)
+- user 「数が多いので専門メディアだけ抽出」 → source 4 account (`yomiuri_giants` / `TokyoGiants` / `hochi_giants` / `Sanspo_Giants`) に絞り込み
+- user 「トレンドの項目も置きたい。 出てきた選手名のタグを並べる、 一日のトップに」 → 記事最上部に トレンド section (上位 15 名、 言及 2 回以上)
+- user 「コーチと監督もね」 → roster 全 136 名 (player 84 + coach 27 + manager 1 + shihaikako 1 + ikusei 23) を トレンド count 対象に
+- user 「スケジュールを追加するとお金がかかるから今のスケジュールの時間帯に日別で追加」 → 既存 `giants-weekday-daytime` / `giants-realtime-trigger` に内部 time gate で相乗り (10/13/17/21 JST)
+- user 「要は金がかからない方法」 → RSSHub 経由 (X API 不要、 LLM 不要、 oEmbed render) で **追加コスト ¥0** path 確定
+
+**コスト** = ¥0 / 月 (新 Scheduler / Job / API call / LLM 全部なし)。
+
+**実装 file 新規** (5):
+- `src/sns_realtime_topic.py` (main、 fetch + 分類 + render + WP upsert)
+- `src/sns_realtime_topic_classifier.py` (一軍 / 二軍 / 三軍 + roster alias match)
+- `src/sns_realtime_topic_template.py` (jinja template)
+- `tests/test_sns_realtime_topic.py`
+- `tests/test_sns_realtime_topic_classifier.py`
+
+**触らない**: 既存 article path / 既存 Scheduler 設定 / WP frontend CSS / X live posting / featured_media rule / 個人 X / 野球全般アカウント (`SponichiYakyu` / `nikkansports` / `npb`)。
+
+doc: `doc/active/445-SNS-realtime-topic-daily.md` / spec: `mkdocs_docs/spec/sns-realtime-topic.md` (mkdocs nav 追加済、 `127.0.0.1:8000` で preview 200 OK 確認済)。
+
+next: Claude 自律で 445 実装着手 (classifier → main → template → tests → fetcher hook → image rebuild → deploy)、 翌日 4 fire 観察で 受け入れ条件 verify。 GH Issue 作成は本 session で並行。
+
 ### 443 — 巨人選手データサイト (topical cluster 構造 / 毎日更新) (READY rev3 2026-05-28 PM2、 user GO 済)
 
 rev 履歴:

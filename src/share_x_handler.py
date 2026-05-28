@@ -479,6 +479,17 @@ def _build_share_cand_page_html(
     if (POST_URL && POST_URL.length > 0) {{
       sharePayload.url = POST_URL;
     }}
+    // 438 (2026-05-28): Android Chrome は url key を omit しても document.URL を
+    // share metadata に fallback で詰める挙動があり、 X app がそれを compose text
+    // に concat する漏出になる (post 後も URL が残る)。 navigator.share 直前に
+    // history.replaceState で URL を innocuous な path に書き換え、 document.URL
+    // を share metadata に渡さないようにする。 token 検証 / image preload は完了
+    // 済なので URL 書き換えても機能影響なし。
+    try {{
+      history.replaceState({{}}, document.title, '/share-x-blank');
+    }} catch (e) {{
+      // 古い browser fallback、 失敗時は従来動作
+    }}
     navigator.share(sharePayload).catch(function(err) {{
       console.warn('share-x-cand share failed, falling back to X intent', err);
       window.location.href = X_INTENT_URL;

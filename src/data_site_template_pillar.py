@@ -128,14 +128,15 @@ def _fmt_avg(avg: Optional[float]) -> str:
 
 
 def _build_season_stats_html(player: PillarPlayerInfo) -> str:
-    """season 集計 stats を 表で表示。 data 無ければ placeholder。"""
+    """season 集計 stats を 表で表示。 data 無ければ placeholder (具体化)。"""
     if not player.has_stats or player.season_games == 0:
         return (
             '<section class="ys-pillar-stats-season" '
             'style="background:#fff;border:1px solid #eee;padding:14px;margin:0 0 16px;border-radius:4px;">'
             '<h2 style="font-size:16px;margin:0 0 10px;">今シーズン 通算 (打撃)</h2>'
             '<p style="font-size:13px;color:#888;margin:0;">'
-            '現在データ集計中 — 一軍出場の最新打撃データが揃い次第ここに反映されます。'
+            f'{_esc(player.name)}選手の今シーズン 一軍出場記録は、 現時点で集計対象となる box score 上に確認できていません。'
+            ' 出場が記録され次第、 毎朝 6:00 + 試合後 17:30 / 23:00 JST に自動反映されます。'
             '</p>'
             '</section>'
         )
@@ -286,14 +287,15 @@ def _fmt_ip(ip: float) -> str:
 
 
 def _build_pitching_season_html(player: PillarPlayerInfo) -> str:
-    """投手 season summary (position=投手 only)."""
+    """投手 season summary (position=投手 only)、 data 無ければ具体化 placeholder。"""
     if not player.has_pitching_stats or player.pitch_games == 0:
         return (
             '<section class="ys-pillar-pitch-season" '
             'style="background:#fff;border:1px solid #eee;padding:14px;margin:0 0 16px;border-radius:4px;">'
             '<h2 style="font-size:16px;margin:0 0 10px;">今シーズン 通算 (投手)</h2>'
             '<p style="font-size:13px;color:#888;margin:0;">'
-            '現在データ集計中 — 一軍登板の最新投手データが揃い次第ここに反映されます。'
+            f'{_esc(player.name)}投手の今シーズン 一軍登板記録は、 現時点で集計対象となる box score 上に確認できていません。'
+            ' 登板が記録され次第、 毎朝 6:00 + 試合後 17:30 / 23:00 JST に自動反映されます。'
             '</p>'
             '</section>'
         )

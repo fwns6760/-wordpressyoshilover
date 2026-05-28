@@ -2373,17 +2373,32 @@ _GUARDED_PUBLISH_DO_NOT_PUBLISH_TITLE_PREFIXES = (
     # fail で skip ではなく draft 化したもの) は publish してはいけない user 判断 queue。
     # guarded-publish が title prefix を見ずに auto-publish して 65046 incident
     # (13:01:05 publish) が起きた事故を防ぐ早期フィルタ。
+    # 2026-05-28: 主要 signal は WP tag (id 872) に移行、 title prefix は backfill
+    # 完了するまで legacy fallback として残す (新規 draft は prefix 無しで作成される)。
     "【要review｜post_gen_validate】",
     # publish-notice scanner が他の review-only draft 用に持ってる prefix も
-    # 念のため網羅 (digest / internal_skip / preflight_skip 等)。
+    # 念のため網羅 (digest / internal_skip / preflight_skip 等)。これらは元々 mail
+    # subject 専用で WP title には付与されない想定だが、 防御的に維持。
     "【要review｜post_gen_validate digest｜",
     "【要review｜internal_skip_visible】",
     "【要review｜preflight_skip】",
 )
 
+# 2026-05-28: title prefix の代替として WP tag 872 (「要review-post_gen_validate」) を
+# 検査。 既存 84+ 件の prefix 付き draft の backfill が完了するまでは title prefix
+# 検査も維持して両系統 OR で判定する。
+_REVIEW_ONLY_DRAFT_TAG_IDS = frozenset({872})
 
-def _is_review_only_draft(title: str) -> bool:
-    """title prefix で「auto-publish してはいけない」 review-only draft を判定。"""
+
+def _is_review_only_draft(title: str, tag_ids: list[int] | None = None) -> bool:
+    """tag id または title prefix で「auto-publish してはいけない」 review-only draft を判定。"""
+    if tag_ids:
+        for tag_id in tag_ids:
+            try:
+                if int(tag_id) in _REVIEW_ONLY_DRAFT_TAG_IDS:
+                    return True
+            except (TypeError, ValueError):
+                continue
     if not title:
         return False
     return any(title.startswith(prefix) for prefix in _GUARDED_PUBLISH_DO_NOT_PUBLISH_TITLE_PREFIXES)
@@ -2415,10 +2430,12 @@ def evaluate_raw_posts(
         record = extractor.extract_post_record(raw_post)
         title_value = str(record.get("title") or "")
         # RELIABILITY-2026-05-08-Y2: review-only draft は guarded-publish の対象から
-        # 完全除外。title prefix で識別 (rss_fetcher 側で「【要review｜post_gen_validate】」
-        # prefix 付き draft を作成してる)。これがないと user 判断 queue に入れたつもりの
-        # 記事が auto-publish されて致命的事実誤認 publish の risk。
-        if _is_review_only_draft(title_value):
+        # 完全除外。 2026-05-28 以降は WP tag (id 872) で識別 (rss_fetcher 側で extra_tag_ids
+        # で付与)、 backfill 完了までは legacy title prefix も OR で fallback。
+        # これがないと user 判断 queue に入れたつもりの記事が auto-publish されて
+        # 致命的事実誤認 publish の risk。
+        record_tag_ids = [int(t) for t in (record.get("tags") or []) if isinstance(t, (int, str)) and str(t).strip().lstrip("-").isdigit()]
+        if _is_review_only_draft(title_value, record_tag_ids):
             continue
         modified_at = _parse_wp_datetime(str(record.get("modified_at") or ""), fallback_now=now_jst)
         if modified_at < cutoff:

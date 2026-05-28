@@ -2001,6 +2001,9 @@ def _post_gen_validate_review_draft_enabled() -> bool:
 
 
 _POST_GEN_VALIDATE_REVIEW_DRAFT_TITLE_PREFIX = "【要review｜post_gen_validate】"
+# 2026-05-28: title prefix を廃止し WP tag (id 872 = 「要review-post_gen_validate」) で
+# review marker を表現する方針へ移行。 prefix 定数は backfill / 旧 draft 検出用に維持。
+_POST_GEN_VALIDATE_REVIEW_TAG_ID = 872
 
 
 # RELIABILITY-2026-05-08-E2: review draft 化の対象軸を絞り込む。致命的軸は
@@ -20774,6 +20777,7 @@ def _create_draft_with_same_fire_guard(
     enrichment_raw_html: str = "",
     enrichment_source_type: str = "",
     article_subtype: str = "",
+    extra_tag_ids: list[int] | None = None,
 ) -> int:
     # 344-INGEST: YouTube source なら title 先頭に「【YouTube】」prefix を付与。
     # mail 件名 + WP admin で即識別可、idempotent。
@@ -20957,6 +20961,11 @@ def _create_draft_with_same_fire_guard(
     # 全 publish が最低 1 tag を持つよう WP tag「速報」 (id=850) を fallback。
     if not tag_ids:
         tag_ids = [850]
+    # 2026-05-28: review marker tag を WP title prefix の代替として注入。
+    # extra_tag_ids は caller (post_gen_validate review draft path) から渡る。
+    for _extra_tag_id in extra_tag_ids or []:
+        if isinstance(_extra_tag_id, int) and _extra_tag_id > 0 and _extra_tag_id not in tag_ids:
+            tag_ids.append(_extra_tag_id)
     post_kwargs = {
         "categories": categories,
         "status": resolved_status,
@@ -27948,7 +27957,9 @@ def _main(args, logger):
                     # entity_mismatch / fact_conflict 系) を含む fail は review draft
                     # 化せず通常 skip path に流す。memory rule の限定 6 STOP gate を
                     # 維持 + review draft 蓄積を抑制。
-                    review_title = _POST_GEN_VALIDATE_REVIEW_DRAFT_TITLE_PREFIX + draft_title
+                    # 2026-05-28: title prefix 付与を廃止。 WP tag (id 872) を
+                    # extra_tag_ids 経由で付与し、 user-facing title を汚さない。
+                    review_title = draft_title
                     review_draft_created = False
                     review_post_id_logged: int | None = None
                     try:
@@ -27976,6 +27987,7 @@ def _main(args, logger):
                             enrichment_raw_html=_article_raw_html,
                             enrichment_source_type=source_type,
                             article_subtype=str(validator_article_subtype or ""),
+                            extra_tag_ids=[_POST_GEN_VALIDATE_REVIEW_TAG_ID],
                         )
                         if review_post_id_logged and review_post_id_logged > 0:
                             review_draft_created = True

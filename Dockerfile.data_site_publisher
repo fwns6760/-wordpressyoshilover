@@ -1,0 +1,30 @@
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app
+
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt ./requirements.txt
+
+RUN python3 -m pip install --no-cache-dir --upgrade pip \
+    && python3 -m pip install --no-cache-dir -r requirements.txt
+
+COPY bin/data_site_publisher_entrypoint.sh ./bin/data_site_publisher_entrypoint.sh
+COPY src/ ./src/
+COPY config/ ./config/
+COPY vendor/ ./vendor/
+
+RUN useradd --create-home --home-dir /home/appuser --shell /usr/sbin/nologin appuser \
+    && mkdir -p /app/logs \
+    && chmod +x /app/bin/data_site_publisher_entrypoint.sh \
+    && chown -R appuser:appuser /app /home/appuser
+
+USER appuser
+
+ENTRYPOINT ["/app/bin/data_site_publisher_entrypoint.sh"]

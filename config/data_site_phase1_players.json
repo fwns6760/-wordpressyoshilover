@@ -1,0 +1,18 @@
+{
+  "_comment": "data-site Phase 1.0 対象 player list (ticket 444、 user 指定 2026-05-28 PM2)。 Phase 1.5 で 一軍 active 30 名に拡張、 Phase 1 full で 110 名。",
+  "phase": "1.0",
+  "players": [
+    {
+      "name": "吉川尚輝",
+      "roster_match": "吉川尚輝"
+    },
+    {
+      "name": "坂本勇人",
+      "roster_match": "坂本勇人"
+    },
+    {
+      "name": "丸佳浩",
+      "roster_match": "丸佳浩"
+    }
+  ]
+}

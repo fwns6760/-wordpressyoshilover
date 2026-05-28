@@ -1,0 +1,278 @@
+"""data-site publisher main module (ticket 443/444 Phase 1.0).
+
+実行 flow:
+1. config から Phase 1.0 対象 player name 取得 (吉川尚輝 / 坂本勇人 / 丸佳浩)
+2. 各 player について:
+   - roster から position / jersey / role
+   - WP REST で featured_media URL + 関連 Topic link 10-20 件
+   - Pillar HTML render
+   - WP REST `/pages` upsert (slug=player-slug, parent=cluster_page_id)
+3. 全 player 終了後、 Cluster HTML render → WP REST `/pages` upsert (slug=data)
+4. log + summary 出力
+
+冪等性: WP page を slug で find_existing → 存在すれば PUT update、 無ければ POST。
+URL 増加なし、 同 URL 上書き daily upsert。
+
+Cloud Run Job entrypoint = `python -m src.data_site_publisher`。
+env:
+  - WP_URL / WP_USER / WP_APP_PASSWORD (WP REST 認証)
+  - DATA_SITE_DRY_RUN=1 で WP upsert を skip (rendering と log 出力のみ)
+"""
+
+from __future__ import annotations
+
+import json as _json
+import logging
+import os
+import sys
+from dataclasses import dataclass
+
+import requests
+from requests.auth import HTTPBasicAuth
+
+from src.data_site_query import (
+    fetch_related_topic_links,
+    find_player_featured_image_url,
+    load_phase1_player_names,
+    load_roster_player,
+)
+from src.data_site_slug import player_slug
+from src.data_site_template_cluster import (
+    ClusterPlayerEntry,
+    render_cluster_html,
+    render_cluster_title,
+)
+from src.data_site_template_pillar import (
+    PillarPlayerInfo,
+    render_pillar_html,
+    render_pillar_title,
+)
+
+
+LOG = logging.getLogger("data_site_publisher")
+
+
+@dataclass
+class UpsertResult:
+    slug: str
+    page_id: int
+    action: str  # "created" / "updated" / "skipped"
+    url: str
+
+
+def _dry_run_enabled() -> bool:
+    return str(os.environ.get("DATA_SITE_DRY_RUN", "")).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _wp_creds() -> tuple[str, HTTPBasicAuth]:
+    base = os.environ.get("WP_URL", "").strip().rstrip("/")
+    user = os.environ.get("WP_USER", "").strip()
+    pw = os.environ.get("WP_APP_PASSWORD", "").strip()
+    if not (base and user and pw):
+        raise RuntimeError("WP_URL / WP_USER / WP_APP_PASSWORD env required")
+    return base, HTTPBasicAuth(user, pw)
+
+
+def _find_page_id_by_slug(slug: str, *, parent: int = 0) -> int | None:
+    """WP REST /pages を slug で検索 → 存在すれば page id を返す."""
+    base, auth = _wp_creds()
+    try:
+        r = requests.get(
+            base + "/wp-json/wp/v2/pages",
+            params={"slug": slug, "per_page": 5, "_fields": "id,slug,parent"},
+            auth=auth,
+            timeout=15,
+        )
+        if not r.ok:
+            return None
+        for p in (r.json() or []):
+            if str(p.get("slug", "")) == slug:
+                if parent and int(p.get("parent") or 0) != parent:
+                    continue
+                return int(p.get("id"))
+        return None
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("find_page_id_by_slug err slug=%s: %r", slug, exc)
+        return None
+
+
+def _upsert_page(
+    *,
+    slug: str,
+    title: str,
+    content_html: str,
+    parent: int = 0,
+    featured_media_id: int | None = None,
+) -> UpsertResult:
+    """WP page を upsert (slug 一致なら PUT、 無ければ POST)."""
+    if _dry_run_enabled():
+        LOG.info("DRY_RUN upsert skipped slug=%s title=%s bytes=%d", slug, title, len(content_html))
+        return UpsertResult(slug=slug, page_id=0, action="skipped", url=f"/data/{slug}/")
+
+    base, auth = _wp_creds()
+    payload: dict[str, object] = {
+        "slug": slug,
+        "title": title,
+        "content": content_html,
+        "status": "publish",
+        "parent": parent,
+    }
+    if featured_media_id:
+        payload["featured_media"] = featured_media_id
+
+    existing_id = _find_page_id_by_slug(slug, parent=parent)
+    try:
+        if existing_id:
+            r = requests.post(
+                base + f"/wp-json/wp/v2/pages/{existing_id}",
+                json=payload,
+                auth=auth,
+                timeout=30,
+            )
+            action = "updated"
+        else:
+            r = requests.post(
+                base + "/wp-json/wp/v2/pages",
+                json=payload,
+                auth=auth,
+                timeout=30,
+            )
+            action = "created"
+        if not r.ok:
+            LOG.warning("upsert fail slug=%s status=%d body=%s", slug, r.status_code, r.text[:300])
+            return UpsertResult(slug=slug, page_id=0, action="error", url=f"/data/{slug}/")
+        page = r.json() or {}
+        return UpsertResult(
+            slug=slug,
+            page_id=int(page.get("id") or 0),
+            action=action,
+            url=str(page.get("link") or f"/data/{slug}/"),
+        )
+    except Exception as exc:  # noqa: BLE001
+        LOG.exception("upsert exception slug=%s: %r", slug, exc)
+        return UpsertResult(slug=slug, page_id=0, action="error", url=f"/data/{slug}/")
+
+
+def _build_pillar_info(player_name: str) -> PillarPlayerInfo | None:
+    """1 player の Pillar 用 info をまとめ作る。 roster 未一致は None."""
+    roster = load_roster_player(player_name)
+    if not roster:
+        LOG.warning("roster miss player=%s — skip", player_name)
+        return None
+    slug = player_slug(player_name)
+    related = fetch_related_topic_links(player_name, limit=20)
+    image_url = find_player_featured_image_url(player_name)
+    return PillarPlayerInfo(
+        name=roster.name,
+        slug=slug,
+        position=roster.position,
+        jersey_number=roster.jersey_number,
+        role=roster.role,
+        featured_image_url=image_url,
+        short_review="",  # Phase 1.0 は AI 短評 未接続、 後 phase で追加
+        related_topic_links=related,
+    )
+
+
+def publish_phase1() -> dict[str, object]:
+    """Phase 1.0 main: 3 Pillar + 1 Cluster upsert."""
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    LOG.info("data-site Phase 1.0 publisher start dry_run=%s", _dry_run_enabled())
+
+    target_names = load_phase1_player_names()
+    if not target_names:
+        LOG.error("no phase1 target players in config — abort")
+        return {"status": "abort", "reason": "no_target_players"}
+
+    LOG.info("phase1 target players: %s", target_names)
+
+    # Cluster page 先に upsert (parent=0、 top-level)、 page id を取得して Pillar parent に使う
+    cluster_entries: list[ClusterPlayerEntry] = []
+    pillar_infos: list[PillarPlayerInfo] = []
+    for name in target_names:
+        info = _build_pillar_info(name)
+        if not info:
+            continue
+        pillar_infos.append(info)
+        cluster_entries.append(
+            ClusterPlayerEntry(
+                name=info.name,
+                slug=info.slug,
+                position=info.position,
+                jersey_number=info.jersey_number,
+                role=info.role,
+            )
+        )
+
+    if not pillar_infos:
+        LOG.error("no eligible pillar infos — abort")
+        return {"status": "abort", "reason": "no_pillar_infos"}
+
+    # Cluster upsert (parent=0)
+    cluster_html = render_cluster_html(cluster_entries)
+    cluster_title = render_cluster_title()
+    cluster_result = _upsert_page(
+        slug="data",
+        title=cluster_title,
+        content_html=cluster_html,
+        parent=0,
+    )
+    LOG.info(
+        "cluster upsert slug=data page_id=%s action=%s",
+        cluster_result.page_id, cluster_result.action,
+    )
+
+    # Pillar upsert (parent=cluster_page_id) — dry-run 時は parent=0 (cluster_page_id=0)
+    cluster_page_id = cluster_result.page_id if cluster_result.action != "skipped" else 0
+    pillar_results: list[UpsertResult] = []
+    for info in pillar_infos:
+        html = render_pillar_html(info)
+        title = render_pillar_title(info)
+        result = _upsert_page(
+            slug=info.slug,
+            title=title,
+            content_html=html,
+            parent=cluster_page_id,
+        )
+        LOG.info(
+            "pillar upsert slug=%s page_id=%s action=%s related=%d image=%s",
+            result.slug, result.page_id, result.action,
+            len(info.related_topic_links), "yes" if info.featured_image_url else "no",
+        )
+        pillar_results.append(result)
+
+    summary = {
+        "status": "ok",
+        "dry_run": _dry_run_enabled(),
+        "cluster": {
+            "slug": cluster_result.slug,
+            "page_id": cluster_result.page_id,
+            "action": cluster_result.action,
+            "url": cluster_result.url,
+        },
+        "pillars": [
+            {
+                "slug": r.slug,
+                "page_id": r.page_id,
+                "action": r.action,
+                "url": r.url,
+            }
+            for r in pillar_results
+        ],
+        "pillar_count": len(pillar_results),
+    }
+    LOG.info("data-site Phase 1.0 publisher done: %s", _json.dumps(summary, ensure_ascii=False))
+    return summary
+
+
+def main() -> int:
+    try:
+        summary = publish_phase1()
+    except Exception as exc:  # noqa: BLE001
+        LOG.exception("publisher fatal: %r", exc)
+        return 1
+    return 0 if summary.get("status") == "ok" else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

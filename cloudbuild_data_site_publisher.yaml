@@ -1,0 +1,30 @@
+substitutions:
+  _REGION: asia-northeast1
+  _PROJECT_ID: baseballsite
+  _IMAGE_NAME: data-site-publisher
+  _TAG: latest-job
+
+steps:
+  - id: build data-site-publisher image
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - Dockerfile.data_site_publisher
+      - -t
+      - ${_REGION}-docker.pkg.dev/${_PROJECT_ID}/yoshilover/${_IMAGE_NAME}:${_TAG}
+      - .
+
+  - id: push data-site-publisher image
+    name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - ${_REGION}-docker.pkg.dev/${_PROJECT_ID}/yoshilover/${_IMAGE_NAME}:${_TAG}
+
+images:
+  - ${_REGION}-docker.pkg.dev/${_PROJECT_ID}/yoshilover/${_IMAGE_NAME}:${_TAG}
+
+timeout: 600s
+
+options:
+  machineType: E2_MEDIUM

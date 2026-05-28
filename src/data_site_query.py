@@ -2,8 +2,12 @@
 
 - roster (config/giants_roster.json) から player info 取得
 - WP REST から該当 player tag の関連記事 (Topic) 取得 (10-20 件)
+- insight.db (GCS cache) から打撃 stats season summary + 直近 5 試合 取得
 
-Phase 1.0 では insight.db 接続は省略 (placeholder)、 Phase 1.5 以降で stats 接続。
+Phase 1.0 (rev2 2026-05-28 PM3): insight.db batting_logs を SUM して大手相当の
+打撃 stats (試合 / 打率 / 安打 / 打点 / 得点 / 盗塁) を出す。 投手 stats は
+Phase 1.5 で 別 source (pitching_logs) を扱う。 insight.db に未収録 player は
+None を返し、 template 側で「データ集計中」 placeholder。
 """
 
 from __future__ import annotations
@@ -11,7 +15,8 @@ from __future__ import annotations
 import json as _json
 import logging
 import os
-from dataclasses import dataclass
+import sqlite3
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
@@ -196,11 +201,164 @@ def find_player_featured_image_url(player_name: str) -> str:
         return ""
 
 
+@dataclass
+class BattingStatsSeason:
+    """打撃 season summary。 全 None なら data 無し (insight.db 未収録 / 出場 0)。"""
+    games: int = 0
+    ab: int = 0
+    hits: int = 0
+    rbi: int = 0
+    runs: int = 0
+    sb: int = 0
+
+    @property
+    def avg(self) -> Optional[float]:
+        return (self.hits / self.ab) if self.ab > 0 else None
+
+
+@dataclass
+class BattingGameRow:
+    """1 試合分の打撃結果 (直近 5 試合表示用)。"""
+    game_date: str
+    opponent: str
+    ab: int
+    hits: int
+    rbi: int
+    runs: int = 0
+    sb: int = 0
+
+
+def _insight_db_path() -> str:
+    """env INSIGHT_DB_PATH (override) or default cache path."""
+    explicit = os.environ.get("INSIGHT_DB_PATH", "").strip()
+    return explicit or "/tmp/insight_cache/insight.db"
+
+
+def _ensure_insight_db_local() -> Optional[str]:
+    """GCS から insight.db を local cache に download (TTL 1h)、 path を返す.
+
+    既に local file あれば再 download せず、 missing で download 失敗時は None。
+    呼び出し元は None なら stats なし扱い (template placeholder)。
+    """
+    path = _insight_db_path()
+    if os.path.exists(path):
+        return path
+    bucket = (os.environ.get("INSIGHT_GCS_BUCKET") or "").strip()
+    if not bucket:
+        LOG.warning("INSIGHT_GCS_BUCKET env unset and no local insight.db cache; stats unavailable")
+        return None
+    try:
+        # Lazy import to avoid hard dependency at module load
+        from google.cloud import storage  # noqa: WPS433
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("google-cloud-storage import failed: %r", exc)
+        return None
+    prefix = (os.environ.get("INSIGHT_GCS_PREFIX") or "").strip().strip("/")
+    object_name = f"{prefix}/insight.db" if prefix else "insight.db"
+    try:
+        client = storage.Client()
+        bucket_obj = client.bucket(bucket)
+        blob = bucket_obj.blob(object_name)
+        if not blob.exists():
+            LOG.warning("insight.db blob missing in GCS: bucket=%s name=%s", bucket, object_name)
+            return None
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        blob.download_to_filename(path)
+        return path
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("insight.db download failed: %r", exc)
+        return None
+
+
+def fetch_batting_stats_season(player_canonical: str) -> Optional[BattingStatsSeason]:
+    """insight.db batting_logs を SUM して season summary を返す.
+
+    未収録 (rows=0 or player table 不在) なら None を返し、 template は placeholder。
+    """
+    path = _ensure_insight_db_local()
+    if not path:
+        return None
+    try:
+        with sqlite3.connect(path) as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT COUNT(DISTINCT game_id) as g,
+                       COALESCE(SUM(AB), 0) as ab,
+                       COALESCE(SUM(H), 0) as h,
+                       COALESCE(SUM(RBI), 0) as rbi,
+                       COALESCE(SUM(R), 0) as r,
+                       COALESCE(SUM(SB), 0) as sb
+                FROM batting_logs
+                WHERE player_canonical = ?
+                """,
+                (player_canonical,),
+            )
+            row = cur.fetchone()
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("fetch_batting_stats_season err player=%s: %r", player_canonical, exc)
+        return None
+    if not row or not row[0]:
+        return None
+    return BattingStatsSeason(
+        games=int(row[0]),
+        ab=int(row[1] or 0),
+        hits=int(row[2] or 0),
+        rbi=int(row[3] or 0),
+        runs=int(row[4] or 0),
+        sb=int(row[5] or 0),
+    )
+
+
+def fetch_recent_games(player_canonical: str, limit: int = 5) -> list[BattingGameRow]:
+    """直近 limit 試合の打撃結果。 insight.db batting_logs JOIN games。"""
+    path = _ensure_insight_db_local()
+    if not path:
+        return []
+    try:
+        with sqlite3.connect(path) as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT g.game_date, g.opponent,
+                       COALESCE(b.AB, 0), COALESCE(b.H, 0),
+                       COALESCE(b.RBI, 0), COALESCE(b.R, 0),
+                       COALESCE(b.SB, 0)
+                FROM batting_logs b
+                JOIN games g ON b.game_id = g.game_id
+                WHERE b.player_canonical = ?
+                ORDER BY g.game_date DESC
+                LIMIT ?
+                """,
+                (player_canonical, int(limit)),
+            )
+            rows = cur.fetchall()
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("fetch_recent_games err player=%s: %r", player_canonical, exc)
+        return []
+    return [
+        BattingGameRow(
+            game_date=str(r[0] or ""),
+            opponent=str(r[1] or ""),
+            ab=int(r[2] or 0),
+            hits=int(r[3] or 0),
+            rbi=int(r[4] or 0),
+            runs=int(r[5] or 0),
+            sb=int(r[6] or 0),
+        )
+        for r in rows
+    ]
+
+
 __all__ = [
     "RosterPlayer",
+    "BattingStatsSeason",
+    "BattingGameRow",
     "load_phase1_player_names",
     "load_roster_player",
     "find_player_tag_id",
     "fetch_related_topic_links",
     "find_player_featured_image_url",
+    "fetch_batting_stats_season",
+    "fetch_recent_games",
 ]

@@ -31,6 +31,8 @@ import requests
 from requests.auth import HTTPBasicAuth
 
 from src.data_site_query import (
+    fetch_batting_stats_season,
+    fetch_recent_games,
     fetch_related_topic_links,
     find_player_featured_image_url,
     load_phase1_player_names,
@@ -162,7 +164,9 @@ def _build_pillar_info(player_name: str) -> PillarPlayerInfo | None:
     slug = player_slug(player_name)
     related = fetch_related_topic_links(player_name, limit=20)
     image_url = find_player_featured_image_url(player_name)
-    return PillarPlayerInfo(
+    season = fetch_batting_stats_season(player_name)
+    recent_games_raw = fetch_recent_games(player_name, limit=5)
+    info = PillarPlayerInfo(
         name=roster.name,
         slug=slug,
         position=roster.position,
@@ -172,6 +176,21 @@ def _build_pillar_info(player_name: str) -> PillarPlayerInfo | None:
         short_review="",  # Phase 1.0 は AI 短評 未接続、 後 phase で追加
         related_topic_links=related,
     )
+    if season:
+        info.has_stats = True
+        info.season_games = season.games
+        info.season_ab = season.ab
+        info.season_hits = season.hits
+        info.season_rbi = season.rbi
+        info.season_runs = season.runs
+        info.season_sb = season.sb
+        info.season_avg = season.avg
+    if recent_games_raw:
+        info.recent_games = [
+            (g.game_date, g.opponent, g.ab, g.hits, g.rbi)
+            for g in recent_games_raw
+        ]
+    return info
 
 
 def publish_phase1() -> dict[str, object]:
@@ -201,6 +220,11 @@ def publish_phase1() -> dict[str, object]:
                 position=info.position,
                 jersey_number=info.jersey_number,
                 role=info.role,
+                season_games=info.season_games,
+                season_hits=info.season_hits,
+                season_rbi=info.season_rbi,
+                season_avg=info.season_avg,
+                has_stats=info.has_stats,
             )
         )
 

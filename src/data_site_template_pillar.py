@@ -17,6 +17,7 @@ from __future__ import annotations
 import html as _html
 import json as _json
 from dataclasses import dataclass, field
+from typing import Optional
 
 
 @dataclass
@@ -32,6 +33,18 @@ class PillarPlayerInfo:
     short_review: str = ""  # AI 短評 200-500 字 (空なら section omit)
     related_topic_links: list[tuple[str, str]] = field(default_factory=list)
     # related_topic_links = [(url, title), ...] (既存記事の link、 関連 Topic = Pillar → Topic)
+
+    # Phase 1.0 stats (insight.db 由来、 None なら placeholder)
+    season_games: int = 0
+    season_ab: int = 0
+    season_hits: int = 0
+    season_rbi: int = 0
+    season_runs: int = 0
+    season_sb: int = 0
+    season_avg: Optional[float] = None
+    recent_games: list[tuple[str, str, int, int, int]] = field(default_factory=list)
+    # recent_games = [(game_date, opponent, ab, hits, rbi), ...]
+    has_stats: bool = False  # False なら 「データ集計中」 placeholder
 
 
 CLUSTER_URL = "https://yoshilover.com/data/"
@@ -81,15 +94,81 @@ def _build_short_review_html(player: PillarPlayerInfo) -> str:
     )
 
 
-def _build_data_placeholder_html() -> str:
-    """Phase 1.0: insight.db 未接続のため placeholder section、 構造のみ確立。"""
+def _fmt_avg(avg: Optional[float]) -> str:
+    if avg is None:
+        return "-"
+    return f"{avg:.3f}".lstrip("0") if avg < 1 else f"{avg:.3f}"
+
+
+def _build_season_stats_html(player: PillarPlayerInfo) -> str:
+    """season 集計 stats を 表で表示。 data 無ければ placeholder。"""
+    if not player.has_stats or player.season_games == 0:
+        return (
+            '<section class="ys-pillar-stats-season" '
+            'style="background:#fff;border:1px solid #eee;padding:14px;margin:0 0 16px;border-radius:4px;">'
+            '<h2 style="font-size:16px;margin:0 0 10px;">今シーズン 通算 (打撃)</h2>'
+            '<p style="font-size:13px;color:#888;margin:0;">'
+            '現在データ集計中 — 一軍出場の最新打撃データが揃い次第ここに反映されます。'
+            '</p>'
+            '</section>'
+        )
+    avg = _fmt_avg(player.season_avg)
     return (
-        '<section class="ys-pillar-stats" '
+        '<section class="ys-pillar-stats-season" '
         'style="background:#fff;border:1px solid #eee;padding:14px;margin:0 0 16px;border-radius:4px;">'
-        '<h2 style="font-size:16px;margin:0 0 10px;">直近5試合・月間・通算データ</h2>'
-        '<p style="font-size:13px;color:#888;margin:0;">'
-        'データ集計準備中 — 試合データの永続 baseline 表示は Phase 1.5 以降に追加予定。'
-        '</p>'
+        '<h2 style="font-size:16px;margin:0 0 10px;">今シーズン 通算 (打撃)</h2>'
+        '<table style="width:100%;border-collapse:collapse;font-size:14px;">'
+        '<thead><tr style="background:#fafafa;text-align:center;">'
+        '<th style="padding:8px 6px;">試合</th>'
+        '<th style="padding:8px 6px;">打数</th>'
+        '<th style="padding:8px 6px;">安打</th>'
+        '<th style="padding:8px 6px;">打率</th>'
+        '<th style="padding:8px 6px;">打点</th>'
+        '<th style="padding:8px 6px;">得点</th>'
+        '<th style="padding:8px 6px;">盗塁</th>'
+        '</tr></thead>'
+        '<tbody><tr style="text-align:center;">'
+        f'<td style="padding:8px 6px;">{player.season_games}</td>'
+        f'<td style="padding:8px 6px;">{player.season_ab}</td>'
+        f'<td style="padding:8px 6px;">{player.season_hits}</td>'
+        f'<td style="padding:8px 6px;font-weight:600;color:#1976d2;">{avg}</td>'
+        f'<td style="padding:8px 6px;">{player.season_rbi}</td>'
+        f'<td style="padding:8px 6px;">{player.season_runs}</td>'
+        f'<td style="padding:8px 6px;">{player.season_sb}</td>'
+        '</tr></tbody></table>'
+        '<p style="font-size:11px;color:#999;margin:8px 0 0;">'
+        '※ insight.db 集計 (NPB official box score 由来)、 毎朝 6:00 JST 更新'
+        '</p></section>'
+    )
+
+
+def _build_recent_games_html(player: PillarPlayerInfo) -> str:
+    """直近 5 試合の打撃結果表。 data 無ければ section omit。"""
+    if not player.recent_games:
+        return ""
+    rows_html = "\n".join(
+        '<tr style="text-align:center;border-bottom:1px solid #eee;">'
+        f'<td style="padding:6px;">{_esc(date)}</td>'
+        f'<td style="padding:6px;">{_esc(opp)}</td>'
+        f'<td style="padding:6px;">{ab}</td>'
+        f'<td style="padding:6px;font-weight:600;">{h}</td>'
+        f'<td style="padding:6px;">{rbi}</td>'
+        '</tr>'
+        for (date, opp, ab, h, rbi) in player.recent_games
+    )
+    return (
+        '<section class="ys-pillar-recent" '
+        'style="background:#fff;border:1px solid #eee;padding:14px;margin:0 0 16px;border-radius:4px;">'
+        f'<h2 style="font-size:16px;margin:0 0 10px;">直近 {len(player.recent_games)} 試合</h2>'
+        '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
+        '<thead><tr style="background:#fafafa;text-align:center;">'
+        '<th style="padding:8px 6px;">日付</th>'
+        '<th style="padding:8px 6px;">相手</th>'
+        '<th style="padding:8px 6px;">打数</th>'
+        '<th style="padding:8px 6px;">安打</th>'
+        '<th style="padding:8px 6px;">打点</th>'
+        '</tr></thead>'
+        f'<tbody>{rows_html}</tbody></table>'
         '</section>'
     )
 
@@ -182,7 +261,8 @@ def render_pillar_html(player: PillarPlayerInfo) -> str:
         _build_breadcrumb_html(player.name),
         _build_featured_image_html(player),
         _build_short_review_html(player),
-        _build_data_placeholder_html(),
+        _build_season_stats_html(player),
+        _build_recent_games_html(player),
         _build_related_topic_html(player),
         _build_back_link_html(),
         _build_jsonld(player),

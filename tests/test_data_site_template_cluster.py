@@ -70,9 +70,45 @@ class RenderClusterHtmlTests(unittest.TestCase):
         html = render_cluster_html(self.players)
         self.assertIn("内野手", html)
         self.assertIn("外野手", html)
-        self.assertIn("背番号 2", html)
-        self.assertIn("背番号 6", html)
-        self.assertIn("背番号 8", html)
+        # jersey column shows raw number (背番号 col)
+        self.assertIn(">2<", html)
+        self.assertIn(">6<", html)
+        self.assertIn(">8<", html)
+
+    def test_table_sorted_by_jersey_number(self) -> None:
+        """背番号順 sort: 2 → 6 → 8 (user 指示 2026-05-28 PM3)。"""
+        # input は適当順、 output で 2/6/8 順を期待
+        unsorted = [
+            ClusterPlayerEntry(name="丸佳浩", slug="maru-yoshihiro", position="外野手", jersey_number="8"),
+            ClusterPlayerEntry(name="吉川尚輝", slug="yoshikawa-naoki", position="内野手", jersey_number="2"),
+            ClusterPlayerEntry(name="坂本勇人", slug="sakamoto-hayato", position="内野手", jersey_number="6"),
+        ]
+        html = render_cluster_html(unsorted)
+        # 吉川 (2) は 坂本 (6) より前に出る
+        pos_yoshikawa = html.find("吉川尚輝")
+        pos_sakamoto = html.find("坂本勇人")
+        pos_maru = html.find("丸佳浩")
+        self.assertLess(pos_yoshikawa, pos_sakamoto)
+        self.assertLess(pos_sakamoto, pos_maru)
+
+    def test_stats_column_shows_dash_when_no_data(self) -> None:
+        """has_stats=False の player は '-' 表示。"""
+        html = render_cluster_html(self.players)  # all defaults has_stats=False
+        # 試合 column に「-」 が含まれる
+        self.assertIn(">-<", html)
+
+    def test_stats_column_shows_values_when_data(self) -> None:
+        """has_stats=True の player は数値表示。"""
+        players = [
+            ClusterPlayerEntry(
+                name="吉川尚輝", slug="yoshikawa-naoki", position="内野手", jersey_number="2",
+                season_games=20, season_hits=17, season_rbi=3, season_avg=0.224, has_stats=True,
+            ),
+        ]
+        html = render_cluster_html(players)
+        self.assertIn(">20<", html)  # 試合
+        self.assertIn(">17<", html)  # 安打
+        self.assertIn(".224", html)  # 打率
 
 
 class RenderClusterTitleTests(unittest.TestCase):

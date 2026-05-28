@@ -26,6 +26,12 @@ class ClusterPlayerEntry:
     position: str
     jersey_number: str
     role: str = "player"
+    # Phase 1.0 stats (insight.db SUM、 data 無ければ "-" 表示)
+    season_games: int = 0
+    season_hits: int = 0
+    season_rbi: int = 0
+    season_avg: float | None = None
+    has_stats: bool = False
 
 
 def _esc(text: str) -> str:
@@ -45,39 +51,68 @@ def _build_intro_html() -> str:
     )
 
 
+def _jersey_sort_key(p: ClusterPlayerEntry) -> tuple[int, str]:
+    """背番号を数字昇順で並べる。 数字でなければ末尾 (999999)。"""
+    try:
+        return (int(p.jersey_number), p.name)
+    except (ValueError, TypeError):
+        return (999999, p.name or "")
+
+
+def _fmt_avg(avg: float | None) -> str:
+    if avg is None:
+        return "-"
+    return f"{avg:.3f}".lstrip("0") if avg < 1 else f"{avg:.3f}"
+
+
 def _build_player_table_html(players: list[ClusterPlayerEntry]) -> str:
     if not players:
         return '<p style="font-size:13px;color:#888;margin:0;">対象選手データを準備中です。</p>'
+    # 背番号順 sort (user 指示 2026-05-28 PM3)
+    sorted_players = sorted(players, key=_jersey_sort_key)
     rows = []
-    for p in players:
+    for p in sorted_players:
         pillar_url = f"/data/{p.slug}/"
-        role_label = {"player": "選手", "manager": "監督", "coach": "コーチ"}.get(p.role, "選手")
-        jersey = f"背番号 {p.jersey_number}" if p.jersey_number else "-"
         pos = p.position or "-"
+        jersey = p.jersey_number or "-"
+        avg = _fmt_avg(p.season_avg)
+        games = str(p.season_games) if p.has_stats else "-"
+        hits = str(p.season_hits) if p.has_stats else "-"
+        rbi = str(p.season_rbi) if p.has_stats else "-"
         rows.append(
             f'<tr style="border-bottom:1px solid #eee;">'
-            f'<td style="padding:10px 12px;"><a href="{_esc(pillar_url)}" '
+            f'<td style="padding:8px 10px;text-align:center;color:#555;font-weight:600;">{_esc(jersey)}</td>'
+            f'<td style="padding:8px 10px;"><a href="{_esc(pillar_url)}" '
             'style="color:#1976d2;text-decoration:none;font-weight:600;">'
             f'{_esc(p.name)}</a></td>'
-            f'<td style="padding:10px 12px;font-size:13px;color:#666;">{_esc(role_label)}</td>'
-            f'<td style="padding:10px 12px;font-size:13px;color:#666;">{_esc(pos)}</td>'
-            f'<td style="padding:10px 12px;font-size:13px;color:#666;">{_esc(jersey)}</td>'
+            f'<td style="padding:8px 10px;font-size:13px;color:#666;">{_esc(pos)}</td>'
+            f'<td style="padding:8px 10px;text-align:center;color:#555;">{games}</td>'
+            f'<td style="padding:8px 10px;text-align:center;color:#555;">{hits}</td>'
+            f'<td style="padding:8px 10px;text-align:center;color:#1976d2;font-weight:600;">{avg}</td>'
+            f'<td style="padding:8px 10px;text-align:center;color:#555;">{rbi}</td>'
             '</tr>'
         )
     return (
         '<section class="ys-cluster-table" '
         'style="background:#fff;border:1px solid #eee;padding:14px;margin:0 0 20px;border-radius:4px;">'
-        f'<h2 style="font-size:16px;margin:0 0 10px;">選手一覧 ({len(players)} 名)</h2>'
-        '<table style="width:100%;border-collapse:collapse;font-size:14px;">'
+        f'<h2 style="font-size:16px;margin:0 0 10px;">選手一覧 ({len(sorted_players)} 名 / 背番号順)</h2>'
+        '<div style="overflow-x:auto;">'
+        '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
         '<thead><tr style="background:#fafafa;text-align:left;">'
-        '<th style="padding:10px 12px;">名前</th>'
-        '<th style="padding:10px 12px;">役割</th>'
-        '<th style="padding:10px 12px;">ポジション</th>'
-        '<th style="padding:10px 12px;">背番号</th>'
+        '<th style="padding:10px;text-align:center;">背番号</th>'
+        '<th style="padding:10px;">名前</th>'
+        '<th style="padding:10px;">ポジション</th>'
+        '<th style="padding:10px;text-align:center;">試合</th>'
+        '<th style="padding:10px;text-align:center;">安打</th>'
+        '<th style="padding:10px;text-align:center;">打率</th>'
+        '<th style="padding:10px;text-align:center;">打点</th>'
         '</tr></thead>'
         f'<tbody>{"".join(rows)}</tbody>'
         '</table>'
-        '</section>'
+        '</div>'
+        '<p style="font-size:11px;color:#999;margin:8px 0 0;">'
+        '※ 打撃 stats は insight.db (NPB official box score 由来)、 毎朝 6:00 JST 更新。 「-」 はデータ集計中。'
+        '</p></section>'
     )
 
 

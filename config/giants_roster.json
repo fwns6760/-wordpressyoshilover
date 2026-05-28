@@ -23,7 +23,8 @@
       "橋上監督代行",
       "橋上監督",
       "橋上秀樹コーチ",
-      "橋上コーチ"
+      "橋上コーチ",
+      "橋上"
     ],
     "role": "coach",
     "position": "監督代行",
@@ -159,6 +160,18 @@
     "role": "player",
     "position": "投手",
     "jersey_number": "20",
+    "active": true
+  },
+  {
+    "name": "岡本和真",
+    "aliases": [
+      "岡本和真",
+      "岡本",
+      "岡本 和真"
+    ],
+    "role": "player",
+    "position": "内野手",
+    "jersey_number": "25",
     "active": true
   },
   {

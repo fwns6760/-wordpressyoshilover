@@ -278,6 +278,13 @@ def publish_phase1() -> dict[str, object]:
                 season_rbi=info.season_rbi,
                 season_avg=info.season_avg,
                 has_stats=info.has_stats,
+                pitch_games=info.pitch_games,
+                pitch_wins=info.pitch_wins,
+                pitch_losses=info.pitch_losses,
+                pitch_ip=info.pitch_ip,
+                pitch_k=info.pitch_k,
+                pitch_era=info.pitch_era,
+                has_pitching_stats=info.has_pitching_stats,
             )
         )
 

@@ -89,23 +89,51 @@ def _wp_creds() -> tuple[str, HTTPBasicAuth] | None:
 
 
 def find_player_tag_id(player_name: str) -> Optional[int]:
-    """WP tag 検索で player name に一致する tag id を返す (person_tag_router が routing 済の前提)."""
+    """WP tag 検索で player name に一致する tag id を返す.
+
+    2026-05-28 PM3 fix: roster の name は 「松本 剛」「赤星 優志」 等 全角空白を
+    含む形式があるが、 WP tag は person_tag_router が登録時に空白除去版で作る
+    ことが多い。 完全一致 → 空白除去一致 → contains 一致 の 3 段 fallback で
+    miss を減らす。
+    """
     creds = _wp_creds()
     if not creds:
         return None
     base, auth = creds
+    target_raw = (player_name or "").strip()
+    target_nosp = target_raw.replace(" ", "").replace("　", "")
     try:
         r = requests.get(
             base + "/wp-json/wp/v2/tags",
-            params={"search": player_name, "per_page": 20, "_fields": "id,name"},
+            params={"search": target_raw, "per_page": 20, "_fields": "id,name"},
             auth=auth,
             timeout=15,
         )
         if not r.ok:
             return None
-        for tag in (r.json() or []):
-            if str(tag.get("name", "")).strip() == player_name:
+        tags = r.json() or []
+        # 1. 完全一致
+        for tag in tags:
+            if str(tag.get("name", "")).strip() == target_raw:
                 return int(tag.get("id"))
+        # 2. 空白除去 一致 (松本 剛 ⇔ 松本剛)
+        for tag in tags:
+            name_nosp = str(tag.get("name", "")).strip().replace(" ", "").replace("　", "")
+            if name_nosp == target_nosp:
+                return int(tag.get("id"))
+        # 3. search が空白入りで hit せず、 空白除去版で再検索
+        if " " in target_raw or "　" in target_raw:
+            r2 = requests.get(
+                base + "/wp-json/wp/v2/tags",
+                params={"search": target_nosp, "per_page": 20, "_fields": "id,name"},
+                auth=auth,
+                timeout=15,
+            )
+            if r2.ok:
+                for tag in (r2.json() or []):
+                    name_nosp = str(tag.get("name", "")).strip().replace(" ", "").replace("　", "")
+                    if name_nosp == target_nosp:
+                        return int(tag.get("id"))
         return None
     except Exception as exc:  # noqa: BLE001
         LOG.warning("find_player_tag_id err player=%s: %r", player_name, exc)

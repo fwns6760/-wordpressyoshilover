@@ -26,12 +26,20 @@ class ClusterPlayerEntry:
     position: str
     jersey_number: str
     role: str = "player"
-    # Phase 1.0 stats (insight.db SUM、 data 無ければ "-" 表示)
+    # Phase 1.0 batting stats (insight.db SUM、 data 無ければ "-" 表示)
     season_games: int = 0
     season_hits: int = 0
     season_rbi: int = 0
     season_avg: float | None = None
     has_stats: bool = False
+    # Phase 1.5+pitch (投手 stats、 position=投手 のみ意味あり)
+    pitch_games: int = 0
+    pitch_wins: int = 0
+    pitch_losses: int = 0
+    pitch_ip: float = 0.0
+    pitch_k: int = 0
+    pitch_era: float | None = None
+    has_pitching_stats: bool = False
 
 
 def _esc(text: str) -> str:
@@ -65,11 +73,24 @@ def _fmt_avg(avg: float | None) -> str:
     return f"{avg:.3f}".lstrip("0") if avg < 1 else f"{avg:.3f}"
 
 
-def _build_player_table_html(players: list[ClusterPlayerEntry]) -> str:
-    if not players:
-        return '<p style="font-size:13px;color:#888;margin:0;">対象選手データを準備中です。</p>'
-    # 背番号順 sort (user 指示 2026-05-28 PM3)
-    sorted_players = sorted(players, key=_jersey_sort_key)
+def _fmt_era(v: float | None) -> str:
+    if v is None:
+        return "-"
+    return f"{v:.2f}"
+
+
+def _fmt_ip(ip: float) -> str:
+    if ip <= 0:
+        return "-"
+    return f"{ip:.1f}"
+
+
+def _build_batter_table_html(players: list[ClusterPlayerEntry]) -> str:
+    """打者 (position != 投手) のみ含む table。 背番号順。"""
+    batters = [p for p in players if (p.position or "") != "投手"]
+    if not batters:
+        return ""
+    sorted_players = sorted(batters, key=_jersey_sort_key)
     rows = []
     for p in sorted_players:
         pillar_url = f"/data/{p.slug}/"
@@ -93,9 +114,9 @@ def _build_player_table_html(players: list[ClusterPlayerEntry]) -> str:
             '</tr>'
         )
     return (
-        '<section class="ys-cluster-table" '
+        '<section class="ys-cluster-batter-table" '
         'style="background:#fff;border:1px solid #eee;padding:14px;margin:0 0 20px;border-radius:4px;">'
-        f'<h2 style="font-size:16px;margin:0 0 10px;">選手一覧 ({len(sorted_players)} 名 / 背番号順)</h2>'
+        f'<h2 style="font-size:16px;margin:0 0 10px;">野手 一覧 ({len(sorted_players)} 名 / 背番号順)</h2>'
         '<div style="overflow-x:auto;">'
         '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
         '<thead><tr style="background:#fafafa;text-align:left;">'
@@ -109,10 +130,70 @@ def _build_player_table_html(players: list[ClusterPlayerEntry]) -> str:
         '</tr></thead>'
         f'<tbody>{"".join(rows)}</tbody>'
         '</table>'
-        '</div>'
-        '<p style="font-size:11px;color:#999;margin:8px 0 0;">'
-        '※ 打撃 stats は insight.db (NPB official box score 由来)、 毎朝 6:00 JST 更新。 「-」 はデータ集計中。'
-        '</p></section>'
+        '</div></section>'
+    )
+
+
+def _build_pitcher_table_html(players: list[ClusterPlayerEntry]) -> str:
+    """投手 (position == 投手) のみ含む table。 背番号順。"""
+    pitchers = [p for p in players if (p.position or "") == "投手"]
+    if not pitchers:
+        return ""
+    sorted_players = sorted(pitchers, key=_jersey_sort_key)
+    rows = []
+    for p in sorted_players:
+        pillar_url = f"/data/{p.slug}/"
+        jersey = p.jersey_number or "-"
+        games = str(p.pitch_games) if p.has_pitching_stats else "-"
+        wl = f"{p.pitch_wins}-{p.pitch_losses}" if p.has_pitching_stats else "-"
+        ip = _fmt_ip(p.pitch_ip) if p.has_pitching_stats else "-"
+        era = _fmt_era(p.pitch_era)
+        k = str(p.pitch_k) if p.has_pitching_stats else "-"
+        rows.append(
+            f'<tr style="border-bottom:1px solid #eee;">'
+            f'<td style="padding:8px 10px;text-align:center;color:#555;font-weight:600;">{_esc(jersey)}</td>'
+            f'<td style="padding:8px 10px;"><a href="{_esc(pillar_url)}" '
+            'style="color:#1976d2;text-decoration:none;font-weight:600;">'
+            f'{_esc(p.name)}</a></td>'
+            f'<td style="padding:8px 10px;text-align:center;color:#555;">{games}</td>'
+            f'<td style="padding:8px 10px;text-align:center;color:#555;">{wl}</td>'
+            f'<td style="padding:8px 10px;text-align:center;color:#555;">{ip}</td>'
+            f'<td style="padding:8px 10px;text-align:center;color:#1976d2;font-weight:600;">{era}</td>'
+            f'<td style="padding:8px 10px;text-align:center;color:#555;">{k}</td>'
+            '</tr>'
+        )
+    return (
+        '<section class="ys-cluster-pitcher-table" '
+        'style="background:#fff;border:1px solid #eee;padding:14px;margin:0 0 20px;border-radius:4px;">'
+        f'<h2 style="font-size:16px;margin:0 0 10px;">投手 一覧 ({len(sorted_players)} 名 / 背番号順)</h2>'
+        '<div style="overflow-x:auto;">'
+        '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
+        '<thead><tr style="background:#fafafa;text-align:left;">'
+        '<th style="padding:10px;text-align:center;">背番号</th>'
+        '<th style="padding:10px;">名前</th>'
+        '<th style="padding:10px;text-align:center;">登板</th>'
+        '<th style="padding:10px;text-align:center;">勝-敗</th>'
+        '<th style="padding:10px;text-align:center;">投球回</th>'
+        '<th style="padding:10px;text-align:center;">防御率</th>'
+        '<th style="padding:10px;text-align:center;">奪三振</th>'
+        '</tr></thead>'
+        f'<tbody>{"".join(rows)}</tbody>'
+        '</table>'
+        '</div></section>'
+    )
+
+
+def _build_player_table_html(players: list[ClusterPlayerEntry]) -> str:
+    """野手 + 投手 の 2 表に分離。 空 list は placeholder."""
+    if not players:
+        return '<p style="font-size:13px;color:#888;margin:0;">対象選手データを準備中です。</p>'
+    return (
+        _build_batter_table_html(players)
+        + "\n"
+        + _build_pitcher_table_html(players)
+        + '<p style="font-size:11px;color:#999;margin:8px 0 0;">'
+        '※ stats は insight.db (NPB official box score 由来)、 毎朝 6:00 + 試合後 17:30 / 23:00 JST 更新。 「-」 はデータ集計中。'
+        '</p>'
     )
 
 

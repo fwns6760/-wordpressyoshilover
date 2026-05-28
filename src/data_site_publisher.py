@@ -32,6 +32,8 @@ from requests.auth import HTTPBasicAuth
 
 from src.data_site_query import (
     fetch_batting_stats_season,
+    fetch_lineup_slot_stats,
+    fetch_opponent_split_stats,
     fetch_recent_games,
     fetch_related_topic_links,
     find_player_featured_image_url,
@@ -190,6 +192,15 @@ def _build_pillar_info(player_name: str) -> PillarPlayerInfo | None:
             (g.game_date, g.opponent, g.ab, g.hits, g.rbi)
             for g in recent_games_raw
         ]
+    # Phase 1.0a 大手未掲載 metric pack
+    info.lineup_slot_stats = [
+        (s.slot_order, s.games, s.ab, s.hits, s.rbi, s.avg)
+        for s in fetch_lineup_slot_stats(player_name)
+    ]
+    info.opponent_split_stats = [
+        (o.opponent, o.games, o.ab, o.hits, o.rbi, o.avg)
+        for o in fetch_opponent_split_stats(player_name)
+    ]
     return info
 
 

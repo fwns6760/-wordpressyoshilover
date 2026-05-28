@@ -228,6 +228,34 @@ class BattingGameRow:
     sb: int = 0
 
 
+@dataclass
+class LineupSlotStat:
+    """打順別 集計 (1.0a metric pack #1)。 slot_order = 1-9、 0 / NULL は代打等。"""
+    slot_order: int
+    games: int
+    ab: int
+    hits: int
+    rbi: int
+
+    @property
+    def avg(self) -> Optional[float]:
+        return (self.hits / self.ab) if self.ab > 0 else None
+
+
+@dataclass
+class OpponentSplitStat:
+    """vs 各球団 集計 (1.0a metric pack #2)。"""
+    opponent: str
+    games: int
+    ab: int
+    hits: int
+    rbi: int
+
+    @property
+    def avg(self) -> Optional[float]:
+        return (self.hits / self.ab) if self.ab > 0 else None
+
+
 def _insight_db_path() -> str:
     """env INSIGHT_DB_PATH (override) or default cache path."""
     explicit = os.environ.get("INSIGHT_DB_PATH", "").strip()
@@ -350,10 +378,97 @@ def fetch_recent_games(player_canonical: str, limit: int = 5) -> list[BattingGam
     ]
 
 
+def fetch_lineup_slot_stats(player_canonical: str) -> list[LineupSlotStat]:
+    """打順別 (1-9) 集計を返す。 大手未掲載 metric (rev4 Phase 1.0a #1)。
+
+    batting_logs.slot_order GROUP BY、 NULL / 0 は除外 (代打等は別 metric)。
+    """
+    path = _ensure_insight_db_local()
+    if not path:
+        return []
+    try:
+        with sqlite3.connect(path) as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT slot_order,
+                       COUNT(DISTINCT game_id) as g,
+                       COALESCE(SUM(AB), 0) as ab,
+                       COALESCE(SUM(H), 0) as h,
+                       COALESCE(SUM(RBI), 0) as rbi
+                FROM batting_logs
+                WHERE player_canonical = ? AND slot_order IS NOT NULL AND slot_order > 0
+                GROUP BY slot_order
+                ORDER BY slot_order
+                """,
+                (player_canonical,),
+            )
+            rows = cur.fetchall()
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("fetch_lineup_slot_stats err player=%s: %r", player_canonical, exc)
+        return []
+    return [
+        LineupSlotStat(
+            slot_order=int(r[0]),
+            games=int(r[1] or 0),
+            ab=int(r[2] or 0),
+            hits=int(r[3] or 0),
+            rbi=int(r[4] or 0),
+        )
+        for r in rows
+    ]
+
+
+def fetch_opponent_split_stats(player_canonical: str) -> list[OpponentSplitStat]:
+    """vs 各球団 集計を返す。 大手未掲載 metric (rev4 Phase 1.0a #2)。
+
+    batting_logs JOIN games で opponent GROUP BY、 自軍同士 (巨人 vs 巨人 紅白戦
+    等) は通常 data 無いので無視。
+    """
+    path = _ensure_insight_db_local()
+    if not path:
+        return []
+    try:
+        with sqlite3.connect(path) as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT g.opponent,
+                       COUNT(DISTINCT b.game_id) as g,
+                       COALESCE(SUM(b.AB), 0) as ab,
+                       COALESCE(SUM(b.H), 0) as h,
+                       COALESCE(SUM(b.RBI), 0) as rbi
+                FROM batting_logs b
+                JOIN games g ON b.game_id = g.game_id
+                WHERE b.player_canonical = ?
+                  AND g.opponent IS NOT NULL AND g.opponent <> ''
+                GROUP BY g.opponent
+                ORDER BY g.opponent
+                """,
+                (player_canonical,),
+            )
+            rows = cur.fetchall()
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("fetch_opponent_split_stats err player=%s: %r", player_canonical, exc)
+        return []
+    return [
+        OpponentSplitStat(
+            opponent=str(r[0]),
+            games=int(r[1] or 0),
+            ab=int(r[2] or 0),
+            hits=int(r[3] or 0),
+            rbi=int(r[4] or 0),
+        )
+        for r in rows
+    ]
+
+
 __all__ = [
     "RosterPlayer",
     "BattingStatsSeason",
     "BattingGameRow",
+    "LineupSlotStat",
+    "OpponentSplitStat",
     "load_phase1_player_names",
     "load_roster_player",
     "find_player_tag_id",
@@ -361,4 +476,6 @@ __all__ = [
     "find_player_featured_image_url",
     "fetch_batting_stats_season",
     "fetch_recent_games",
+    "fetch_lineup_slot_stats",
+    "fetch_opponent_split_stats",
 ]

@@ -228,3 +228,38 @@ Cloud Run Job 新設、 既存 scheduler に追加せず別 job。 Phase 1.0 は
 - 2026-05-28: rev1 初版 (旧「既存記事から SEO long-form aggregation」 案)
 - 2026-05-28 PM: rev2 全面書き換え (user 「データサイト作って index からしてく。 毎日更新のデータ記事。 選手全員の」)
 - 2026-05-28 PM2: rev3 topical cluster 構造 + 大手差別化 4 理由 + 内部 link 流量設計 を明文化 (user 「今あるデータベースから色々な記事をつくる。 球団の選手全体をクラスターページ。 選手をピラーページ。 日々の記事を速報ページでとぴくらをつくりたい」 + 「コンセプトは大手メディアではわからない」)。 Phase 1.0 player を 吉川尚輝 / 坂本勇人 / 丸佳浩 に変更 (user 指定)、 scope に Cluster page 追加 (4 page)
+- 2026-05-28 PM3: rev4 「大手にない data」 metric pack を §15 で明文化、 Phase 1.0a/b/c 段階追加 (user 「大手に乗らないデータとかない? データとして弱い」)
+
+## 15. 大手にない data metric pack (rev4 追加)
+
+「大手 (報知 / 日刊 / サンスポ / 朝日) が紙面 / web で常時表示しない、 ファンが本当に知りたい data」 を 3 段階で Pillar に追加。
+
+### Phase 1.0a (即実装、 batting_logs SUM のみで取得可)
+
+| # | data | sample (吉川尚輝) | source |
+|---|---|---|---|
+| 1 | 打順別 打率 | 1番 .083 / 2番 .250 / 3番 .167 / 7番 .333 / 8番 .400 | `batting_logs.slot_order` GROUP BY |
+| 2 | vs 各球団 打率 | 中日 .500 / DeNA .250 / ヤクルト .111 / 阪神 .176 / 広島 .167 / ソフトバンク .222 | `batting_logs` JOIN `games.opponent` |
+
+### Phase 1.0b (continuous、 1.0a 観察後)
+
+| # | data | source |
+|---|---|---|
+| 3 | 球場別 (本拠地 vs ビジター) | `games.source_url` → 球場 抽出 |
+| 4 | イニング別 (序盤 1-3 / 中盤 4-6 / 終盤 7-9) | `at_bat_details.inning_no` |
+| 5 | 守備機会 + 失策 | `defense_opportunities` + `fielding_logs` |
+| 6 | vs 左右投手 打率 | `at_bat_details.current_pitcher` + pitcher hand JOIN |
+| 7 | count split (初球 / 2 strike 後) | `at_bat_details.count_balls / count_strikes` |
+| 8 | 連続安打 / 出塁 streak | `batting_logs` 順次 scan |
+| 9 | 打席あたり投球数 | `at_bat_details` 集計 |
+
+### Phase 1.0c (BLOCKED、 ticket 445 で先に修復)
+
+| # | data | block 理由 |
+|---|---|---|
+| 10 | 得点圏打率 (RISP) | `at_bat_details.batter_canonical` NULL (raw `batter` column のみ 「吉川」「代打・ 吉川」 形式)、 data-insight lane の batter canonical 補完 修復必要 |
+| 11 | 走者状況別 (満塁 / 2塁等) | 同上 |
+
+### advanced sabermetric (insight.db 既存)
+
+advanced_metric_snapshots table に 17 metric (BABIP / wOBA / ISO / BB_pct / K_pct / OBP / SLG / OPS / FIP / xFIP / WHIP 等) + 9 scope (season / monthly / weekly / last_*) + **league_rank / position_rank** が available。 Phase 1.0a で 打順別 + vs 球団 を出した後、 Pillar に「サバメトリクス (大手未掲載)」 section として並走表示する案も検討 (Phase 1.0a に含めるか別 phase は user 指示待ち)。

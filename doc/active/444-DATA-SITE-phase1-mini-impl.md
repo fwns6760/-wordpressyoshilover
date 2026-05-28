@@ -12,7 +12,43 @@
 - **parent**: 443 (DATA-SITE 全体方針)
 - **spec doc**: `mkdocs_docs/spec/data-site.md`
 
-## 2. scope (Phase 1.0 のみ — topical cluster 3 階層の Cluster + Pillar 部分)
+## 2. scope — 大手にない data で差別化する metric pack
+
+user 指示 2026-05-28 PM (「大手に乗らないデータとかない?」「データとして弱い」) を反映、 advanced sabermetric (BABIP / wOBA 等) **だけでは足りず**、 ファン視点 + 大手未掲載の specific data を以下 3 段階で追加。
+
+### Phase 1.0 base (deploy 済 2026-05-28 06:00 JST)
+- Pillar: 当日試合 placeholder / 直近 5 試合 / season summary (試合/打率/安打/打点/得点/盗塁) / 関連 Topic link
+- Cluster: 試合/安打/打率/打点 column + **背番号順 sort**
+
+### Phase 1.0a (即実装、 batting_logs SUM だけで取れる 2 metric)
+- **打順別 打率** (1-9 番、 batting_logs.slot_order でグループ化)
+  - 例: 吉川尚輝 → 1番 .083 / 8番 .400 (下位で爆発、 大手絶対出さない)
+- **vs 各球団 打率** (batting_logs JOIN games で対戦別)
+  - 例: 吉川 → 中日 .500 / ヤクルト .111 (相性丸見え、 ファンに刺さる)
+
+### Phase 1.0b (Phase 1.0a 観察後 連続実装、 残り 7 個)
+- 球場別 (本拠地 vs ビジター、 games.source_url → 球場抽出)
+- イニング別 (序盤/中盤/終盤、 at_bat_details.inning_no)
+- 守備機会 + 失策 (defense_opportunities + fielding_logs)
+- vs 左右投手 (at_bat_details.current_pitcher → pitcher hand JOIN)
+- count split (初球 / 2 strike 後、 at_bat_details.count_*)
+- 連続安打/出塁 streak (batting_logs 順次 scan)
+- 打席あたり投球数 (at_bat_details 集計)
+
+### Phase 1.0c (BLOCKED、 ticket 445 で先に修復)
+- 得点圏打率 (RISP、 at_bat_details.runner_state)
+- 走者状況別 (満塁 / 2塁等)
+- → at_bat_details.batter_canonical が NULL (raw batter column のみ「吉川」「代打・ 吉川」 形式)、 data-insight lane の取り込み修復必要
+
+### Phase 1.0 全体 (Cluster + Pillar 4 page)
+
+| 階層 | URL | 数 |
+|---|---|---|
+| **Cluster** | `yoshilover.com/data/` | 1 |
+| **Pillar** | `yoshilover.com/data/yoshikawa-naoki/` (吉川尚輝) | 1 |
+| Pillar | `yoshilover.com/data/sakamoto-hayato/` (坂本勇人) | 1 |
+| Pillar | `yoshilover.com/data/maru-yoshihiro/` (丸佳浩) | 1 |
+| **合計** | | **4 page** |
 
 | 階層 | URL | 数 |
 |---|---|---|
@@ -25,6 +61,13 @@
 - 頻度: 毎日 6:00 JST、 4 page 同時 upsert
 - Topic 階層 (既存記事 ~73,000) は **Phase 1.0 では触らない** (Pillar → 既存 Topic への internal link は出力するが、 Topic 側に back-link 注入は Phase 2 で別途)
 - 観察期間: 2-3 週間 (Phase 1.5 拡大判断 前)
+
+### Phase 1.0a 取れる data 例
+
+| metric | 吉川尚輝 実 sample | 大手 |
+|---|---|---|
+| 打順別 | 1番 .083 / 2番 .250 / 3番 .167 / 7番 .333 / 8番 **.400** | 出さない |
+| vs 球団 | 中日 **.500** / DeNA .250 / ヤクルト .111 / 阪神 .176 / 広島 .167 / ソフトバンク .222 | 出さない |
 
 ## 3. 実装 file (新規)
 

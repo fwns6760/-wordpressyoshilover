@@ -45,6 +45,11 @@ class PillarPlayerInfo:
     recent_games: list[tuple[str, str, int, int, int]] = field(default_factory=list)
     # recent_games = [(game_date, opponent, ab, hits, rbi), ...]
     has_stats: bool = False  # False なら 「データ集計中」 placeholder
+    # Phase 1.0a 大手未掲載 metric pack
+    lineup_slot_stats: list[tuple[int, int, int, int, int, Optional[float]]] = field(default_factory=list)
+    # lineup_slot_stats = [(slot, G, AB, H, RBI, AVG), ...] (slot 1-9)
+    opponent_split_stats: list[tuple[str, int, int, int, int, Optional[float]]] = field(default_factory=list)
+    # opponent_split_stats = [(opp, G, AB, H, RBI, AVG), ...]
 
 
 CLUSTER_URL = "https://yoshilover.com/data/"
@@ -173,6 +178,78 @@ def _build_recent_games_html(player: PillarPlayerInfo) -> str:
     )
 
 
+def _build_lineup_slot_html(player: PillarPlayerInfo) -> str:
+    """打順別 打率 (大手未掲載 metric pack #1)。"""
+    if not player.lineup_slot_stats:
+        return ""
+    rows_html = "\n".join(
+        '<tr style="text-align:center;border-bottom:1px solid #eee;">'
+        f'<td style="padding:6px;font-weight:600;color:#5d4037;">{slot} 番</td>'
+        f'<td style="padding:6px;">{g}</td>'
+        f'<td style="padding:6px;">{ab}</td>'
+        f'<td style="padding:6px;font-weight:600;">{h}</td>'
+        f'<td style="padding:6px;color:#1976d2;font-weight:600;">{_fmt_avg(avg)}</td>'
+        f'<td style="padding:6px;">{rbi}</td>'
+        '</tr>'
+        for (slot, g, ab, h, rbi, avg) in player.lineup_slot_stats
+    )
+    return (
+        '<section class="ys-pillar-lineup-split" '
+        'style="background:#fff;border:1px solid #eee;padding:14px;margin:0 0 16px;border-radius:4px;">'
+        '<h2 style="font-size:16px;margin:0 0 6px;">打順別 成績 <span style="font-size:11px;color:#888;font-weight:normal;">(大手未掲載)</span></h2>'
+        '<p style="font-size:12px;color:#666;margin:0 0 10px;">'
+        'どの打順で起用された時に結果を残せているか、 一目で分かる split data。'
+        '</p>'
+        '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
+        '<thead><tr style="background:#fafafa;text-align:center;">'
+        '<th style="padding:8px 6px;">打順</th>'
+        '<th style="padding:8px 6px;">試合</th>'
+        '<th style="padding:8px 6px;">打数</th>'
+        '<th style="padding:8px 6px;">安打</th>'
+        '<th style="padding:8px 6px;">打率</th>'
+        '<th style="padding:8px 6px;">打点</th>'
+        '</tr></thead>'
+        f'<tbody>{rows_html}</tbody></table>'
+        '</section>'
+    )
+
+
+def _build_opponent_split_html(player: PillarPlayerInfo) -> str:
+    """vs 各球団 打率 (大手未掲載 metric pack #2)。"""
+    if not player.opponent_split_stats:
+        return ""
+    rows_html = "\n".join(
+        '<tr style="text-align:center;border-bottom:1px solid #eee;">'
+        f'<td style="padding:6px;font-weight:600;color:#5d4037;">{_esc(opp)}</td>'
+        f'<td style="padding:6px;">{g}</td>'
+        f'<td style="padding:6px;">{ab}</td>'
+        f'<td style="padding:6px;font-weight:600;">{h}</td>'
+        f'<td style="padding:6px;color:#1976d2;font-weight:600;">{_fmt_avg(avg)}</td>'
+        f'<td style="padding:6px;">{rbi}</td>'
+        '</tr>'
+        for (opp, g, ab, h, rbi, avg) in player.opponent_split_stats
+    )
+    return (
+        '<section class="ys-pillar-opp-split" '
+        'style="background:#fff;border:1px solid #eee;padding:14px;margin:0 0 16px;border-radius:4px;">'
+        '<h2 style="font-size:16px;margin:0 0 6px;">vs 各球団 成績 <span style="font-size:11px;color:#888;font-weight:normal;">(大手未掲載)</span></h2>'
+        '<p style="font-size:12px;color:#666;margin:0 0 10px;">'
+        '対戦相手別の相性。 得意 / 苦手な球団が浮き出る。'
+        '</p>'
+        '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
+        '<thead><tr style="background:#fafafa;text-align:center;">'
+        '<th style="padding:8px 6px;">相手</th>'
+        '<th style="padding:8px 6px;">試合</th>'
+        '<th style="padding:8px 6px;">打数</th>'
+        '<th style="padding:8px 6px;">安打</th>'
+        '<th style="padding:8px 6px;">打率</th>'
+        '<th style="padding:8px 6px;">打点</th>'
+        '</tr></thead>'
+        f'<tbody>{rows_html}</tbody></table>'
+        '</section>'
+    )
+
+
 def _build_related_topic_html(player: PillarPlayerInfo) -> str:
     if not player.related_topic_links:
         return (
@@ -263,6 +340,8 @@ def render_pillar_html(player: PillarPlayerInfo) -> str:
         _build_short_review_html(player),
         _build_season_stats_html(player),
         _build_recent_games_html(player),
+        _build_lineup_slot_html(player),
+        _build_opponent_split_html(player),
         _build_related_topic_html(player),
         _build_back_link_html(),
         _build_jsonld(player),

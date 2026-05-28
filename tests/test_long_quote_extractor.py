@@ -131,5 +131,41 @@ class SpeakerProximityTests(unittest.TestCase):
         self.assertGreater(len(out), 0)
 
 
+class ThresholdRelaxationTests(unittest.TestCase):
+    """2026-05-28 緩和: min_chars 60→40 / speaker_proximity 40→100。"""
+
+    def test_quote_40_to_59_chars_now_accepted(self) -> None:
+        # 「今日は最後まで集中して投げ切ることができた」 (22 字) + 「!」 ×20 (20字) = 42 字
+        # 旧 60 字閾値では reject、 新 40 字閾値では accept
+        quote_42 = "今日は最後まで集中して投げ切ることができた" + "!" * 20
+        text = f"巨人の戸郷が「{quote_42}」と試合後コメント"
+        out = extract_long_quote(text)
+        self.assertGreaterEqual(len(out), 40)
+        self.assertLess(len(out), 60)
+        self.assertIn("集中して投げ切る", out)
+
+    def test_quote_below_40_still_rejected(self) -> None:
+        # 30 字 quote → 新閾値でも reject
+        quote_30 = "今日は良い結果になった本当に良かった" + "!" * 12
+        self.assertEqual(len(quote_30), 30)
+        text = f"戸郷が「{quote_30}」と話した"
+        self.assertEqual(extract_long_quote(text), "")
+
+    def test_speaker_within_100_chars_now_accepted(self) -> None:
+        # speaker と quote 間が 60 字 → 旧 40 字 window 外、 新 100 字 window 内
+        gap = "x" * 60
+        text = f"戸郷翔征{gap}「" + "今日は集中して投げきった" * 5 + "」"
+        out = extract_long_quote(text, speaker_aliases=("戸郷翔征",))
+        self.assertGreater(len(out), 0)
+        self.assertIn("今日は集中して投げきった", out)
+
+    def test_speaker_beyond_100_chars_still_rejected(self) -> None:
+        # speaker と quote 間が 200 字 → 100 字 window 外、 reject 維持
+        gap = "x" * 200
+        text = f"戸郷翔征{gap}「" + "今日は集中して投げきった" * 5 + "」"
+        out = extract_long_quote(text, speaker_aliases=("戸郷翔征",))
+        self.assertEqual(out, "")
+
+
 if __name__ == "__main__":
     unittest.main()

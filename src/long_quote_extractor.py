@@ -6,10 +6,15 @@ Pattern B (brand_quote) で画像 overlay text として使う。
 設計:
 - HTML から <script> / <style> / tag を剥がして plain text 化
 - 「...」 segment を全部抽出
-- 60-180 字に収まる最長 quote を選ぶ
-- 60 字未満は短すぎ → 不採用 (Pattern A フォールバック)
+- 40-180 字に収まる最長 quote を選ぶ
+- 40 字未満は短すぎ → 不採用 (Pattern A フォールバック)
 - 180 字超過は 「。」 / 「、」 境界で truncate (末尾「…」 禁止 = literal violation)
 - ネスト quote (「外『内』外」) は外側の「」 のみ対象
+
+2026-05-28: 成立率改善のため min_chars 60→40 / speaker proximity 40→100 に
+緩和。 hochi.news / sanspo.com の本文は短文「」 が多く、 旧 60 字閾値では
+24h で Pattern B 成立 1 件未満だったため。 literal 引用境界 (「」 そのまま /
+truncate 末尾「…」 禁止 / nested 『』 対象外) は維持。
 """
 
 from __future__ import annotations
@@ -18,7 +23,7 @@ import re as _re
 from typing import Iterable
 
 
-_DEFAULT_MIN_CHARS = 60
+_DEFAULT_MIN_CHARS = 40
 _DEFAULT_MAX_CHARS = 180
 
 # 「」 のみ抽出 (『』 はネストとみなして対象外)。 ネスト無し前提で内側 chars を取る。
@@ -37,7 +42,7 @@ def extract_long_quote(
     speaker_aliases: Iterable[str] = (),
     min_chars: int = _DEFAULT_MIN_CHARS,
     max_chars: int = _DEFAULT_MAX_CHARS,
-    speaker_proximity_chars: int = 40,
+    speaker_proximity_chars: int = 100,
 ) -> str:
     """plain text or HTML から「」 quote 内容を取り出す.
 

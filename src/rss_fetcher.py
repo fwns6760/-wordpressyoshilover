@@ -28662,6 +28662,21 @@ def _main(args, logger):
         f"=== 完了: 取得={total} / 投稿={success} / 重複スキップ={skip_dup} "
         f"/ フィルタスキップ={skip_filter} / エラー={error} ==="
     )
+
+    # ticket 445: SNS リアルタイム話題 (巨人 1軍/2軍/3軍) daily aggregation。
+    # 既存 fetcher Scheduler の hourly run に相乗りし、内部 time gate (10/13/17/21 JST :00-:04)
+    # で 1 日 4 回のみ実行。 dry_run / no-wp 時は skip。
+    if os.environ.get("ENABLE_SNS_REALTIME_TOPIC", "").strip().lower() in ("1", "true", "yes", "on"):
+        try:
+            import sns_realtime_topic as _sns_topic
+            _sns_wp = wp if not args.dry_run else None
+            _sns_result = _sns_topic.run(wp_client=_sns_wp)
+            logger.info(
+                json.dumps({"event": "sns_realtime_topic_result", **_sns_result}, ensure_ascii=False)
+            )
+        except Exception as _sns_exc:
+            logger.exception("sns_realtime_topic failed: %s", _sns_exc)
+
     inline_notice_counts = _send_fetcher_inline_draft_notices(
         inline_draft_notice_requests,
         logger=logger,

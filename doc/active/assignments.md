@@ -25,7 +25,9 @@ scope: x-post-mail-lane の comment 系候補 (GEMMA_BRANDING / build_x_post_fro
 - fix `38b0085` Android Chrome share-x-cand URL 漏出 fix (history.replaceState)
 - fix `26b95db` Pattern B 成立率改善 (long_quote_extractor 閾値緩和)
 
-next: (1) 24h `gcloud billing` 実測 verify (画像生成 + GCS upload で課金 ¥0 想定の追認)、 (2) 実 X 投稿で Pattern A / Pattern B 成立比率と speaker mis-attribution / URL 漏出 / overlay 可読性を観察、 (3) 観察で問題なければ CLOSED に遷移 + doc を `doc/done/2026-05/` へ移動。 件名/scope 拡張 (本文中 `<img>` フォールバック等) は別 ticket 起票。
+**deploy 状況 (2026-05-28 10:32 JST 時点)**: image `pattern-b-relax-26b95db` (Cloud Build `4d0f3cd8` SUCCESS) / Cloud Run Job `x-post-mail-lane` gen=91。 5/28 doc backfill 直後の verify で `26b95db` 未 deploy 判明 → 同 session 内で rebuild + Job update 完了。
+
+next: (1) 11:00 JST 以降の自然 fire で実 Pattern A / Pattern B 成立比率と speaker mis-attribution / URL 漏出 / overlay 可読性を観察、 (2) 24h `gcloud billing` 実測 verify (画像生成 + GCS upload で課金 ¥0 想定の追認)、 (3) 観察で問題なければ CLOSED に遷移 + doc を `doc/done/2026-05/` へ移動。 件名/scope 拡張 (本文中 `<img>` フォールバック等) は別 ticket 起票。
 
 ## 2026-05-23 session update
 

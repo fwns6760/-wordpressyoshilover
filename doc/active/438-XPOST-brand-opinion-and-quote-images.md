@@ -124,5 +124,7 @@ acceptance:
 - 2026-05-27 17:38 JST `3184a91` docs — Phase 1+2 + GCS lifecycle を `mkdocs_docs/spec/x-post-mail.md` に追記
 - 2026-05-28 09:28 JST `38b0085` fix — Android Chrome share-x-cand URL 漏出 fix (history.replaceState)
 - 2026-05-28 09:51 JST `26b95db` fix — Pattern B 成立率改善 (long_quote_extractor 閾値緩和)
-- 2026-05-28: 上記 12 commit 全 deploy 済み (image rebuild + Cloud Run Job update)、 status は IN_FLIGHT 維持 (24h billing 実測 verify + 実 X 投稿での Pattern A / B 比率観察 pending)
-- 2026-05-28: ticket doc / assignments / README が 5/27 起票時のまま凍結していたため Claude 修復 (この log section + assignments / README の next_action 更新)
+- 2026-05-28 10:14 JST `55f75b2` doc backfill — ticket doc / assignments / README が 5/27 起票時のまま凍結していたため Claude が src 12 commit の実態に同期
+- 2026-05-28 10:30 JST Claude verify で deploy 漏れ判明 — 直近 image は `xpost-history-7d-2868d88` (441 commit) で `26b95db` (本 ticket 最終 fix Pattern B 閾値緩和) が未 deploy だった
+- 2026-05-28 10:32 JST image rebuild `pattern-b-relax-26b95db` (Cloud Build `4d0f3cd8` 1m49s SUCCESS) + Cloud Run Job update gen=90→91 → これで本 ticket の src commit 全件が production 反映済
+- next: 11:00 JST 以降の自然 fire で実 Pattern A / B 比率と speaker mis-attribution / URL 漏出 / overlay 可読性観察 + 24h `gcloud billing` 実測 verify

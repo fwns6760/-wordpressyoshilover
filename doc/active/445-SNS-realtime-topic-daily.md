@@ -20,9 +20,11 @@ Yahoo リアルタイム検索の **巨人専門 1軍/2軍/3軍 版** を、 既
 - source = 既存登録済の 巨人専門 / 球団公式 X アカウント 4 件 (`yomiuri_giants` / `TokyoGiants` / `hochi_giants` / `Sanspo_Giants`)
 - 取得 = RSSHub `https://rsshub-n5hunzkyna-an.a.run.app/twitter/user/{handle}?limit=30`
 - 発火 = 既存 fetcher Scheduler の中で内部 time gate (`hour in {10,13,17,21} and minute < 5`)、 1 日 4 回
-- 出力 = WP post 1 件 / 日 (slug = `giants-sns-realtime-{YYYY-MM-DD}`)、 4 fire で同 URL を upsert
+- 出力 = WP post **permanent 1 URL** (slug = `giants-sns-realtime`)、 4 fire/日 × 365 日 全部同 URL upsert (Yahoo リアルタイム検索式)
 - 分類 = 三軍 (`role=='ikusei'` or `育成/三軍/3軍` keyword) / 二軍 (`ファーム/二軍/イースタン` keyword or roster `position` に `二軍/ファーム`) / 一軍 (default)
 - トレンド = `config/giants_roster.json` 全 136 名 aliases で言及回数を count、 上位 15 名 (2 回以上のみ) を tag chip で最上部表示
+  - **(a) 急上昇 marker**: 昨日の counts を GCS (`gs://yoshilover-history/sns_realtime_topic/counts_{date}.json`) から load、 delta を chip に ↑+N / ↓N で badge 表示
+  - **(b) tag chip → WP tag page link**: `<a href="https://yoshilover.com/tag/{quote(name)}/">` で WP tag archive にリンク
 - render = oEmbed `https://publish.twitter.com/oembed` (X 公式、 著作権安全)
 
 Phase 1 では監督 / コーチ言及は **一軍配置を仮定**。 lineup data を使った 1軍 / 2軍 コーチ split は別 ticket (Phase 2)。
@@ -31,10 +33,11 @@ Phase 1 では監督 / コーチ言及は **一軍配置を仮定**。 lineup da
 
 | file | 内容 |
 | --- | --- |
-| `src/sns_realtime_topic.py` | main module、 fetch + 分類 + render + WP upsert |
+| `src/sns_realtime_topic.py` | main module、 fetch + 分類 + render + WP upsert + state IO |
 | `src/sns_realtime_topic_classifier.py` | 一軍 / 二軍 / 三軍 分類 + roster alias match |
-| `src/sns_realtime_topic_template.py` | jinja template (トレンド + 3 section + 出典) |
-| `tests/test_sns_realtime_topic.py` | fetch mock / 分類 / render / upsert mock |
+| `src/sns_realtime_topic_template.py` | template (トレンド + 急上昇 marker + tag chip link + 3 section + 出典) |
+| `src/sns_realtime_topic_state.py` | (a) 急上昇 marker 用 GCS state IO (save_counts / load_previous_counts) |
+| `tests/test_sns_realtime_topic.py` | fetch mock / 分類 / tag URL / delta / wp upsert mock / run with state |
 | `tests/test_sns_realtime_topic_classifier.py` | 育成 / ファーム keyword + roster alias match の boundary tests |
 
 新規 Cloud Run Job / Dockerfile / cloudbuild は **作らない**。 既存 `yoshilover-fetcher` service の hourly run に組み込む。

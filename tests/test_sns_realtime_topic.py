@@ -14,12 +14,14 @@ if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
 from sns_realtime_topic import (  # noqa: E402
+    PERMANENT_SLUG,
     build_article,
     collect_all_posts,
     filter_recent_24h,
     section_oembeds,
     should_run_now,
     split_by_level,
+    wp_tag_url_for,
     wp_upsert,
 )
 from sns_realtime_topic_classifier import load_roster_aliases  # noqa: E402
@@ -181,15 +183,96 @@ def test_wp_upsert_create_uses_draft_status():
         assert payload["slug"] == "slug-x"
 
 
-# ----- build_article smoke -----
+# ----- wp_tag_url_for -----
 
-def test_build_article_empty_posts_smoke():
-    """No posts → still returns valid title/html/slug/meta with empty trend section."""
+def test_wp_tag_url_for_japanese_name():
+    url = wp_tag_url_for("坂本勇人")
+    # URL-encoded UTF-8
+    assert url.startswith("https://yoshilover.com/tag/")
+    assert url.endswith("/")
+    assert "%E5%9D%82%E6%9C%AC%E5%8B%87%E4%BA%BA" in url
+
+
+def test_wp_tag_url_for_abe():
+    url = wp_tag_url_for("阿部慎之助")
+    assert "%E9%98%BF%E9%83%A8%E6%85%8E%E4%B9%8B%E5%8A%A9" in url
+
+
+# ----- build_article smoke (permanent slug + counts return) -----
+
+def test_build_article_permanent_slug():
     fixed_now = datetime(2026, 5, 28, 10, 0, tzinfo=JST)
     with patch("sns_realtime_topic.collect_all_posts", return_value=[]):
-        title, html, slug, meta = build_article(fixed_now)
+        title, html, slug, counts, meta = build_article(fixed_now)
+    # permanent slug (Yahoo リアルタイム式 1 URL)
+    assert slug == PERMANENT_SLUG == "giants-sns-realtime"
+    # title は更新時刻入り
     assert "2026-05-28 10:00" in title
-    assert slug == "giants-sns-realtime-2026-05-28"
+    assert "最終更新" in title
     assert meta["post_count_24h"] == 0
-    # トレンド section は無いが 出典 footer はある
+    assert counts == {}
     assert "出典" in html
+
+
+def test_build_article_with_prev_counts_shows_delta():
+    fixed_now = datetime(2026, 5, 28, 10, 0, tzinfo=JST)
+    fake_posts = [
+        {"text": "坂本勇人が3安打 また坂本勇人 / 別 post で坂本勇人", "url": "https://x.com/u/status/1", "handle": "h"},
+    ]
+    # 3 alias 含むので canonical count = 1 (alias dedup)、 でも post 3 件分にしたい:
+    fake_posts = [
+        {"text": "坂本勇人が3安打", "url": "https://x.com/u/status/1", "handle": "h", "published": (2026, 5, 28, 0, 0, 0, 0, 0, 0)},
+        {"text": "坂本勇人 また打った", "url": "https://x.com/u/status/2", "handle": "h", "published": (2026, 5, 28, 0, 0, 0, 0, 0, 0)},
+    ]
+    with patch("sns_realtime_topic.collect_all_posts", return_value=fake_posts):
+        title, html, slug, counts, meta = build_article(
+            fixed_now,
+            prev_counts={"坂本勇人": 0},
+        )
+    # 今日 2 回、 昨日 0 → ↑+2 が出る
+    assert counts.get("坂本勇人") == 2
+    assert "↑+2" in html or "↑+" in html  # delta badge
+
+
+# ----- run() delegates to load_previous_counts and save_counts -----
+
+def test_run_loads_prev_and_saves_counts():
+    fixed_now = datetime(2026, 5, 28, 17, 0, tzinfo=JST)
+    mock_wp = MagicMock()
+    mock_wp.api = "https://example.com/wp-json/wp/v2"
+    mock_wp.auth = ("u", "p")
+    fake_posts = [
+        {
+            "text": "坂本勇人 3 安打",
+            "url": "https://x.com/u/status/1",
+            "handle": "h",
+            "published": (2026, 5, 28, 0, 0, 0, 0, 0, 0),
+        },
+        {
+            "text": "坂本勇人 また",
+            "url": "https://x.com/u/status/2",
+            "handle": "h",
+            "published": (2026, 5, 28, 0, 0, 0, 0, 0, 0),
+        },
+    ]
+    with patch("sns_realtime_topic.collect_all_posts", return_value=fake_posts), \
+         patch("sns_realtime_topic.load_previous_counts", return_value={"坂本勇人": 1}) as mock_load, \
+         patch("sns_realtime_topic.save_counts", return_value=True) as mock_save, \
+         patch("sns_realtime_topic.requests") as mock_req:
+        get_resp = MagicMock()
+        get_resp.json.return_value = []
+        get_resp.raise_for_status.return_value = None
+        mock_req.get.return_value = get_resp
+        post_resp = MagicMock()
+        post_resp.json.return_value = {"id": 999}
+        post_resp.raise_for_status.return_value = None
+        mock_req.post.return_value = post_resp
+
+        from sns_realtime_topic import run as _run
+        result = _run(wp_client=mock_wp, now=fixed_now)
+
+    assert result["ran"] is True
+    assert result["slug"] == PERMANENT_SLUG
+    assert result["save_counts_ok"] is True
+    mock_load.assert_called_once()
+    mock_save.assert_called_once()

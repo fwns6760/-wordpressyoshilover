@@ -74,8 +74,20 @@ oEmbed (X post URL)
 過去 24h に集約した X 投稿の text を `config/giants_roster.json` の **全 136 名 (player 84 + coach 27 + manager 1 + shihaikako 1 + ikusei 23) の aliases** で照合し、 言及回数で sort。
 
 - 表示: 上位 ==15 名==、 言及 ==2 回以上== のみ (1 回はノイズ除去)
-- format: clickable tag chip `[ #{name} {count} ]` (各 chip は WP の player tag page にリンク)
+- format: clickable tag chip `[ #{name} {count} ↑+{delta} ]`
+- **(a) 急上昇 marker**: 昨日の言及回数 (GCS snapshot) と diff を chip に表示
+  - `↑+5 以上` = 赤太字 (急上昇)
+  - `↑+1〜4` = orange
+  - `↓N` = 灰色 (下落)
+  - 同値は badge 無し
+- **(b) tag chip → WP tag page link**: 各 chip は `<a href="https://yoshilover.com/tag/{quote(name)}/">` で WP tag archive にリンク
 - 言及 0 のときは section ごと非表示 (試合なし日 + ニュースなし日)
+
+#### GCS state (a 用)
+
+- path: `gs://{GCS_BUCKET}/sns_realtime_topic/counts_{YYYY-MM-DD}.json` (`GCS_BUCKET=yoshilover-history` 既設定済)
+- 毎 fire で当日の最新 counts dict を upload (4 fire × 30 日 = 120 file × 数 KB = 数 MB、 free tier 内)
+- 翌日の fire で前日 file を load して delta 計算 (初日は空 dict、 全 chip が ↑+N 表示)
 
 ### 一軍 / 二軍 / 三軍 分類ルール
 
@@ -95,21 +107,24 @@ oEmbed (X post URL)
 
 ## :material-database-outline: 重複防止
 
-同一日 4 fire = 同一記事の **upsert**。 新 X 投稿が出るたびに section が更新される。
+**Yahoo リアルタイム検索式の permanent 1 URL**。 毎日 4 fire は **同一 URL を更新**。
 
-- WP post の slug = `giants-sns-realtime-{YYYY-MM-DD}` で fix
-- 存在チェック: `GET /wp-json/wp/v2/posts?slug=giants-sns-realtime-{date}`
-- 存在すれば `PUT /posts/{id}` で content / title 上書き、 なければ `POST /posts`
-- ==1 日 1 URL==、 4 回 update で 4 URL 増えない
+- WP post の slug = `giants-sns-realtime` (==permanent fix==、 日付なし)
+- 存在チェック: `GET /wp-json/wp/v2/posts?slug=giants-sns-realtime`
+- 存在すれば `POST /posts/{id}` で content / title 上書き、 なければ `POST /posts` で新規
+- ==永続 1 URL==、 365 日 × 4 fire 全部が同 URL を update
+- SEO: backlink / 内部リンク / freshness signal を 1 URL に集中させ、 thin content URL の量産を防ぐ
+- (日別 archive が必要なら 別 ticket で snapshot 保存機能)
 
 ## :material-cog-outline: 実装 file (新規)
 
 | file | 内容 |
 | --- | --- |
-| `src/sns_realtime_topic.py` | main module、 RSSHub fetch + 分類 + render + WP upsert |
+| `src/sns_realtime_topic.py` | main module、 RSSHub fetch + 分類 + render + WP upsert + state IO |
 | `src/sns_realtime_topic_classifier.py` | 一軍 / 二軍 / 三軍 分類 + roster alias match |
-| `src/sns_realtime_topic_template.py` | jinja template (トレンド + 3 section + 出典) |
-| `tests/test_sns_realtime_topic.py` | unit tests (fetch mock / 分類 / render / upsert mock) |
+| `src/sns_realtime_topic_template.py` | template (トレンド + 急上昇 marker + tag chip link + 3 section + 出典) |
+| `src/sns_realtime_topic_state.py` | (a) 急上昇 marker 用 GCS state IO (save_counts / load_previous_counts) |
+| `tests/test_sns_realtime_topic.py` | unit tests (fetch mock / 分類 / tag URL / delta / wp upsert / run with state) |
 | `tests/test_sns_realtime_topic_classifier.py` | 育成 / ファーム keyword + roster alias match の boundary tests |
 
 既存 fetcher pipeline (`src/rss_fetcher.py`) の hourly run の中で時刻 gate を見て `sns_realtime_topic.run()` を呼ぶ。 別 Cloud Run Job は作らない。

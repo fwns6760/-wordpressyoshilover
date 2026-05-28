@@ -219,6 +219,42 @@ excerpt 例: 「巨人 SNS リアルタイム (一軍) - 過去 24h で 49 件�
 | GCS state | **¥0** (1 file/日 × 365 日 = 数 MB、 free tier) |
 | **合計** | **¥0** |
 
+## :material-cancel: 旧 per-X-post 記事化の停止 (`DISABLE_SOCIAL_NEWS_ARTICLES`)
+
+ticket 445 で SNS aggregation page に集約済 → **旧 個別 X-post を 1 WP article 化する path は停止**。
+
+user 「SNS のポストは作りたいが、 SNS の記事はいらない」 (2026-05-28 PM) 反映。
+
+### 停止する path
+
+`config/rss_sources.json` の `type: "social_news"` source 15 件 (全 X feed)。 `rss_fetcher.py:main` の source load 直後で skip。
+
+| 停止する処理 | 例 |
+| --- | --- |
+| X 投稿 1 件 → WP article 1 件 化 | 旧 `source_type=social_news` post 量産 |
+| `x_tweet_article_unfurler` 経由の outbound article discovery | t.co → hochi.news の unfurl 経路 |
+
+### 停止しない機能 (全部継続)
+
+| 機能 | 経路 |
+| --- | --- |
+| ==445 SNS aggregation page== (一軍 / ファーム) | `src/sns_realtime_topic.py:SOURCE_HANDLES` の hardcoded list + RSSHub 直 URL、 `rss_sources.json` 参照しない |
+| ==X live posting== (auto-tweet) | `AUTO_TWEET_ENABLED` 等 完全別 path、 本 flag の影響 0 |
+| ==報知 / サンスポ / スポニチ等の直 RSS== 由来 article | `type: "news"` source 32 件、 同じ媒体の article は別経路で discover 継続 |
+| fan reaction 収集 | `type: "fan_voice_pool"` source、 別経路 |
+| tag scrape | `type: "tag_scrape"` source、 別経路 |
+
+### env flag
+
+| key | value | 効果 |
+| --- | --- | --- |
+| `DISABLE_SOCIAL_NEWS_ARTICLES` | `1` / `true` / `yes` / `on` | 全 X feed source を main loop で skip |
+| `DISABLE_SOCIAL_NEWS_ARTICLES` | unset / `0` / 他 | 旧挙動 (全 47 source 処理) |
+
+log signature: `event: social_news_sources_disabled, skipped_sources: 15, remaining: 32`
+
+flag 反転は env update 1 発で即時復帰可能 (`gcloud run services update yoshilover-fetcher --update-env-vars=DISABLE_SOCIAL_NEWS_ARTICLES=0`)。
+
 ## :material-hand-pointing-up: 触らない範囲
 
 - 既存 article / 既存 subtype の生成 path

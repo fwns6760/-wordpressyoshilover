@@ -94,9 +94,10 @@ Yahoo リアルタイム検索の **巨人専門 一軍 / 二軍・三軍 版** 
 | `7bed2dc` | `sns-realtime-7bed2dc` | `00500-b2b` | page split + 初日 badge 抑制 + auto-post category |
 | `37f1c70` | `sns-realtime-37f1c70` | `00501-ksv` | post → page 切替 (noindex 自動回避) |
 | `0d09e60` | `sns-realtime-0d09e60` | `00502-qdx` | Giants design + JSON-LD (CollectionPage + Breadcrumb) |
-| `3cbe211` | `sns-realtime-3cbe211` | `00503-bxc` (LIVE) | A LiveBlogPosting + B OGP excerpt + C /data/ 内部リンク |
+| `3cbe211` | `sns-realtime-3cbe211` | `00503-bxc` | A LiveBlogPosting + B OGP excerpt + C /data/ 内部リンク |
+| `6609bae` | `disable-social-news-6609bae` | `00504-9hw` (LIVE) | DISABLE_SOCIAL_NEWS_ARTICLES kill switch follow-up |
 
-env `ENABLE_SNS_REALTIME_TOPIC=1` 設定済。
+env: `ENABLE_SNS_REALTIME_TOPIC=1` + `DISABLE_SOCIAL_NEWS_ARTICLES=1` 設定済。
 
 ## 8. tests (29/29 PASS)
 
@@ -131,11 +132,23 @@ env `ENABLE_SNS_REALTIME_TOPIC=1` 設定済。
 - [x] sitemap (`page-sitemap.xml`) 自動登録
 - [x] 追加コスト ¥0 verify (Cloud Build / deploy 計 7 回、 全て成功、 cost 増分なし)
 
-## 10. 残課題 (本 ticket scope 外、 別 ticket 候補)
+## 10. follow-up 完了 (2026-05-28 20:23 JST)
+
+### DISABLE_SOCIAL_NEWS_ARTICLES kill switch
+user 「SNS のポストは作りたいが、 SNS の記事はいらない」 反映。
+
+- commit `6609bae` / image `disable-social-news-6609bae` / revision `yoshilover-fetcher-00504-9hw` (LIVE)
+- env `DISABLE_SOCIAL_NEWS_ARTICLES=1` 設定済
+- `src/rss_fetcher.py:main` の source load 直後で `type=social_news` 15 件 skip
+- 残り 32 件 (news / tag_scrape / fan_voice_pool) は継続
+- 445 SNS aggregation / X live posting (auto-tweet) は完全別経路、 影響 0
+- 21:00 JST 初回 fire で `event=social_news_sources_disabled` log で動作確認予定
+- 仕様書 `mkdocs_docs/spec/sns-realtime-topic.md` § DISABLE_SOCIAL_NEWS_ARTICLES に明記
+
+## 11. 残課題 (本 ticket scope 外、 別 ticket 候補)
 
 - **(D) ヨシラバー独自 commentary 挿入** (E-E-A-T 強化) — 本文 top に 100-200 字の編集部まとめテキスト。 Gemini Flash で生成 or 手動。 工事 1.5h。
 - **(E) embed lazy load** (Core Web Vitals LCP 改善) — IntersectionObserver で scroll で初めて load。 工事 1h。
-- **旧 SNS 記事削除戦略** — 現状 `source_type=social_news` で個別 X post → 個別 WP article を作る path が継続中。 新 aggregation page に集約したので per-post path は競合 risk。 別 ticket で kill switch。
 - **1軍 / 2軍 コーチ split** — 監督 / コーチ言及は現在 一軍 仮定。 lineup data で per-team split は別 ticket。
 - **2軍3軍 source 追加** — `TokyoGiantsFarm` 等が公式に存在すれば source list 追加検討。
 - **Google Search Console URL inspection** — 2 URL の「インデックス登録をリクエスト」 で初回 crawl 加速 (user 手動推奨)。

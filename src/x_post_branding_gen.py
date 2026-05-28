@@ -1473,62 +1473,52 @@ def _try_fetch_og_image_for_candidate(
     return result.image_bytes, "", result.image_url, result.html_text or ""
 
 
-def _try_apply_pattern_b_quote_overlay(
+def _try_extract_pattern_b_quote(
     *,
     image_bytes: bytes,
     speaker: str,
     html_text: str,
     log,
-) -> tuple[bytes, str]:
-    """438 Phase 2: html_text から speaker の long quote 抽出 → image に焼き込み.
+) -> str:
+    """438 Phase 2 revised (2026-05-28): html_text から speaker の long quote を抽出.
+
+    user 仕様変更 (2026-05-28): overlay 焼き込み廃止、 post text に「人名「quote」」
+    を書く方式 (案 C) に切替。 web intent が画像 attach 非対応のため、 焼き込み
+    image でも raw image でも user 手動 attach は同じ、 text 検索可能性 + 実装
+    simplicity + 既存 ヨシラバー voice 哲学 と一致を選択。
 
     speaker の roster alias 全部 (姓名 / 姓 / 役職付き等) を proximity check に
     使い、 mis-attribution (発言者の取り違え) を防ぐ。
 
     Returns:
-        (overlay_image_bytes, extracted_quote) — Pattern B 成立時
-        (b"", "") — 不成立 (caller 側 Pattern A 維持)
+        extracted_quote (str) — Pattern B 成立時 (40-180 字 の literal long quote)
+        "" — 不成立 (caller 側 Pattern A 維持)
     """
     if not image_bytes or not speaker or not html_text:
-        return b"", ""
+        return ""
     try:
         from src.long_quote_extractor import extract_long_quote
     except Exception as exc:  # noqa: BLE001
         log.info("pattern_b_skip reason=extractor_import_failed err=%r", exc)
-        return b"", ""
+        return ""
     # roster から speaker の aliases を取得 (姓 / 姓名 / 役職付き等)
     speaker_aliases = _resolve_speaker_aliases(speaker)
     try:
         quote = extract_long_quote(html_text, speaker_aliases=speaker_aliases)
     except Exception as exc:  # noqa: BLE001
         log.info("pattern_b_skip reason=extract_exception err=%r", exc)
-        return b"", ""
+        return ""
     if not quote:
         log.info(
             "pattern_b_skip reason=no_long_quote_found speaker=%s alias_count=%d",
             speaker, len(speaker_aliases),
         )
-        return b"", ""
-    try:
-        from src.image_quote_overlay import apply_quote_overlay
-    except Exception as exc:  # noqa: BLE001
-        log.info("pattern_b_skip reason=overlay_import_failed err=%r", exc)
-        return b"", ""
-    try:
-        out_bytes = apply_quote_overlay(
-            image_bytes,
-            speaker=speaker,
-            quote=quote,
-            logger=log,
-        )
-    except Exception as exc:  # noqa: BLE001
-        log.info("pattern_b_skip reason=overlay_exception err=%r", exc)
-        return b"", ""
+        return ""
     log.info(
-        "pattern_b_applied speaker=%s quote_len=%d image_bytes=%d",
-        speaker, len(quote), len(out_bytes),
+        "pattern_b_extracted speaker=%s quote_len=%d",
+        speaker, len(quote),
     )
-    return out_bytes, quote
+    return quote
 
 
 def _resolve_speaker_aliases(canonical_name: str) -> tuple[str, ...]:
@@ -1846,22 +1836,22 @@ def build_x_post_from_article_info(
         source_name=source_name,
         log=log,
     )
-    # 438 Phase 2 (2026-05-27): html_text + speaker から long quote 抽出 →
-    # Pillow で image に overlay 焼き込み. 成立時は Pattern B として post_text
-    # を 人物名のみに切替 (画像が主、 post text の重複を避ける)。
+    # 438 Phase 2 revised (2026-05-28): user 仕様変更で overlay 廃止、 post text に
+    # 「人名「quote」」 を書く方式 (案 C) に切替。 html_text + speaker から long quote
+    # 抽出、 成立時は post_text = 「{player}「{quote}」」、 image はそのまま raw
+    # og:image を attach (overlay 焼き込みなし、 Pillow 不要)。
     final_post_text = post_text_without_handle
     pattern_label = "A"
     if image_bytes and html_text and player and not is_postgame_team_wide:
-        overlay_bytes, extracted_quote = _try_apply_pattern_b_quote_overlay(
+        extracted_quote = _try_extract_pattern_b_quote(
             image_bytes=image_bytes,
             speaker=player,
             html_text=html_text,
             log=log,
         )
-        if overlay_bytes and extracted_quote:
-            image_bytes = overlay_bytes
-            # Pattern B 成立: post_text は 人物名のみ (image が long quote を持つ)
-            final_post_text = player
+        if extracted_quote:
+            # Pattern B 成立: post_text = 「{player}「{quote}」」、 image は raw のまま
+            final_post_text = f"{player}「{extracted_quote}」"
             pattern_label = "B"
     log.info(
         "article_info_branding_candidate_built player=%s source_url=%s text_len=%d model=%s handle=%s og_image=%s pattern=%s",

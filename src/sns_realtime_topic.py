@@ -1,16 +1,18 @@
-"""sns_realtime_topic — main module: RSSHub fetch → 分類 → render → WP upsert.
+"""sns_realtime_topic — main module: RSSHub fetch → 分類 → render → WP upsert (page split).
 
-ticket 445: SNS リアルタイム話題 (巨人 1軍/2軍/3軍) daily aggregation.
+ticket 445: SNS リアルタイム話題 daily aggregation (page split: 一軍 / ファーム).
 
-URL モデル: **permanent 単一 URL** (`giants-sns-realtime`) を 4 fire/日 で update。
-Yahoo リアルタイム検索式 = authority concentration、freshness signal 累積。
+URL モデル: **permanent 2 URL** (Yahoo リアルタイム検索式)
+- `giants-sns-realtime-1gun` — 一軍 投稿 上位 15 件
+- `giants-sns-realtime-farm` — 二軍 上位 5 + 三軍 上位 5 = 最大 10 件
 
 source = 巨人専門 / 球団公式 X 4 account を RSSHub 経由で取得。
 1 日 4 fire (10/13/17/21 JST) を内部 time gate で発火。
 
-追加 enhancement (ticket 445 a + b):
-- (a) 急上昇 marker: 昨日の言及回数 (GCS) と diff を chip に表示
-- (b) tag chip → WP tag page link (https://yoshilover.com/tag/{quote(name)}/)
+enhancement (a) + (b):
+- (a) 急上昇 marker: 昨日の言及回数 (GCS、 page 別 nested dict) と diff
+       初日 (前日 counts なし) は badge 抑制 (全員 ↑+N 出ないようにする)
+- (b) tag chip → WP tag page link
 """
 
 from __future__ import annotations
@@ -29,7 +31,11 @@ from sns_realtime_topic_classifier import (
     count_mentions,
     load_roster_aliases,
 )
-from sns_realtime_topic_state import load_previous_counts, save_counts
+from sns_realtime_topic_state import (
+    PageCounts,
+    load_previous_counts,
+    save_counts,
+)
 from sns_realtime_topic_template import render_full_html, render_trend_chips
 from wp_draft_creator import build_oembed_block
 
@@ -40,11 +46,27 @@ SOURCE_HANDLES = ["yomiuri_giants", "TokyoGiants", "hochi_giants", "Sanspo_Giant
 JST = timezone(timedelta(hours=9))
 FIRE_SLOTS = {10, 13, 17, 21}
 SLOT_MINUTE_WINDOW = 5
-MAX_PER_SECTION = 5
 RSSHUB_TIMEOUT_SECONDS = 20
 WP_TIMEOUT_SECONDS = 30
-PERMANENT_SLUG = "giants-sns-realtime"  # Yahoo リアルタイム式 1 URL 永続
 WP_TAG_URL_BASE = "https://yoshilover.com/tag"
+WP_AUTO_POST_CATEGORY_ID = 673  # category slug=auto-post, name=自動投稿
+
+# page split limits — user 「一日のSNSは見える量にしたい、 一軍は無理かも」
+PAGE_1GUN = {
+    "key": "1gun",
+    "slug": "giants-sns-realtime-1gun",
+    "title_suffix": "(一軍)",
+    "levels": ("一軍",),
+    "max_per_section": 15,
+}
+PAGE_FARM = {
+    "key": "farm",
+    "slug": "giants-sns-realtime-farm",
+    "title_suffix": "(二軍・三軍)",
+    "levels": ("二軍", "三軍"),
+    "max_per_section": 5,
+}
+PAGES = (PAGE_1GUN, PAGE_FARM)
 
 
 def should_run_now(now: Optional[datetime] = None) -> bool:
@@ -122,7 +144,7 @@ def split_by_level(posts: List[Dict], roster_aliases) -> Dict[str, List[Dict]]:
     return out
 
 
-def section_oembeds(posts: List[Dict], limit: int = MAX_PER_SECTION) -> List[str]:
+def section_oembeds(posts: List[Dict], limit: int) -> List[str]:
     out: List[str] = []
     for p in posts[:limit]:
         url = p.get("url", "")
@@ -133,41 +155,74 @@ def section_oembeds(posts: List[Dict], limit: int = MAX_PER_SECTION) -> List[str
 
 
 def wp_tag_url_for(name: str) -> str:
-    """WP default tag slug = URL-encoded UTF-8 name. 存在しない tag は 404 だが page は壊れない。"""
+    """WP default tag slug = URL-encoded UTF-8 name."""
     return f"{WP_TAG_URL_BASE}/{urlquote(name, safe='')}/"
 
 
-def build_article(
+def build_pages(
     now: Optional[datetime] = None,
-    prev_counts: Optional[Dict[str, int]] = None,
-) -> Tuple[str, str, str, Dict[str, int], Dict]:
-    """Return (title, html, slug, counts, meta).
+    prev_counts_by_page: Optional[PageCounts] = None,
+) -> Tuple[List[Dict], PageCounts]:
+    """Return (list of page dicts, counts_by_page).
 
-    `counts` を返すのは caller が GCS に保存できるようにするため。
+    page dict: {title, html, slug, page_key, meta}
+    counts_by_page: GCS 保存用の {page_key: {name: count}}
     """
     now = now or datetime.now(JST)
     posts = collect_all_posts()
     posts = filter_recent_24h(posts, now)
     roster = load_roster_aliases()
-    counts = count_mentions([p["text"] for p in posts], roster)
-    prev = prev_counts if prev_counts is not None else {}
-    trend_html = render_trend_chips(counts, prev_counts=prev, tag_url_for=wp_tag_url_for)
     by_level = split_by_level(posts, roster)
-    sections = [
-        ("一軍", section_oembeds(by_level["一軍"])),
-        ("二軍", section_oembeds(by_level["二軍"])),
-        ("三軍", section_oembeds(by_level["三軍"])),
-    ]
+    prev_by_page = prev_counts_by_page or {}
     updated_at = now.strftime("%Y-%m-%d %H:%M")
-    title = f"巨人 SNS リアルタイム (最終更新: {updated_at} JST)"
-    html = render_full_html(updated_at, trend_html, sections, SOURCE_HANDLES)
-    meta = {
-        "post_count_24h": len(posts),
-        "level_counts": {k: len(v) for k, v in by_level.items()},
-        "trend_player_count": len(counts),
-        "prev_count_loaded": bool(prev),
-    }
-    return title, html, PERMANENT_SLUG, counts, meta
+
+    pages: List[Dict] = []
+    counts_by_page: PageCounts = {}
+    for page in PAGES:
+        page_posts: List[Dict] = []
+        for level in page["levels"]:
+            page_posts.extend(by_level.get(level, []))
+        page_counts = count_mentions([p["text"] for p in page_posts], roster)
+        counts_by_page[page["key"]] = page_counts
+        prev = prev_by_page.get(page["key"], {})
+
+        trend_html = render_trend_chips(
+            page_counts,
+            prev_counts=prev,
+            tag_url_for=wp_tag_url_for,
+        )
+
+        sections: List[Tuple[str, List[str]]] = []
+        if len(page["levels"]) == 1:
+            # 一軍 page = 単一 section、 max_per_section 件まで表示
+            level = page["levels"][0]
+            level_posts = by_level.get(level, [])
+            sections.append(("最新の投稿", section_oembeds(level_posts, limit=page["max_per_section"])))
+        else:
+            # farm page = 二軍 + 三軍 を別 section で
+            for level in page["levels"]:
+                lvl_posts = by_level.get(level, [])
+                blocks = section_oembeds(lvl_posts, limit=page["max_per_section"])
+                if blocks:
+                    sections.append((level, blocks))
+
+        html = render_full_html(updated_at, trend_html, sections, SOURCE_HANDLES)
+        title = f"巨人 SNS リアルタイム {page['title_suffix']} (最終更新: {updated_at} JST)"
+        pages.append(
+            {
+                "title": title,
+                "html": html,
+                "slug": page["slug"],
+                "page_key": page["key"],
+                "meta": {
+                    "post_count": len(page_posts),
+                    "trend_player_count": len(page_counts),
+                    "prev_count_loaded": bool(prev),
+                    "section_counts": {lvl: len(by_level.get(lvl, [])) for lvl in page["levels"]},
+                },
+            }
+        )
+    return pages, counts_by_page
 
 
 def wp_upsert(title: str, content: str, slug: str, wp_client) -> Tuple[str, int]:
@@ -199,6 +254,7 @@ def wp_upsert(title: str, content: str, slug: str, wp_client) -> Tuple[str, int]
             "content": content,
             "slug": slug,
             "status": "draft",
+            "categories": [WP_AUTO_POST_CATEGORY_ID],
         },
         timeout=WP_TIMEOUT_SECONDS,
     )
@@ -210,40 +266,29 @@ def run(wp_client=None, now: Optional[datetime] = None) -> Dict:
     now = now or datetime.now(JST)
     if not should_run_now(now):
         return {"ran": False, "reason": "outside_fire_slot", "hour": now.hour, "minute": now.minute}
-    prev_counts = load_previous_counts(now)
-    title, html, slug, counts, meta = build_article(now, prev_counts=prev_counts)
-    if not meta["post_count_24h"]:
+    prev_by_page = load_previous_counts(now)
+    pages, counts_by_page = build_pages(now, prev_counts_by_page=prev_by_page)
+    if not any(p["meta"]["post_count"] for p in pages):
         _logger.info("sns_realtime no posts in last 24h; skip wp upsert")
-        return {"ran": False, "reason": "no_posts_24h", "slug": slug, "meta": meta}
+        return {"ran": False, "reason": "no_posts_24h", "pages": [p["meta"] for p in pages]}
     if wp_client is None:
         return {
             "ran": False,
             "reason": "no_wp_client",
-            "title": title,
-            "slug": slug,
-            "meta": meta,
+            "pages": [{"slug": p["slug"], "title": p["title"], "meta": p["meta"]} for p in pages],
         }
-    try:
-        op, post_id = wp_upsert(title, html, slug, wp_client)
-    except Exception as exc:  # noqa: BLE001
-        _logger.exception("sns_realtime wp_upsert failed slug=%s: %s", slug, exc)
-        return {"ran": False, "reason": "wp_upsert_failed", "slug": slug, "error": str(exc)}
-    # GCS save (失敗しても WP upsert 結果は返す)
-    save_ok = save_counts(counts, now)
-    _logger.info(
-        "sns_realtime done op=%s post_id=%s slug=%s save_ok=%s meta=%s",
-        op,
-        post_id,
-        slug,
-        save_ok,
-        meta,
-    )
-    return {
-        "ran": True,
-        "op": op,
-        "post_id": post_id,
-        "slug": slug,
-        "title": title,
-        "save_counts_ok": save_ok,
-        "meta": meta,
-    }
+    results: List[Dict] = []
+    for page in pages:
+        if not page["meta"]["post_count"]:
+            results.append({"slug": page["slug"], "skipped": "no_posts"})
+            continue
+        try:
+            op, post_id = wp_upsert(page["title"], page["html"], page["slug"], wp_client)
+        except Exception as exc:  # noqa: BLE001
+            _logger.exception("sns_realtime wp_upsert failed slug=%s: %s", page["slug"], exc)
+            results.append({"slug": page["slug"], "error": str(exc)})
+            continue
+        results.append({"slug": page["slug"], "op": op, "post_id": post_id, "meta": page["meta"]})
+    save_ok = save_counts(counts_by_page, now)
+    _logger.info("sns_realtime done save_ok=%s results=%s", save_ok, results)
+    return {"ran": True, "results": results, "save_counts_ok": save_ok}

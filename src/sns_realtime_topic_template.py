@@ -40,11 +40,17 @@ def render_trend_chips(
     if not items:
         return ""
     prev = prev_counts or {}
+    # 初日 (前日 counts なし) は ↑+N badge を全 chip に出すと「全員急上昇」 で
+    # 見栄え微妙、 badge 自体を抑制する。
+    suppress_badge = not prev
     chips: List[str] = []
     for name, count in items:
         safe = _html.escape(name)
-        delta = count - int(prev.get(name, 0))
-        badge = _delta_badge(delta)
+        if suppress_badge:
+            badge = ""
+        else:
+            delta = count - int(prev.get(name, 0))
+            badge = _delta_badge(delta)
         inner = (
             f'#{safe} <span style="color:#ff6f00;">{count}</span>{badge}'
         )
@@ -58,12 +64,17 @@ def render_trend_chips(
             chips.append(
                 f'<span class="yoshilover-trend-chip" style="{_CHIP_STYLE}">{inner}</span>'
             )
+    sub = (
+        ''
+        if suppress_badge
+        else '<p style="font-size:13px;color:#666;margin:0 0 8px 0;">'
+             '↑ = 昨日比増加 (全 136 名 から自動検出)</p>\n'
+    )
     return (
         '<!-- wp:html -->\n'
         '<h2>今日のトレンド</h2>\n'
-        '<p style="font-size:13px;color:#666;margin:0 0 8px 0;">'
-        '↑ = 昨日比増加 (1 軍 / 全選手 / 監督 / コーチ 全 136 名 から自動検出)</p>\n'
-        '<div class="yoshilover-trend-list" style="margin:16px 0;line-height:2.2;">'
+        + sub
+        + '<div class="yoshilover-trend-list" style="margin:16px 0;line-height:2.2;">'
         + "".join(chips)
         + '</div>\n'
         '<!-- /wp:html -->'

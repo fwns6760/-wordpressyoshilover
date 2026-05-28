@@ -2427,11 +2427,11 @@ def _load_recent_dedup_records(
     bucket_name: str,
     now: datetime,
     *,
-    lookback_hours: int = 24,
+    lookback_hours: int = 168,
 ) -> list[dict]:
-    """355: read JSONL files in ``gs://{bucket_name}/x_post_mail/dedup/``
-    for today + yesterday and filter to records with ``ts >= now -
-    lookback_hours``.
+    """355 / 441: read JSONL files in ``gs://{bucket_name}/x_post_mail/dedup/``
+    for the days covering ``lookback_hours`` (default 168h = 7d) and filter
+    to records with ``ts >= now - lookback_hours``.
 
     Returns an empty list on any GCS error after logging the failure.
     The mail send must never block on dedup infrastructure problems.
@@ -2445,10 +2445,14 @@ def _load_recent_dedup_records(
         LOG.warning("_load_recent_dedup_records: client init failed: %r", exc)
         return []
     cutoff = now - timedelta(hours=lookback_hours)
-    today = now.strftime("%Y-%m-%d")
-    yesterday = (now - timedelta(days=1)).strftime("%Y-%m-%d")
+    # 441: cover lookback_hours days back (ceil + 1 safety day for JST boundary).
+    days_back = max(1, (int(lookback_hours) + 23) // 24 + 1)
+    date_strs = [
+        (now - timedelta(days=offset)).strftime("%Y-%m-%d")
+        for offset in range(days_back)
+    ]
     out: list[dict] = []
-    for date_str in (today, yesterday):
+    for date_str in date_strs:
         blob = bucket.blob(_dedup_blob_path(date_str))
         try:
             if not blob.exists():
@@ -2485,7 +2489,7 @@ def _load_recent_dedup_signatures(
     bucket_name: str,
     now: datetime,
     *,
-    lookback_hours: int = 24,
+    lookback_hours: int = 168,
 ) -> set[str]:
     """Return recent combo signatures from the GCS-backed dedup JSONL."""
     records = _load_recent_dedup_records(
@@ -2515,7 +2519,7 @@ def _load_recent_player_counts(
     bucket_name: str,
     now: datetime,
     *,
-    lookback_hours: int = 24,
+    lookback_hours: int = 168,
 ) -> dict[str, int]:
     """Return recent focus-player counts from the GCS-backed dedup JSONL."""
     records = _load_recent_dedup_records(

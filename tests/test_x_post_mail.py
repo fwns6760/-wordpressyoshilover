@@ -2259,17 +2259,11 @@ class XPostMailEntrypointFreshnessTests(unittest.TestCase):
         self.assertEqual(result, 0)
         self.assertEqual(pick_candidates.call_count, 1)
 
-    def test_player_history_zero_candidate_relaxes_as_last_resort(self) -> None:
-        """380 follow-up: player history で0件化する場合だけ最後に緩める。"""
+    def test_player_history_zero_candidate_skips_mail(self) -> None:
+        """441: player history で 0 件化したら relaxed retry せず mail skip
+        (user 方針「少なくてもよいから連発回避優先」)。"""
         from src.tools import run_x_post_mail
 
-        relaxed = [self._entrypoint_candidate("relaxed-sig")]
-        send_result = run_x_post_mail.mdb.MailResult(
-            status="sent",
-            refused_recipients={},
-            smtp_response=[],
-            reason=None,
-        )
         with patch.dict(
             "os.environ",
             {
@@ -2299,11 +2293,10 @@ class XPostMailEntrypointFreshnessTests(unittest.TestCase):
         ), patch.object(
             run_x_post_mail.lane,
             "pick_candidates",
-            side_effect=[[], relaxed],
+            return_value=[],
         ) as pick_candidates, patch.object(
             run_x_post_mail.mdb,
             "send",
-            return_value=send_result,
         ) as send, patch.object(
             run_x_post_mail.lane,
             "_record_dedup_signatures",
@@ -2312,17 +2305,13 @@ class XPostMailEntrypointFreshnessTests(unittest.TestCase):
             result = run_x_post_mail.main(["--max-candidates", "1"])
 
         self.assertEqual(result, 0)
-        self.assertEqual(pick_candidates.call_count, 2)
+        # 441: 旧 relaxed-history fallback は削除。
+        self.assertEqual(pick_candidates.call_count, 1)
         self.assertEqual(
             pick_candidates.call_args_list[0].kwargs["recent_player_counts"],
             {"浦田俊輔": 1},
         )
-        self.assertEqual(
-            pick_candidates.call_args_list[1].kwargs["recent_player_counts"],
-            {},
-        )
-        request = send.call_args.args[0]
-        self.assertEqual(request.metadata["candidate_count"], 1)
+        send.assert_not_called()
 
     def test_news_opinion_fallback_fills_sparse_data_candidates(self) -> None:
         """source-backed RSS/comment 候補をデータ候補と同じメールに足す。"""
@@ -2653,18 +2642,21 @@ class TicketThreeFiftyFiveDedupTests(unittest.TestCase):
         self.assertEqual(sigs, {"OPS|直近1週間|False|None", "AVG|直近1週間|False|None"})
 
     def test_load_recent_dedup_signatures_filters_old(self) -> None:
-        """24h 超 (= 30h 前) の record は除外。"""
+        """441: 168h 超 (= 200h 前) の record は除外。"""
         from unittest.mock import patch
         import src.x_post_mail_lane as lane
 
-        old_ts = (datetime(2026, 5, 16, 7, 0, tzinfo=JST) - timedelta(hours=30)).isoformat()
-        recent_ts = (datetime(2026, 5, 16, 7, 0, tzinfo=JST) - timedelta(hours=2)).isoformat()
+        now = datetime(2026, 5, 16, 7, 0, tzinfo=JST)
+        old_ts = (now - timedelta(hours=200)).isoformat()
+        recent_ts = (now - timedelta(hours=2)).isoformat()
+        old_date = (now - timedelta(hours=200)).strftime("%Y-%m-%d")
+        recent_date = (now - timedelta(hours=2)).strftime("%Y-%m-%d")
         store = {
-            "x_post_mail/dedup/2026-05-15.jsonl":
-                f'{{"ts": "{old_ts}", "signature": "STALE|x|False|None"}}\n'
+            f"x_post_mail/dedup/{old_date}.jsonl":
+                f'{{"ts": "{old_ts}", "signature": "STALE|x|False|None"}}\n',
+            f"x_post_mail/dedup/{recent_date}.jsonl":
                 f'{{"ts": "{recent_ts}", "signature": "FRESH|y|False|None"}}\n',
         }
-        now = datetime(2026, 5, 16, 7, 0, tzinfo=JST)
         with patch.object(lane, "_get_storage_client",
                           return_value=self._fake_storage_client(store)):
             sigs = lane._load_recent_dedup_signatures("test-bucket", now)

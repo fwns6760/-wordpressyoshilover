@@ -1369,26 +1369,38 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         return 4
 
-    # 355: load 24h dedup set so combos already mailed in the past day
-    # do not repeat. Disabled when ``X_POST_MAIL_DEDUP_DISABLED=1`` or
-    # bucket env missing. GCS errors are logged and treated as empty
-    # state (= dedup off for this run, mail still sends).
+    # 355 / 441: load rolling dedup set so combos already mailed do not
+    # repeat. Window defaults to 168h (7d) and is overridable via
+    # ``X_POST_MAIL_PLAYER_HISTORY_HOURS``. Disabled when
+    # ``X_POST_MAIL_DEDUP_DISABLED=1`` or bucket env missing. GCS errors
+    # are logged and treated as empty state (= dedup off for this run,
+    # mail still sends).
     dedup_set: set[str] | None = None
     recent_player_counts: dict[str, int] = {}
     bucket_name = os.environ.get("INSIGHT_GCS_BUCKET") or ""
     dedup_disabled = (os.environ.get("X_POST_MAIL_DEDUP_DISABLED") or "").strip()
+    history_hours = _resolve_int_env(
+        "X_POST_MAIL_PLAYER_HISTORY_HOURS", 168, min_value=1
+    )
     if bucket_name and dedup_disabled not in {"1", "true", "yes"}:
         try:
-            dedup_records = lane._load_recent_dedup_records(bucket_name, now_jst)
+            dedup_records = lane._load_recent_dedup_records(
+                bucket_name, now_jst, lookback_hours=history_hours
+            )
             dedup_set = {
                 str(rec.get("signature") or "")
                 for rec in dedup_records
                 if str(rec.get("signature") or "")
             }
-            LOG.info("Loaded 24h dedup set: %d signatures", len(dedup_set))
+            LOG.info(
+                "Loaded %dh dedup set: %d signatures",
+                history_hours,
+                len(dedup_set),
+            )
             recent_player_counts = lane._player_counts_from_dedup_records(dedup_records)
             LOG.info(
-                "Loaded 24h player history: %d players, %d appearances",
+                "Loaded %dh player history: %d players, %d appearances",
+                history_hours,
                 len(recent_player_counts),
                 sum(recent_player_counts.values()),
             )
@@ -1662,32 +1674,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                         len(queue_items),
                     )
 
+    # 441: relaxed-history fallback removed. user 方針「少なくてもよいから
+    # 連発回避優先」(memory: feedback_data_insight_user_preferences_2026_05_15,
+    # ticket 436 follow-up 21:20)。 0 件のままなら mail skip。
     if not candidates and recent_player_counts:
-        LOG.warning(
-            "Player history left 0 candidates after news/opinion fallback; "
-            "retrying without player history to avoid starving scheduled mail.",
+        LOG.info(
+            "Player history left 0 candidates; skipping mail per user policy "
+            "(no relaxed-history backfill).",
         )
-        relaxed_history_candidates = lane.pick_candidates(
-            miq.query_rank,
-            now=now_jst,
-            max_candidates=args.max_candidates,
-            min_sample=args.min_sample,
-            db_path=db_path,
-            dedup_set=None,
-            focus_player_names=lineup_focus_names if context_label else None,
-            context_label=context_label,
-            recent_player_counts={},
-        )
-        if relaxed_history_candidates:
-            candidates = _backfill_dedup_starved_candidates(
-                candidates,
-                relaxed_history_candidates,
-                max_candidates=args.max_candidates,
-            )
-            LOG.info(
-                "Player history fallback backfilled candidates: 0 -> %d",
-                len(candidates),
-            )
     if not candidates:
         LOG.warning("No candidates generated — skip send (insight.db likely sparse).")
         return 0

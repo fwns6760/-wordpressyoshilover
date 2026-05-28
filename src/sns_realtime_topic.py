@@ -55,6 +55,8 @@ WP_TAG_URL_BASE = "https://yoshilover.com/tag"
 # page type は両 plugin の noindex 対象外 (既存 /data/ /about-yoshilover/ で確認済)、
 # 切替だけで index 許可される。 plugin / SEO 設定 / user 手動 一切不要。
 WP_POST_TYPE = "pages"  # /wp/v2/pages endpoint
+WP_DATA_PAGE_URL_BASE = "https://yoshilover.com/data"
+DATA_PAGES_CACHE: Dict[str, set] = {}  # process-local cache: {api_url: {slug, slug, ...}}
 
 # page split limits — user 「一日のSNSは見える量にしたい、 一軍は無理かも」
 PAGE_1GUN = {
@@ -164,14 +166,74 @@ def wp_tag_url_for(name: str) -> str:
     return f"{WP_TAG_URL_BASE}/{urlquote(name, safe='')}/"
 
 
+def _fetch_data_page_slugs(wp_client) -> set:
+    """data-site page (parent=/data/) の slug set を返す。 process-local cache。
+
+    (C) 内部リンク enrichment: トレンド chip 先を /data/{slug}/ に切替判定で使う。
+    """
+    if wp_client is None:
+        return set()
+    api = wp_client.api
+    if api in DATA_PAGES_CACHE:
+        return DATA_PAGES_CACHE[api]
+    try:
+        # data parent page id を slug=data で取得
+        r = requests.get(
+            f"{api}/pages",
+            params={"slug": "data", "_fields": "id", "status": "any"},
+            auth=wp_client.auth,
+            timeout=WP_TIMEOUT_SECONDS,
+        )
+        r.raise_for_status()
+        items = r.json() or []
+        if not items:
+            DATA_PAGES_CACHE[api] = set()
+            return set()
+        parent_id = int(items[0]["id"])
+        r2 = requests.get(
+            f"{api}/pages",
+            params={"parent": parent_id, "per_page": 100, "_fields": "slug"},
+            auth=wp_client.auth,
+            timeout=WP_TIMEOUT_SECONDS,
+        )
+        r2.raise_for_status()
+        slugs = {p.get("slug", "") for p in (r2.json() or []) if p.get("slug")}
+        DATA_PAGES_CACHE[api] = slugs
+        return slugs
+    except Exception as exc:  # noqa: BLE001
+        _logger.warning("sns_realtime _fetch_data_page_slugs failed: %s", exc)
+        DATA_PAGES_CACHE[api] = set()
+        return set()
+
+
+def make_tag_url_resolver(data_slugs_available: set):
+    """tag URL resolver factory。 /data/ に該当 player page があれば /data/{slug}/、
+    なければ /tag/{name}/ にフォールバック (C 内部リンク enrichment)。"""
+    try:
+        from data_site_slug import player_slug  # type: ignore
+    except Exception:
+        player_slug = None  # type: ignore
+
+    def resolve(name: str) -> str:
+        if player_slug and data_slugs_available:
+            slug = player_slug(name)
+            if slug and slug in data_slugs_available:
+                return f"{WP_DATA_PAGE_URL_BASE}/{slug}/"
+        return wp_tag_url_for(name)
+
+    return resolve
+
+
 def build_pages(
     now: Optional[datetime] = None,
     prev_counts_by_page: Optional[PageCounts] = None,
+    wp_client=None,
 ) -> Tuple[List[Dict], PageCounts]:
     """Return (list of page dicts, counts_by_page).
 
     page dict: {title, html, slug, page_key, meta}
     counts_by_page: GCS 保存用の {page_key: {name: count}}
+    wp_client: 省略可、 渡されれば (C) 内部リンク enrichment 用に /data/ slug を fetch
     """
     now = now or datetime.now(JST)
     posts = collect_all_posts()
@@ -180,6 +242,8 @@ def build_pages(
     by_level = split_by_level(posts, roster)
     prev_by_page = prev_counts_by_page or {}
     updated_at = now.strftime("%Y-%m-%d %H:%M")
+    data_slugs = _fetch_data_page_slugs(wp_client) if wp_client else set()
+    tag_resolver = make_tag_url_resolver(data_slugs)
 
     pages: List[Dict] = []
     counts_by_page: PageCounts = {}
@@ -195,7 +259,7 @@ def build_pages(
         trend_html = render_trend_chips(
             page_counts,
             prev_counts=prev,
-            tag_url_for=wp_tag_url_for,
+            tag_url_for=tag_resolver,
         )
 
         sections: List[Tuple[str, List[str]]] = []
@@ -218,6 +282,15 @@ def build_pages(
 
         page_url = f"https://yoshilover.com/{page['slug']}/"
         page_label = page["title_suffix"]  # "(一軍)" 等
+        # JSON-LD LiveBlogPosting 用に published_iso を付与 (post の published_parsed → ISO 8601)
+        for p in posts_for_listing:
+            pub = p.get("published")
+            if pub and isinstance(pub, tuple):
+                try:
+                    p["published_iso"] = datetime(*pub[:6], tzinfo=timezone.utc).astimezone(JST).strftime("%Y-%m-%dT%H:%M:00+09:00")
+                except Exception:  # noqa: BLE001
+                    pass
+        coverage_start_iso = (now - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:00+09:00")
         html = render_full_html(
             updated_at,
             trend_html,
@@ -228,28 +301,43 @@ def build_pages(
             page_url=page_url,
             updated_at_iso=updated_at_iso,
             posts_for_listing=posts_for_listing,
+            coverage_start_iso=coverage_start_iso,
         )
         title = f"巨人 SNS リアルタイム {page['title_suffix']} (最終更新: {updated_at} JST)"
+        # (B) OGP / Twitter Card description 用 excerpt
+        top3 = sorted(page_counts.items(), key=lambda t: -t[1])[:3]
+        top3_str = " / ".join(f"#{n} ({c})" for n, c in top3) if top3 else ""
+        excerpt = (
+            f"巨人 SNS リアルタイム {page['title_suffix']} - "
+            f"過去 24h で {len(page_posts)} 件の X 投稿。"
+            f"{('話題: ' + top3_str + '。') if top3_str else ''}"
+            f" 1 日 4 回 (10/13/17/21 JST) 自動更新。"
+        )
         pages.append(
             {
                 "title": title,
                 "html": html,
                 "slug": page["slug"],
                 "page_key": page["key"],
+                "excerpt": excerpt,
                 "meta": {
                     "post_count": len(page_posts),
                     "trend_player_count": len(page_counts),
                     "prev_count_loaded": bool(prev),
                     "section_counts": {lvl: len(by_level.get(lvl, [])) for lvl in page["levels"]},
+                    "data_slugs_available": len(data_slugs),
                 },
             }
         )
     return pages, counts_by_page
 
 
-def wp_upsert(title: str, content: str, slug: str, wp_client) -> Tuple[str, int]:
+def wp_upsert(title: str, content: str, slug: str, wp_client, excerpt: str = "") -> Tuple[str, int]:
     """page (post type=page) に upsert。 post type を page にすることで
-    yoshilover-post-noindex plugin + SEO SIMPLE PACK の noindex 対象外 → 自動 index。"""
+    yoshilover-post-noindex plugin + SEO SIMPLE PACK の noindex 対象外 → 自動 index。
+
+    excerpt: (B) OGP / Twitter Card description として WP/SEO PACK が拾う。
+    """
     api = wp_client.api
     auth = wp_client.auth
     resp = requests.get(
@@ -260,25 +348,24 @@ def wp_upsert(title: str, content: str, slug: str, wp_client) -> Tuple[str, int]
     )
     resp.raise_for_status()
     items = resp.json() or []
+    payload: Dict = {"title": title, "content": content}
+    if excerpt:
+        payload["excerpt"] = excerpt
     if items:
         page_id = int(items[0]["id"])
         upd = requests.post(
             f"{api}/{WP_POST_TYPE}/{page_id}",
             auth=auth,
-            json={"title": title, "content": content},
+            json=payload,
             timeout=WP_TIMEOUT_SECONDS,
         )
         upd.raise_for_status()
         return "updated", page_id
+    create_payload = {**payload, "slug": slug, "status": "draft"}
     cr = requests.post(
         f"{api}/{WP_POST_TYPE}",
         auth=auth,
-        json={
-            "title": title,
-            "content": content,
-            "slug": slug,
-            "status": "draft",
-        },
+        json=create_payload,
         timeout=WP_TIMEOUT_SECONDS,
     )
     cr.raise_for_status()
@@ -290,7 +377,7 @@ def run(wp_client=None, now: Optional[datetime] = None) -> Dict:
     if not should_run_now(now):
         return {"ran": False, "reason": "outside_fire_slot", "hour": now.hour, "minute": now.minute}
     prev_by_page = load_previous_counts(now)
-    pages, counts_by_page = build_pages(now, prev_counts_by_page=prev_by_page)
+    pages, counts_by_page = build_pages(now, prev_counts_by_page=prev_by_page, wp_client=wp_client)
     if not any(p["meta"]["post_count"] for p in pages):
         _logger.info("sns_realtime no posts in last 24h; skip wp upsert")
         return {"ran": False, "reason": "no_posts_24h", "pages": [p["meta"] for p in pages]}
@@ -306,7 +393,10 @@ def run(wp_client=None, now: Optional[datetime] = None) -> Dict:
             results.append({"slug": page["slug"], "skipped": "no_posts"})
             continue
         try:
-            op, post_id = wp_upsert(page["title"], page["html"], page["slug"], wp_client)
+            op, post_id = wp_upsert(
+                page["title"], page["html"], page["slug"], wp_client,
+                excerpt=page.get("excerpt", ""),
+            )
         except Exception as exc:  # noqa: BLE001
             _logger.exception("sns_realtime wp_upsert failed slug=%s: %s", page["slug"], exc)
             results.append({"slug": page["slug"], "error": str(exc)})

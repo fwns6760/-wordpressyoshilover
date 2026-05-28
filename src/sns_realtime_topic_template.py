@@ -186,11 +186,13 @@ def render_jsonld(
     page_url: str,
     updated_at_iso: str,
     posts_for_listing: List[Dict],
+    coverage_start_iso: str = "",
 ) -> str:
-    """CollectionPage + ItemList(SocialMediaPosting) + BreadcrumbList + about:SportsTeam.
+    """CollectionPage + LiveBlogPosting + ItemList(SocialMediaPosting) + BreadcrumbList + about:SportsTeam.
 
-    posts_for_listing: [{url, handle}]
+    posts_for_listing: [{url, handle, published_iso?}]
     updated_at_iso: ISO 8601 (e.g., 2026-05-28T17:00:00+09:00)
+    coverage_start_iso: 過去 24h の開始 ISO (LiveBlogPosting 用)
     """
     items = []
     for i, post in enumerate(posts_for_listing[:20], 1):
@@ -268,9 +270,63 @@ def render_jsonld(
         ],
     }
 
+    # (A) LiveBlogPosting — Google SERP で「LIVE」 バッジ表示の rich snippet 狙い
+    live_updates = []
+    for i, post in enumerate(posts_for_listing[:20], 1):
+        url = post.get("url", "")
+        handle = post.get("handle", "")
+        published_iso = post.get("published_iso") or updated_at_iso
+        text_preview = (post.get("text") or "")[:140]
+        if not url:
+            continue
+        live_updates.append(
+            {
+                "@type": "BlogPosting",
+                "@id": f"{page_url}#item-{i}",
+                "headline": text_preview or f"X 投稿 #{i}",
+                "datePublished": published_iso,
+                "url": url,
+                "author": {
+                    "@type": "Organization",
+                    "name": handle,
+                    "url": f"https://twitter.com/{handle}",
+                },
+            }
+        )
+
+    live_blog = {
+        "@context": "https://schema.org",
+        "@type": "LiveBlogPosting",
+        "headline": f"巨人 SNS リアルタイム {page_label}",
+        "description": (
+            f"巨人専門 X 公式アカウントの過去 24 時間投稿を集約 {page_label}。"
+            " 1 日 4 回 (10/13/17/21 JST) 自動更新する LIVE ブログ。"
+        ),
+        "url": page_url,
+        "coverageStartTime": coverage_start_iso or updated_at_iso,
+        "coverageEndTime": updated_at_iso,
+        "datePublished": coverage_start_iso or updated_at_iso,
+        "dateModified": updated_at_iso,
+        "inLanguage": "ja",
+        "about": {
+            "@type": "SportsTeam",
+            "name": "読売ジャイアンツ",
+            "sport": "Baseball",
+        },
+        "publisher": {
+            "@type": "Organization",
+            "name": "ヨシラバー",
+            "url": "https://yoshilover.com/",
+        },
+        "liveBlogUpdate": live_updates,
+    }
+
     return (
         '<script type="application/ld+json">'
         + _json.dumps(collection_page, ensure_ascii=False, separators=(",", ":"))
+        + '</script>\n'
+        '<script type="application/ld+json">'
+        + _json.dumps(live_blog, ensure_ascii=False, separators=(",", ":"))
         + '</script>\n'
         '<script type="application/ld+json">'
         + _json.dumps(breadcrumb, ensure_ascii=False, separators=(",", ":"))
@@ -288,10 +344,16 @@ def render_page_html(
     page_url: str = "",
     updated_at_iso: str = "",
     posts_for_listing: Optional[List[Dict]] = None,
+    coverage_start_iso: str = "",
 ) -> str:
     parts = [_CSS]
     if page_url and updated_at_iso:
-        parts.append(render_jsonld(page_label, page_url, updated_at_iso, posts_for_listing or []))
+        parts.append(
+            render_jsonld(
+                page_label, page_url, updated_at_iso, posts_for_listing or [],
+                coverage_start_iso=coverage_start_iso,
+            )
+        )
     parts.append('<div class="ysn-wrap">')
     parts.append(render_hero(page_label, updated_at, stats))
     if trend_html:
@@ -316,6 +378,7 @@ def render_full_html(
     page_url: str = "",
     updated_at_iso: str = "",
     posts_for_listing: Optional[List[Dict]] = None,
+    coverage_start_iso: str = "",
 ) -> str:
     return render_page_html(
         page_label or "",
@@ -327,4 +390,5 @@ def render_full_html(
         page_url=page_url,
         updated_at_iso=updated_at_iso,
         posts_for_listing=posts_for_listing,
+        coverage_start_iso=coverage_start_iso,
     )

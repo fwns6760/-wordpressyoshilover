@@ -26159,6 +26159,22 @@ def _main(args, logger):
     with open(RSS_SOURCES_FILE, encoding="utf-8") as f:
         sources = json.load(f)
     sources = _expand_sources_with_youtube_registry(sources, logger=logger)
+
+    # ticket 445 follow-up: SNS aggregation page (445) で巨人 SNS は集約済。
+    # 個別 X-post を per-WP-article 化する path (source_type=social_news) は重複かつ
+    # thin content URL 量産の原因のため、 env flag で kill switch。
+    # X live posting (auto-tweet) は AUTO_TWEET_ENABLED 等 別 flag で完全独立、 本 flag は影響しない。
+    if os.environ.get("DISABLE_SOCIAL_NEWS_ARTICLES", "").strip().lower() in ("1", "true", "yes", "on"):
+        before_count = len(sources)
+        sources = [s for s in sources if str(s.get("type", "")).strip().lower() != "social_news"]
+        skipped = before_count - len(sources)
+        if skipped > 0:
+            logger.info(
+                json.dumps(
+                    {"event": "social_news_sources_disabled", "skipped_sources": skipped, "remaining": len(sources)},
+                    ensure_ascii=False,
+                )
+            )
     with open(KEYWORDS_FILE, encoding="utf-8") as f:
         keywords = json.load(f)
 

@@ -19,6 +19,10 @@ truncate 末尾「…」 禁止 / nested 『』 対象外) は維持。
 2026-05-28 PM: user 指示「セリフは長め」 で min_chars 40→60 に逆戻し
 (43字 阿部慎之助 quote が短く感じられた fb)。 60 未満 quote 持ち article は
 Pattern A (voice text) に fallback。 speaker proximity 100 は維持。
+
+2026-05-28 PM2: user 指示「もっと文字数ふやしていい」 で min_chars 60→80 に
+更に引き上げ。 substantive な長 quote (見出し level でなく本文段落 level の
+発言) だけ Pattern B 化、 短文 quote 持つ article は Pattern A fallback 継続。
 """
 
 from __future__ import annotations
@@ -27,7 +31,7 @@ import re as _re
 from typing import Iterable
 
 
-_DEFAULT_MIN_CHARS = 60
+_DEFAULT_MIN_CHARS = 80
 _DEFAULT_MAX_CHARS = 180
 
 # 「」 のみ抽出 (『』 はネストとみなして対象外)。 ネスト無し前提で内側 chars を取る。

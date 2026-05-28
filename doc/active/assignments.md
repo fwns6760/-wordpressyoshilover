@@ -1,6 +1,6 @@
 # assignments — 現場担当と次アクション
 
-最終更新: 2026-05-27 JST
+最終更新: 2026-05-28 JST
 
 ## 2026-05-27 session update
 
@@ -8,9 +8,24 @@
 
 x-post-mail-lane の GEMMA_BRANDING / build_x_post_from_article_info gate を **active member (player + manager + coach)** へ拡張。 giants_roster.json に三軍 7 + 巡回 2 = 9 名追加、 73 橋上秀樹 を 監督代行 に更新 + alias 4 個、 阿部慎之助 に「阿部前監督」 alias 追加。 commit `776252d` / image `x-post-mail-lane:member-gate-776252d` (build `40f1cfab` 1m50s SUCCESS) / Cloud Run Job gen=83。 smoke `x-post-mail-lane-tqc6j` で実 build 4 candidates、 旧 skip 全件 verified=True。 spec doc `mkdocs_docs/spec/x-post-mail.md` 追記 (persona / member gate / 5 型 / postgame 救済 path)。
 
-### 438 — X-post comment 候補 画像添付 brand_opinion + brand_quote (IN_FLIGHT)
+### 438 — X-post comment 候補 画像添付 brand_opinion + brand_quote (IN_FLIGHT, Phase 1+2 実装 deploy 済、 観察中)
 
-scope: x-post-mail-lane の comment 系候補 (GEMMA_BRANDING / build_x_post_from_article_info) に毎時 fire で image 添付。 Pattern A=brand_opinion (反応元 og:image + ヨシラバー voice text)、 Pattern B=brand_quote (引用元 og:image + 「発言者名「literal 60-180 字長 quote」」)。 共通: source 画像 native aspect / 強制 crop なし、 画像内 brand mark なし、 出典は alt text。 post text は URL / ハッシュタグ / 媒体名 含めない (現 hard rule 維持)。 新規 Cloud Scheduler / Cloud Run job は作らない (¥10/月/job 削減 lock 維持)。 prerequisite=5/27 776252d (member gate)。 Phase 1=A 単体、 Phase 2=B + long quote extractor。 doc: `doc/active/438-XPOST-brand-opinion-and-quote-images.md`。 next: Phase 1 着手 (og:image fetch helper + brand_opinion template + alt_text wiring)。
+scope: x-post-mail-lane の comment 系候補 (GEMMA_BRANDING / build_x_post_from_article_info) に毎時 fire で image 添付。 Pattern A=brand_opinion (反応元 og:image + ヨシラバー voice text)、 Pattern B=brand_quote (引用元 og:image + 「発言者名「literal 60-180 字長 quote」」)。 共通: source 画像 native aspect / 強制 crop なし、 画像内 brand mark なし、 出典は alt text。 post text は URL / ハッシュタグ / 媒体名 含めない (現 hard rule 維持)。 新規 Cloud Scheduler / Cloud Run job は作らない (¥10/月/job 削減 lock 維持)。 prerequisite=5/27 776252d (member gate)。 doc: `doc/active/438-XPOST-brand-opinion-and-quote-images.md`。
+
+**実装 commit (5/27 - 5/28, 計 11 本 + 前段 1 本)**:
+- 前段 `2049640` 若手 7 名 eyecatch scrape upload
+- Phase 1 `b63888c` comment 系候補に og:image 自動添付
+- fix `bdcba6a` og_image_fetcher gzip decompress bug (sanspo / hochi)
+- Phase 2 `6a59de6` Pattern B 引用 overlay (人物名「long quote」)
+- fix `cae5066` Pattern B speaker proximity check で mis-attribution 防止
+- fix `5a0729b` navigator.share / X intent で空 URL を送らない (iOS Safari)
+- fix `ea23382` post_text 末尾「(出典 @handle)」削除
+- fix `bf56300` 画像 alt_text「引用元: 媒体名」削除 (user 仕様)
+- docs `3184a91` Phase 1+2 + GCS lifecycle を `mkdocs_docs/spec/x-post-mail.md` に追記
+- fix `38b0085` Android Chrome share-x-cand URL 漏出 fix (history.replaceState)
+- fix `26b95db` Pattern B 成立率改善 (long_quote_extractor 閾値緩和)
+
+next: (1) 24h `gcloud billing` 実測 verify (画像生成 + GCS upload で課金 ¥0 想定の追認)、 (2) 実 X 投稿で Pattern A / Pattern B 成立比率と speaker mis-attribution / URL 漏出 / overlay 可読性を観察、 (3) 観察で問題なければ CLOSED に遷移 + doc を `doc/done/2026-05/` へ移動。 件名/scope 拡張 (本文中 `<img>` フォールバック等) は別 ticket 起票。
 
 ## 2026-05-23 session update
 

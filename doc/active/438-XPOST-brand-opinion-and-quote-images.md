@@ -7,7 +7,7 @@
 - **owner**: Claude Code (2026-05-12 user 切替で Claude が dev + deploy 全権)
 - **lane**: x-post-image
 - **created**: 2026-05-27
-- **updated**: 2026-05-27
+- **updated**: 2026-05-28
 - **priority**: P1
 - **github_issue**: (起票後追記)
 - **parent**: なし (新規 lane)
@@ -112,4 +112,17 @@ acceptance:
 
 ## 7. log / status
 
-- 2026-05-27: 起票、 user 仕様 lock 完了、 Phase 1 着手予定
+- 2026-05-27: 起票、 user 仕様 lock 完了
+- 2026-05-27 12:40 JST `2049640` 前段: 若手 7 名 eyecatch scrape upload (438 関連)
+- 2026-05-27 16:17 JST `b63888c` **Phase 1 完** — comment 系候補に og:image 自動添付 (og:image fetch helper + brand_opinion template + alt_text wiring)
+- 2026-05-27 16:22 JST `bdcba6a` fix — og_image_fetcher gzip decompress bug (sanspo / hochi で og:image 検出失敗)
+- 2026-05-27 16:37 JST `6a59de6` **Phase 2 完** — Pattern B 引用 overlay (人物名「long quote」) + long quote extractor + 発言者特定
+- 2026-05-27 16:44 JST `cae5066` fix — Pattern B speaker proximity check で mis-attribution 防止
+- 2026-05-27 16:48 JST `5a0729b` fix — navigator.share / X intent で空 URL を送らない (iOS Safari 漏出)
+- 2026-05-27 17:05 JST `ea23382` fix — post_text 末尾「(出典 @handle)」削除 (X 上で link 化問題)
+- 2026-05-27 17:07 JST `bf56300` fix — 画像 alt_text「引用元: 媒体名」削除 (user 仕様で出典 visible 担保不要、 引用 4 条件は本文 voice + 写真自体で担保)
+- 2026-05-27 17:38 JST `3184a91` docs — Phase 1+2 + GCS lifecycle を `mkdocs_docs/spec/x-post-mail.md` に追記
+- 2026-05-28 09:28 JST `38b0085` fix — Android Chrome share-x-cand URL 漏出 fix (history.replaceState)
+- 2026-05-28 09:51 JST `26b95db` fix — Pattern B 成立率改善 (long_quote_extractor 閾値緩和)
+- 2026-05-28: 上記 12 commit 全 deploy 済み (image rebuild + Cloud Run Job update)、 status は IN_FLIGHT 維持 (24h billing 実測 verify + 実 X 投稿での Pattern A / B 比率観察 pending)
+- 2026-05-28: ticket doc / assignments / README が 5/27 起票時のまま凍結していたため Claude 修復 (この log section + assignments / README の next_action 更新)

@@ -11,7 +11,8 @@
 - **github_issue**: PENDING
 - **rev 履歴**:
   - rev1 (廃止): 「既存記事から SEO long-form aggregation」 方向
-  - **rev2 (本版)**: user 「データサイト作って index からしてく。 毎日更新のデータ記事。 選手全員の」 で方向転換
+  - rev2: user 「データサイト作って index からしてく。 毎日更新のデータ記事。 選手全員の」 で方向転換 (per-player static page 採用)
+  - **rev3 (本版)**: user 「今あるデータベースから色々な記事をつくる。 球団の選手全体をクラスターページ。 選手をピラーページ。 日々の記事を速報ページでとぴくらをつくりたい」 + 「コンセプトは大手メディアではわからない」 で **topical cluster 構造 + 大手差別化 4 理由** を本 ticket と spec に明文化、 Phase 1.0 player を 吉川尚輝 / 坂本勇人 / 丸佳浩 に変更、 scope に Cluster page 追加 (合計 4 page)
 - **related**:
   - [[project_site_direction_data_focus]] (memory) — データサイト方向
   - [[project_data_insight_aggressive_publishing]] (memory) — 既存 anomaly base、 本 lane と並走
@@ -32,18 +33,42 @@
   - のもとけ が薄い「per-player baseline」 を独占
   - 既存 anomaly data-insight (ticket 439) は highlight 通知、 本 lane は baseline daily 蓄積
 
-## 3. 何を作るか
+## 3. 何を作るか — topical cluster 3 階層
+
+```
+[Cluster] /data/   (1 page、 巨人選手全員 hub)
+    ↓ link 110
+[Pillar] /data/{player-slug}/   (player ごと 1 page、 daily upsert)
+    ↓ link 10-20/pillar    ↑ back link 1/topic (Phase 2)
+[Topic] 既存記事 ~73,000 + 新規 daily 速報 (Phase 3)
+```
+
+| 階層 | URL | 数 (Phase 1 full) | 役割 |
+|---|---|---|---|
+| Cluster | `/data/` | 1 | 全 player hub、 全体 ranking 表、 Pillar への link 110 |
+| Pillar | `/data/{player-slug}/` | ~110 | 永続 包括 data page (当日 / 直近 / 月間 / season / vs 他球団 / 関連 player / 関連 Topic link) |
+| Topic | 既存記事 + 新規 daily 速報 | ~73,000 + α | 試合別 / event 別記事、 末尾に Pillar back link (Phase 2 で 73,000 件 batch 注入) |
 
 | 項目 | 設計 |
 |---|---|
-| URL | `yoshilover.com/data/{player-slug}/` 静的 page (例: `/data/okamoto-kazuma/`)、 player ごと 1 URL |
-| 数 | active player (一軍 + 二軍) ~83 名 + manager/coach 数名 = ~110 page |
-| 更新頻度 | **毎日 1 回** (朝 6:00 JST upsert)、 同 URL 上書き |
-| 内容構成 | (1) 当日試合 打席/投球結果 (2) 直近 5 試合 stats (3) 月間 trend (4) season summary (5) vs 他球団 split (6) 関連 player 比較 (7) 元記事 link block |
-| 構造化データ | `SportsPlayer` + `SportsEvent` + `Person` schema.org JSON-LD、 BreadcrumbList |
-| index 設定 | 新 `data/` section のみ `index, follow` (`<meta name="robots">` override)、 既存記事は noindex 維持 |
-| featured_media | player 保存写真 (rule = 既存 437 phase1 と同じ 3 段 fallback) |
+| 更新頻度 | Pillar 毎日 6:00 JST upsert、 Cluster 同時更新 (同 URL 上書き、 新 URL 増加なし) |
+| 構造化データ | Cluster = `CollectionPage` + `ItemList`、 Pillar = `SportsPlayer` + `Person` + `BreadcrumbList`、 全 JSON-LD |
+| index 設定 | Cluster + Pillar = `index, follow`、 既存 Topic は noindex 維持 (Phase 2 で再評価) |
+| featured_media | Pillar = 該当 player 保存写真 (437 phase1 rule 3 段 fallback)、 Cluster = team mark |
 | 公開 trigger | 新 Cloud Run Job `data-site-publisher`、 Cloud Scheduler `0 6 * * *` JST |
+
+## 3.5 大手メディアに作れない 4 理由 (yoshilover の堀)
+
+user 明示 2026-05-28 PM 「コンセプトは大手メディアではわからない」 を明文化:
+
+| # | 理由 | 大手の制約 | yoshilover の優位 |
+|---|---|---|---|
+| 1 | **cost** | 110 名 daily update は記者人件費で不可能 | Gemini Flash Lite で月 ¥30-50、 AI 自動化 |
+| 2 | **focus 範囲** | 大手は 12 球団分散、 巨人だけに紙面割けない | **巨人専門で深掘り** (一軍 + 二軍 + 育成 + 監督・コーチまで個別 Pillar) |
+| 3 | **fan voice** | 編集者距離 / 事実中心、 感情入れたら炎上 risk | **ファン感情寄り短評** (「ここで打って欲しかった」 等) を AI で安全に挿入 |
+| 4 | **永続 baseline + cluster** | 記事 URL 量産型 / 速報蓄積、 既存記事に back-link 注入する文化なし | **per-player 1 URL に永続蓄積 + 既存 73,000 記事に back-link 自動注入** (Phase 2) で topical authority 構築 |
+
+→ 大手は cost / focus / culture の 3 つで構造的に同等のものを作れない、 これが yoshilover の堀。
 
 ## 4. のもとけ との差別化
 
@@ -57,13 +82,14 @@
 
 ## 5. phase 分け
 
-| stage | 対象 | 数 | trigger | 期間 |
+| stage | scope | URL 数 | trigger | 期間 |
 |---|---|---|---|---|
-| **Phase 1.0 (MVP-mini)** | star player 3 名 (岡本和真 / 戸郷翔征 / 坂本勇人) | 3 page | **user GO 済** | 2-3 週間観察 |
-| Phase 1.5 | 一軍 active player | ~30 page | Phase 1.0 SEO 流入確認 | 1 ヶ月観察 |
-| Phase 1 (full) | 全 active player + manager/coach | ~110 page | Phase 1.5 観察 OK | 継続運用 |
-| Phase 2 | event-base aggregation (試合まとめ / HR 一覧 etc) | +追加 | Phase 1 stable 後 | — |
-| Phase 3 | column 風 long-form (旧 rev1 SEO long-form 案を復活) | +追加 | data 基盤 stable 後 | — |
+| **Phase 1.0 (MVP-mini)** | Cluster `/data/` 1 + Pillar `/data/{slug}/` × 3 (**吉川尚輝 / 坂本勇人 / 丸佳浩**) | 4 | **user GO 済 (2026-05-28 PM)** | 2-3 週間観察 |
+| Phase 1.5 | Cluster 更新 + 一軍 active Pillar 30 | 31 | Phase 1.0 SEO 流入 + 品質 OK | 1 ヶ月観察 |
+| Phase 1 (full) | Cluster 完成 + 全 Pillar 110 (player + manager + coach) | 111 | Phase 1.5 観察 OK | 継続運用 |
+| Phase 2 | 既存 ~73,000 Topic 記事に Pillar back-link 自動注入 (大手差別化 4 番目) | mutation 73,000 | Phase 1 full stable 後 | — |
+| Phase 3 | 日々の data 速報 Topic 自前産出 (試合別 / event 別) | +追加 daily | Phase 2 完了後 | — |
+| Phase 4 | column 風 long-form (旧 rev1 SEO long-form 案を復活) | +追加 | data 基盤 stable 後 | — |
 
 ## 6. 触らない範囲
 
@@ -99,11 +125,15 @@
 
 ## 9. 受け入れ条件 (Phase 1.0)
 
-- [ ] 3 player の static page が `/data/{slug}/` に作成される
-- [ ] 各 page に schema.org JSON-LD (SportsPlayer + Person) 埋め込み
-- [ ] `<meta name="robots" content="index, follow">` (新 page のみ)
-- [ ] featured_media = 該当 player 保存写真
-- [ ] daily 6:00 JST upsert で同 URL 内容更新 (新 URL 増加なし)
-- [ ] Google Search Console submit (sitemap.xml に新 URL 追加)
+- [ ] Cluster `/data/` 1 page 作成 (3 player のみ表示、 Phase 1.5 で拡大予定)
+- [ ] Pillar `/data/{slug}/` × 3 (`yoshikawa-naoki` / `sakamoto-hayato` / `maru-yoshihiro`) 作成
+- [ ] Cluster → 各 Pillar への internal link 3 本
+- [ ] 各 Pillar → 関連 Topic (既存記事) link 10-20 本
+- [ ] Cluster page に `CollectionPage` + `ItemList` JSON-LD
+- [ ] Pillar page に `SportsPlayer` + `Person` + `BreadcrumbList` JSON-LD
+- [ ] `<meta name="robots" content="index, follow">` (Cluster + Pillar のみ)
+- [ ] featured_media: Cluster = team mark / Pillar = 該当 player 保存写真
+- [ ] daily 6:00 JST upsert で 4 URL 内容更新 (新 URL 増加なし)
+- [ ] Google Search Console submit (sitemap.xml に 4 URL 追加)
 - [ ] 2-3 週間後 indexed 確認 + 流入 trend
 - [ ] コスト ¥1-2/月 (Phase 1.0 mini で実測)

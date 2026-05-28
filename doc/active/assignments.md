@@ -4,19 +4,31 @@
 
 ## 2026-05-28 session update
 
-### 443 — 巨人選手データサイト (毎日更新 per-player 静的 page) (READY rev2 2026-05-28 PM、 user GO 済)
+### 443 — 巨人選手データサイト (topical cluster 構造 / 毎日更新) (READY rev3 2026-05-28 PM2、 user GO 済)
 
-rev1 廃止: 「既存記事から SEO long-form 月 1 回」 案 (の もとけ benchmark + open question 8 件) → user 「データサイト作って index からしてく。 毎日更新のデータ記事。 選手全員の」 で 方向転換。
+rev 履歴:
+- rev1 廃止: 既存記事 → SEO long-form 月 1 回案
+- rev2: user 「データサイト作って index 化、 毎日更新、 選手全員」 で per-player static page 方式
+- **rev3 (本版)**: user 「今あるDBから記事生成、 球団全体=クラスター、 選手=ピラー、 日々=速報トピック」 + 「コンセプトは大手メディアでは作れない」 で **topical cluster 3 階層 + 大手差別化 4 理由** を明文化
 
-**rev2 採用案** = `yoshilover.com/data/{player-slug}/` 静的 page を全 active player 分作成、 **毎日 6:00 JST upsert** (同 URL 上書き、 新 URL 増加なし)。 内容 = 当日試合 / 直近 5 試合 / 月間 trend / season summary / vs 他球団 / 関連 player / 関連記事 link + schema.org SportsPlayer JSON-LD。 既存 noindex 解除は **新 `data/` section のみ**、 既存記事 (~73,000) は noindex 維持。 のもとけ 差別化主軸 = **per-player baseline page + 構造化データ + 長尾 query 独占**。
+**rev3 採用案** = 3 階層 topical cluster:
+- **Cluster** `/data/` (1 page、 全 player hub)
+- **Pillar** `/data/{player-slug}/` (~110 page、 player ごと 1 URL、 daily 6:00 JST upsert)
+- **Topic** 既存 ~73,000 + 新規 daily 速報 (Phase 2-3)、 Pillar back-link で authority 集中
 
-**phase 分け**: Phase 1.0 (3 star player MVP-mini) → Phase 1.5 (一軍 30 名) → Phase 1 (full 110 名 + manager/coach) → Phase 2 (event-based aggregation) → Phase 3 (column long-form)。 Phase 1.0 着手は **user GO 済**、 初回 fire = 2026-05-29 (木) 6:00 JST 想定。
+**大手差別化 4 理由** (yoshilover の堀):
+1. cost (110 名 daily = 人手不可、 AI Gemini で月 ¥30-50)
+2. focus (大手は 12 球団分散、 yoshilover は巨人専門で一軍/二軍/育成まで)
+3. fan voice (大手は事実中心、 yoshilover はファン感情寄り短評を AI で安全挿入)
+4. 永続 baseline + cluster (大手は記事量産型、 yoshilover は per-player 永続蓄積 + 既存 73,000 に back-link 自動注入)
 
-doc: `doc/active/443-DATA-SITE-daily-per-player-pages.md` (rev2) / `doc/active/444-DATA-SITE-phase1-mini-impl.md` (Phase 1.0 実装計画) / spec: `mkdocs_docs/spec/data-site.md` (mkdocs nav 更新済、 `127.0.0.1:8000` mkdocs serve で preview 可能)。
+**phase 分け**: Phase 1.0 (Cluster 1 + Pillar 3 = 4 page、 **吉川尚輝 / 坂本勇人 / 丸佳浩**、 user 指定) → Phase 1.5 (一軍 30) → Phase 1 full (110) → Phase 2 (既存 73,000 に back-link 注入) → Phase 3 (日々の data 速報 Topic 自前産出) → Phase 4 (column long-form)。 Phase 1.0 着手は **user GO 済**、 初回 fire = 2026-05-29 (木) 6:00 JST 想定。
+
+doc: `doc/active/443-DATA-SITE-daily-per-player-pages.md` (rev3) / `doc/active/444-DATA-SITE-phase1-mini-impl.md` (Phase 1.0 実装計画 rev3 反映) / spec: `mkdocs_docs/spec/data-site.md` (rev3、 mkdocs nav 更新済、 `127.0.0.1:8000` mkdocs serve で preview)。
 
 コスト: Phase 1.0 ¥1-2/月、 Phase 1 full ¥30-50/月 (Gemini Flash Lite + Cloud Run 無料枠内)。
 
-next: Claude 自律で 444 実装着手 (`src/data_site_publisher.py` + Dockerfile + cloudbuild + Scheduler `data-site-publisher-daily`)、 2026-05-29 6:00 初回 fire、 2-3 週間観察後 Phase 1.5 拡大判断を user に報告。
+next: Claude 自律で 444 実装着手 (`src/data_site_publisher.py` + `data_site_template_cluster.py` + `data_site_template_pillar.py` + Dockerfile + cloudbuild + Scheduler `data-site-publisher-daily`)、 2026-05-29 6:00 初回 fire、 2-3 週間観察後 Phase 1.5 拡大判断を user に報告。
 
 ### 439 — DATA-INSIGHT publish queue restore 7 signals (LIVE_DEPLOYED_VERIFY_PENDING 2026-05-28 10:38 JST)
 

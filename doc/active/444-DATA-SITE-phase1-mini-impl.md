@@ -12,27 +12,37 @@
 - **parent**: 443 (DATA-SITE 全体方針)
 - **spec doc**: `mkdocs_docs/spec/data-site.md`
 
-## 2. scope (Phase 1.0 のみ)
+## 2. scope (Phase 1.0 のみ — topical cluster 3 階層の Cluster + Pillar 部分)
 
-- 対象 player: **3 名** = 岡本和真 / 戸郷翔征 / 坂本勇人
-- 頻度: 毎日 6:00 JST upsert
-- URL: `yoshilover.com/data/okamoto-kazuma/` / `/data/togo-shosei/` / `/data/sakamoto-hayato/`
+| 階層 | URL | 数 |
+|---|---|---|
+| **Cluster** | `yoshilover.com/data/` | 1 |
+| **Pillar** | `yoshilover.com/data/yoshikawa-naoki/` (吉川尚輝) | 1 |
+| Pillar | `yoshilover.com/data/sakamoto-hayato/` (坂本勇人) | 1 |
+| Pillar | `yoshilover.com/data/maru-yoshihiro/` (丸佳浩) | 1 |
+| **合計** | | **4 page** |
+
+- 頻度: 毎日 6:00 JST、 4 page 同時 upsert
+- Topic 階層 (既存記事 ~73,000) は **Phase 1.0 では触らない** (Pillar → 既存 Topic への internal link は出力するが、 Topic 側に back-link 注入は Phase 2 で別途)
 - 観察期間: 2-3 週間 (Phase 1.5 拡大判断 前)
 
 ## 3. 実装 file (新規)
 
 | file | 内容 |
 |---|---|
-| `src/data_site_publisher.py` | main module、 player loop + page generate + WP upsert |
-| `src/data_site_template.py` | jinja-style template (data 表 + schema.org JSON-LD) |
-| `src/data_site_slug.py` | player name → URL slug (kebab + romaji) |
-| `src/data_site_query.py` | insight.db 読み出し + WP REST 関連記事 query |
+| `src/data_site_publisher.py` | main module、 Cluster 1 + Pillar 3 loop + page generate + WP upsert |
+| `src/data_site_template_cluster.py` | Cluster page jinja template (player list + ranking + ItemList JSON-LD) |
+| `src/data_site_template_pillar.py` | Pillar page jinja template (data 表 + 関連 Topic link + SportsPlayer JSON-LD) |
+| `src/data_site_slug.py` | player name → URL slug (kebab + romaji)、 例: 吉川尚輝 → `yoshikawa-naoki` |
+| `src/data_site_query.py` | insight.db 読み出し + WP REST 関連記事 query (Pillar → Topic link 用) |
 | `Dockerfile.data_site_publisher` | Cloud Run Job 用 image (root Dockerfile と分離) |
 | `cloudbuild_data_site_publisher.yaml` | Cloud Build 設定 |
 | `bin/data_site_publisher_entrypoint.sh` | Cloud Run Job entrypoint |
-| `tests/test_data_site_publisher.py` | unit tests (template render / slug / query / upsert) |
-| `tests/test_data_site_slug.py` | slug 変換 |
-| `config/data_site_phase1_players.json` | Phase 1.0 対象 3 名 list (Phase 1.5 で拡張) |
+| `tests/test_data_site_publisher.py` | unit tests (Cluster + Pillar template render / WP upsert mock) |
+| `tests/test_data_site_slug.py` | slug 変換 (kanji / katakana / 役職 suffix 除去) |
+| `tests/test_data_site_template_cluster.py` | Cluster JSON-LD `CollectionPage` + `ItemList` 構造 verify |
+| `tests/test_data_site_template_pillar.py` | Pillar JSON-LD `SportsPlayer` + `BreadcrumbList` 構造 verify |
+| `config/data_site_phase1_players.json` | Phase 1.0 対象 3 名 list (吉川尚輝 / 坂本勇人 / 丸佳浩、 Phase 1.5 で拡張) |
 
 ## 4. WP REST upsert
 
@@ -143,12 +153,25 @@ gcloud scheduler jobs create http data-site-publisher-daily \
 
 ## 11. 受け入れ条件 (Phase 1.0)
 
-- [ ] 3 player の static page が `/data/{slug}/` に作成 (initial: 2026-05-29 6:00 JST 初回 fire)
-- [ ] 各 page に schema.org JSON-LD (SportsPlayer + Person + BreadcrumbList) 埋め込み
-- [ ] `<meta name="robots" content="index, follow">` (新 page のみ)
+**Cluster page**:
+- [ ] `yoshilover.com/data/` 作成、 H1 = 「巨人選手データ」
+- [ ] 3 Pillar への internal link (吉川尚輝 / 坂本勇人 / 丸佳浩)
+- [ ] JSON-LD: `CollectionPage` + `ItemList` (3 SportsPlayer entry)
+- [ ] `<meta name="robots" content="index, follow">`
+
+**Pillar pages × 3** (吉川尚輝 / 坂本勇人 / 丸佳浩):
+- [ ] `/data/yoshikawa-naoki/` / `/data/sakamoto-hayato/` / `/data/maru-yoshihiro/` 作成
+- [ ] H1 = 「{player名} ({pos} / 背番号 {jersey})」
+- [ ] data section: 当日試合 / 直近 5 試合 / 月間 / season
+- [ ] 関連 Topic (既存記事) link 10-20 本/Pillar
+- [ ] Cluster への back link 1 (breadcrumb)
+- [ ] JSON-LD: `SportsPlayer` + `Person` + `BreadcrumbList`
+- [ ] `<meta name="robots" content="index, follow">`
 - [ ] featured_media = 該当 player 保存写真 (3 名分 既存保存済 verify 要)
-- [ ] daily 6:00 JST upsert で同 URL 内容更新 (新 URL 増加なし)
-- [ ] sitemap.xml に新 URL 追加、 Search Console submit
+
+**運用**:
+- [ ] daily 6:00 JST upsert で 4 URL 内容更新 (新 URL 増加なし)
+- [ ] sitemap.xml に 4 URL 追加、 Search Console submit
 - [ ] 2-3 週間後 indexed 確認 + 流入 trend
 - [ ] コスト ¥1-2/月 (実測)
 

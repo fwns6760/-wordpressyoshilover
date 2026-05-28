@@ -1,29 +1,69 @@
-# 巨人選手データサイト (毎日更新 per-player 静的 page)
+# 巨人選手データサイト (topical cluster 構造 / 毎日更新)
 
 > **status**: READY (Phase 1.0 着手、 user GO 済 2026-05-28 PM)
 > **正本 ticket**: `doc/active/443-DATA-SITE-daily-per-player-pages.md`
 > **実装 ticket**: `doc/active/444-DATA-SITE-phase1-mini-impl.md`
-> **rev**: rev2 (rev1 旧「既存記事 → SEO long-form」 案は廃止)
+> **rev**: rev3 (rev2 までは per-player page 単独設計、 rev3 で topical cluster 構造 + 大手差別化 4 理由 を明文化)
 
-## 1. 何を作るか
+## 1. 何を作るか — topical cluster SEO 構造
 
-巨人 active player ごとに 1 ページの **静的 data page** を `yoshilover.com/data/{player-slug}/` に作成、 **毎日 6:00 JST に同 URL 内容を upsert** (新 URL は作らない)。
+既存 DB (insight.db + WP 既存記事) から **3 階層の SEO topical cluster** を構築:
 
-**phase 1.0 MVP**: 3 player (岡本和真 / 戸郷翔征 / 坂本勇人) で先行、 2-3 週間観察。
+```
+┌─────────────────────────────────────────────────────────────┐
+│ Cluster page  /data/                                         │
+│   ┌──────────────────────────────────────────────────────┐  │
+│   │ 巨人選手全員 hub (110 名 list + 全体 ranking 表)     │  │
+│   │ → 各 Pillar page への internal link (110 link)       │  │
+│   └──────────────────────────────────────────────────────┘  │
+│            ↓ internal link                                   │
+│ Pillar page  /data/{player-slug}/                            │
+│   ┌──────────────────────────────────────────────────────┐  │
+│   │ 該当選手の永続 包括 data page (毎日 6:00 upsert)     │  │
+│   │ - 当日試合 / 直近 5 試合 / 月間 / season / vs 他球団 │  │
+│   │ - 関連 player 比較 / 関連 Topic 記事 link 10-20      │  │
+│   │ - schema.org SportsPlayer + Person + JSON-LD         │  │
+│   └──────────────────────────────────────────────────────┘  │
+│            ↑ back-link                ↓ internal link        │
+│ Topic page  既存 ~73,000 + 日々の新規 data 速報              │
+│   ┌──────────────────────────────────────────────────────┐  │
+│   │ - 既存記事 (試合別 / event 別、 既存 lane で publish) │  │
+│   │ - 新規 daily data 速報 (Phase 3 で追加生成)          │  │
+│   │ - 末尾に「{player} データに戻る」 link (Pillar back) │  │
+│   └──────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
+```
 
-## 2. のもとけ benchmark との差別化
+**SEO 上の意義** (Google topical authority):
+- Cluster → Pillar (110 link) → Topic (10-20/pillar) → Pillar back の **internal link 流量** で「巨人選手」 topic の authority を集中させる
+- 1 URL ごと shallow content にせず、 cluster 全体で **topical depth** を Google に示す
+- 既存 ~73,000 記事 (現在 noindex) を Topic として cluster に組み込む = 既存資産を活かす
+
+**phase 1.0 MVP**: Cluster page 1 + Pillar page 3 (**吉川尚輝 / 坂本勇人 / 丸佳浩**) で先行、 2-3 週間観察。
+
+## 2. のもとけ benchmark との差別化 + 大手メディアに作れない 4 理由
 
 dnomotoke.com を 2026-05-28 fetch 分析の結論:
 
 | 軸 | のもとけ | yoshilover data-site |
 |---|---|---|
 | 速報 | 1 日 15-25 本 (試合別 / イベント別 URL 量産) | 既存 lane (rss_fetcher + x-post-mail) で並走、 本 lane では 触らず |
-| player 軸 | タグ page (記事一覧のみ、 stats なし) | **per-player 静的 page (数字 + 試合 highlight + trend)** |
+| player 軸 | タグ page (記事一覧のみ、 stats なし) | **per-player Pillar page (数字 + 試合 highlight + trend)** |
 | 構造化データ | なし | **schema.org SportsPlayer + Person + BreadcrumbList + JSON-LD** |
 | 長尾 query | 弱い (鮮度勝負) | **「○○選手 打率 / 防御率 / 推移」 等の long-tail を独占** |
-| URL 戦略 | URL 増加型 (試合 / イベント別) | **URL 固定型 (player ごと 1 URL、 daily upsert)** ← SEO 評価集中 |
+| URL 戦略 | URL 増加型 (試合 / イベント別) | **URL 固定型 (Pillar = player ごと 1 URL、 daily upsert)** ← SEO 評価集中 |
+| topical cluster | タグ依存 (Cluster の概念なし) | **Cluster → Pillar → Topic の 3 階層構造で authority 集中** |
 
-→ **「per-player baseline page + 構造化データ + 長尾 query」 を yoshilover の堀にする** 方針。
+### 大手メディア (報知 / 日刊スポーツ / 東スポ / 朝日 等) に真似できない 4 理由
+
+| # | 理由 | 大手の制約 | yoshilover の優位 |
+|---|---|---|---|
+| 1 | **cost** | 110 名 daily update は記者人件費で不可能 | Gemini Flash Lite で月 ¥30-50、 AI が回す |
+| 2 | **focus 範囲** | 大手は 12 球団分散、 巨人だけに紙面割けない | **巨人専門で深掘り** (一軍 + 二軍 + 育成まで個別 Pillar) |
+| 3 | **fan voice** | 編集者距離 / 事実中心、 感情入れたら炎上 | **ファン感情寄り短評** (「ここで打って欲しかった」 等) を AI で安全に挿入 |
+| 4 | **永続 baseline + cluster** | 記事 (URL 量産型 / 速報) で蓄積、 既存記事に back-link 注入する文化なし | **per-player 1 URL に永続蓄積 + 既存 73,000 記事に back-link 自動注入** (Phase 2) で topical authority 構築 |
+
+→ 「**topical cluster + 永続 Pillar + AI 大量自動化**」 が yoshilover の堀。 大手は cost / focus / culture の 3 つで構造的に同等のものを作れない。
 
 ## 3. 既存 lane との関係
 
@@ -58,14 +98,29 @@ dnomotoke.com を 2026-05-28 fetch 分析の結論:
 
 ## 4. URL / sitemap / index
 
+| 階層 | URL pattern | 数 (Phase 1 full) |
+|---|---|---|
+| **Cluster** | `yoshilover.com/data/` (固定 1 URL) | 1 |
+| **Pillar** | `yoshilover.com/data/{player-slug}/` (player ごと 1 URL) | ~110 |
+| **Topic** | 既存 publish 記事 URL (例: `yoshilover.com/73041/`) + 新規 daily 速報 URL (Phase 3) | ~73,000 + 追加 |
+
 | 項目 | 値 |
 |---|---|
-| URL pattern | `yoshilover.com/data/{player-slug}/` (player ごと 1 URL、 datepath なし) |
-| player-slug | roster の `name` を kebab-case + romaji 化 (例: 岡本和真 → `okamoto-kazuma`、 マルティネス → `martinez`) |
-| index 設定 | `<meta name="robots" content="index, follow">` を 新 page のみで output、 既存記事は noindex 維持 |
-| sitemap | `sitemap.xml` に `/data/{slug}/` を全件追加、 Google Search Console submit |
+| player-slug | roster の `name` を kebab-case + romaji 化 (例: 岡本和真 → `okamoto-kazuma`、 マルティネス → `martinez`、 吉川尚輝 → `yoshikawa-naoki`) |
+| index 設定 | Cluster + Pillar は `<meta name="robots" content="index, follow">`、 既存 Topic 記事は noindex 維持 (Phase 2 で back-link 注入時に index 解除検討) |
+| sitemap | `sitemap.xml` に `/data/` + `/data/{slug}/` 全件追加、 Google Search Console submit |
 | canonical | self-canonical (`<link rel="canonical" href="https://yoshilover.com/data/{slug}/">`) |
-| trailing slash | `/data/slug/` (slash あり) で固定、 slash なしは 301 で揃える |
+| trailing slash | `/data/` + `/data/slug/` (slash あり) で固定、 slash なしは 301 で揃える |
+
+### 内部 link 流量設計 (topical authority 構築)
+
+| from | to | 数 | 用途 |
+|---|---|---|---|
+| Cluster | 全 Pillar | 110 link | Pillar への authority 流入 |
+| Pillar | 関連 Topic | 10-20 link/Pillar | Topic への authority 流入 (該当 player tag の既存記事) |
+| Topic | 1 Pillar | 1 link/Topic | Pillar への back link (Phase 2 で 73,000 記事に自動注入) |
+| Pillar | Cluster | 1 link/Pillar (breadcrumb) | Cluster への back link |
+| Pillar | 関連 Pillar | 3-5 link (同 pos / 同 lineup) | Pillar 間 cross link、 cluster 内 PageRank 分散最適化 |
 
 ## 5. 内容構成 (静的 page)
 
@@ -152,13 +207,14 @@ Cloud Run Job 新設、 既存 scheduler に追加せず別 job。 Phase 1.0 は
 
 ## 12. ロールアウト
 
-| phase | 対象 | 数 | trigger |
+| phase | scope | URL 数 | trigger |
 |---|---|---|---|
-| **Phase 1.0** (MVP-mini) | 岡本和真 / 戸郷翔征 / 坂本勇人 | 3 | user GO 済 (2026-05-28 PM) |
-| Phase 1.5 | 一軍 active player | ~30 | Phase 1.0 SEO 流入確認 + 品質 OK |
-| Phase 1 (full) | 全 active player + manager/coach | ~110 | Phase 1.5 観察 |
-| Phase 2 | event-base aggregation (試合まとめ / HR 一覧 等) | +追加 | Phase 1 stable 後 |
-| Phase 3 | column 風 long-form (rev1 旧案復活) | +追加 | data 基盤 stable 後 |
+| **Phase 1.0** (MVP-mini) | Cluster `/data/` 1 + Pillar `/data/{slug}/` × 3 (**吉川尚輝 / 坂本勇人 / 丸佳浩**) | 4 | **user GO 済 (2026-05-28 PM)** |
+| Phase 1.5 | Cluster 更新 + 一軍 active Pillar 30 | 31 | Phase 1.0 SEO 流入確認 + 品質 OK |
+| Phase 1 (full) | Cluster 完成 + 全 active Pillar 110 (player + manager + coach) | 111 | Phase 1.5 観察 |
+| Phase 2 | 既存 ~73,000 Topic 記事に Pillar back-link 自動注入 (大手差別化主軸の 4 番目) | mutation 73,000 | Phase 1 full stable 後 |
+| Phase 3 | 日々の data 速報 page 新規生成 (Topic 自前産出、 試合別 / event 別) | +追加 daily | Phase 2 完了後 |
+| Phase 4 | column 風 long-form (rev1 旧案復活) | +追加 | data 基盤 stable 後 |
 
 ## 13. 評価指標
 
@@ -171,3 +227,4 @@ Cloud Run Job 新設、 既存 scheduler に追加せず別 job。 Phase 1.0 は
 
 - 2026-05-28: rev1 初版 (旧「既存記事から SEO long-form aggregation」 案)
 - 2026-05-28 PM: rev2 全面書き換え (user 「データサイト作って index からしてく。 毎日更新のデータ記事。 選手全員の」)
+- 2026-05-28 PM2: rev3 topical cluster 構造 + 大手差別化 4 理由 + 内部 link 流量設計 を明文化 (user 「今あるデータベースから色々な記事をつくる。 球団の選手全体をクラスターページ。 選手をピラーページ。 日々の記事を速報ページでとぴくらをつくりたい」 + 「コンセプトは大手メディアではわからない」)。 Phase 1.0 player を 吉川尚輝 / 坂本勇人 / 丸佳浩 に変更 (user 指定)、 scope に Cluster page 追加 (4 page)

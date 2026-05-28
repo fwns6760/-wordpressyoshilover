@@ -4,9 +4,19 @@
 
 ## 2026-05-28 session update
 
-### 443 — SEO 記事生成 (既存記事 → SEO 強化 long-form) (DRAFT 2026-05-28)
+### 443 — 巨人選手データサイト (毎日更新 per-player 静的 page) (READY rev2 2026-05-28 PM、 user GO 済)
 
-user 指示「今の記事から SEO 記事を作っていく場合どうする?」 + 「dnomotoke.com を参考に」 で起票。 既存 publish 記事 ~73,000+ post を素材に **「選手別 月間まとめ」 long-form 1500-3000 字** を週 1 回生成 (Phase 1 MVP)、 巨人 active player 上位 10 名対象、 Cloud Run Job `seo-article-publisher` 新設 (`0 21 * * 0` JST)。 のもとけ benchmark で差別化: **長尾 query 独占 + data 深掘り + schema.org**。 yoshilover noindex 解除 ([§11 user 判断 SEO 領域]) が前提、 ¥10-15/月 cost。 既存 lane (rss_fetcher / draft body / guarded-publish) は不変、 read-only で素材 query。 doc: `doc/active/443-SEO-article-from-existing-articles.md` / spec: `mkdocs_docs/spec/seo-article-generation.md` (mkdocs nav 追加済、 `127.0.0.1:8000` mkdocs serve で preview 可能)。 open question 8 件 user 判断待ち (noindex 解除 / コスト / 引用 4 条件 / 差別化方向 / オフシーズン / 動画 / 公示 / 速報連動)。
+rev1 廃止: 「既存記事から SEO long-form 月 1 回」 案 (の もとけ benchmark + open question 8 件) → user 「データサイト作って index からしてく。 毎日更新のデータ記事。 選手全員の」 で 方向転換。
+
+**rev2 採用案** = `yoshilover.com/data/{player-slug}/` 静的 page を全 active player 分作成、 **毎日 6:00 JST upsert** (同 URL 上書き、 新 URL 増加なし)。 内容 = 当日試合 / 直近 5 試合 / 月間 trend / season summary / vs 他球団 / 関連 player / 関連記事 link + schema.org SportsPlayer JSON-LD。 既存 noindex 解除は **新 `data/` section のみ**、 既存記事 (~73,000) は noindex 維持。 のもとけ 差別化主軸 = **per-player baseline page + 構造化データ + 長尾 query 独占**。
+
+**phase 分け**: Phase 1.0 (3 star player MVP-mini) → Phase 1.5 (一軍 30 名) → Phase 1 (full 110 名 + manager/coach) → Phase 2 (event-based aggregation) → Phase 3 (column long-form)。 Phase 1.0 着手は **user GO 済**、 初回 fire = 2026-05-29 (木) 6:00 JST 想定。
+
+doc: `doc/active/443-DATA-SITE-daily-per-player-pages.md` (rev2) / `doc/active/444-DATA-SITE-phase1-mini-impl.md` (Phase 1.0 実装計画) / spec: `mkdocs_docs/spec/data-site.md` (mkdocs nav 更新済、 `127.0.0.1:8000` mkdocs serve で preview 可能)。
+
+コスト: Phase 1.0 ¥1-2/月、 Phase 1 full ¥30-50/月 (Gemini Flash Lite + Cloud Run 無料枠内)。
+
+next: Claude 自律で 444 実装着手 (`src/data_site_publisher.py` + Dockerfile + cloudbuild + Scheduler `data-site-publisher-daily`)、 2026-05-29 6:00 初回 fire、 2-3 週間観察後 Phase 1.5 拡大判断を user に報告。
 
 ### 439 — DATA-INSIGHT publish queue restore 7 signals (LIVE_DEPLOYED_VERIFY_PENDING 2026-05-28 10:38 JST)
 

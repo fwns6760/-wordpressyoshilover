@@ -122,6 +122,12 @@ def _upsert_page(
         "content": content_html,
         "status": "publish",
         "parent": parent,
+        # 2026-05-28 PM3 user 指示「まだnoindexでいいよ」 — index 解除は別 decision、
+        # 当面 Yoast SEO の post meta で noindex 明示 (yoshilover site-wide noindex
+        # の上から個別 page で念のため + 解除 plugin 設定でも override されないように).
+        "meta": {
+            "_yoast_wpseo_meta-robots-noindex": "1",
+        },
     }
     if featured_media_id:
         payload["featured_media"] = featured_media_id

@@ -36,6 +36,28 @@ _PLAYER_SLUG_MAP: dict[str, str] = {
     # 監督・コーチ
     "阿部慎之助": "abe-shinnosuke",
     "橋上秀樹": "hashigami-hideki",
+    # Phase 1.5 追加 (一軍 active player、 insight.db 出場 record top 30)
+    "中川皓太": "nakagawa-kota",
+    "ダルベック": "dalbec",
+    "浦田俊輔": "urata-shunsuke",
+    "佐々木俊輔": "sasaki-shunsuke",
+    "岸田行倫": "kishida-yukinori",
+    "高梨雄平": "takanashi-yuhei",
+    "田和廉": "tawa-ren",
+    "平山功太": "hirayama-kota",
+    "井上温大": "inoue-haruhiro",
+    "大勢": "taisei",
+    "松本剛": "matsumoto-tsuyoshi",
+    "船迫大雅": "funasako-taiga",
+    "赤星優志": "akahoshi-yushi",
+    "湯浅大": "yuasa-dai",
+    "ウィットリー": "whitley",
+    "則本昂大": "norimoto-takahiro",
+    "西川歩": "nishikawa-ayumu",
+    "北浦竜次": "kitaura-ryuji",
+    "ルシアーノ": "luciano",
+    "石川達也": "ishikawa-tatsuya",
+    "小濱佑斗": "ohama-yuto",
 }
 
 

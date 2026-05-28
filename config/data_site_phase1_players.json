@@ -1,18 +1,37 @@
 {
-  "_comment": "data-site Phase 1.0 対象 player list (ticket 444、 user 指定 2026-05-28 PM2)。 Phase 1.5 で 一軍 active 30 名に拡張、 Phase 1 full で 110 名。",
-  "phase": "1.0",
+  "_comment": "data-site Phase 1.5 対象 player list (ticket 444 / spec data-site.md)。 一軍 active (insight.db 出場 record あり) top 30 + Phase 1.0 keep player 1 名 (坂本勇人) = 31 名。 phase 推移: 1.0 (3 player) → 1.5 (31 player) → 1 full (110 名 = active 全員 + manager/coach)。",
+  "phase": "1.5",
   "players": [
-    {
-      "name": "吉川尚輝",
-      "roster_match": "吉川尚輝"
-    },
-    {
-      "name": "坂本勇人",
-      "roster_match": "坂本勇人"
-    },
-    {
-      "name": "丸佳浩",
-      "roster_match": "丸佳浩"
-    }
+    {"name": "中川皓太", "roster_match": "中川皓太"},
+    {"name": "キャベッジ", "roster_match": "キャベッジ"},
+    {"name": "ダルベック", "roster_match": "ダルベック"},
+    {"name": "浦田俊輔", "roster_match": "浦田俊輔"},
+    {"name": "泉口友汰", "roster_match": "泉口友汰"},
+    {"name": "佐々木俊輔", "roster_match": "佐々木俊輔"},
+    {"name": "大城卓三", "roster_match": "大城卓三"},
+    {"name": "岸田 行倫", "roster_match": "岸田 行倫"},
+    {"name": "高梨雄平", "roster_match": "高梨雄平"},
+    {"name": "田和 廉", "roster_match": "田和 廉"},
+    {"name": "平山 功太", "roster_match": "平山 功太"},
+    {"name": "マルティネス", "roster_match": "マルティネス"},
+    {"name": "井上温大", "roster_match": "井上温大"},
+    {"name": "吉川尚輝", "roster_match": "吉川尚輝"},
+    {"name": "大勢", "roster_match": "大勢"},
+    {"name": "松本 剛", "roster_match": "松本 剛"},
+    {"name": "船迫 大雅", "roster_match": "船迫 大雅"},
+    {"name": "中山礼都", "roster_match": "中山礼都"},
+    {"name": "赤星 優志", "roster_match": "赤星 優志"},
+    {"name": "湯浅 大", "roster_match": "湯浅 大"},
+    {"name": "ウィットリー", "roster_match": "ウィットリー"},
+    {"name": "則本昂大", "roster_match": "則本昂大"},
+    {"name": "西川 歩", "roster_match": "西川 歩"},
+    {"name": "北浦竜次", "roster_match": "北浦竜次"},
+    {"name": "ルシアーノ", "roster_match": "ルシアーノ"},
+    {"name": "戸郷翔征", "roster_match": "戸郷翔征"},
+    {"name": "丸佳浩", "roster_match": "丸佳浩"},
+    {"name": "門脇誠", "roster_match": "門脇誠"},
+    {"name": "石川 達也", "roster_match": "石川 達也"},
+    {"name": "小濱 佑斗", "roster_match": "小濱 佑斗"},
+    {"name": "坂本勇人", "roster_match": "坂本勇人", "_note": "Phase 1.0 keep (insight.db data 0、 placeholder 表示)"}
   ]
 }

@@ -16,7 +16,7 @@ if str(_SRC) not in sys.path:
 from sns_realtime_topic import (  # noqa: E402
     PAGE_1GUN,
     PAGE_FARM,
-    WP_AUTO_POST_CATEGORY_ID,
+    WP_POST_TYPE,
     build_pages,
     collect_all_posts,
     filter_recent_24h,
@@ -126,7 +126,9 @@ def test_wp_tag_url_for_japanese():
 
 # ----- wp_upsert -----
 
-def test_wp_upsert_creates_when_not_exists_with_category():
+def test_wp_upsert_creates_page_when_not_exists():
+    """post type = page で create (noindex 回避)。"""
+    assert WP_POST_TYPE == "pages"
     mock_client = MagicMock()
     mock_client.api = "https://example.com/wp-json/wp/v2"
     mock_client.auth = ("u", "p")
@@ -142,13 +144,21 @@ def test_wp_upsert_creates_when_not_exists_with_category():
         op, pid = wp_upsert("t", "c", "slug-x", mock_client)
     assert op == "created"
     assert pid == 100
-    # create payload に category と draft が入ってる
+    # GET の endpoint が /pages であること
+    get_url = mock_req.get.call_args.args[0]
+    assert get_url.endswith("/pages")
+    # POST の endpoint も /pages
+    post_url = mock_req.post.call_args.args[0]
+    assert "/pages" in post_url
     payload = mock_req.post.call_args.kwargs["json"]
     assert payload["status"] == "draft"
-    assert payload["categories"] == [WP_AUTO_POST_CATEGORY_ID]
+    # page は category 不要
+    assert "categories" not in payload
+    # _yoshilover_index 等の meta 操作も不要
+    assert "meta" not in payload
 
 
-def test_wp_upsert_updates_when_exists_no_status_change():
+def test_wp_upsert_updates_page_when_exists():
     mock_client = MagicMock()
     mock_client.api = "https://example.com/wp-json/wp/v2"
     mock_client.auth = ("u", "p")
@@ -164,10 +174,13 @@ def test_wp_upsert_updates_when_exists_no_status_change():
         op, pid = wp_upsert("t", "c", "slug-x", mock_client)
     assert op == "updated"
     assert pid == 200
-    # update payload には status / categories を含めない (既存 publish 状態を保つ)
     payload = mock_req.post.call_args.kwargs["json"]
     assert "status" not in payload
     assert "categories" not in payload
+    assert "meta" not in payload
+    # update URL も /pages
+    post_url = mock_req.post.call_args.args[0]
+    assert "/pages/200" in post_url
 
 
 # ----- build_pages (page split) -----

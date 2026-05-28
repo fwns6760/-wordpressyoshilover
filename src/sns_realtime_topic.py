@@ -49,7 +49,12 @@ SLOT_MINUTE_WINDOW = 5
 RSSHUB_TIMEOUT_SECONDS = 20
 WP_TIMEOUT_SECONDS = 30
 WP_TAG_URL_BASE = "https://yoshilover.com/tag"
-WP_AUTO_POST_CATEGORY_ID = 673  # category slug=auto-post, name=自動投稿
+# ticket 445: post type を post → page に切替 (2026-05-28 user 判断)。
+# 理由: post type は yoshilover-post-noindex plugin (is_single() check) +
+# SEO SIMPLE PACK 設定で site-wide noindex、 個別 checkbox 操作必要。
+# page type は両 plugin の noindex 対象外 (既存 /data/ /about-yoshilover/ で確認済)、
+# 切替だけで index 許可される。 plugin / SEO 設定 / user 手動 一切不要。
+WP_POST_TYPE = "pages"  # /wp/v2/pages endpoint
 
 # page split limits — user 「一日のSNSは見える量にしたい、 一軍は無理かも」
 PAGE_1GUN = {
@@ -226,10 +231,12 @@ def build_pages(
 
 
 def wp_upsert(title: str, content: str, slug: str, wp_client) -> Tuple[str, int]:
+    """page (post type=page) に upsert。 post type を page にすることで
+    yoshilover-post-noindex plugin + SEO SIMPLE PACK の noindex 対象外 → 自動 index。"""
     api = wp_client.api
     auth = wp_client.auth
     resp = requests.get(
-        f"{api}/posts",
+        f"{api}/{WP_POST_TYPE}",
         params={"slug": slug, "_fields": "id", "status": "any"},
         auth=auth,
         timeout=WP_TIMEOUT_SECONDS,
@@ -237,24 +244,23 @@ def wp_upsert(title: str, content: str, slug: str, wp_client) -> Tuple[str, int]
     resp.raise_for_status()
     items = resp.json() or []
     if items:
-        post_id = int(items[0]["id"])
+        page_id = int(items[0]["id"])
         upd = requests.post(
-            f"{api}/posts/{post_id}",
+            f"{api}/{WP_POST_TYPE}/{page_id}",
             auth=auth,
             json={"title": title, "content": content},
             timeout=WP_TIMEOUT_SECONDS,
         )
         upd.raise_for_status()
-        return "updated", post_id
+        return "updated", page_id
     cr = requests.post(
-        f"{api}/posts",
+        f"{api}/{WP_POST_TYPE}",
         auth=auth,
         json={
             "title": title,
             "content": content,
             "slug": slug,
             "status": "draft",
-            "categories": [WP_AUTO_POST_CATEGORY_ID],
         },
         timeout=WP_TIMEOUT_SECONDS,
     )

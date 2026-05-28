@@ -1,6 +1,12 @@
 # assignments — 現場担当と次アクション
 
-最終更新: 2026-05-28 JST
+最終更新: 2026-05-28 JST (10:38 439 deploy 追記)
+
+## 2026-05-28 session update
+
+### 439 — DATA-INSIGHT publish queue restore 7 signals (LIVE_DEPLOYED_VERIFY_PENDING 2026-05-28 10:38 JST)
+
+user 報告 「データ記事 (ポスト編) が同じネタばかり」 の真因 fix。 5/15 commit `f8c9e57` で `ALL_ANOMALY_SIGNALS` から drop されていた 7 種 detector (BABIP / FIP / GIANTS_TOP / PACE_HR / HIDDEN_OPS / HIT_STREAK / STAT_DELTA) を復活、 publish queue の signal mix を 8 → 15 entries に拡張。 commit `c413725` (5/27 landed)、 5/28 10:38 JST deploy: Cloud Build `9f055d05` 2m26s SUCCESS、 image `insight-nightly:signals-restore-c413725`、 Cloud Run Job `insight-nightly` gen=106→107。 Scheduler 10/12/17/20/21 JST ENABLED 維持、 次 fire = 12:00 JST。 next: 12:00 JST 以降 execution log で signal mix + publish 件数観察、 +1 day で BABIP / FIP / STAT_DELTA の whitelist block 状況確認 (block で 0 件なら whitelist 更新 follow-up 起票)。 推定 +30-50% draft 量、 detector 計算 cost 増無し、 publish 数増による Cloud Run guarded-publish / mail / WP REST 増 minor。 doc: `doc/active/439-DATA-INSIGHT-publish-queue-restore-7-signals.md`。
 
 ## 2026-05-27 session update
 

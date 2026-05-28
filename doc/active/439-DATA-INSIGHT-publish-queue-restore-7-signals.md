@@ -2,7 +2,7 @@
 
 ## meta
 
-- status: REPO_IMPL_TESTED (deploy 待ち)
+- status: LIVE_DEPLOYED_VERIFY_PENDING (2026-05-28 10:38 JST deploy 完、 next-day observe pending)
 - priority: P1
 - owner: Claude
 - lane: data-insight / publish queue
@@ -47,10 +47,18 @@ whitelist 側の更新を follow-up ticket で扱う。
 
 - [x] ALL_ANOMALY_SIGNALS = 15 entries
 - [x] targeted pytest pass
-- [ ] deploy (insight-nightly Job image rebuild + 次 nightly fire)
+- [x] deploy (2026-05-28 10:38 JST、 Cloud Build `9f055d05` 2m26s SUCCESS、 image `insight-nightly:signals-restore-c413725`、 Cloud Run Job gen=106→107)
 - [ ] next-day observe で publish 実件数 / signal mix 確認、 BABIP / FIP /
       STAT_DELTA が whitelist block で 0 件なら follow-up 起票
 - [ ] visual variety 確認 (若手 quota 新 eyecatch 当選含む)
+
+## 2026-05-28 10:38 JST deploy log
+
+- Cloud Build `9f055d05-a82d-40fb-b8b1-450b3a03f3ae` 2m26s SUCCESS
+- image `asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/insight-nightly:signals-restore-c413725`
+- Cloud Run Job `insight-nightly` generation 106 → 107、 image switched
+- Scheduler: `data-insight-{1000,noon,pregame,2000,during-game}-trigger` (10/12/17/20/21 JST) ENABLED、 次 fire = 12:00 JST data-insight-noon-trigger
+- next: 12:00 JST 以降 execution log で signal mix + publish 件数観察、 +1 day で BABIP / FIP / STAT_DELTA の whitelist block 状況確認
 
 ## blast radius
 

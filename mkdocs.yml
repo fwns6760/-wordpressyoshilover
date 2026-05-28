@@ -58,6 +58,7 @@ nav:
       - アイキャッチ (featured_media): spec/eyecatch.md
       - メール lane の住み分け: spec/mail-lanes.md
       - X インプ向上プラン: spec/x-impression-plan.md
+      - SEO 記事生成 (既存記事→SEO long-form): spec/seo-article-generation.md
   - 運用 (Operations):
       - 運用ルール: operations/policy.md
       - Deploy 手順: operations/deploy.md

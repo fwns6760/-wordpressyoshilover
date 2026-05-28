@@ -4,6 +4,10 @@
 
 ## 2026-05-28 session update
 
+### 443 — SEO 記事生成 (既存記事 → SEO 強化 long-form) (DRAFT 2026-05-28)
+
+user 指示「今の記事から SEO 記事を作っていく場合どうする?」 + 「dnomotoke.com を参考に」 で起票。 既存 publish 記事 ~73,000+ post を素材に **「選手別 月間まとめ」 long-form 1500-3000 字** を週 1 回生成 (Phase 1 MVP)、 巨人 active player 上位 10 名対象、 Cloud Run Job `seo-article-publisher` 新設 (`0 21 * * 0` JST)。 のもとけ benchmark で差別化: **長尾 query 独占 + data 深掘り + schema.org**。 yoshilover noindex 解除 ([§11 user 判断 SEO 領域]) が前提、 ¥10-15/月 cost。 既存 lane (rss_fetcher / draft body / guarded-publish) は不変、 read-only で素材 query。 doc: `doc/active/443-SEO-article-from-existing-articles.md` / spec: `mkdocs_docs/spec/seo-article-generation.md` (mkdocs nav 追加済、 `127.0.0.1:8000` mkdocs serve で preview 可能)。 open question 8 件 user 判断待ち (noindex 解除 / コスト / 引用 4 条件 / 差別化方向 / オフシーズン / 動画 / 公示 / 速報連動)。
+
 ### 439 — DATA-INSIGHT publish queue restore 7 signals (LIVE_DEPLOYED_VERIFY_PENDING 2026-05-28 10:38 JST)
 
 user 報告 「データ記事 (ポスト編) が同じネタばかり」 の真因 fix。 5/15 commit `f8c9e57` で `ALL_ANOMALY_SIGNALS` から drop されていた 7 種 detector (BABIP / FIP / GIANTS_TOP / PACE_HR / HIDDEN_OPS / HIT_STREAK / STAT_DELTA) を復活、 publish queue の signal mix を 8 → 15 entries に拡張。 commit `c413725` (5/27 landed)、 5/28 10:38 JST deploy: Cloud Build `9f055d05` 2m26s SUCCESS、 image `insight-nightly:signals-restore-c413725`、 Cloud Run Job `insight-nightly` gen=106→107。 Scheduler 10/12/17/20/21 JST ENABLED 維持、 次 fire = 12:00 JST。 next: 12:00 JST 以降 execution log で signal mix + publish 件数観察、 +1 day で BABIP / FIP / STAT_DELTA の whitelist block 状況確認 (block で 0 件なら whitelist 更新 follow-up 起票)。 推定 +30-50% draft 量、 detector 計算 cost 増無し、 publish 数増による Cloud Run guarded-publish / mail / WP REST 増 minor。 doc: `doc/active/439-DATA-INSIGHT-publish-queue-restore-7-signals.md`。

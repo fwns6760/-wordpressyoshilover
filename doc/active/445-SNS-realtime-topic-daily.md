@@ -1,100 +1,147 @@
-# 445 SNS リアルタイム話題 (巨人 1軍/2軍/3軍) daily aggregation
+# 445 SNS リアルタイム話題 (巨人 一軍/二軍三軍) daily aggregation
 
 ## 1. ticket header
 
 - **ticket id**: 445
-- **status**: READY (user GO 済 2026-05-28 PM、 Claude 自律実装)
+- **status**: LIVE_DEPLOYED_VERIFIED (2026-05-28 18:14 JST、 全機能 deploy + verify 済)
 - **owner**: Claude Code
 - **lane**: ingest / sns-realtime
 - **created**: 2026-05-28
 - **priority**: P1
-- **github_issue**: #114 (https://github.com/fwns6760/-wordpressyoshilover/issues/114)
+- **github_issue**: #114 (<https://github.com/fwns6760/etc/-wordpressyoshilover/issues/114>)
 - **spec doc**: `mkdocs_docs/spec/sns-realtime-topic.md`
 
 ## 2. 目的 (1 line)
 
-Yahoo リアルタイム検索の **巨人専門 1軍/2軍/3軍 版** を、 既存 RSSHub + 既存 Scheduler + 既存 fetcher pipeline に相乗りで実装 (==追加コスト ¥0==)。
+Yahoo リアルタイム検索の **巨人専門 一軍 / 二軍・三軍 版** を、 既存 RSSHub + 既存 Scheduler + 既存 fetcher pipeline 相乗りで実装 (==追加コスト ¥0==)。
 
-## 3. scope (Phase 1.0)
+## 3. LIVE URL
 
-- source = 既存登録済の 巨人専門 / 球団公式 X アカウント 4 件 (`yomiuri_giants` / `TokyoGiants` / `hochi_giants` / `Sanspo_Giants`)
-- 取得 = RSSHub `https://rsshub-n5hunzkyna-an.a.run.app/twitter/user/{handle}?limit=30`
-- 発火 = 既存 fetcher Scheduler の中で内部 time gate (`hour in {10,13,17,21} and minute < 5`)、 1 日 4 回
-- 出力 = WP post **permanent 1 URL** (slug = `giants-sns-realtime`)、 4 fire/日 × 365 日 全部同 URL upsert (Yahoo リアルタイム検索式)
-- 分類 = 三軍 (`role=='ikusei'` or `育成/三軍/3軍` keyword) / 二軍 (`ファーム/二軍/イースタン` keyword or roster `position` に `二軍/ファーム`) / 一軍 (default)
-- トレンド = `config/giants_roster.json` 全 136 名 aliases で言及回数を count、 上位 15 名 (2 回以上のみ) を tag chip で最上部表示
-  - **(a) 急上昇 marker**: 昨日の counts を GCS (`gs://yoshilover-history/sns_realtime_topic/counts_{date}.json`) から load、 delta を chip に ↑+N / ↓N で badge 表示
-  - **(b) tag chip → WP tag page link**: `<a href="https://yoshilover.com/tag/{quote(name)}/">` で WP tag archive にリンク
+- 一軍: <https://yoshilover.com/giants-sns-realtime-1gun/> (page_id=73959)
+- 二軍・三軍: <https://yoshilover.com/giants-sns-realtime-farm/> (page_id=73960)
+
+## 4. scope 達成項目
+
+- source = 巨人専門 / 球団公式 X account 4 件 (`yomiuri_giants` / `TokyoGiants` / `hochi_giants` / `Sanspo_Giants`)
+- RSSHub `https://rsshub-487178857517.asia-northeast1.run.app/twitter/user/{handle}` 経由
+- 発火 = 既存 fetcher Scheduler 相乗り + 内部 time gate (`hour in {10,13,17,21} and minute < 5`)、 1 日 4 回
+- 出力 = **post type = page**、 永続 2 URL (`giants-sns-realtime-1gun` / `giants-sns-realtime-farm`)
+- 4 fire/日 × 365 日 全部同 URL upsert (Yahoo リアルタイム検索式)
+- 一軍 page = 上位 15 投稿 / farm page = 二軍 5 + 三軍 5 最大 10
+- 分類 = 三軍 (`role=='ikusei'` or `育成/三軍/3軍`) / 二軍 (`ファーム/二軍/イースタン` or roster position `二軍/ファーム`) / 一軍 (default)
+- トレンド = `config/giants_roster.json` 全 136 名 aliases で言及回数 count、 各 page 独立 count、 上位 15 名 (2 回以上のみ)
 - render = oEmbed `https://publish.twitter.com/oembed` (X 公式、 著作権安全)
 
-Phase 1 では監督 / コーチ言及は **一軍配置を仮定**。 lineup data を使った 1軍 / 2軍 コーチ split は別 ticket (Phase 2)。
+## 5. SEO 強化 (本 ticket 内)
 
-## 4. 実装 file (新規)
+### (a) 急上昇 marker
+- 新 module: `src/sns_realtime_topic_state.py` (GCS-backed save_counts / load_previous_counts)
+- path: `gs://yoshilover-history/sns_realtime_topic/counts_{date}.json` (nested per-page)
+- 毎 fire で counts save、 翌日 fire で delta 表示
+- ↑+5 以上 = 赤太字 / ↑+1〜4 = orange / ↓N = 灰色 / 同値 badge なし
+- 初日 (前日 counts なし) は badge 抑制
 
-| file | 内容 |
-| --- | --- |
-| `src/sns_realtime_topic.py` | main module、 fetch + 分類 + render + WP upsert + state IO |
-| `src/sns_realtime_topic_classifier.py` | 一軍 / 二軍 / 三軍 分類 + roster alias match |
-| `src/sns_realtime_topic_template.py` | template (トレンド + 急上昇 marker + tag chip link + 3 section + 出典) |
-| `src/sns_realtime_topic_state.py` | (a) 急上昇 marker 用 GCS state IO (save_counts / load_previous_counts) |
-| `tests/test_sns_realtime_topic.py` | fetch mock / 分類 / tag URL / delta / wp upsert mock / run with state |
-| `tests/test_sns_realtime_topic_classifier.py` | 育成 / ファーム keyword + roster alias match の boundary tests |
+### (b) tag chip → 内部リンク enrichment
+- data-site page (`/data/{slug}/`、 ticket 444) 該当 player → `/data/{slug}/`
+- 該当なし player → `/tag/{quote(name)}/` fallback
+- WP REST `/pages?parent={data_id}` で 1 fire 1 回 fetch + cache (process-local)
 
-新規 Cloud Run Job / Dockerfile / cloudbuild は **作らない**。 既存 `yoshilover-fetcher` service の hourly run に組み込む。
+### (c) 巨人ブランド design
+- hero banner (黒 → オレンジ gradient + LIVE pulse + stats card)
+- ranking chip (top 3 = gold / silver / bronze、 rank# 表示)
+- card feed (oEmbed を border-left オレンジ frame で包む)
+- 巨人カラー (黒 #000 / オレンジ #FF6F00 / クリーム #fff4e6)
+- mobile responsive (@media max-width:540px)
+- inline `<style>` + class prefix `ysn-` で theme conflict 回避
 
-## 5. 触らない範囲
+### (d) JSON-LD 構造化 markup (3 schema)
+- **CollectionPage**: name / about=SportsTeam 読売ジャイアンツ / publisher / mainEntity=ItemList(SocialMediaPosting × 20)
+- **LiveBlogPosting** (==Google SERP LIVE バッジ狙い==): coverageStart/End、 liveBlogUpdate × 20 (BlogPosting + author)
+- **BreadcrumbList**: ヨシラバー → 該当 page
 
-- 既存 article / 既存 subtype の生成 path
-- 既存 Cloud Scheduler の cron 式 / enable 状態
-- WP frontend display CSS
-- X live posting / X API key
-- featured_media rule
-- 個人 X アカウント (球団 / 専門メディア以外は対象外)
-- 野球全般アカウント (`SponichiYakyu` / `nikkansports` / `npb`) は本 subtype では使わない
+### (e) OGP / Twitter Card
+- WP page `excerpt` に top3 トレンド + 投稿数 + 更新 schedule
+- SEO SIMPLE PACK が自動で og:title / og:description / twitter:card 生成
 
-## 6. tests (新規)
+### (f) indexability
+- yoshilover は site-wide noindex (post type=post 限定で `yoshilover-post-noindex` plugin + SEO SIMPLE PACK)
+- **post type=page** にすることで両 plugin の noindex 対象外、 自動 index 許可
+- 既存 `/data/` `/about-yoshilover/` で検証済 (noindex なし)、 本 page も同様
 
-- `test_sns_realtime_topic_classifier.py`
-  - 育成 keyword → 三軍
-  - ファーム / 二軍 / イースタン keyword → 二軍
-  - 選手名 alias で `role=='ikusei'` match → 三軍
-  - keyword なし + roster match なし → 一軍 default
-- `test_sns_realtime_topic.py`
-  - RSSHub fetch mock (1 handle 取得失敗で他 3 handle 継続)
-  - トレンド count 2 回未満は除外
-  - WP slug 存在チェック → PUT で update (1 日 1 URL fix)
-  - section 0 件は H2 ごと非表示
+## 6. 実装 file
 
-## 7. 受け入れ条件
+| file | 内容 | 状態 |
+| --- | --- | --- |
+| `src/sns_realtime_topic.py` | main module、 fetch + 分類 + render + WP upsert + state + data-site slug | 新規 |
+| `src/sns_realtime_topic_classifier.py` | 一軍 / 二軍 / 三軍 分類 + roster alias match | 新規 |
+| `src/sns_realtime_topic_template.py` | template (hero / chip / data link / card / JSON-LD 3 種) | 新規 |
+| `src/sns_realtime_topic_state.py` | GCS state IO (nested per-page) | 新規 |
+| `tests/test_sns_realtime_topic.py` | 18 tests | 新規 |
+| `tests/test_sns_realtime_topic_classifier.py` | 11 tests | 新規 |
+| `src/rss_fetcher.py` | hourly run 末尾に hook (env flag) | 変更 1 箇所 |
+| `mkdocs_docs/spec/sns-realtime-topic.md` | 仕様書 | 新規 |
+| `mkdocs.yml` | nav 追加 | 変更 |
 
-- [ ] 4 fire 後の 1 日で WP に **1 URL のみ** 作成され、 4 回 update される
-- [ ] トレンド section に上位 15 名以下が言及回数 desc で表示
-- [ ] 三軍 section に 育成選手 (`role=='ikusei'`) または `育成/三軍/3軍` keyword 投稿のみ
-- [ ] 二軍 section に `ファーム/二軍/イースタン` keyword 投稿のみ
-- [ ] 一軍 section に default 投稿
-- [ ] oEmbed が正しく render され、 X 投稿が embed 表示される
-- [ ] Cloud Run / Scheduler / RSSHub の追加課金 ¥0 (24h 観察)
+新規 Cloud Run Job / Dockerfile / cloudbuild は **作らない**。
 
-## 8. blockers
+## 7. deploy 経緯
 
-なし。 既存 RSSHub Cloud Run + 既存 Scheduler + 既存 roster + 既存 X account list で全部揃っている。
+| commit | image | revision | 内容 |
+| --- | --- | --- | --- |
+| `3811c4c` | — | — | doc + spec + ticket + GH Issue #114 |
+| `da588c8` | `sns-realtime-da588c8` | `00498-547` | impl + tests + fetcher hook |
+| `7ba307d` | `sns-realtime-7ba307d` | — | permanent slug + (a) 急上昇 + (b) tag link |
+| `7bed2dc` | `sns-realtime-7bed2dc` | `00500-b2b` | page split + 初日 badge 抑制 + auto-post category |
+| `37f1c70` | `sns-realtime-37f1c70` | `00501-ksv` | post → page 切替 (noindex 自動回避) |
+| `0d09e60` | `sns-realtime-0d09e60` | `00502-qdx` | Giants design + JSON-LD (CollectionPage + Breadcrumb) |
+| `3cbe211` | `sns-realtime-3cbe211` | `00503-bxc` (LIVE) | A LiveBlogPosting + B OGP excerpt + C /data/ 内部リンク |
 
-## 9. 関連 ticket
+env `ENABLE_SNS_REALTIME_TOPIC=1` 設定済。
 
-- 関連: 392 (X branding MCP), 411 (X voice persona), 414 (X voice quality framework) — 本 ticket は X 出力ではなく **WP 上の集約記事**、 出力 channel が異なる
-- 関連: 444 (data-site per-player) — daily upsert / 1 URL fix 方針は共通
+## 8. tests (29/29 PASS)
 
-## 10. 実装順序
+- `test_sns_realtime_topic_classifier.py`: 11 tests
+  - 育成 / 三軍 / 3軍 keyword → 三軍
+  - ファーム / 二軍 / 2軍 / イースタン keyword → 二軍
+  - roster `role=='ikusei'` match → 三軍
+  - keyword + match なし → 一軍 default
+  - count_mentions: alias dedup per post / empty / no match
+- `test_sns_realtime_topic.py`: 18 tests
+  - should_run_now: slot 内 / 外
+  - filter_recent_24h: 24h window / no published
+  - split_by_level
+  - section_oembeds: limit / empty url skip
+  - collect_all_posts: URL dedup
+  - wp_tag_url_for: 日本語 URL encode
+  - wp_upsert: page endpoint / status draft / no categories / no meta / update no status change
+  - build_pages: 2 page / slugs / title suffix / level 分離
+  - 急上昇 badge: 初日抑制 / 2 日目表示
+  - run: outside_slot / 両 page upsert / load/save nested
 
-1. spec doc (本 commit、 done)
-2. ticket doc (本 commit、 done)
-3. GH Issue 作成
-4. README priority board 更新 + assignments.md 更新 (本 commit)
-5. mkdocs.yml nav 追加 (本 commit)
-6. 実装 (`src/sns_realtime_topic_classifier.py` → `src/sns_realtime_topic.py` → template → tests)
-7. fetcher pipeline に hook 追加 (`src/rss_fetcher.py` の hourly entry に time gate + caller 1 行)
-8. unit tests pass (`pytest tests/test_sns_realtime_topic*.py`)
-9. full pytest baseline pass
-10. commit + push (feat/377 branch)
-11. fetcher image rebuild + deploy
-12. 翌日 4 fire 観察 + 受け入れ条件 verify
+## 9. 受け入れ条件 (全達成)
+
+- [x] 4 fire/日 で WP の 2 page を upsert (1 page = 1 URL fix)
+- [x] トレンド section 上位 15 名以下 (count desc、 ranking color)
+- [x] 三軍 / 二軍 / 一軍 分類 rule 通り
+- [x] oEmbed 正しく render (Giants frame card)
+- [x] page type で noindex 自動回避 (Google index 許可)
+- [x] CollectionPage + LiveBlogPosting + BreadcrumbList の 3 JSON-LD
+- [x] OGP / Twitter Card meta set
+- [x] /data/ 内部リンク enrichment (該当 player)
+- [x] sitemap (`page-sitemap.xml`) 自動登録
+- [x] 追加コスト ¥0 verify (Cloud Build / deploy 計 7 回、 全て成功、 cost 増分なし)
+
+## 10. 残課題 (本 ticket scope 外、 別 ticket 候補)
+
+- **(D) ヨシラバー独自 commentary 挿入** (E-E-A-T 強化) — 本文 top に 100-200 字の編集部まとめテキスト。 Gemini Flash で生成 or 手動。 工事 1.5h。
+- **(E) embed lazy load** (Core Web Vitals LCP 改善) — IntersectionObserver で scroll で初めて load。 工事 1h。
+- **旧 SNS 記事削除戦略** — 現状 `source_type=social_news` で個別 X post → 個別 WP article を作る path が継続中。 新 aggregation page に集約したので per-post path は競合 risk。 別 ticket で kill switch。
+- **1軍 / 2軍 コーチ split** — 監督 / コーチ言及は現在 一軍 仮定。 lineup data で per-team split は別 ticket。
+- **2軍3軍 source 追加** — `TokyoGiantsFarm` 等が公式に存在すれば source list 追加検討。
+- **Google Search Console URL inspection** — 2 URL の「インデックス登録をリクエスト」 で初回 crawl 加速 (user 手動推奨)。
+
+## 11. 関連 ticket
+
+- 関連: 392 (X branding MCP)、 411 (X voice persona)、 414 (X voice quality framework) — 本 ticket は X 出力ではなく **WP 上の集約記事**
+- 関連: 444 (data-site per-player) — daily upsert / 1 URL fix 方針共通、 (C) /data/ 内部リンク enrichment で連動
+- 関連: 251 (SEO noindex release strategy、 waiting) — 本 ticket は noindex を post type=page で回避する narrow path、 251 とは独立

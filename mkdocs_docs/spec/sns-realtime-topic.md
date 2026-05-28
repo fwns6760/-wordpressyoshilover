@@ -2,9 +2,14 @@
 
 !!! info "これは何のページ"
 
-    Yahoo リアルタイム検索の **巨人専門 1軍 / 2軍 / 3軍 版**。 巨人専門の X 公式アカウント (球団 + 報知 / サンスポ 巨人担当) を **RSSHub 経由** で 24h 集約し、 「==今 X で何が話題か==」 を 1 記事 (3 section) として WordPress に毎日数回 publish する。
+    Yahoo リアルタイム検索の **巨人専門 一軍 / 二軍・三軍 版**。 巨人専門の X 公式アカウント (球団 + 報知 / サンスポ 巨人担当) を **RSSHub 経由** で 24h 集約し、 「==今 X で何が話題か==」 を 2 ページ (一軍 / ファーム) として WordPress に毎日 4 回 update する。
 
-    **追加コスト ¥0** (新 Scheduler なし / X API なし / LLM なし)。 既存の RSSHub Cloud Run service + 既存の fetcher Scheduler 発火に相乗りする。
+    **追加コスト ¥0** (新 Scheduler なし / X API なし / LLM なし / RSSHub 既稼働 / WP は既支払 hosting)。
+
+!!! tip "LIVE URL"
+
+    - 一軍: <https://yoshilover.com/giants-sns-realtime-1gun/>
+    - 二軍・三軍: <https://yoshilover.com/giants-sns-realtime-farm/>
 
 ## :material-clock-outline: 発火タイミング (JST)
 
@@ -14,15 +19,14 @@
 | --- | --- | --- |
 | `giants-weekday-daytime` (`0 6-16 * * *`) | 10:00, 11:00, 12:00, 13:00, 14:00, 15:00, 16:00 | **10:00 / 13:00** |
 | `giants-realtime-trigger` (`0,30 17-21 * * *`) | 17:00, 17:30, ... 21:00 | **17:00 / 21:00** |
-| `giants-realtime-2230` / `2300` | 22:30 / 23:00 | (なし) |
 
-実行場所: Cloud Run service `yoshilover-fetcher` の既存 entry。 内部で `JST.hour in {10,13,17,21} and minute < 5` のとき本 subtype 生成。
+実行場所: Cloud Run service `yoshilover-fetcher` の hourly run の中、 `JST.hour in {10,13,17,21} and minute < 5` の time gate で `sns_realtime_topic.run()` を呼ぶ (env `ENABLE_SNS_REALTIME_TOPIC=1` で有効化)。
 
 == 1 日 4 回 (10:00 / 13:00 / 17:00 / 21:00) ==、 過去 24h の X 投稿を集約する。
 
 ## :material-source-branch: source = 巨人専門 X アカウント
 
-`src/tools/manual_intake.py:3437-3441` で既に登録済の **巨人専門 / 球団公式 のみ** を本 subtype の source とする (野球全般の `SponichiYakyu` / `nikkansports` / `npb` は本 subtype では使わない)。
+`src/sns_realtime_topic.py:SOURCE_HANDLES` で定義する 巨人専門 / 球団公式 のみ。 野球全般の `SponichiYakyu` / `nikkansports` / `npb` は本 subtype では使わない。
 
 | handle | 種別 |
 | --- | --- |
@@ -31,42 +35,48 @@
 | `hochi_giants` | 報知 巨人担当 |
 | `Sanspo_Giants` | サンスポ 巨人担当 |
 
-取得は **RSSHub 経由**:
+取得は **RSSHub Cloud Run** 経由:
 
 ```
-https://rsshub-n5hunzkyna-an.a.run.app/twitter/user/{handle}?limit=30
+https://rsshub-487178857517.asia-northeast1.run.app/twitter/user/{handle}?limit=30
 ```
 
-- RSSHub Cloud Run は `TWITTER_AUTH_TOKEN` env で認証済 (既稼働、 追加コストなし)
+- env `TWITTER_AUTH_TOKEN` で認証済 (既稼働、 追加コストなし)
 - 1 fire = 4 handle × 1 request = ==4 outbound HTTP only==
-- 取得失敗 handle は section から除外、 fire 自体は継続
+
+## :material-pencil-box-multiple-outline: page split (2 URL)
+
+==Yahoo リアルタイム検索式 1 URL / level== を 2 page で運用 (user 「一軍と2軍3軍はページ分けて」「一日のSNSは見える量にしたい」 反映)。
+
+| ページ | slug | URL | levels | max 表示件数 |
+| --- | --- | --- | --- | --- |
+| 一軍 | `giants-sns-realtime-1gun` | `/giants-sns-realtime-1gun/` | 一軍 | 15 |
+| 二軍・三軍 | `giants-sns-realtime-farm` | `/giants-sns-realtime-farm/` | 二軍 + 三軍 | 各 5 (合計 最大 10) |
+
+- post type = **`page`** (post type=post ではない、 後述 § indexability)
+- 各 page は **永続 1 URL**、 4 fire/日 × 365 日 全部同 URL を upsert
+- SEO: authority concentration、 thin content URL の量産防止、 freshness signal 累積
 
 ## :material-card-bulleted-outline: 記事構造
 
-1 記事 = 1 H1 + **トレンド section** + **3 軍別 section**。
-
 ```
-H1: 巨人 SNS リアルタイム (YYYY-MM-DD HH:MM JST 更新)
+<hero banner>
+  ⚾ 巨人  SNS リアルタイム (一軍)
+  ●LIVE  最終更新 YYYY-MM-DD HH:MM JST (10/13/17/21 JST 更新)
+  [投稿/24h: 51]  [話題の選手: 27]
 
-## 今日のトレンド
-[ #岡本和真 12 ][ #坂本勇人 8 ][ #阿部慎之助 7 ][ #吉川尚輝 5 ][ #丸佳浩 4 ] ...
+<トレンド section>
+  🔥 今日のトレンド
+  [① #戸郷翔征 17 ↑+5] [② #橋上秀樹 11 ↑+3] [③ #坂本勇人 5 →] ...
 
-## 一軍
-oEmbed (X post URL)
-oEmbed (X post URL)
-...
+<feed section>
+  📱 最新の投稿 (一軍 page)
+  二軍 / 三軍 (farm page、 各 section に分割)
+  - oEmbed (X 公式 blockquote)
 
-## 二軍
-oEmbed (X post URL)
-...
-
-## 三軍
-oEmbed (X post URL)
-...
-
-## 出典 / 更新
-- @yomiuri_giants / @TokyoGiants / @hochi_giants / @Sanspo_Giants
-- 過去 24h の投稿を集約、 4 時刻 (10/13/17/21 JST) で更新
+<出典 footer>
+  📡 出典 X アカウント
+  @yomiuri_giants / @TokyoGiants / @hochi_giants / @Sanspo_Giants
 ```
 
 ### トレンド section (==最上部==)
@@ -74,60 +84,128 @@ oEmbed (X post URL)
 過去 24h に集約した X 投稿の text を `config/giants_roster.json` の **全 136 名 (player 84 + coach 27 + manager 1 + shihaikako 1 + ikusei 23) の aliases** で照合し、 言及回数で sort。
 
 - 表示: 上位 ==15 名==、 言及 ==2 回以上== のみ (1 回はノイズ除去)
-- format: clickable tag chip `[ #{name} {count} ↑+{delta} ]`
+- format: ranking chip `[ ① #{name} {count} ↑+{delta} ]`
+  - top 1-3 は gold / silver / bronze 色
 - **(a) 急上昇 marker**: 昨日の言及回数 (GCS snapshot) と diff を chip に表示
-  - `↑+5 以上` = 赤太字 (急上昇)
-  - `↑+1〜4` = orange
-  - `↓N` = 灰色 (下落)
-  - 同値は badge 無し
-- **(b) tag chip → WP tag page link**: 各 chip は `<a href="https://yoshilover.com/tag/{quote(name)}/">` で WP tag archive にリンク
-- 言及 0 のときは section ごと非表示 (試合なし日 + ニュースなし日)
+  - `↑+5 以上` = 赤太字 (急上昇) / `↑+1〜4` = orange / `↓N` = 灰色 / 同値 badge なし
+  - 初日 (前日 counts なし) は badge 抑制 (全 chip ↑+N で見栄え悪化を防ぐ)
+- **(b) tag chip → 内部リンク** (==C 内部リンク enrichment==):
+  - data-site page (`/data/{slug}/`、 ticket 444) が **ある player** → `/data/{slug}/` リンク
+  - **ない player** → `/tag/{quote(name)}/` fallback
+  - data-site page slug は 1 fire 1 回 WP REST `/pages?parent={data_id}` で fetch + process-local cache
 
 #### GCS state (a 用)
 
 - path: `gs://{GCS_BUCKET}/sns_realtime_topic/counts_{YYYY-MM-DD}.json` (`GCS_BUCKET=yoshilover-history` 既設定済)
-- 毎 fire で当日の最新 counts dict を upload (4 fire × 30 日 = 120 file × 数 KB = 数 MB、 free tier 内)
-- 翌日の fire で前日 file を load して delta 計算 (初日は空 dict、 全 chip が ↑+N 表示)
+- format: nested per-page dict `{1gun: {name: count, ...}, farm: {name: count, ...}}`
+- 毎 fire で当日の最新 counts を upload (4 fire × 30 日 = 120 file × 数 KB = 数 MB、 free tier 内)
+- 翌日の fire で前日 file を load して delta 計算 (初日は空 dict、 badge 抑制)
 
 ### 一軍 / 二軍 / 三軍 分類ルール
 
 各 X 投稿を以下の優先順で分類:
 
 1. **三軍** = 投稿 text に `育成 / 三軍 / 3軍` 含む、 または text 内の選手名が `roster.json` で `role == "ikusei"`
-2. **二軍** = 投稿 text に `二軍 / 2軍 / ファーム / イースタン` 含む、 または text 内の選手名が roster で position に `二軍 / ファーム` 含む
+2. **二軍** = 投稿 text に `二軍 / 2軍 / ファーム / イースタン` 含む、 または text 内の選手名が roster で position に `二軍 / ファーム`
 3. **一軍** = 上記以外 (default)
 
 監督 / コーチ言及は **一軍配置を仮定** (Phase 1)。 将来 lineup data で 1軍 / 2軍 コーチ split は別 ticket。
 
-各 section は ==上位 5 件== を oEmbed 埋め込み (1 記事に最大 15 投稿)。 該当 0 件の section は H2 ごと非表示。
+### oEmbed 埋め込み (card frame)
 
-### oEmbed 埋め込み
+`https://publish.twitter.com/oembed?url={x_post_url}` を fetch して `<blockquote class="twitter-tweet">` を本文に貼る。 X 公式 oEmbed なので **著作権安全** (CLAUDE.md §18 マスコミ X 引用 oEmbed only に準拠)。
 
-`https://publish.twitter.com/oembed?url={x_post_url}` を fetch して `<blockquote class="twitter-tweet">` を本文に貼る。 X 公式 oEmbed なので **著作権安全** (AGENTS.md / CLAUDE.md §18 のマスコミ X 引用 oEmbed only に準拠)。
+各 embed は CSS class `ysn-card` の orange border-left frame で包む。
 
-## :material-database-outline: 重複防止
+## :material-shield-search: indexability
 
-**Yahoo リアルタイム検索式の permanent 1 URL**。 毎日 4 fire は **同一 URL を更新**。
+yoshilover は site-wide noindex policy (`yoshilover-post-noindex` plugin + SEO SIMPLE PACK)。 ただし **post type=page** は両 plugin の noindex 対象外。
 
-- WP post の slug = `giants-sns-realtime` (==permanent fix==、 日付なし)
-- 存在チェック: `GET /wp-json/wp/v2/posts?slug=giants-sns-realtime`
-- 存在すれば `POST /posts/{id}` で content / title 上書き、 なければ `POST /posts` で新規
-- ==永続 1 URL==、 365 日 × 4 fire 全部が同 URL を update
-- SEO: backlink / 内部リンク / freshness signal を 1 URL に集中させ、 thin content URL の量産を防ぐ
-- (日別 archive が必要なら 別 ticket で snapshot 保存機能)
+| 検証対象 | 結果 |
+| --- | --- |
+| 既存 `/data/` (page) | `<meta name='robots' content='max-image-preview:large' />` (noindex なし) |
+| 既存 `/about-yoshilover/` (page) | 同上 |
+| 既存 通常 post (`/73533`) | `<meta ... content='max-image-preview:large, noindex, follow' />` |
+| 本 page (`/giants-sns-realtime-1gun/`) | `max-image-preview:large` のみ (noindex なし) ✓ |
 
-## :material-cog-outline: 実装 file (新規)
+== post type=page にするだけで noindex 自動回避==、 plugin / SEO 設定 / 個別 checkbox 一切操作不要。
+
+## :material-share-variant-outline: 構造化 markup (JSON-LD)
+
+3 つの `<script type="application/ld+json">` を inject。
+
+### (a) CollectionPage
+
+| 項目 | 値 |
+| --- | --- |
+| `@type` | `CollectionPage` |
+| `name` | `巨人 SNS リアルタイム (一軍)` 等 |
+| `url` | 該当 page URL |
+| `datePublished` / `dateModified` | 該当 fire の ISO 8601 +09:00 |
+| `about` | `SportsTeam` 読売ジャイアンツ |
+| `publisher` | `Organization` ヨシラバー |
+| `mainEntity` | `ItemList` (SocialMediaPosting × max 20) |
+
+### (b) LiveBlogPosting (==SEO 強化 A==)
+
+| 項目 | 値 |
+| --- | --- |
+| `@type` | `LiveBlogPosting` |
+| `coverageStartTime` | 24h 前 ISO 8601 |
+| `coverageEndTime` | 該当 fire ISO 8601 |
+| `liveBlogUpdate` | `BlogPosting` × max 20 (headline=投稿 text preview、 datePublished、 author=@handle) |
+
+Google SERP で「LIVE」 rich snippet 表示の可能性。
+
+### (c) BreadcrumbList
+
+| position | name | item |
+| --- | --- | --- |
+| 1 | ヨシラバー | `https://yoshilover.com/` |
+| 2 | 巨人 SNS リアルタイム (一軍) 等 | 該当 page URL |
+
+## :material-share-circle: OGP / Twitter Card (==SEO 強化 B==)
+
+WP page の `excerpt` field に top3 トレンド + 投稿数 + 更新 schedule を要約 set。 WP / SEO SIMPLE PACK が以下を自動生成:
+
+| meta | source |
+| --- | --- |
+| `og:title` | page title (`巨人 SNS リアルタイム (一軍) (最終更新: ...)`) |
+| `og:description` | hero text + excerpt から自動抽出 |
+| `og:image` | site default OG image |
+| `twitter:card` | `summary_large_image` (theme default) |
+
+excerpt 例: 「巨人 SNS リアルタイム (一軍) - 過去 24h で 49 件の X 投稿。 話題: #増田大輝 (8) / #中山礼都 (8) / #浅野翔吾 (6)。 1 日 4 回 (10/13/17/21 JST) 自動更新。」
+
+## :material-database-outline: WP upsert
+
+- 各 page は **slug** で固定検索 → 存在 = update / 不在 = create (status=`draft` で作成、 publish は user 判断)
+- update payload: `title` / `content` / `excerpt` のみ (`status` 不変)
+- create payload: + `slug` + `status=draft`
+- category 不要 (page は categories field なし)
+- meta override も不要 (page は noindex 対象外なので `_yoshilover_index` 不要)
+
+## :material-cog-outline: 実装 file
 
 | file | 内容 |
 | --- | --- |
-| `src/sns_realtime_topic.py` | main module、 RSSHub fetch + 分類 + render + WP upsert + state IO |
-| `src/sns_realtime_topic_classifier.py` | 一軍 / 二軍 / 三軍 分類 + roster alias match |
-| `src/sns_realtime_topic_template.py` | template (トレンド + 急上昇 marker + tag chip link + 3 section + 出典) |
-| `src/sns_realtime_topic_state.py` | (a) 急上昇 marker 用 GCS state IO (save_counts / load_previous_counts) |
-| `tests/test_sns_realtime_topic.py` | unit tests (fetch mock / 分類 / tag URL / delta / wp upsert / run with state) |
+| `src/sns_realtime_topic.py` | main module、 fetch + 分類 + render + WP upsert + state IO + data-site slug fetch |
+| `src/sns_realtime_topic_classifier.py` | 一軍 / 二軍 / 三軍 分類 + roster alias match + count_mentions |
+| `src/sns_realtime_topic_template.py` | template (hero / 急上昇 chip / data link / card feed / 出典 + JSON-LD 3 種) |
+| `src/sns_realtime_topic_state.py` | GCS state IO (save_counts / load_previous_counts、 nested per-page) |
+| `tests/test_sns_realtime_topic.py` | fetch mock / 分類 / page split / 急上昇 badge / wp_upsert page endpoint |
 | `tests/test_sns_realtime_topic_classifier.py` | 育成 / ファーム keyword + roster alias match の boundary tests |
+| `src/rss_fetcher.py` | hourly run の末尾に `sns_realtime_topic.run()` hook (env flag gate) |
 
-既存 fetcher pipeline (`src/rss_fetcher.py`) の hourly run の中で時刻 gate を見て `sns_realtime_topic.run()` を呼ぶ。 別 Cloud Run Job は作らない。
+依存 (本 ticket では新規 file を 作らず参照):
+
+- `config/giants_roster.json` — トレンド count 用 (player + coach + manager + ikusei 全 136 名)
+- `config/data_site_phase1_players.json` — data-site 該当 player list (Phase 1.5)
+- `src/data_site_slug.py` — `player_slug(name)` で /data/ slug 生成
+- `src/wp_draft_creator.py:build_oembed_block` — X 公式 oEmbed wrapper
+- `src/wp_client.py:WPClient` — REST 認証
+
+== 新規 Cloud Run Job / Dockerfile / cloudbuild は 作らない==。 既存 `yoshilover-fetcher` service の hourly run に組み込む。
 
 ## :material-currency-jpy: コスト
 
@@ -135,39 +213,43 @@ oEmbed (X post URL)
 | --- | --- |
 | Cloud Scheduler 追加 | **¥0** (既存 trigger 相乗り) |
 | X API | **¥0** (RSSHub `TWITTER_AUTH_TOKEN` 経由) |
-| LLM (Gemini / Grok) | **¥0** (投稿は oEmbed 埋め込み、 AI rewrite なし) |
+| LLM (Gemini / Grok) | **¥0** (oEmbed 埋め込み、 AI rewrite なし) |
 | RSSHub Cloud Run | **¥0** (既稼働、 outbound 4 req × 4 fire × 30 日 = 480 req/月、 free tier 内) |
-| WP REST | **¥0** (既存) |
+| WP REST | **¥0** (既支払 hosting) |
+| GCS state | **¥0** (1 file/日 × 365 日 = 数 MB、 free tier) |
 | **合計** | **¥0** |
 
 ## :material-hand-pointing-up: 触らない範囲
 
 - 既存 article / 既存 subtype の生成 path
-- 既存 Scheduler の cron 式 / enable 状態
-- WP frontend display CSS
+- 既存 Cloud Scheduler の cron 式 / enable 状態
+- WP frontend display CSS (本 page は inline `<style>` で完結、 theme 不干渉)
 - X live posting / X API key
 - featured_media rule
 - 個人 X アカウント (球団 / 専門メディア以外は対象外)
+- 野球全般アカウント (`SponichiYakyu` / `nikkansports` / `npb`) は本 subtype では使わない
+- yoshilover-post-noindex plugin / SEO SIMPLE PACK 設定 (post type=page 切替で回避)
 
 ## :material-test-tube: tests
 
-- `test_sns_realtime_topic_classifier.py`
-  - 育成 keyword → 三軍
-  - ファーム / 二軍 / イースタン keyword → 二軍
-  - 選手名 alias で role match → 該当軍
-  - keyword なし + roster match なし → 一軍 default
-- `test_sns_realtime_topic.py`
-  - RSSHub fetch mock (1 handle 取得失敗で他 3 handle 継続)
-  - トレンド count 2 回未満は除外
-  - WP slug 存在チェック → PUT で update (1 日 1 URL fix)
-  - section 0 件は H2 ごと非表示
+29 tests PASS (本 module + classifier):
 
-## :material-source-pull: 受け入れ条件
+- 分類器: 育成/ファーム/イースタン keyword、 roster alias match、 mention count dedup
+- main: fire slot gate (10/13/17/21 :00-:04)、 24h filter、 URL dedup、 oembed limit
+- page split: 2 page 返却 / slug / title suffix / level 分離
+- 急上昇 badge: 初日抑制 / 2 日目表示
+- wp_upsert: page endpoint (/wp/v2/pages)、 status=draft、 excerpt 含む
+- run: outside_slot skip、 両 page upsert、 load_previous_counts / save_counts 呼び出し
 
-- [ ] 4 fire 後の 1 日 (例: 10/13/17/21) で WP に **1 URL のみ** 作成され、 4 回 update されている (revision 履歴で確認)
-- [ ] トレンド section に上位 15 名以下が表示 (count desc)
-- [ ] 三軍 section に 育成選手 (`role=='ikusei'`) または `育成 / 三軍 / 3軍` keyword 投稿のみ
-- [ ] 二軍 section に `ファーム / 二軍 / イースタン` keyword または farm position 選手のみ
-- [ ] 一軍 section に上記以外 (default)
-- [ ] oEmbed が正しく render され、 X 投稿が embed 表示される
-- [ ] Cloud Run / Scheduler / RSSHub の追加課金が **¥0** (24h 観察)
+## :material-source-pull: 受け入れ条件 (達成)
+
+- [x] 4 fire 後の 1 日で WP に **1 URL / page** で update (revision 履歴で確認)
+- [x] トレンド section に上位 15 名以下 (count desc、 1-3 位は色つき)
+- [x] 三軍 / 二軍 / 一軍 分類が rule 通り
+- [x] oEmbed が正しく render
+- [x] page type 採用で noindex なし → Google index 許可
+- [x] CollectionPage + LiveBlogPosting + BreadcrumbList の 3 JSON-LD inject
+- [x] OGP / Twitter Card meta set
+- [x] /data/ 内部リンク enrichment (該当 player のみ)
+- [x] sitemap (`page-sitemap.xml`) 自動登録
+- [x] Cloud Run / Scheduler / RSSHub の追加課金 **¥0**

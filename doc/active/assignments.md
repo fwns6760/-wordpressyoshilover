@@ -4,6 +4,24 @@
 
 ## 2026-05-28 session update
 
+### 443 / 444 — 巨人選手データサイト Phase 1.5 完成 + back-link 注入 (LIVE_DEPLOYED 2026-05-28 PM4)
+
+**状態**: Phase 1.0 → 1.5 + Phase 2 (back-link) 全完成、 live 稼働中、 user 受け入れ試験 pending。
+
+**完了 phase**: Cluster (1) + Pillar (31) + 打順別 + vs 球団 + streak + 投手 stats + 既存 301 記事 back-link + daily cron + placeholder 具体化 + 8 player WP tag 修復
+
+**live infra**: data-site-publisher Cloud Run Job (3 schedule: 6:00/17:30/23:00 JST) + data-site-backlink-daily (7:15 JST)、 cost ¥45/月
+
+**受け入れ試験 URL**: `/data/` (Cluster) / `/data/yoshikawa-naoki/` (打者) / `/data/togo-shosei/` (投手) / `/data/sakamoto-hayato/` (placeholder) / `/73041/` (back-link aside)
+
+**GH issues**: #115 (443 master) / #116 (444 impl) / #117 (447 defer = data-insight lane 修復) / #118 (446 defer = Phase 1 full)
+
+**spec doc**: `mkdocs_docs/spec/data-site.md` rev5 §16 進捗 section に詳細
+
+**defer (user 判断後)**: ticket 447 (data-insight lane 修復、 元 id 445 → 別 thread の 445-SNS 衝突回避で 447 rename) / 446 (Phase 1 full 拡大、 推奨 option D = 観察後) / noindex 適用 (Yoast REST 制約、 user 手動 5 分)
+
+**handoff**: parent repo `docs/handoff/session_logs/2026-05-28_pm4_data_site_phase1_5_complete.md`
+
 ### 445 — 巨人 SNS リアルタイム話題 daily aggregation (READY 2026-05-28 PM、 user GO 済)
 
 user 「SNSページをページにはしたいが、 コンテンツがたりない」 → Yahoo リアルタイム検索の **巨人専門 1軍/2軍/3軍 版** を作る方針 lock。

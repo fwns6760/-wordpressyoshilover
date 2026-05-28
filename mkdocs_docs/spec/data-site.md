@@ -268,7 +268,7 @@ Cloud Run Job 新設、 既存 scheduler に追加せず別 job。 Phase 1.0 は
 
 | ticket | 内容 | 推奨判断 |
 |---|---|---|
-| `doc/active/445-DATA-SITE-phase1c-insight-lane-fix.md` | data-insight lane 修復 (at_bat_details.batter_canonical / games.home_away) → RISP / 球場別 / vs 左右 / count split / イニング別 5 metric 解放 | priority P2 (Phase 1.5 で MVP 充足、 観察後着手) |
+| `doc/active/447-DATA-SITE-phase1c-insight-lane-fix.md` (元 id 445 → 447 rename) | data-insight lane 修復 (at_bat_details.batter_canonical / games.home_away) → RISP / 球場別 / vs 左右 / count split / イニング別 5 metric 解放 | priority P2 (Phase 1.5 で MVP 充足、 観察後着手) |
 | `doc/active/446-DATA-SITE-phase1-full-slug-map.md` | Phase 1 full (84 player) 拡大、 54 player の slug 整備 | 推奨 option D (Phase 1.5 で MVP 充足、 SEO 流入観察後判断) |
 | noindex 適用 | Yoast REST 制約で page meta 反映不可、 theme hook or 手動設定要 | user 側 (Yoast 設定 5 分) |
 
@@ -287,7 +287,7 @@ Cloud Run Job 新設、 既存 scheduler に追加せず別 job。 Phase 1.0 は
 
 - [#115 (= ticket 443 master)](https://github.com/fwns6760/-wordpressyoshilover/issues/115) — 巨人選手データサイト master、 進捗 checkbox + live URL + cost
 - [#116 (= ticket 444 impl)](https://github.com/fwns6760/-wordpressyoshilover/issues/116) — Phase 1.0 / 1.5 実装、 完了 file list + live verify + blocker
-- [#117 (= ticket 445 defer)](https://github.com/fwns6760/-wordpressyoshilover/issues/117) — Phase 1.0c data-insight lane 修復 (5 metric block 解除)
+- [#117 (= ticket 447 defer、 元 id 445 → 447 rename)](https://github.com/fwns6760/-wordpressyoshilover/issues/117) — Phase 1.0c data-insight lane 修復 (5 metric block 解除)
 - [#118 (= ticket 446 defer)](https://github.com/fwns6760/-wordpressyoshilover/issues/118) — Phase 1 full 拡大 (54 player slug 整備)
 
 ## 15. 大手にない data metric pack (rev4 追加)

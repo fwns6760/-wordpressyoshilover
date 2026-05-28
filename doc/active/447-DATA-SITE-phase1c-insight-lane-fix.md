@@ -1,8 +1,12 @@
-# 445 data-site Phase 1.0c — insight.db data-insight lane 修復 (Phase 1.0c BLOCKED 解除)
+# 447 data-site Phase 1.0c — insight.db data-insight lane 修復 (Phase 1.0c BLOCKED 解除)
+
+> **note**: 元 id = 445 で作成、 別 thread で `445-SNS-realtime-topic-daily.md`
+> が並行作成中だったため 2026-05-28 PM4 に **447** へ rename。 GH issue #117 は
+> 既存維持 (title 「【445】 ...」 のまま、 本 ticket への link は 447 へ訂正)。
 
 ## 1. ticket header
 
-- **ticket id**: 445
+- **ticket id**: 447
 - **status**: DRAFT (user 判断 pending、 data-insight lane 触る risk あるため scope 確定後着手)
 - **owner**: Claude Code
 - **lane**: data-insight / insight.db

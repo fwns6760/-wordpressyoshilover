@@ -203,7 +203,8 @@ def test_build_pages_titles_have_suffix():
     by_key = {p["page_key"]: p for p in pages}
     assert "(一軍)" in by_key["1gun"]["title"]
     assert "(二軍・三軍)" in by_key["farm"]["title"]
-    assert "最終更新: 2026-05-28 17:00" in by_key["1gun"]["title"]
+    assert "2026-05-28" in by_key["1gun"]["title"]
+    assert "17:00" not in by_key["1gun"]["title"]
 
 
 def test_build_pages_separates_levels():

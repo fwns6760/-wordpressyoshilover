@@ -303,7 +303,7 @@ def build_pages(
             posts_for_listing=posts_for_listing,
             coverage_start_iso=coverage_start_iso,
         )
-        title = f"巨人 SNS リアルタイム {page['title_suffix']} (最終更新: {updated_at} JST)"
+        title = f"巨人 SNS リアルタイム {page['title_suffix']} {now.strftime('%Y-%m-%d')}"
         # (B) OGP / Twitter Card description 用 excerpt
         top3 = sorted(page_counts.items(), key=lambda t: -t[1])[:3]
         top3_str = " / ".join(f"#{n} ({c})" for n, c in top3) if top3 else ""

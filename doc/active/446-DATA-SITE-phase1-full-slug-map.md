@@ -96,3 +96,10 @@ user 追加指示「投/捕/内/外で分ける、育成は枠に、コーチ監
   (spoke↔spoke 内部リンク補強、 回転窓で均等化)。 image `schema-links-444e2fb`、 live verify済。
   test 52 passed。
 - **残**: orphan育成16ページの noindex/削除 (user判断)。 速報のカテゴリ分け+index化 (user後決め、WP設定)。
+
+## OB・レジェンド枠 LIVE (2026-05-29 PM3)
+
+- 有名OB21名の枠を追加 (commit `4f182da`、 image `ob-legends-4f182da`)。 cluster「OB・レジェンド(21名)」chip + 個別profileページ。
+- MLB組(松井/上原/菅野/岡本)はMLB実績併記。 生涯成績は公式記録クロス検証(推測ゼロ)。
+- 育成15+梶原=16ページはゴミ箱(復元可)。 長野・岡本は OB 統合。
+- 詳細 = 親repo session_logs/2026-05-29_data_site_ob_legends_complete.md

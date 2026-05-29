@@ -121,6 +121,33 @@ class RenderPillarHtmlTests(unittest.TestCase):
         self.assertNotIn("今シーズン 通算", html)
         self.assertNotIn("打順別 成績", html)
 
+    def test_staff_career_stats_batter(self) -> None:
+        p = PillarPlayerInfo(name="阿部慎之助", slug="abe-shinnosuke", position="監督",
+                             jersey_number="83", role="manager")
+        p.career_stats = {"type": "batter", "games": 2282, "avg": ".284", "hits": 2132,
+                          "hr": 406, "rbi": 1285, "years": "2001-2019"}
+        html = render_pillar_html(p)
+        self.assertIn("ys-pillar-career-stats", html)
+        self.assertIn("現役時代 通算成績", html)
+        self.assertIn("2132", html)
+        self.assertIn("406", html)
+
+    def test_staff_career_stats_pitcher(self) -> None:
+        p = PillarPlayerInfo(name="内海哲也", slug="utsumi-tetsuya", position="投手コーチ",
+                             jersey_number="77", role="coach")
+        p.career_stats = {"type": "pitcher", "games": 335, "w": 135, "l": 104,
+                          "era": "3.24", "k": 1519, "years": "2004-2022"}
+        html = render_pillar_html(p)
+        self.assertIn("ys-pillar-career-stats", html)
+        self.assertIn("奪三振", html)
+        self.assertIn("135", html)
+
+    def test_staff_career_stats_absent_when_none(self) -> None:
+        p = PillarPlayerInfo(name="某コーチ", slug="x-coach", position="コーチ",
+                             jersey_number="80", role="coach")
+        html = render_pillar_html(p)
+        self.assertNotIn("ys-pillar-career-stats", html)
+
     def test_coach_renders_staff_profile(self) -> None:
         p = PillarPlayerInfo(name="内海哲也", slug="utsumi-tetsuya", position="投手コーチ",
                              jersey_number="77", role="coach")

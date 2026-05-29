@@ -128,6 +128,35 @@ def load_ikusei_entries() -> list[tuple[str, str]]:
     return out
 
 
+_COACH_CAREER_PATH = Path(__file__).resolve().parents[1] / "config" / "coach_career_stats.json"
+_coach_career_cache: Optional[dict] = None
+
+
+def load_coach_career_stats() -> dict:
+    """監督・コーチの現役時代 NPB 通算成績 (config/coach_career_stats.json)。
+
+    {正規化name: {type, games, ...}} を返す。 引退選手の固定値、 出典 Wikipedia/NPB。
+    """
+    global _coach_career_cache
+    if _coach_career_cache is not None:
+        return _coach_career_cache
+    out: dict = {}
+    if _COACH_CAREER_PATH.exists():
+        try:
+            data = _json.loads(_COACH_CAREER_PATH.read_text(encoding="utf-8"))
+            for name, rec in (data.get("stats") or {}).items():
+                out[_norm_name(name)] = rec
+        except Exception as exc:  # noqa: BLE001
+            LOG.warning("coach career stats parse error: %r", exc)
+    _coach_career_cache = out
+    return out
+
+
+def coach_career_stat(name: str) -> Optional[dict]:
+    """1 コーチ/監督の現役通算成績 dict。 無ければ None。"""
+    return load_coach_career_stats().get(_norm_name(name))
+
+
 def staff_military_level(position: str) -> str:
     """コーチ position 文字列から 軍 level を返す ('一軍'/'二軍'/'三軍'/'巡回')。"""
     p = position or ""
@@ -995,6 +1024,8 @@ __all__ = [
     "load_shihai_names",
     "load_ikusei_entries",
     "staff_military_level",
+    "load_coach_career_stats",
+    "coach_career_stat",
     "load_roster_player",
     "find_player_tag_id",
     "fetch_related_topic_links",

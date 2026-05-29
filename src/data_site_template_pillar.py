@@ -33,6 +33,8 @@ class PillarPlayerInfo:
     short_review: str = ""  # AI 短評 200-500 字 (空なら section omit)
     related_topic_links: list[tuple[str, str]] = field(default_factory=list)
     # related_topic_links = [(url, title), ...] (既存記事の link、 関連 Topic = Pillar → Topic)
+    # 監督・コーチ の現役選手時代 NPB 通算成績 (config/coach_career_stats.json 由来、 無ければ None)
+    career_stats: Optional[dict] = None
 
     # Phase 1.0 stats (insight.db 由来、 None なら placeholder)
     season_games: int = 0
@@ -420,6 +422,48 @@ def _is_staff(player: PillarPlayerInfo) -> bool:
     return (player.role or "").strip() in ("manager", "coach")
 
 
+def _build_staff_career_html(player: PillarPlayerInfo) -> str:
+    """監督・コーチ の現役選手時代 NPB 通算成績 (config 由来)。 無ければ空。"""
+    cs = player.career_stats
+    if not cs:
+        return ""
+    years = _esc(str(cs.get("years", "")))
+    if cs.get("type") == "pitcher":
+        cells = [
+            ("登板", cs.get("games")),
+            ("勝利", cs.get("w")),
+            ("敗戦", cs.get("l")),
+            ("防御率", cs.get("era")),
+            ("奪三振", cs.get("k")),
+        ]
+    else:
+        cells = [
+            ("試合", cs.get("games")),
+            ("打率", cs.get("avg")),
+            ("安打", cs.get("hits")),
+            ("本塁打", cs.get("hr")),
+            ("打点", cs.get("rbi")),
+        ]
+        if cs.get("sb") is not None:
+            cells.append(("盗塁", cs.get("sb")))
+    head = "".join(f'<th style="padding:8px 6px;">{_esc(label)}</th>' for label, _ in cells)
+    body = "".join(
+        f'<td style="padding:8px 6px;text-align:center;'
+        f'{"color:#1976d2;font-weight:600;" if label in ("打率","防御率") else "color:#555;"}">{_esc(val)}</td>'
+        for label, val in cells
+    )
+    return (
+        '<section class="ys-pillar-career-stats" '
+        'style="background:#fff;border:1px solid #eee;padding:14px;margin:0 0 16px;border-radius:4px;">'
+        f'<h2 style="font-size:16px;margin:0 0 6px;">現役時代 通算成績 <span style="font-size:11px;color:#888;font-weight:normal;">(NPB{f" {years}" if years else ""})</span></h2>'
+        '<p style="font-size:12px;color:#666;margin:0 0 10px;">選手として残した NPB 通算記録。</p>'
+        '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
+        f'<thead><tr style="background:#fafafa;text-align:center;">{head}</tr></thead>'
+        f'<tbody><tr style="text-align:center;">{body}</tr></tbody></table>'
+        '</section>'
+    )
+
+
 def _build_staff_profile_html(player: PillarPlayerInfo) -> str:
     """監督・コーチ 用 profile section (stats 無し)。 役職を主役に、 関連記事へ誘導。"""
     role_label = "監督" if (player.role or "").strip() == "manager" else "コーチ"
@@ -570,6 +614,7 @@ def render_pillar_html(player: PillarPlayerInfo) -> str:
     if _is_staff(player):
         stats_sections = [
             _build_staff_profile_html(player),
+            _build_staff_career_html(player),
         ]
     elif _is_pitcher(player):
         stats_sections = [

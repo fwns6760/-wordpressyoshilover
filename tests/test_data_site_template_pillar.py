@@ -92,6 +92,24 @@ class RenderPillarHtmlTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             render_pillar_html(PillarPlayerInfo(name="x", slug="", position="", jersey_number=""))
 
+    def test_venue_split_section_rendered(self) -> None:
+        p = PillarPlayerInfo(name="吉川尚輝", slug="yoshikawa-naoki", position="内野手", jersey_number="2")
+        p.venue_split_stats = [
+            ("本拠地", 14, 53, 8, 5, 8 / 53),
+            ("ビジター", 7, 27, 9, 3, 9 / 27),
+        ]
+        html = render_pillar_html(p)
+        self.assertIn("ys-pillar-venue-split", html)
+        self.assertIn("本拠地", html)
+        self.assertIn("ビジター", html)
+        self.assertIn("大手未掲載", html)
+
+    def test_venue_split_section_skipped_when_empty(self) -> None:
+        # data 無し player では venue section を出さない (placeholder 乱立防止)
+        p = PillarPlayerInfo(name="丸佳浩", slug="maru-yoshihiro", position="外野手", jersey_number="8")
+        html = render_pillar_html(p)
+        self.assertNotIn("ys-pillar-venue-split", html)
+
 
 class RenderPillarTitleTests(unittest.TestCase):
     def test_title_format(self) -> None:

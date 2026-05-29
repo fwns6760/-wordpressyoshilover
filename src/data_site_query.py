@@ -285,6 +285,24 @@ class OpponentSplitStat:
 
 
 @dataclass
+class VenueSplitStat:
+    """本拠地 / ビジター 別 集計 (Phase 1.0c metric pack #2 venue)。
+
+    venue は '本拠地' (giants home) / 'ビジター' (giants away)。 巨人 home/away
+    は game_id (NPB.jp box score code `{home}-{away}-{no}`) から判定。
+    """
+    venue: str
+    games: int
+    ab: int
+    hits: int
+    rbi: int
+
+    @property
+    def avg(self) -> Optional[float]:
+        return (self.hits / self.ab) if self.ab > 0 else None
+
+
+@dataclass
 class StreakInfo:
     """連続記録 (Phase 1.0b1)。 active = 現在進行中、 season_max = 今シーズン最長."""
     active: int  # 現在連続中 (直近試合から遡って continuous)
@@ -544,6 +562,88 @@ def fetch_opponent_split_stats(player_canonical: str) -> list[OpponentSplitStat]
     ]
 
 
+def giants_venue_from_game_id(game_id: str) -> Optional[str]:
+    """game_id から 巨人視点の home/away を返す ('home' / 'away' / None)。
+
+    game_id 形式 = `YYYY-MM-DD:{home}-{away}-{game_no}` (NPB.jp box score code、
+    例: `2026-03-27:g-t-01` = 巨人 home vs 阪神 / `2026-03-31:d-g-01` = 中日 home,
+    巨人 away)。 NPB.jp の URL code は home-away 順 (公式)。 巨人 code = 'g'。
+
+    巨人が含まれない (= 巨人戦でない) game_id は None。
+    """
+    if not game_id or ":" not in game_id:
+        return None
+    code = game_id.partition(":")[2]
+    parts = code.split("-")
+    if len(parts) < 2:
+        return None
+    home, away = parts[0], parts[1]
+    if home == "g":
+        return "home"
+    if away == "g":
+        return "away"
+    return None
+
+
+def fetch_venue_split_stats(player_canonical: str) -> list[VenueSplitStat]:
+    """本拠地 / ビジター 別 打撃集計を返す。 大手未掲載 metric (Phase 1.0c venue)。
+
+    巨人 home/away は games.home_away column に依存せず game_id から判定する
+    (column は全件 'unknown' だが game_id の NPB.jp code は信頼できる)。 本拠地 →
+    ビジター の固定順で返し、 該当 0 試合の venue は省く。
+    """
+    path = _ensure_insight_db_local()
+    if not path:
+        return []
+    try:
+        with sqlite3.connect(path) as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT game_id,
+                       COALESCE(AB, 0), COALESCE(H, 0), COALESCE(RBI, 0)
+                FROM batting_logs
+                WHERE player_canonical = ?
+                """,
+                (player_canonical,),
+            )
+            rows = cur.fetchall()
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("fetch_venue_split_stats err player=%s: %r", player_canonical, exc)
+        return []
+    # venue ('home'/'away') ごとに game 数 + 打数 + 安打 + 打点 を集計。
+    buckets: dict[str, dict[str, set | int]] = {
+        "home": {"games": set(), "ab": 0, "hits": 0, "rbi": 0},
+        "away": {"games": set(), "ab": 0, "hits": 0, "rbi": 0},
+    }
+    for game_id, ab, h, rbi in rows:
+        venue = giants_venue_from_game_id(str(game_id or ""))
+        if venue not in buckets:
+            continue
+        b = buckets[venue]
+        b["games"].add(game_id)  # type: ignore[union-attr]
+        b["ab"] = int(b["ab"]) + int(ab or 0)  # type: ignore[arg-type]
+        b["hits"] = int(b["hits"]) + int(h or 0)  # type: ignore[arg-type]
+        b["rbi"] = int(b["rbi"]) + int(rbi or 0)  # type: ignore[arg-type]
+    label = {"home": "本拠地", "away": "ビジター"}
+    out: list[VenueSplitStat] = []
+    for key in ("home", "away"):
+        b = buckets[key]
+        n_games = len(b["games"])  # type: ignore[arg-type]
+        if n_games == 0:
+            continue
+        out.append(
+            VenueSplitStat(
+                venue=label[key],
+                games=n_games,
+                ab=int(b["ab"]),  # type: ignore[arg-type]
+                hits=int(b["hits"]),  # type: ignore[arg-type]
+                rbi=int(b["rbi"]),  # type: ignore[arg-type]
+            )
+        )
+    return out
+
+
 def _compute_streak(values: list[int]) -> StreakInfo:
     """0/1 配列から active streak (先頭から連続 1) と season max を計算.
 
@@ -742,6 +842,7 @@ __all__ = [
     "BattingGameRow",
     "LineupSlotStat",
     "OpponentSplitStat",
+    "VenueSplitStat",
     "StreakInfo",
     "PitchingStatsSeason",
     "PitchingGameRow",
@@ -754,6 +855,8 @@ __all__ = [
     "fetch_recent_games",
     "fetch_lineup_slot_stats",
     "fetch_opponent_split_stats",
+    "fetch_venue_split_stats",
+    "giants_venue_from_game_id",
     "fetch_hit_streak",
     "fetch_contribution_streak",
     "fetch_pitching_stats_season",

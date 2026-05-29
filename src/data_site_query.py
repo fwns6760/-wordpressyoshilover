@@ -118,6 +118,30 @@ def load_shihai_names() -> list[str]:
     return out
 
 
+def shihai_group_members(group: str) -> list[str]:
+    """支配下の指定登録ポジション (投手/捕手/内野手/外野手) の選手 name list (config 順)。"""
+    return list(load_player_class().get("shihai", {}).get(group, []))
+
+
+def related_shihai_players(player_name: str, limit: int = 6) -> list[str]:
+    """同じ登録ポジションの他の支配下選手を limit 名返す (関連選手リンク用)。
+
+    自分を起点に config 順で「次の選手」を回転窓で拾い、 グループ内でリンクが
+    偏らないようにする (各選手が異なる相手にリンク = 内部リンク均等化)。
+    """
+    group = shihai_position_group(player_name)
+    if not group:
+        return []
+    members = shihai_group_members(group)
+    norm = _norm_name(player_name)
+    idx = next((i for i, n in enumerate(members) if _norm_name(n) == norm), None)
+    if idx is None:
+        others = [n for n in members if _norm_name(n) != norm]
+    else:
+        others = members[idx + 1:] + members[:idx]  # 自分の次から回転
+    return others[:limit]
+
+
 def load_ikusei_entries() -> list[tuple[str, str]]:
     """育成選手 [(name, position_group), ...] (投手→捕手→内野手→外野手 の順)。 cluster 育成枠用。"""
     cls = load_player_class()
@@ -1022,6 +1046,8 @@ __all__ = [
     "shihai_position_group",
     "is_ikusei",
     "load_shihai_names",
+    "shihai_group_members",
+    "related_shihai_players",
     "load_ikusei_entries",
     "staff_military_level",
     "load_coach_career_stats",

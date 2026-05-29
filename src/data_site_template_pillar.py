@@ -35,6 +35,8 @@ class PillarPlayerInfo:
     # related_topic_links = [(url, title), ...] (既存記事の link、 関連 Topic = Pillar → Topic)
     # 監督・コーチ の現役選手時代 NPB 通算成績 (config/coach_career_stats.json 由来、 無ければ None)
     career_stats: Optional[dict] = None
+    # 関連選手 (同じ登録ポジションの他選手) [(slug, name), ...] — spoke↔spoke 内部リンク用
+    related_players: list[tuple[str, str]] = field(default_factory=list)
 
     # Phase 1.0 stats (insight.db 由来、 None なら placeholder)
     season_games: int = 0
@@ -548,6 +550,31 @@ def _build_related_topic_html(player: PillarPlayerInfo) -> str:
     )
 
 
+def _build_related_players_html(player: PillarPlayerInfo) -> str:
+    """関連選手 (同じ登録ポジションの他選手) への内部リンク (spoke↔spoke)。
+
+    同ポジションの選手を横断回遊させ、 トピッククラスタの横リンクを補強する。
+    """
+    if not player.related_players:
+        return ""
+    pos = (player.position or "").strip()
+    heading = f"同じ{pos}の選手" if pos else "関連選手"
+    chips = "\n".join(
+        f'<a href="/data/{_esc(slug)}/" '
+        'style="display:inline-block;margin:4px 6px 4px 0;padding:6px 12px;background:#fff8e1;'
+        'border:1px solid #ffe082;border-radius:16px;color:#5d4037;text-decoration:none;font-size:13px;">'
+        f'{_esc(name)}</a>'
+        for slug, name in player.related_players
+    )
+    return (
+        '<section class="ys-pillar-related-players" '
+        'style="background:#fff;border:1px solid #eee;padding:14px;margin:0 0 16px;border-radius:4px;">'
+        f'<h2 style="font-size:16px;margin:0 0 10px;">{_esc(heading)}</h2>'
+        f'<div>{chips}</div>'
+        '</section>'
+    )
+
+
 def _build_back_link_html() -> str:
     return (
         '<div class="ys-pillar-back" style="margin:24px 0 0;text-align:center;">'
@@ -577,6 +604,15 @@ def _build_jsonld(player: PillarPlayerInfo) -> str:
     }
     if player.featured_image_url:
         sports_player["image"] = player.featured_image_url
+    # エンティティ強化: ポジション (登録区分) + 背番号 を additionalProperty で明示。
+    # Google の選手⇔ポジション⇔背番号 理解を助ける (knowledge graph 連携の素地)。
+    add_props = []
+    if player.position:
+        add_props.append({"@type": "PropertyValue", "name": "ポジション", "value": player.position})
+    if player.jersey_number:
+        add_props.append({"@type": "PropertyValue", "name": "背番号", "value": str(player.jersey_number)})
+    if add_props:
+        sports_player["additionalProperty"] = add_props
     # nationality None は出力前に除外 (schema 不要 key)
     sports_player = {k: v for k, v in sports_player.items() if v is not None}
     breadcrumb = {
@@ -636,6 +672,7 @@ def render_pillar_html(player: PillarPlayerInfo) -> str:
         _build_short_review_html(player),
         *stats_sections,
         _build_related_topic_html(player),
+        _build_related_players_html(player),
         _build_back_link_html(),
         _build_jsonld(player),
     ]

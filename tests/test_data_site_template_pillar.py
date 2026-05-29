@@ -148,6 +148,29 @@ class RenderPillarHtmlTests(unittest.TestCase):
         html = render_pillar_html(p)
         self.assertNotIn("ys-pillar-career-stats", html)
 
+    def test_sportsplayer_jsonld_has_position_and_jersey(self) -> None:
+        p = PillarPlayerInfo(name="戸郷翔征", slug="togo-shosei", position="投手", jersey_number="20")
+        html = render_pillar_html(p)
+        matches = re.findall(r'<script type="application/ld\+json">(.+?)</script>', html, flags=re.DOTALL)
+        sp = next(json.loads(m) for m in matches if '"SportsPlayer"' in m)
+        props = {pv["name"]: pv["value"] for pv in sp.get("additionalProperty", [])}
+        self.assertEqual(props.get("ポジション"), "投手")
+        self.assertEqual(props.get("背番号"), "20")
+
+    def test_related_players_internal_links(self) -> None:
+        p = PillarPlayerInfo(name="戸郷翔征", slug="togo-shosei", position="投手", jersey_number="20")
+        p.related_players = [("yamazaki-iori", "山﨑伊織"), ("akahoshi-yushi", "赤星優志")]
+        html = render_pillar_html(p)
+        self.assertIn("ys-pillar-related-players", html)
+        self.assertIn("同じ投手の選手", html)
+        self.assertIn('href="/data/yamazaki-iori/"', html)
+        self.assertIn('href="/data/akahoshi-yushi/"', html)
+
+    def test_related_players_absent_when_empty(self) -> None:
+        p = PillarPlayerInfo(name="丸佳浩", slug="maru-yoshihiro", position="外野手", jersey_number="8")
+        html = render_pillar_html(p)
+        self.assertNotIn("ys-pillar-related-players", html)
+
     def test_coach_renders_staff_profile(self) -> None:
         p = PillarPlayerInfo(name="内海哲也", slug="utsumi-tetsuya", position="投手コーチ",
                              jersey_number="77", role="coach")

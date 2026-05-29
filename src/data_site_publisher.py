@@ -46,6 +46,7 @@ from src.data_site_query import (
     load_data_site_target_names,
     load_ikusei_entries,
     shihai_position_group,
+    related_shihai_players,
     staff_military_level,
     coach_career_stat,
     load_roster_player,
@@ -194,6 +195,11 @@ def _build_pillar_info(player_name: str) -> PillarPlayerInfo | None:
         short_review="",  # Phase 1.0 は AI 短評 未接続、 後 phase で追加
         related_topic_links=related,
     )
+    # 関連選手 (同登録ポジションの他選手) への spoke↔spoke 内部リンク。
+    # staff は shihai_position_group=None → [] (related_shihai_players 内で空)。
+    info.related_players = [
+        (player_slug(n), n) for n in related_shihai_players(player_name)
+    ]
     # 監督・コーチ は当年 stats を持たない (insight.db join しても空)。 当年 stats query は
     # 全 skip し、 現役時代の通算成績 (config 由来) + profile + 関連記事の page にする。
     if (roster.role or "").strip() in ("manager", "coach"):

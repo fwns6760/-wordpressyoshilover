@@ -1,6 +1,19 @@
 # assignments — 現場担当と次アクション
 
-最終更新: 2026-05-28 JST (10:38 439 deploy 追記)
+最終更新: 2026-05-29 JST (10:20 445 title 日付化 + 大手 source 追加 deploy)
+
+## 2026-05-29 session update
+
+### 445 — SNS リアルタイム title SEO 安定化 + 大手 source 追加 (LIVE_DEPLOYED 2026-05-29 10:20 JST)
+
+2 件を 1 deploy で反映。 revision `yoshilover-fetcher-00505-56r` / image `sns-major-src-92aaac1` / `/health` 200。
+
+1. **title 日付化** (commit `3234659`): 分単位時刻を title から除去、 `巨人 SNS リアルタイム (一軍) YYYY-MM-DD` へ。 1日4回 upsert でも同日内 title 不変 = SEO title churn 解消。 本文 hero banner の HH:MM 表示は鮮度シグナルとして維持。
+2. **大手 source 追加** (commit `92aaac1`): `sponichiyakyuu` (スポニチ野球) / `nikkan_yakyuude` (日刊スポーツ野球取材基地) を追加。 大手の野球全般アカウントは全12球団 post を含むため、 新規 handle のみ `is_giants_relevant` gate (巨人/ジャイアンツ keyword or 巨人 roster alias) を適用し他球団 post 除外。 既存巨人専門 4 アカウントは全件通過 (不変)。 追加コスト ¥0 (RSSHub 既存、 X API 不要、 LLM 不使用)。
+
+tests: 30 passed。 実データ smoke: sponichiyakyuu 20→2 / nikkan_yakyuude 20→7 件保持。
+
+next: **13:00 JST 自然 fire** で (a) title が日付のみか、 (b) 一軍 page の post 件数が大手 source 分増えたか、 (c) 他球団ノイズ混入なしか を Cloud Logging `event=sns_realtime_topic_result` で確認。 さらに大手追加候補 = デイリー/スポニチ general (`Daily_Online` / `sponichiannex`、 巨人率低め、 filter で安全) は user 判断後。
 
 ## 2026-05-28 session update
 

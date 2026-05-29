@@ -248,8 +248,8 @@ def _build_player_table_html(players: list[ClusterPlayerEntry]) -> str:
 def _build_footnote_html(players_count: int) -> str:
     return (
         '<section class="ys-cluster-footnote" style="font-size:12px;color:#888;margin:24px 0 0;">'
-        f'<p style="margin:0;">現在 {players_count} 名分の個別ページを公開中 '
-        '(Phase 1.0 MVP)。 順次拡大予定 (Phase 1.5: 一軍 30 名、 Phase 1 full: 110 名)。</p>'
+        f'<p style="margin:0;">読売ジャイアンツの支配下選手・監督・コーチ {players_count} 名分の'
+        '個別データページを公開中です（育成選手は順次追加予定）。</p>'
         '</section>'
     )
 

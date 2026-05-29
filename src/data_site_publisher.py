@@ -130,12 +130,11 @@ def _upsert_page(
         "content": content_html,
         "status": "publish",
         "parent": parent,
-        # 2026-05-28 PM3 user 指示「まだnoindexでいいよ」 — index 解除は別 decision、
-        # 当面 Yoast SEO の post meta で noindex 明示 (yoshilover site-wide noindex
-        # の上から個別 page で念のため + 解除 plugin 設定でも override されないように).
-        "meta": {
-            "_yoast_wpseo_meta-robots-noindex": "1",
-        },
+        # index 方針 (2026-05-29 user 確定): データページ + SNS リアルタイムは index、
+        # 速報 post のみ noindex。 旧「Yoast noindex meta」指定は no-op だった (本サイトの
+        # 有効 SEO plugin は SEO SIMPLE PACK + yoshilover-post-noindex で、 どちらも
+        # 投稿(is_single)対象・固定ページは noindex 対象外。 Yoast meta は無視される)。
+        # 実態として data ページは index 済のため、 コードを方針に一致させ no-op meta を除去。
     }
     if featured_media_id:
         payload["featured_media"] = featured_media_id

@@ -34,6 +34,21 @@ ticket 444 で Phase 1.5 (一軍 active 31 player) まで実装済。 Phase 1 fu
 
 block 真因: data_site_slug.py の `_PLAYER_SLUG_MAP` は 31 名分 hardcode、 残り 54 名分 romaji slug が未マッピング。 pykakasi 未 install、 手動で姓名 → romaji を 1 人ずつ調査 必要 (1 player 2-3 分 × 54 = 2-3 時間)。
 
+## 進捗2 (2026-05-29 PM — 登録ポジション別 再編 LIVE)
+
+user 追加指示「投/捕/内/外で分ける、育成は枠に、コーチ監督は軍別、生涯成績入れて」。
+
+- **roster stale を NPB 公式名簿で是正**: ティマ昇格未反映(#013育成→#50外野手支配下)、
+  16名を支配下に誤登録(実は育成)、26名「打者」未分類、石川達也=実は投手、
+  森下暢仁=巨人に居ない(広島)等を発見。`config/data_site_player_class.json`(正本)化。
+- **クラスター再編 (commit `d32af6e`)**: 支配下66を 投手32/捕手6/内野16/外野12 の4表 +
+  育成38を「育成枠」一覧(個別ページ無し)+ 監督コーチ28を軍別(一軍11/二軍8/三軍7/巡回2)。
+- 個別ページ対象 = 支配下66 + コーチ監督28 = 94(育成は枠のみ)。
+- deploy: image `pos-split-d32af6e`、execution SUCCESS、live verify 済(クラスター6見出し +
+  軍別4小見出し、石川達也=投手ページに是正)。test 46 passed。
+- **残**: コーチ・監督の生涯成績(選手時代の通算)= insight.db に無いため公式記録 curation 必要(次便)。
+  育成個別ページは未作成(枠一覧のみ、user 確認済)。旧16育成 個別ページは orphan として残置(削除は user 判断)。
+
 ## 3. options
 
 ### option A (推奨): pykakasi install + 自動 slug 生成

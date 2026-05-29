@@ -29,6 +29,34 @@ ticket 444 で実装した data-site Phase 1.5 (31 player Pillar) で、 「大�
 
 at_bat_details は 1,185 行存在、 batter raw 値はあるが canonical 補完がない。
 
+## 進捗 (2026-05-29)
+
+**metric #2 venue (球場別 本拠地/ビジター) = LIVE_DEPLOYED_VERIFIED** (commit `f1bd93f`)
+
+- ticket 当初の Phase A (at_bat_details.batter_canonical fuzzy backfill) に依存せず、
+  **純 read-side で実装**。 home/away は games.home_away column (全件 'unknown')
+  ではなく **game_id の NPB.jp box score code** (`{home}-{away}-{no}`、 巨人=g)
+  から判定。 left=home は source_url (`npb.jp/scores/.../g-t-01/box.html`) で
+  authoritative 確認 (NPB.jp 公式 URL は home-away 順)。
+- insight.db 変更 / ETL deploy / backfill **不要** = 最小リスク。
+- impl: `data_site_query.py` (VenueSplitStat / giants_venue_from_game_id /
+  fetch_venue_split_stats) + `data_site_template_pillar.py` (_build_venue_split_html) +
+  publisher 配線。 test 6 件追加 (計 41 passed)。
+- deploy: image `data-site-publisher:venue-split-f1bd93f`、 Job execution
+  `data-site-publisher-4t6vx` SUCCESS。 live verify: `/data/yoshikawa-naoki`
+  本拠地 14G .151 / ビジター 7G .333 (production data 一致)。
+- **重要な発見**: ローカル `data/insight/insight.db` は scramble test data
+  (`team_role='giants'` がヤクルト選手を指す、 岡本和真 game_id に g 無し)。
+  insight.db 系の検証は production copy (GCS `baseballsite-yoshilover-insight/insight.db`)
+  必須。 [[feedback_local_is_dev_only_production_is_canonical]] の通り。
+
+**残り 4 metric (#1 RISP / #3 vs左右 / #4 カウント / #5 イニング別)**: production の
+at_bat_details (1,264 行、 batter_canonical 全 NULL) 修復が必要。 #5 イニング別のみ
+`batting_logs.atbats_json` (player_canonical 健在、 配列 index=イニング) から
+Phase A 抜きで導ける可能性あり (atbats_json の index→イニング mapping 正確性を
+production data で要検証)。 #1/#3/#4 は走者状況 / 投手 hand / 球種カウントが必要で
+at_bat_details backfill (Phase A) 必須。
+
 ## 3. 修復 plan (2 PR 想定)
 
 ### Phase A: at_bat_details.batter_canonical 補完 (修復 #1)

@@ -3,13 +3,30 @@
 ## 1. ticket header
 
 - **ticket id**: 446
-- **status**: DRAFT (defer、 user 判断待ち)
+- **status**: LIVE_DEPLOYED (2026-05-29、 user 指示で実行)
 - **owner**: Claude Code
 - **lane**: data-site / phase 拡大
 - **created**: 2026-05-28
-- **priority**: P3 (Phase 1.5 で 31 player ある = MVP 充足、 Phase 1 full は SEO 流入観察後 検討)
+- **priority**: P3 → 着手済 (user「選手のページを作って あとコーチマネージャ」)
 - **parent**: 444 (data-site Phase 1.5)
 - **github_issue**: PENDING
+
+## 進捗 (2026-05-29 LIVE)
+
+**31 → 112 page へ拡大完了** (commit `37c91a1` impl + `743fc59` footnote)
+
+- 範囲 (user 確認済): 支配下選手85 (player 84 + 支配下降格 1) + 監督1 + コーチ27 = 112
+  (slug dedup 後)。 育成23は一軍データ薄のため除外。
+- **slug**: option B (手動) を採用。 75 名分 romaji を data_site_slug.py に hand-author
+  (pykakasi 不使用、 URL/SEO 用、 表示は kanji)。 若手読みは推定含む forward-only。
+- **対象選定**: config 手書き 31 名 → roster 直結 (load_data_site_target_names、
+  role=player/shihaikako/coach/manager filter + slug dedup)。 roster 更新に自動追従。
+- **監督・コーチ**: stats 無し → profile 型 page (役職 + 関連記事)、 cluster に専用
+  「監督・コーチ 一覧」 表追加、 野手/投手表から除外。
+- deploy: image `data-site-publisher:full-roster-37c91a1` → footnote `footnote-743fc59`、
+  execution `data-site-publisher-2nt22` SUCCESS。 live verify: 野手46+投手38+監督コーチ28=112、
+  /data/abe-shinnosuke (監督 profile)、 /data/utsumi-tetsuya (投手コーチ)、 /data/asano-shogo (新選手) 全 200。
+- 残: 育成23名は別 phase (薄ページ SEO リスクのため需要観察後)。 若手 slug 読みの精査は forward-only。
 
 ## 2. 背景
 

@@ -9,11 +9,17 @@
 2 件を 1 deploy で反映。 revision `yoshilover-fetcher-00505-56r` / image `sns-major-src-92aaac1` / `/health` 200。
 
 1. **title 日付化** (commit `3234659`): 分単位時刻を title から除去、 `巨人 SNS リアルタイム (一軍) YYYY-MM-DD` へ。 1日4回 upsert でも同日内 title 不変 = SEO title churn 解消。 本文 hero banner の HH:MM 表示は鮮度シグナルとして維持。
-2. **大手 source 追加** (commit `92aaac1`): `sponichiyakyuu` (スポニチ野球) / `nikkan_yakyuude` (日刊スポーツ野球取材基地) を追加。 大手の野球全般アカウントは全12球団 post を含むため、 新規 handle のみ `is_giants_relevant` gate (巨人/ジャイアンツ keyword or 巨人 roster alias) を適用し他球団 post 除外。 既存巨人専門 4 アカウントは全件通過 (不変)。 追加コスト ¥0 (RSSHub 既存、 X API 不要、 LLM 不使用)。
+2. **大手 source 追加** (commit `92aaac1` → `01e579b`): source を巨人専門 4 + 大手 general 5 の **計 9 アカウント**へ拡張。
+   - 巨人専門 4 (全件通過、 不変): `TokyoGiants` (球団公式) / `yomiuri_giants` (読売) / `hochi_giants` (報知) / `Sanspo_Giants` (サンスポ)
+   - 大手 general 5 (巨人 relevance filter 適用): `sponichiyakyuu` (スポニチ野球) / `nikkan_yakyuude` (日刊野球取材基地) / `Daily_Online` (デイリー) / `sponichiannex` (スポニチ公式) / `nikkansports` (日刊公式)
+   - filter = `is_giants_relevant`: 巨人/ジャイアンツ keyword or 巨人 roster alias or **元巨人 OB MLB allowlist (岡本/菅野、 user 判断 2026-05-29)** を含む post のみ通過。 大谷翔平 等 非元巨人 MLB は roster/allowlist 不在で drop。
+   - 追加コスト ¥0 (RSSHub 既存、 X API 不要、 LLM 不使用)。
 
-tests: 30 passed。 実データ smoke: sponichiyakyuu 20→2 / nikkan_yakyuude 20→7 件保持。
+deploy: image `sns-ob-mlb-01e579b` (Cloud Build `5605f621` SUCCESS) / revision `yoshilover-fetcher-00506-xcc` / `/health` 200。
 
-next: **13:00 JST 自然 fire** で (a) title が日付のみか、 (b) 一軍 page の post 件数が大手 source 分増えたか、 (c) 他球団ノイズ混入なしか を Cloud Logging `event=sns_realtime_topic_result` で確認。 さらに大手追加候補 = デイリー/スポニチ general (`Daily_Online` / `sponichiannex`、 巨人率低め、 filter で安全) は user 判断後。
+tests: 33 passed (`is_giants_relevant` の keyword / OB allowlist / 大谷・阪神 drop を追加)。 実データ smoke (filter 後 kept): sponichiyakyuu 2 / nikkan_yakyuude 8 / Daily_Online 1 / sponichiannex 2 / nikkansports 1 = 計 ~14 件。
+
+next: **13:00 JST 自然 fire** で (a) title が日付のみか、 (b) 一軍 page の post 件数が大手 source 分増えたか、 (c) 他球団・大谷ノイズ混入なしか、 (d) 岡本/菅野 OB post が拾えているか を Cloud Logging `event=sns_realtime_topic_result` で確認。
 
 ## 2026-05-28 session update
 

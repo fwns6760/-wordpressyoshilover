@@ -409,8 +409,14 @@ def render_cluster_html(
     return "\n".join(s for s in sections if s)
 
 
+# SEO long-tail 用シーズン表記。 毎シーズンこの 1 行を置換するだけ。
+# data_site_template_pillar.SEASON_LABEL と同期すること。
+SEASON_LABEL = "2026年"
+
+
 def render_cluster_title() -> str:
-    return "巨人選手データ - 全選手の打率・防御率・関連記事 一覧 | ヨシラバー"
+    # 「巨人 2026 選手 打率」 等の long-tail を拾うためシーズン年を前寄せ。
+    return f"巨人選手データ {SEASON_LABEL} - 全選手の打率・防御率・成績一覧 | ヨシラバー"
 
 
 __all__ = [

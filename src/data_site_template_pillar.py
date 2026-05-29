@@ -775,10 +775,29 @@ def render_pillar_html(player: PillarPlayerInfo) -> str:
     return "\n".join(s for s in sections if s)
 
 
+# SEO long-tail 用シーズン表記。 毎シーズンこの 1 行を置換するだけ
+# (slug/URL は不変)。 data_site_template_cluster.SEASON_LABEL と同期すること。
+SEASON_LABEL = "2026年"
+
+
 def render_pillar_title(player: PillarPlayerInfo) -> str:
-    """WP page.title = SEO 検索表示用。"""
-    pos = f"（{player.position}・背番号{player.jersey_number}）" if player.position and player.jersey_number else ""
-    return f"{player.name}{pos} データ - 直近成績・関連記事 | 巨人選手データ"
+    """WP page.title = SEO 検索表示用。
+
+    選手名直後に検索意図語 (シーズン年 + 成績 + 打率/防御率) を前寄せして
+    「坂本勇人 2026 成績」 等の long-tail を拾う。 監督・コーチ・OB は当年
+    シーズン成績の主体でないため通算成績・プロフィール軸。 suffix は既存の
+    ブランド一貫性のため「| 巨人選手データ」 を維持。
+    """
+    num = f"・背番号{player.jersey_number}" if player.jersey_number else ""
+    pos = player.position or ""
+    bracket = f"【巨人 {pos}{num}】" if pos else "【巨人】"
+    if player.role in ("manager", "coach") or player.ob_profile is not None:
+        head = f"{player.name} 通算成績・プロフィール"
+    elif "投手" in pos:
+        head = f"{player.name} {SEASON_LABEL}成績・防御率"
+    else:
+        head = f"{player.name} {SEASON_LABEL}成績・打率"
+    return f"{head}{bracket} | 巨人選手データ"
 
 
 __all__ = [

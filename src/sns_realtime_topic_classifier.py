@@ -41,16 +41,24 @@ def load_roster_aliases(path: Path = ROSTER_JSON) -> List[RosterAlias]:
 
 
 GIANTS_KEYWORDS = ("巨人", "ジャイアンツ", "讀賣ジャイアンツ", "読売ジャイアンツ")
+# 元巨人 OB で MLB 移籍した選手のうち拾ってよい対象 (user 判断 2026-05-29)。
+# 岡本和真は現 roster active で alias match されるが、 菅野智之は roster 外のため明示。
+# 他の MLB 選手 (大谷翔平 / 山本由伸 等 非元巨人) は対象外。
+OB_MLB_ALLOWLIST = ("菅野", "岡本")
 
 
 def is_giants_relevant(post_text: str, roster_aliases: List[RosterAlias]) -> bool:
     """大手の野球全般アカウント (全12球団 post) から巨人関連だけ通す gate。
 
-    巨人/ジャイアンツ keyword、 または巨人 roster の alias を含む post のみ True。
-    巨人専門アカウントには適用しない (team news が keyword 無しでも巨人と確定のため)。
+    巨人/ジャイアンツ keyword、 巨人 roster の alias、 または元巨人 OB MLB allowlist
+    (岡本 / 菅野) を含む post のみ True。 非元巨人 MLB (大谷 等) は roster/allowlist
+    に無いため drop。 巨人専門アカウントには適用しない (team news が keyword 無しでも
+    巨人と確定のため)。
     """
     text = post_text or ""
     if any(kw in text for kw in GIANTS_KEYWORDS):
+        return True
+    if any(name in text for name in OB_MLB_ALLOWLIST):
         return True
     for alias, _canonical, _role, _position in roster_aliases:
         if alias in text:

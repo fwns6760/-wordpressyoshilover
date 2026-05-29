@@ -14,6 +14,7 @@ if str(_SRC) not in sys.path:
 from sns_realtime_topic_classifier import (  # noqa: E402
     classify_team_level,
     count_mentions,
+    is_giants_relevant,
     load_roster_aliases,
 )
 
@@ -25,6 +26,23 @@ def roster():
 
 def test_load_roster_aliases_nonzero(roster):
     assert len(roster) > 100  # 136 名 × 複数 alias で 数百件
+
+
+def test_is_giants_relevant_keyword(roster):
+    assert is_giants_relevant("巨人が逆転勝ち", roster)
+    assert is_giants_relevant("ジャイアンツ快勝", roster)
+
+
+def test_is_giants_relevant_ob_mlb_allowlist(roster):
+    # 元巨人 OB MLB = 拾う (user 判断 2026-05-29)
+    assert is_giants_relevant("岡本和真、ブルージェイズで一発", roster)
+    assert is_giants_relevant("菅野智之 メジャーで好投", roster)
+
+
+def test_is_giants_relevant_excludes_non_ob_mlb(roster):
+    # 非元巨人 MLB (大谷 等) は drop
+    assert not is_giants_relevant("大谷翔平 ドジャースでサヨナラ弾", roster)
+    assert not is_giants_relevant("阪神 佐藤輝明が満塁弾", roster)
 
 
 def test_ikusei_keyword_to_3gun(roster):

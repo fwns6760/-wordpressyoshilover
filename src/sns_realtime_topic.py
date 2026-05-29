@@ -46,7 +46,14 @@ RSSHUB_BASE = "https://rsshub-487178857517.asia-northeast1.run.app"
 # 巨人専門アカウント = 全 post 通す (team news が keyword 無しでも巨人確定)
 GIANTS_SPECIALIST_HANDLES = ["yomiuri_giants", "TokyoGiants", "hochi_giants", "Sanspo_Giants"]
 # 大手の野球全般アカウント = 全12球団 post を含むため巨人 relevance filter を適用
-MAJOR_GENERAL_HANDLES = ["sponichiyakyuu", "nikkan_yakyuude"]
+# (巨人 + 元巨人 OB MLB 岡本/菅野 のみ通過、 大谷 等 非 OB MLB は drop)
+MAJOR_GENERAL_HANDLES = [
+    "sponichiyakyuu",   # スポニチ 野球
+    "nikkan_yakyuude",  # 日刊スポーツ 野球取材基地
+    "Daily_Online",     # デイリースポーツ
+    "sponichiannex",    # スポニチ 公式 (general)
+    "nikkansports",     # 日刊スポーツ 公式 (general)
+]
 SOURCE_HANDLES = GIANTS_SPECIALIST_HANDLES + MAJOR_GENERAL_HANDLES
 GIANTS_FILTER_HANDLES = set(MAJOR_GENERAL_HANDLES)
 JST = timezone(timedelta(hours=9))

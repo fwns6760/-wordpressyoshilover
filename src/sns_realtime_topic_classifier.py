@@ -40,6 +40,24 @@ def load_roster_aliases(path: Path = ROSTER_JSON) -> List[RosterAlias]:
     return out
 
 
+GIANTS_KEYWORDS = ("巨人", "ジャイアンツ", "讀賣ジャイアンツ", "読売ジャイアンツ")
+
+
+def is_giants_relevant(post_text: str, roster_aliases: List[RosterAlias]) -> bool:
+    """大手の野球全般アカウント (全12球団 post) から巨人関連だけ通す gate。
+
+    巨人/ジャイアンツ keyword、 または巨人 roster の alias を含む post のみ True。
+    巨人専門アカウントには適用しない (team news が keyword 無しでも巨人と確定のため)。
+    """
+    text = post_text or ""
+    if any(kw in text for kw in GIANTS_KEYWORDS):
+        return True
+    for alias, _canonical, _role, _position in roster_aliases:
+        if alias in text:
+            return True
+    return False
+
+
 def classify_team_level(post_text: str, roster_aliases: List[RosterAlias]) -> str:
     text = post_text or ""
     if any(kw in text for kw in IKUSEI_KEYWORDS):

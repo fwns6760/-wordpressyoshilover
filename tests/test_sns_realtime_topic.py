@@ -115,6 +115,29 @@ def test_collect_all_posts_dedup():
     assert urls == ["https://x.com/a/status/1", "https://x.com/b/status/2"]
 
 
+def test_collect_all_posts_filters_general_handles():
+    """大手の野球全般 handle は巨人 relevance filter で他球団 post を落とす。"""
+    from sns_realtime_topic import MAJOR_GENERAL_HANDLES, GIANTS_SPECIALIST_HANDLES
+
+    general = MAJOR_GENERAL_HANDLES[0]
+    specialist = GIANTS_SPECIALIST_HANDLES[0]
+    general_posts = [
+        {"url": "https://x.com/g/status/1", "text": "巨人 坂本勇人 3安打", "handle": general, "published": None},
+        {"url": "https://x.com/g/status/2", "text": "阪神 佐藤輝明 満塁弾", "handle": general, "published": None},
+    ]
+    specialist_posts = [
+        {"url": "https://x.com/s/status/3", "text": "本日の試合は雨天中止", "handle": specialist, "published": None},
+    ]
+    with patch("sns_realtime_topic.fetch_handle_posts") as mock_fetch:
+        mock_fetch.side_effect = [general_posts, specialist_posts]
+        out = collect_all_posts([general, specialist])
+    urls = [p["url"] for p in out]
+    # general: 巨人 post のみ通過 (阪神 post は drop) / specialist: keyword 無くても通過
+    assert "https://x.com/g/status/1" in urls
+    assert "https://x.com/g/status/2" not in urls
+    assert "https://x.com/s/status/3" in urls
+
+
 # ----- wp_tag_url_for -----
 
 def test_wp_tag_url_for_japanese():

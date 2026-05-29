@@ -29,6 +29,7 @@ import requests
 from sns_realtime_topic_classifier import (
     classify_team_level,
     count_mentions,
+    is_giants_relevant,
     load_roster_aliases,
 )
 from sns_realtime_topic_state import (
@@ -42,7 +43,12 @@ from wp_draft_creator import build_oembed_block
 _logger = logging.getLogger(__name__)
 
 RSSHUB_BASE = "https://rsshub-487178857517.asia-northeast1.run.app"
-SOURCE_HANDLES = ["yomiuri_giants", "TokyoGiants", "hochi_giants", "Sanspo_Giants"]
+# 巨人専門アカウント = 全 post 通す (team news が keyword 無しでも巨人確定)
+GIANTS_SPECIALIST_HANDLES = ["yomiuri_giants", "TokyoGiants", "hochi_giants", "Sanspo_Giants"]
+# 大手の野球全般アカウント = 全12球団 post を含むため巨人 relevance filter を適用
+MAJOR_GENERAL_HANDLES = ["sponichiyakyuu", "nikkan_yakyuude"]
+SOURCE_HANDLES = GIANTS_SPECIALIST_HANDLES + MAJOR_GENERAL_HANDLES
+GIANTS_FILTER_HANDLES = set(MAJOR_GENERAL_HANDLES)
 JST = timezone(timedelta(hours=9))
 FIRE_SLOTS = {10, 13, 17, 21}
 SLOT_MINUTE_WINDOW = 5
@@ -130,13 +136,18 @@ def filter_recent_24h(posts: List[Dict], now: Optional[datetime] = None) -> List
     return out
 
 
-def collect_all_posts(handles: List[str] = SOURCE_HANDLES) -> List[Dict]:
+def collect_all_posts(handles: List[str] = SOURCE_HANDLES, roster_aliases=None) -> List[Dict]:
+    if roster_aliases is None:
+        roster_aliases = load_roster_aliases()
     seen_urls = set()
     all_posts: List[Dict] = []
     for h in handles:
+        needs_filter = h in GIANTS_FILTER_HANDLES
         for p in fetch_handle_posts(h):
             url = p.get("url", "")
             if not url or url in seen_urls:
+                continue
+            if needs_filter and not is_giants_relevant(p.get("text", ""), roster_aliases):
                 continue
             seen_urls.add(url)
             all_posts.append(p)
@@ -236,9 +247,9 @@ def build_pages(
     wp_client: 省略可、 渡されれば (C) 内部リンク enrichment 用に /data/ slug を fetch
     """
     now = now or datetime.now(JST)
-    posts = collect_all_posts()
-    posts = filter_recent_24h(posts, now)
     roster = load_roster_aliases()
+    posts = collect_all_posts(roster_aliases=roster)
+    posts = filter_recent_24h(posts, now)
     by_level = split_by_level(posts, roster)
     prev_by_page = prev_counts_by_page or {}
     updated_at = now.strftime("%Y-%m-%d %H:%M")

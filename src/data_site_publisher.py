@@ -43,6 +43,7 @@ from src.data_site_query import (
     fetch_related_topic_links,
     find_player_featured_image_url,
     load_phase1_player_names,
+    load_data_site_target_names,
     load_roster_player,
 )
 from src.data_site_slug import player_slug
@@ -177,8 +178,6 @@ def _build_pillar_info(player_name: str) -> PillarPlayerInfo | None:
     slug = player_slug(player_name)
     related = fetch_related_topic_links(player_name, limit=20)
     image_url = find_player_featured_image_url(player_name)
-    season = fetch_batting_stats_season(player_name)
-    recent_games_raw = fetch_recent_games(player_name, limit=5)
     info = PillarPlayerInfo(
         name=roster.name,
         slug=slug,
@@ -189,6 +188,12 @@ def _build_pillar_info(player_name: str) -> PillarPlayerInfo | None:
         short_review="",  # Phase 1.0 は AI 短評 未接続、 後 phase で追加
         related_topic_links=related,
     )
+    # 監督・コーチ は stats を持たない (insight.db join しても空)。 stats query を
+    # 全 skip し、 profile + 関連記事のみの page にする (template 側で staff 分岐)。
+    if (roster.role or "").strip() in ("manager", "coach"):
+        return info
+    season = fetch_batting_stats_season(player_name)
+    recent_games_raw = fetch_recent_games(player_name, limit=5)
     if season:
         info.has_stats = True
         info.season_games = season.games
@@ -256,9 +261,9 @@ def publish_phase1() -> dict[str, object]:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
     LOG.info("data-site Phase 1.0 publisher start dry_run=%s", _dry_run_enabled())
 
-    target_names = load_phase1_player_names()
+    target_names = load_data_site_target_names()
     if not target_names:
-        LOG.error("no phase1 target players in config — abort")
+        LOG.error("no data-site target players in roster — abort")
         return {"status": "abort", "reason": "no_target_players"}
 
     LOG.info("phase1 target players: %s", target_names)

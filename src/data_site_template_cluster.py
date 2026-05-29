@@ -85,9 +85,14 @@ def _fmt_ip(ip: float) -> str:
     return f"{ip:.1f}"
 
 
+def _is_staff_entry(p: ClusterPlayerEntry) -> bool:
+    """監督 / コーチ entry (野手・投手 表から除外、 staff 表へ)。"""
+    return (p.role or "").strip() in ("manager", "coach")
+
+
 def _build_batter_table_html(players: list[ClusterPlayerEntry]) -> str:
-    """打者 (position != 投手) のみ含む table。 背番号順。"""
-    batters = [p for p in players if (p.position or "") != "投手"]
+    """打者 (position != 投手、 staff 除く) のみ含む table。 背番号順。"""
+    batters = [p for p in players if (p.position or "") != "投手" and not _is_staff_entry(p)]
     if not batters:
         return ""
     sorted_players = sorted(batters, key=_jersey_sort_key)
@@ -135,8 +140,8 @@ def _build_batter_table_html(players: list[ClusterPlayerEntry]) -> str:
 
 
 def _build_pitcher_table_html(players: list[ClusterPlayerEntry]) -> str:
-    """投手 (position == 投手) のみ含む table。 背番号順。"""
-    pitchers = [p for p in players if (p.position or "") == "投手"]
+    """投手 (position == 投手、 staff 除く) のみ含む table。 背番号順。"""
+    pitchers = [p for p in players if (p.position or "") == "投手" and not _is_staff_entry(p)]
     if not pitchers:
         return ""
     sorted_players = sorted(pitchers, key=_jersey_sort_key)
@@ -183,14 +188,57 @@ def _build_pitcher_table_html(players: list[ClusterPlayerEntry]) -> str:
     )
 
 
+def _build_staff_table_html(players: list[ClusterPlayerEntry]) -> str:
+    """監督・コーチ 一覧 table。 役職 + name link (stats 列なし)。 背番号順。"""
+    staff = [p for p in players if _is_staff_entry(p)]
+    if not staff:
+        return ""
+    # 監督を先頭、 その後コーチを背番号順
+    staff_sorted = sorted(
+        staff,
+        key=lambda p: (0 if (p.role or "") == "manager" else 1,) + _jersey_sort_key(p),
+    )
+    rows = []
+    for p in staff_sorted:
+        pillar_url = f"/data/{p.slug}/"
+        jersey = p.jersey_number or "-"
+        pos = p.position or ("監督" if (p.role or "") == "manager" else "コーチ")
+        rows.append(
+            f'<tr style="border-bottom:1px solid #eee;">'
+            f'<td style="padding:8px 10px;text-align:center;color:#555;font-weight:600;">{_esc(jersey)}</td>'
+            f'<td style="padding:8px 10px;"><a href="{_esc(pillar_url)}" '
+            'style="color:#1976d2;text-decoration:none;font-weight:600;">'
+            f'{_esc(p.name)}</a></td>'
+            f'<td style="padding:8px 10px;font-size:13px;color:#666;">{_esc(pos)}</td>'
+            '</tr>'
+        )
+    return (
+        '<section class="ys-cluster-staff-table" '
+        'style="background:#fff;border:1px solid #eee;padding:14px;margin:0 0 20px;border-radius:4px;">'
+        f'<h2 style="font-size:16px;margin:0 0 10px;">監督・コーチ 一覧 ({len(staff_sorted)} 名)</h2>'
+        '<div style="overflow-x:auto;">'
+        '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
+        '<thead><tr style="background:#fafafa;text-align:left;">'
+        '<th style="padding:10px;text-align:center;">背番号</th>'
+        '<th style="padding:10px;">名前</th>'
+        '<th style="padding:10px;">役職</th>'
+        '</tr></thead>'
+        f'<tbody>{"".join(rows)}</tbody>'
+        '</table>'
+        '</div></section>'
+    )
+
+
 def _build_player_table_html(players: list[ClusterPlayerEntry]) -> str:
-    """野手 + 投手 の 2 表に分離。 空 list は placeholder."""
+    """野手 + 投手 + 監督・コーチ の 3 表に分離。 空 list は placeholder."""
     if not players:
         return '<p style="font-size:13px;color:#888;margin:0;">対象選手データを準備中です。</p>'
     return (
         _build_batter_table_html(players)
         + "\n"
         + _build_pitcher_table_html(players)
+        + "\n"
+        + _build_staff_table_html(players)
         + '<p style="font-size:11px;color:#999;margin:8px 0 0;">'
         '※ stats は insight.db (NPB official box score 由来)、 毎朝 6:00 + 試合後 17:30 / 23:00 JST 更新。 「-」 はデータ集計中。'
         '</p>'

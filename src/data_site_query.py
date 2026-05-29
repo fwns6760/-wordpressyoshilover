@@ -53,6 +53,54 @@ def load_phase1_player_names() -> list[str]:
     return [p["name"] for p in (data.get("players") or []) if p.get("name")]
 
 
+# data-site 対象 role (支配下選手 + 監督・コーチ、 育成 ikusei は除外)
+_DATA_SITE_TARGET_ROLES = ("player", "shihaikako", "coach", "manager")
+
+
+def load_data_site_target_names() -> list[str]:
+    """roster (giants_roster.json) から data-site 対象 player canonical name list を返す.
+
+    対象 = 支配下選手 (role=player / shihaikako) + 監督・コーチ (role=manager / coach)。
+    育成 (role=ikusei) は一軍データがほぼ無く薄ページになるため除外。
+    config (data_site_phase1_players.json) の手書き 31 名に代わり roster を直接 source に
+    することで Phase 1 full (113 名) へ自動拡大し、 roster 更新に追従する。
+    """
+    if not _ROSTER_PATH.exists():
+        LOG.warning("roster missing: %s", _ROSTER_PATH)
+        return []
+    try:
+        roster = _json.loads(_ROSTER_PATH.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("roster parse error: %r", exc)
+        return []
+    # slug で dedup (roster に同一人物の name 表記ゆれ重複あり、 例:
+    # 「Ｆ．ウィットリー」 と 「ウィットリー」 = 同じ背番号、 同 slug whitley)。
+    from src.data_site_slug import player_slug  # lazy import (循環回避)
+
+    out: list[str] = []
+    seen_name: set[str] = set()
+    seen_slug: set[str] = set()
+    for row in roster:
+        if str(row.get("role") or "") not in _DATA_SITE_TARGET_ROLES:
+            continue
+        if not row.get("active", True):
+            continue
+        name = str(row.get("name") or "").strip()
+        if not name:
+            continue
+        key = name.replace(" ", "").replace("　", "")
+        if key in seen_name:
+            continue
+        slug = player_slug(name)
+        if slug and slug in seen_slug:
+            continue
+        seen_name.add(key)
+        if slug:
+            seen_slug.add(slug)
+        out.append(name)
+    return out
+
+
 def load_roster_player(canonical_name: str) -> Optional[RosterPlayer]:
     """roster から canonical name で 1 player を引く。 半角/全角空白を正規化して照合。"""
     if not _ROSTER_PATH.exists():
@@ -847,6 +895,7 @@ __all__ = [
     "PitchingStatsSeason",
     "PitchingGameRow",
     "load_phase1_player_names",
+    "load_data_site_target_names",
     "load_roster_player",
     "find_player_tag_id",
     "fetch_related_topic_links",

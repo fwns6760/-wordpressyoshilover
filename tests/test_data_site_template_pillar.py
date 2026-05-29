@@ -110,6 +110,25 @@ class RenderPillarHtmlTests(unittest.TestCase):
         html = render_pillar_html(p)
         self.assertNotIn("ys-pillar-venue-split", html)
 
+    def test_manager_renders_staff_profile_no_stats(self) -> None:
+        p = PillarPlayerInfo(name="阿部慎之助", slug="abe-shinnosuke", position="監督",
+                             jersey_number="83", role="manager")
+        html = render_pillar_html(p)
+        self.assertIn("ys-pillar-staff-profile", html)
+        self.assertIn("監督", html)
+        # stats section は一切出さない
+        self.assertNotIn("ys-pillar-venue-split", html)
+        self.assertNotIn("今シーズン 通算", html)
+        self.assertNotIn("打順別 成績", html)
+
+    def test_coach_renders_staff_profile(self) -> None:
+        p = PillarPlayerInfo(name="内海哲也", slug="utsumi-tetsuya", position="投手コーチ",
+                             jersey_number="77", role="coach")
+        html = render_pillar_html(p)
+        self.assertIn("ys-pillar-staff-profile", html)
+        self.assertIn("投手コーチ", html)
+        self.assertNotIn("今シーズン 通算", html)
+
 
 class RenderPillarTitleTests(unittest.TestCase):
     def test_title_format(self) -> None:

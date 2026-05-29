@@ -415,6 +415,29 @@ def _is_pitcher(player: PillarPlayerInfo) -> bool:
     return (player.position or "").strip() == "投手"
 
 
+def _is_staff(player: PillarPlayerInfo) -> bool:
+    """監督 / コーチ なら True (stats section omit、 profile section に分岐)."""
+    return (player.role or "").strip() in ("manager", "coach")
+
+
+def _build_staff_profile_html(player: PillarPlayerInfo) -> str:
+    """監督・コーチ 用 profile section (stats 無し)。 役職を主役に、 関連記事へ誘導。"""
+    role_label = "監督" if (player.role or "").strip() == "manager" else "コーチ"
+    position = (player.position or "").strip() or role_label
+    return (
+        '<section class="ys-pillar-staff-profile" '
+        'style="background:#fff;border:1px solid #eee;padding:16px;margin:0 0 16px;border-radius:4px;">'
+        f'<h2 style="font-size:16px;margin:0 0 10px;">{_esc(player.name)} <span style="font-size:13px;color:#5d4037;font-weight:600;">（{_esc(position)}）</span></h2>'
+        '<p style="font-size:13px;line-height:1.7;color:#444;margin:0 0 8px;">'
+        f'読売ジャイアンツ {_esc(position)}。 試合での采配・指導や、 関連する最新ニュースをまとめています。'
+        '</p>'
+        '<p style="font-size:12px;color:#888;margin:0;">'
+        f'※ {role_label}のため打撃・投手成績の集計対象外です。 最新の動向は下記の関連記事をご覧ください。'
+        '</p>'
+        '</section>'
+    )
+
+
 def _build_streak_html(player: PillarPlayerInfo) -> str:
     """連続記録 (Phase 1.0b1 metric pack #3/#4)。 active streak がゼロでも season_max があれば section 出す。"""
     if (player.hit_streak_active + player.hit_streak_season_max
@@ -543,8 +566,12 @@ def render_pillar_html(player: PillarPlayerInfo) -> str:
     """
     if not player.name or not player.slug:
         raise ValueError("PillarPlayerInfo.name and .slug are required")
-    # position=投手 は投手 section、 その他は打撃 section に分岐
-    if _is_pitcher(player):
+    # 監督・コーチ は profile section、 position=投手 は投手 section、 その他は打撃 section に分岐
+    if _is_staff(player):
+        stats_sections = [
+            _build_staff_profile_html(player),
+        ]
+    elif _is_pitcher(player):
         stats_sections = [
             _build_pitching_season_html(player),
             _build_pitching_recent_html(player),

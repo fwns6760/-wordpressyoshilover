@@ -97,6 +97,22 @@ class RenderClusterHtmlTests(unittest.TestCase):
         # 試合 column に「-」 が含まれる
         self.assertIn(">-<", html)
 
+    def test_staff_table_separate_from_player_tables(self) -> None:
+        """監督・コーチ は専用 staff 表に入り、 野手・投手 表には混入しない。"""
+        players = self.players + [
+            ClusterPlayerEntry(name="阿部慎之助", slug="abe-shinnosuke", position="監督",
+                               jersey_number="83", role="manager"),
+            ClusterPlayerEntry(name="内海哲也", slug="utsumi-tetsuya", position="投手コーチ",
+                               jersey_number="77", role="coach"),
+        ]
+        html = render_cluster_html(players)
+        self.assertIn("ys-cluster-staff-table", html)
+        self.assertIn("監督・コーチ 一覧 (2 名)", html)
+        # staff は batter 表 ("野手 一覧") に入らない: 野手は元の 3 名のまま
+        self.assertIn("野手 一覧 (3 名", html)
+        # 監督が先頭 (コーチより前)
+        self.assertLess(html.find("阿部慎之助"), html.find("内海哲也"))
+
     def test_stats_column_shows_values_when_data(self) -> None:
         """has_stats=True の player は数値表示。"""
         players = [

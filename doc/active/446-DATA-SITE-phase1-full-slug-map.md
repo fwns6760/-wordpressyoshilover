@@ -86,3 +86,13 @@ user 追加指示「投/捕/内/外で分ける、育成は枠に、コーチ監
 
 - (推奨) ticket close、 Phase 1.5 で運用継続。 user が「全 player 欲しい」 と判断後 option A で再起動
 - (代替) option A 着手 → Phase 1 full まで一気に拡大
+
+## 進捗3 (2026-05-29 PM2 — SEO 強化 LIVE)
+
+- **index 方針確定**: データpage + SNS = index / 速報post = noindex (カテゴリ後決め)。
+  no-op Yoast noindex meta 除去 (`52e5da2`)。詳細 = 親repo session_logs/2026-05-29_data_site_index_posture_decision.md。
+- **SportsPlayer 構造化強化 + 関連選手リンク (`444e2fb`)**: SportsPlayer JSON-LD に
+  additionalProperty (ポジション/背番号)。 同登録ポジションの他選手へ chip 横リンク6名
+  (spoke↔spoke 内部リンク補強、 回転窓で均等化)。 image `schema-links-444e2fb`、 live verify済。
+  test 52 passed。
+- **残**: orphan育成16ページの noindex/削除 (user判断)。 速報のカテゴリ分け+index化 (user後決め、WP設定)。

@@ -784,15 +784,21 @@ def render_pillar_title(player: PillarPlayerInfo) -> str:
     """WP page.title = SEO 検索表示用。
 
     選手名直後に検索意図語 (シーズン年 + 成績 + 打率/防御率) を前寄せして
-    「坂本勇人 2026 成績」 等の long-tail を拾う。 監督・コーチ・OB は当年
-    シーズン成績の主体でないため通算成績・プロフィール軸。 suffix は既存の
-    ブランド一貫性のため「| 巨人選手データ」 を維持。
+    「坂本勇人 2026 成績」 等の long-tail を拾う。 役割で軸を分ける:
+    - 現役の監督・コーチ: 当年 (2026) 巨人組織の一員のため年を付け、 軸は
+      現役時代の通算成績・プロフィール (「阿部慎之助 2026 監督」 を拾う)
+    - OB・レジェンド: 歴史枠で当年シーズン非該当のため年を付けない
+    - 現役選手: 年 + 成績 + 打率/防御率
+    suffix は既存のブランド一貫性のため「| 巨人選手データ」 を維持。
     """
     num = f"・背番号{player.jersey_number}" if player.jersey_number else ""
     pos = player.position or ""
     bracket = f"【巨人 {pos}{num}】" if pos else "【巨人】"
-    if player.role in ("manager", "coach") or player.ob_profile is not None:
+    is_ob = player.role == "ob" or player.ob_profile is not None
+    if is_ob:
         head = f"{player.name} 通算成績・プロフィール"
+    elif player.role in ("manager", "coach"):
+        head = f"{player.name} {SEASON_LABEL} 通算成績・プロフィール"
     elif "投手" in pos:
         head = f"{player.name} {SEASON_LABEL}成績・防御率"
     else:

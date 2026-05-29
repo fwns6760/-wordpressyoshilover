@@ -39,9 +39,10 @@ class PublishPhase1DryRunTests(unittest.TestCase):
     @mock.patch.dict(os.environ, {"DATA_SITE_DRY_RUN": "1"}, clear=False)
     @mock.patch("src.data_site_publisher.find_player_featured_image_url", return_value="")
     @mock.patch("src.data_site_publisher.fetch_related_topic_links", return_value=[])
+    @mock.patch("src.data_site_publisher.load_ob_names", return_value=[])
     @mock.patch("src.data_site_publisher.load_roster_player")
     @mock.patch("src.data_site_publisher.load_data_site_target_names", return_value=["吉川尚輝", "坂本勇人", "丸佳浩"])
-    def test_dry_run_returns_ok(self, m_names, m_roster, m_topic, m_img):
+    def test_dry_run_returns_ok(self, m_names, m_roster, m_ob, m_topic, m_img):
         def roster_side(name):
             return RosterPlayer(
                 name=name,

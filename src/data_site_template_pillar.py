@@ -37,6 +37,8 @@ class PillarPlayerInfo:
     career_stats: Optional[dict] = None
     # 関連選手 (同じ登録ポジションの他選手) [(slug, name), ...] — spoke↔spoke 内部リンク用
     related_players: list[tuple[str, str]] = field(default_factory=list)
+    # OB・レジェンド profile (config/ob_legends.json 由来、 無ければ None)
+    ob_profile: Optional[dict] = None
 
     # Phase 1.0 stats (insight.db 由来、 None なら placeholder)
     season_games: int = 0
@@ -419,6 +421,96 @@ def _is_pitcher(player: PillarPlayerInfo) -> bool:
     return (player.position or "").strip() == "投手"
 
 
+def _is_ob(player: PillarPlayerInfo) -> bool:
+    """OB・レジェンド (ob_profile あり) なら True。"""
+    return bool(player.ob_profile)
+
+
+def _ob_npb_line(npb: dict, ptype: str) -> str:
+    """OB の NPB 通算 stat 行。 0/欠損 field は省く。"""
+    parts: list[str] = []
+    if ptype == "pitcher":
+        if npb.get("games"):
+            parts.append(f"登板{npb['games']}")
+        if npb.get("w"):
+            parts.append(f"{npb['w']}勝")
+        if npb.get("l"):
+            parts.append(f"{npb['l']}敗")
+        if npb.get("era"):
+            parts.append(f"防御率{npb['era']}")
+        if npb.get("k"):
+            parts.append(f"奪三振{npb['k']}")
+    else:
+        if npb.get("games"):
+            parts.append(f"{npb['games']}試合")
+        if npb.get("avg"):
+            parts.append(f"打率{npb['avg']}")
+        if npb.get("hits"):
+            parts.append(f"安打{npb['hits']}")
+        if npb.get("hr"):
+            parts.append(f"本塁打{npb['hr']}")
+        if npb.get("rbi"):
+            parts.append(f"打点{npb['rbi']}")
+    return "　".join(parts)
+
+
+def _ob_mlb_line(mlb: dict, ptype: str) -> str:
+    """OB の MLB 行 (note があれば優先、 なければ stat)。"""
+    if mlb.get("note"):
+        return str(mlb["note"])
+    parts: list[str] = []
+    if ptype == "pitcher":
+        if mlb.get("w"):
+            parts.append(f"{mlb['w']}勝")
+        if mlb.get("sv"):
+            parts.append(f"{mlb['sv']}セーブ")
+        if mlb.get("era"):
+            parts.append(f"防御率{mlb['era']}")
+    else:
+        if mlb.get("avg"):
+            parts.append(f"打率{mlb['avg']}")
+        if mlb.get("hr"):
+            parts.append(f"本塁打{mlb['hr']}")
+        if mlb.get("rbi"):
+            parts.append(f"打点{mlb['rbi']}")
+    return "　".join(parts)
+
+
+def _build_ob_html(player: PillarPlayerInfo) -> str:
+    """OB・レジェンド profile (現役通算の看板 stat + MLB + 代表実績)。"""
+    ob = player.ob_profile or {}
+    ptype = ob.get("type", "batter")
+    years = _esc(str(ob.get("years", "")))
+    teams = _esc(str(ob.get("teams", "")))
+    npb_line = _ob_npb_line(ob.get("npb") or {}, ptype)
+    mlb_line = _ob_mlb_line(ob.get("mlb") or {}, ptype) if ob.get("mlb") else ""
+    honors = ob.get("honors") or []
+    honors_html = "".join(f'<li style="margin:4px 0;">{_esc(h)}</li>' for h in honors)
+    rows = ""
+    if npb_line:
+        rows += (
+            '<tr style="border-bottom:1px solid #eee;">'
+            '<th style="padding:8px 10px;text-align:left;background:#fafafa;white-space:nowrap;">NPB通算</th>'
+            f'<td style="padding:8px 10px;">{_esc(npb_line)}</td></tr>'
+        )
+    if mlb_line:
+        rows += (
+            '<tr style="border-bottom:1px solid #eee;">'
+            '<th style="padding:8px 10px;text-align:left;background:#fafafa;white-space:nowrap;">MLB</th>'
+            f'<td style="padding:8px 10px;">{_esc(mlb_line)}</td></tr>'
+        )
+    return (
+        '<section class="ys-pillar-ob-profile" '
+        'style="background:#fff;border:1px solid #eee;padding:16px;margin:0 0 16px;border-radius:4px;">'
+        f'<h2 style="font-size:16px;margin:0 0 6px;">{_esc(player.name)} '
+        f'<span style="font-size:12px;color:#5d4037;font-weight:600;">（巨人OB・レジェンド{f" / {years}" if years else ""}）</span></h2>'
+        + (f'<p style="font-size:12px;color:#666;margin:0 0 10px;">所属: {teams}</p>' if teams else "")
+        + (f'<table style="width:100%;border-collapse:collapse;font-size:13px;margin:0 0 12px;"><tbody>{rows}</tbody></table>' if rows else "")
+        + (f'<h3 style="font-size:14px;margin:0 0 6px;color:#5d4037;">代表実績</h3><ul style="font-size:13px;line-height:1.6;margin:0;padding-left:20px;">{honors_html}</ul>' if honors_html else "")
+        + '</section>'
+    )
+
+
 def _is_staff(player: PillarPlayerInfo) -> bool:
     """監督 / コーチ なら True (stats section omit、 profile section に分岐)."""
     return (player.role or "").strip() in ("manager", "coach")
@@ -646,8 +738,12 @@ def render_pillar_html(player: PillarPlayerInfo) -> str:
     """
     if not player.name or not player.slug:
         raise ValueError("PillarPlayerInfo.name and .slug are required")
-    # 監督・コーチ は profile section、 position=投手 は投手 section、 その他は打撃 section に分岐
-    if _is_staff(player):
+    # OB・レジェンド は OB profile、 監督・コーチ は staff profile、 投手 / 打者 に分岐
+    if _is_ob(player):
+        stats_sections = [
+            _build_ob_html(player),
+        ]
+    elif _is_staff(player):
         stats_sections = [
             _build_staff_profile_html(player),
             _build_staff_career_html(player),

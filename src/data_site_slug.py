@@ -138,6 +138,27 @@ _PLAYER_SLUG_MAP: dict[str, str] = {
     "西村健太朗": "nishimura-kentaro",
     "矢野謙次": "yano-kenji",
     "久保康生": "kubo-yasuo",
+    # ---- OB・レジェンド (config/ob_legends.json と一致、 岡本和真は上で定義済) ----
+    "長嶋茂雄": "nagashima-shigeo",
+    "王貞治": "oh-sadaharu",
+    "川上哲治": "kawakami-tetsuharu",
+    "金田正一": "kaneda-masaichi",
+    "原辰徳": "hara-tatsunori",
+    "高橋由伸": "takahashi-yoshinobu",
+    "松井秀喜": "matsui-hideki",
+    "中畑清": "nakahata-kiyoshi",
+    "篠塚和典": "shinozuka-kazunori",
+    "小笠原道大": "ogasawara-michihiro",
+    "村田修一": "murata-shuichi",
+    "アレックス・ラミレス": "alex-ramirez",
+    "斎藤雅樹": "saito-masaki",
+    "江川卓": "egawa-suguru",
+    "桑田真澄": "kuwata-masumi",
+    "槙原寛己": "makihara-hiromi",
+    "上原浩治": "uehara-koji",
+    "堀内恒夫": "horiuchi-tsuneo",
+    "菅野智之": "sugano-tomoyuki",
+    "長野久義": "chono-hisayoshi",
 }
 
 

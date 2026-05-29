@@ -148,6 +148,36 @@ class RenderPillarHtmlTests(unittest.TestCase):
         html = render_pillar_html(p)
         self.assertNotIn("ys-pillar-career-stats", html)
 
+    def test_ob_legend_profile_with_mlb(self) -> None:
+        p = PillarPlayerInfo(name="松井秀喜", slug="matsui-hideki", position="", jersey_number="", role="ob")
+        p.ob_profile = {
+            "type": "batter", "years": "NPB 1993-2002 / MLB 2003-2012",
+            "teams": "読売ジャイアンツ→ヤンキース 他",
+            "npb": {"games": 1268, "avg": ".304", "hr": 332},
+            "mlb": {"avg": ".282", "hr": 175, "rbi": 760},
+            "honors": ["巨人で本塁打王3回・通算332本塁打", "2009 ワールドシリーズMVP (日本人初)"],
+        }
+        html = render_pillar_html(p)
+        self.assertIn("ys-pillar-ob-profile", html)
+        self.assertIn("NPB通算", html)
+        self.assertIn("MLB", html)
+        self.assertIn("本塁打175", html)
+        self.assertIn("2009 ワールドシリーズMVP (日本人初)", html)
+        # OB は live stats section を出さない
+        self.assertNotIn("ys-pillar-venue-split", html)
+
+    def test_ob_pitcher_omits_zero_fields(self) -> None:
+        # games/l/k が 0/欠損の投手 OB は勝利・防御率のみ表示 (0 を出さない)
+        p = PillarPlayerInfo(name="桑田真澄", slug="kuwata-masumi", position="", jersey_number="", role="ob")
+        p.ob_profile = {"type": "pitcher", "years": "1986-2006", "teams": "巨人",
+                        "npb": {"games": 0, "w": 173, "l": 0, "era": "3.55", "k": 0},
+                        "honors": ["通算173勝"]}
+        html = render_pillar_html(p)
+        self.assertIn("173勝", html)
+        self.assertIn("防御率3.55", html)
+        self.assertNotIn("登板0", html)
+        self.assertNotIn("0敗", html)
+
     def test_sportsplayer_jsonld_has_position_and_jersey(self) -> None:
         p = PillarPlayerInfo(name="戸郷翔征", slug="togo-shosei", position="投手", jersey_number="20")
         html = render_pillar_html(p)

@@ -181,6 +181,41 @@ def coach_career_stat(name: str) -> Optional[dict]:
     return load_coach_career_stats().get(_norm_name(name))
 
 
+_OB_LEGENDS_PATH = Path(__file__).resolve().parents[1] / "config" / "ob_legends.json"
+_ob_cache: Optional[dict] = None
+
+
+def load_ob_legends() -> dict:
+    """有名OB・レジェンドの profile (config/ob_legends.json)。 {正規化name: profile}。"""
+    global _ob_cache
+    if _ob_cache is not None:
+        return _ob_cache
+    data = {"order": [], "stats": {}}
+    if _OB_LEGENDS_PATH.exists():
+        try:
+            data = _json.loads(_OB_LEGENDS_PATH.read_text(encoding="utf-8"))
+        except Exception as exc:  # noqa: BLE001
+            LOG.warning("ob legends parse error: %r", exc)
+            data = {"order": [], "stats": {}}
+    norm_stats = {}
+    for name, rec in (data.get("stats") or {}).items():
+        rec = dict(rec)
+        rec.setdefault("display_name", name)
+        norm_stats[_norm_name(name)] = rec
+    _ob_cache = {"order": data.get("order") or list((data.get("stats") or {}).keys()), "stats": norm_stats}
+    return _ob_cache
+
+
+def load_ob_names() -> list[str]:
+    """OB の表示名 list (config order)。 個別ページ対象。"""
+    return list(load_ob_legends().get("order") or [])
+
+
+def ob_legend(name: str) -> Optional[dict]:
+    """1 OB の profile dict。 無ければ None。"""
+    return load_ob_legends().get("stats", {}).get(_norm_name(name))
+
+
 def staff_military_level(position: str) -> str:
     """コーチ position 文字列から 軍 level を返す ('一軍'/'二軍'/'三軍'/'巡回')。"""
     p = position or ""
@@ -1052,6 +1087,9 @@ __all__ = [
     "staff_military_level",
     "load_coach_career_stats",
     "coach_career_stat",
+    "load_ob_legends",
+    "load_ob_names",
+    "ob_legend",
     "load_roster_player",
     "find_player_tag_id",
     "fetch_related_topic_links",

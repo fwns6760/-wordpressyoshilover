@@ -49,6 +49,8 @@ from src.data_site_query import (
     related_shihai_players,
     staff_military_level,
     coach_career_stat,
+    load_ob_names,
+    ob_legend,
     load_roster_player,
 )
 from src.data_site_slug import player_slug
@@ -175,6 +177,22 @@ def _upsert_page(
 
 def _build_pillar_info(player_name: str) -> PillarPlayerInfo | None:
     """1 player の Pillar 用 info をまとめ作る。 roster 未一致は None."""
+    # OB・レジェンドは roster に居ない (退団/引退済)。 config 由来の profile で構築し、
+    # live stats query は行わない (関連記事 + 写真のみ取得)。
+    ob = ob_legend(player_name)
+    if ob:
+        slug = ob.get("slug") or player_slug(player_name)
+        return PillarPlayerInfo(
+            name=ob.get("display_name", player_name),
+            slug=slug,
+            position="",
+            jersey_number="",
+            role="ob",
+            featured_image_url=find_player_featured_image_url(player_name),
+            short_review="",
+            related_topic_links=fetch_related_topic_links(player_name, limit=20),
+            ob_profile=ob,
+        )
     roster = load_roster_player(player_name)
     if not roster:
         LOG.warning("roster miss player=%s — skip", player_name)
@@ -313,12 +331,22 @@ def publish_phase1() -> dict[str, object]:
             )
         )
 
+    # OB・レジェンド: 個別 profile ページを作る (cluster の position/staff 表には入れず、
+    # OB 枠 chip リンクに集約)。 roster 不在のため _build_pillar_info が ob_profile で構築。
+    ob_entries: list[tuple[str, str]] = []
+    for name in load_ob_names():
+        info = _build_pillar_info(name)
+        if not info:
+            continue
+        pillar_infos.append(info)
+        ob_entries.append((info.slug, info.name))
+
     if not pillar_infos:
         LOG.error("no eligible pillar infos — abort")
         return {"status": "abort", "reason": "no_pillar_infos"}
 
-    # Cluster upsert (parent=0)。 育成選手は個別ページ無し、 育成枠の一覧のみ。
-    cluster_html = render_cluster_html(cluster_entries, load_ikusei_entries())
+    # Cluster upsert (parent=0)。 育成=一覧のみ、 OB=chip リンク (個別ページあり)。
+    cluster_html = render_cluster_html(cluster_entries, load_ikusei_entries(), ob_entries)
     cluster_title = render_cluster_title()
     cluster_result = _upsert_page(
         slug="data",

@@ -283,12 +283,35 @@ def _build_ikusei_table_html(ikusei_entries: list[tuple[str, str]]) -> str:
     )
 
 
+def _build_ob_table_html(ob_entries: list[tuple[str, str]]) -> str:
+    """OB・レジェンド 一覧 (氏名 chip リンク、 個別 profile ページへ)。"""
+    if not ob_entries:
+        return ""
+    chips = "\n".join(
+        f'<a href="/data/{_esc(slug)}/" '
+        'style="display:inline-block;margin:4px 8px 4px 0;padding:8px 14px;background:#fff3e0;'
+        'border:1px solid #ffcc80;border-radius:18px;color:#e65100;text-decoration:none;font-size:14px;font-weight:600;">'
+        f'{_esc(name)}</a>'
+        for slug, name in ob_entries
+    )
+    return (
+        '<section class="ys-cluster-ob-table" '
+        'style="background:#fff;border:1px solid #eee;padding:14px;margin:0 0 20px;border-radius:4px;">'
+        f'<h2 style="font-size:16px;margin:0 0 6px;">OB・レジェンド ({len(ob_entries)} 名)</h2>'
+        '<p style="font-size:12px;color:#666;margin:0 0 10px;">読売ジャイアンツを代表する歴代の名選手。 '
+        '現役時代の通算成績・代表実績・関連記事をまとめています (メジャー移籍選手はMLB実績も)。</p>'
+        f'<div>{chips}</div>'
+        '</section>'
+    )
+
+
 def _build_player_table_html(
     players: list[ClusterPlayerEntry],
     ikusei_entries: list[tuple[str, str]] | None = None,
+    ob_entries: list[tuple[str, str]] | None = None,
 ) -> str:
-    """支配下 4 区分 (投手/捕手/内野手/外野手) + 育成枠 + 監督・コーチ に分離。"""
-    if not players and not ikusei_entries:
+    """支配下 4 区分 (投手/捕手/内野手/外野手) + 育成枠 + 監督・コーチ + OB に分離。"""
+    if not players and not ikusei_entries and not ob_entries:
         return '<p style="font-size:13px;color:#888;margin:0;">対象選手データを準備中です。</p>'
     return (
         _build_pitcher_table_html(players)
@@ -302,6 +325,8 @@ def _build_player_table_html(
         + _build_ikusei_table_html(ikusei_entries or [])
         + "\n"
         + _build_staff_table_html(players)
+        + "\n"
+        + _build_ob_table_html(ob_entries or [])
         + '<p style="font-size:11px;color:#999;margin:8px 0 0;">'
         '※ stats は insight.db (NPB official box score 由来)、 毎朝 6:00 + 試合後 17:30 / 23:00 JST 更新。 「-」 はデータ集計中。'
         '</p>'
@@ -367,15 +392,17 @@ def _build_jsonld(players: list[ClusterPlayerEntry]) -> str:
 def render_cluster_html(
     players: list[ClusterPlayerEntry],
     ikusei_entries: list[tuple[str, str]] | None = None,
+    ob_entries: list[tuple[str, str]] | None = None,
 ) -> str:
     """Cluster page の WP post.content として入る HTML を返す.
 
     players = 支配下選手 + 監督・コーチ (個別ページあり)。 ikusei_entries =
-    育成選手 [(name, position)] (育成枠の一覧のみ、 個別ページなし)。
+    育成選手 [(name, position)] (育成枠の一覧のみ、 個別ページなし)。 ob_entries =
+    OB・レジェンド [(slug, name)] (個別 profile ページあり)。
     """
     sections = [
         _build_intro_html(),
-        _build_player_table_html(players, ikusei_entries),
+        _build_player_table_html(players, ikusei_entries, ob_entries),
         _build_footnote_html(len(players)),
         _build_jsonld(players),
     ]

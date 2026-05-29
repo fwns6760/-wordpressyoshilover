@@ -44,6 +44,9 @@ from src.data_site_query import (
     find_player_featured_image_url,
     load_phase1_player_names,
     load_data_site_target_names,
+    load_ikusei_entries,
+    shihai_position_group,
+    staff_military_level,
     load_roster_player,
 )
 from src.data_site_slug import player_slug
@@ -178,10 +181,13 @@ def _build_pillar_info(player_name: str) -> PillarPlayerInfo | None:
     slug = player_slug(player_name)
     related = fetch_related_topic_links(player_name, limit=20)
     image_url = find_player_featured_image_url(player_name)
+    # 登録ポジションは NPB 公式分類を優先 (roster.position は stale: 例 石川達也は
+    # roster「打者」だが公式「投手」)。 支配下でなければ roster.position に fallback。
+    official_pos = shihai_position_group(player_name)
     info = PillarPlayerInfo(
         name=roster.name,
         slug=slug,
-        position=roster.position,
+        position=official_pos or roster.position,
         jersey_number=roster.jersey_number,
         role=roster.role,
         featured_image_url=image_url,
@@ -283,6 +289,8 @@ def publish_phase1() -> dict[str, object]:
                 position=info.position,
                 jersey_number=info.jersey_number,
                 role=info.role,
+                position_group=shihai_position_group(name) or "",
+                military=staff_military_level(info.position) if (info.role or "") in ("manager", "coach") else "",
                 season_games=info.season_games,
                 season_hits=info.season_hits,
                 season_rbi=info.season_rbi,
@@ -302,8 +310,8 @@ def publish_phase1() -> dict[str, object]:
         LOG.error("no eligible pillar infos — abort")
         return {"status": "abort", "reason": "no_pillar_infos"}
 
-    # Cluster upsert (parent=0)
-    cluster_html = render_cluster_html(cluster_entries)
+    # Cluster upsert (parent=0)。 育成選手は個別ページ無し、 育成枠の一覧のみ。
+    cluster_html = render_cluster_html(cluster_entries, load_ikusei_entries())
     cluster_title = render_cluster_title()
     cluster_result = _upsert_page(
         slug="data",

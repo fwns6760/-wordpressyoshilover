@@ -108,10 +108,40 @@ class RenderClusterHtmlTests(unittest.TestCase):
         html = render_cluster_html(players)
         self.assertIn("ys-cluster-staff-table", html)
         self.assertIn("監督・コーチ 一覧 (2 名)", html)
-        # staff は batter 表 ("野手 一覧") に入らない: 野手は元の 3 名のまま
-        self.assertIn("野手 一覧 (3 名", html)
+        # 軍別小見出し (内海=投手コーチ は position に二軍/三軍/巡回 無し → 一軍)
+        self.assertIn("一軍 (2 名)", html)
+        # staff は野手表 (内野手/外野手) に入らない: sample 3 名は内野2+外野1 のまま
+        self.assertIn("内野手 一覧 (2 名", html)
+        self.assertIn("外野手 一覧 (1 名", html)
         # 監督が先頭 (コーチより前)
         self.assertLess(html.find("阿部慎之助"), html.find("内海哲也"))
+
+    def test_position_split_four_tables(self) -> None:
+        """支配下が 投手/捕手/内野手/外野手 の登録区分別に分割される。"""
+        players = [
+            ClusterPlayerEntry(name="戸郷翔征", slug="togo-shosei", position="投手",
+                               jersey_number="20", position_group="投手"),
+            ClusterPlayerEntry(name="岸田行倫", slug="kishida-yukinori", position="捕手",
+                               jersey_number="27", position_group="捕手"),
+            ClusterPlayerEntry(name="吉川尚輝", slug="yoshikawa-naoki", position="内野手",
+                               jersey_number="2", position_group="内野手"),
+            ClusterPlayerEntry(name="丸佳浩", slug="maru-yoshihiro", position="外野手",
+                               jersey_number="8", position_group="外野手"),
+        ]
+        html = render_cluster_html(players)
+        self.assertIn("投手 一覧 (1 名", html)
+        self.assertIn("捕手 一覧 (1 名", html)
+        self.assertIn("内野手 一覧 (1 名", html)
+        self.assertIn("外野手 一覧 (1 名", html)
+
+    def test_ikusei_frame_listed_without_links(self) -> None:
+        """育成枠は氏名+ポジションの一覧、 個別ページ link なし。"""
+        html = render_cluster_html(self.players, [("中田歩夢", "内野手"), ("鈴木大和", "外野手")])
+        self.assertIn("ys-cluster-ikusei-table", html)
+        self.assertIn("育成選手 一覧 (2 名)", html)
+        self.assertIn("中田歩夢", html)
+        # 育成は個別ページ無し → /data/{slug}/ への link を作らない
+        self.assertNotIn("中田歩夢</a>", html)
 
     def test_stats_column_shows_values_when_data(self) -> None:
         """has_stats=True の player は数値表示。"""

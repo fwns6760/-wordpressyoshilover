@@ -56,15 +56,92 @@ def load_phase1_player_names() -> list[str]:
 # data-site 対象 role (支配下選手 + 監督・コーチ、 育成 ikusei は除外)
 _DATA_SITE_TARGET_ROLES = ("player", "shihaikako", "coach", "manager")
 
+_PLAYER_CLASS_PATH = Path(__file__).resolve().parents[1] / "config" / "data_site_player_class.json"
+_POSITION_ORDER = ("投手", "捕手", "内野手", "外野手")
 
-def load_data_site_target_names() -> list[str]:
-    """roster (giants_roster.json) から data-site 対象 player canonical name list を返す.
 
-    対象 = 支配下選手 (role=player / shihaikako) + 監督・コーチ (role=manager / coach)。
-    育成 (role=ikusei) は一軍データがほぼ無く薄ページになるため除外。
-    config (data_site_phase1_players.json) の手書き 31 名に代わり roster を直接 source に
-    することで Phase 1 full (113 名) へ自動拡大し、 roster 更新に追従する。
+def _norm_name(name: str) -> str:
+    return (name or "").replace(" ", "").replace("　", "").strip()
+
+
+_player_class_cache: Optional[dict] = None
+
+
+def load_player_class() -> dict:
+    """NPB 公式由来の支配下/育成 ポジション分類 (config/data_site_player_class.json)。
+
+    giants_roster.json の role/position が stale なため、 data-site の登録ポジション
+    分類はこの正本を優先する。 戻り値は {'shihai': {pos:[name]}, 'ikusei': {pos:[name]}}。
     """
+    global _player_class_cache
+    if _player_class_cache is not None:
+        return _player_class_cache
+    if not _PLAYER_CLASS_PATH.exists():
+        LOG.warning("player class config missing: %s", _PLAYER_CLASS_PATH)
+        _player_class_cache = {"shihai": {}, "ikusei": {}}
+        return _player_class_cache
+    try:
+        data = _json.loads(_PLAYER_CLASS_PATH.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("player class parse error: %r", exc)
+        data = {"shihai": {}, "ikusei": {}}
+    _player_class_cache = {"shihai": data.get("shihai") or {}, "ikusei": data.get("ikusei") or {}}
+    return _player_class_cache
+
+
+def _build_name_to_pos(section: str) -> dict[str, str]:
+    """section ('shihai'/'ikusei') の {正規化name: position} 逆引き map。"""
+    cls = load_player_class()
+    out: dict[str, str] = {}
+    for pos, names in (cls.get(section) or {}).items():
+        for n in names:
+            out[_norm_name(n)] = pos
+    return out
+
+
+def shihai_position_group(name: str) -> Optional[str]:
+    """支配下選手の登録ポジション ('投手'/'捕手'/'内野手'/'外野手')。 非支配下は None。"""
+    return _build_name_to_pos("shihai").get(_norm_name(name))
+
+
+def is_ikusei(name: str) -> bool:
+    """NPB 公式 育成選手なら True。"""
+    return _norm_name(name) in _build_name_to_pos("ikusei")
+
+
+def load_shihai_names() -> list[str]:
+    """支配下選手 canonical name list (投手→捕手→内野手→外野手 の順)。"""
+    cls = load_player_class()
+    out: list[str] = []
+    for pos in _POSITION_ORDER:
+        out.extend(cls.get("shihai", {}).get(pos, []))
+    return out
+
+
+def load_ikusei_entries() -> list[tuple[str, str]]:
+    """育成選手 [(name, position_group), ...] (投手→捕手→内野手→外野手 の順)。 cluster 育成枠用。"""
+    cls = load_player_class()
+    out: list[tuple[str, str]] = []
+    for pos in _POSITION_ORDER:
+        for n in cls.get("ikusei", {}).get(pos, []):
+            out.append((n, pos))
+    return out
+
+
+def staff_military_level(position: str) -> str:
+    """コーチ position 文字列から 軍 level を返す ('一軍'/'二軍'/'三軍'/'巡回')。"""
+    p = position or ""
+    if "三軍" in p:
+        return "三軍"
+    if "二軍" in p:
+        return "二軍"
+    if "巡回" in p:
+        return "巡回"
+    return "一軍"
+
+
+def load_staff_names() -> list[str]:
+    """roster から 監督・コーチ (role=manager/coach) の canonical name list。"""
     if not _ROSTER_PATH.exists():
         LOG.warning("roster missing: %s", _ROSTER_PATH)
         return []
@@ -73,22 +150,37 @@ def load_data_site_target_names() -> list[str]:
     except Exception as exc:  # noqa: BLE001
         LOG.warning("roster parse error: %r", exc)
         return []
-    # slug で dedup (roster に同一人物の name 表記ゆれ重複あり、 例:
-    # 「Ｆ．ウィットリー」 と 「ウィットリー」 = 同じ背番号、 同 slug whitley)。
-    from src.data_site_slug import player_slug  # lazy import (循環回避)
-
     out: list[str] = []
-    seen_name: set[str] = set()
-    seen_slug: set[str] = set()
+    seen: set[str] = set()
     for row in roster:
-        if str(row.get("role") or "") not in _DATA_SITE_TARGET_ROLES:
+        if str(row.get("role") or "") not in ("manager", "coach"):
             continue
         if not row.get("active", True):
             continue
         name = str(row.get("name") or "").strip()
-        if not name:
+        key = _norm_name(name)
+        if not name or key in seen:
             continue
-        key = name.replace(" ", "").replace("　", "")
+        seen.add(key)
+        out.append(name)
+    return out
+
+
+def load_data_site_target_names() -> list[str]:
+    """data-site で個別ページを作る対象 canonical name list を返す.
+
+    対象 = 支配下選手 (NPB 公式分類 = config/data_site_player_class.json shihai) +
+    監督・コーチ (roster role=manager/coach)。 育成は cluster 育成枠の一覧のみで
+    個別ページは作らない (一軍データ薄 = 薄ページ SEO リスク回避、 user 確認済)。
+    支配下分類は giants_roster.json の stale な role/position に依存しない。
+    """
+    from src.data_site_slug import player_slug  # lazy import (循環回避)
+
+    out: list[str] = []
+    seen_slug: set[str] = set()
+    seen_name: set[str] = set()
+    for name in load_shihai_names() + load_staff_names():
+        key = _norm_name(name)
         if key in seen_name:
             continue
         slug = player_slug(name)
@@ -896,6 +988,13 @@ __all__ = [
     "PitchingGameRow",
     "load_phase1_player_names",
     "load_data_site_target_names",
+    "load_staff_names",
+    "load_player_class",
+    "shihai_position_group",
+    "is_ikusei",
+    "load_shihai_names",
+    "load_ikusei_entries",
+    "staff_military_level",
     "load_roster_player",
     "find_player_tag_id",
     "fetch_related_topic_links",

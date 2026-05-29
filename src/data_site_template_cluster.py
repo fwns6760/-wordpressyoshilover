@@ -26,6 +26,11 @@ class ClusterPlayerEntry:
     position: str
     jersey_number: str
     role: str = "player"
+    # NPB 公式由来の登録ポジション区分 (投手/捕手/内野手/外野手)。 支配下選手の
+    # 4 表分割に使う (roster.position は stale なため不使用)。 staff は空。
+    position_group: str = ""
+    # staff (監督・コーチ) の 軍 level (一軍/二軍/三軍/巡回)。 player は空。
+    military: str = ""
     # Phase 1.0 batting stats (insight.db SUM、 data 無ければ "-" 表示)
     season_games: int = 0
     season_hits: int = 0
@@ -90,16 +95,26 @@ def _is_staff_entry(p: ClusterPlayerEntry) -> bool:
     return (p.role or "").strip() in ("manager", "coach")
 
 
-def _build_batter_table_html(players: list[ClusterPlayerEntry]) -> str:
-    """打者 (position != 投手、 staff 除く) のみ含む table。 背番号順。"""
-    batters = [p for p in players if (p.position or "") != "投手" and not _is_staff_entry(p)]
-    if not batters:
+def _group_of(p: ClusterPlayerEntry) -> str:
+    """entry の登録ポジション区分。 position_group 優先、 無ければ position から推定。"""
+    if p.position_group:
+        return p.position_group
+    pos = (p.position or "").strip()
+    if pos in ("投手", "捕手", "内野手", "外野手"):
+        return pos
+    # 旧 "打者" 等の汎用値や空は内野手扱いに寄せる (production では position_group が必ず入る)
+    return "内野手"
+
+
+def _build_batter_group_table_html(players: list[ClusterPlayerEntry], group: str, css: str) -> str:
+    """捕手 / 内野手 / 外野手 の登録区分別 table (打撃列)。 背番号順。"""
+    members = [p for p in players if not _is_staff_entry(p) and _group_of(p) == group]
+    if not members:
         return ""
-    sorted_players = sorted(batters, key=_jersey_sort_key)
+    sorted_players = sorted(members, key=_jersey_sort_key)
     rows = []
     for p in sorted_players:
         pillar_url = f"/data/{p.slug}/"
-        pos = p.position or "-"
         jersey = p.jersey_number or "-"
         avg = _fmt_avg(p.season_avg)
         games = str(p.season_games) if p.has_stats else "-"
@@ -111,7 +126,6 @@ def _build_batter_table_html(players: list[ClusterPlayerEntry]) -> str:
             f'<td style="padding:8px 10px;"><a href="{_esc(pillar_url)}" '
             'style="color:#1976d2;text-decoration:none;font-weight:600;">'
             f'{_esc(p.name)}</a></td>'
-            f'<td style="padding:8px 10px;font-size:13px;color:#666;">{_esc(pos)}</td>'
             f'<td style="padding:8px 10px;text-align:center;color:#555;">{games}</td>'
             f'<td style="padding:8px 10px;text-align:center;color:#555;">{hits}</td>'
             f'<td style="padding:8px 10px;text-align:center;color:#1976d2;font-weight:600;">{avg}</td>'
@@ -119,15 +133,14 @@ def _build_batter_table_html(players: list[ClusterPlayerEntry]) -> str:
             '</tr>'
         )
     return (
-        '<section class="ys-cluster-batter-table" '
+        f'<section class="ys-cluster-{css}-table" '
         'style="background:#fff;border:1px solid #eee;padding:14px;margin:0 0 20px;border-radius:4px;">'
-        f'<h2 style="font-size:16px;margin:0 0 10px;">野手 一覧 ({len(sorted_players)} 名 / 背番号順)</h2>'
+        f'<h2 style="font-size:16px;margin:0 0 10px;">{group} 一覧 ({len(sorted_players)} 名 / 背番号順)</h2>'
         '<div style="overflow-x:auto;">'
         '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
         '<thead><tr style="background:#fafafa;text-align:left;">'
         '<th style="padding:10px;text-align:center;">背番号</th>'
         '<th style="padding:10px;">名前</th>'
-        '<th style="padding:10px;">ポジション</th>'
         '<th style="padding:10px;text-align:center;">試合</th>'
         '<th style="padding:10px;text-align:center;">安打</th>'
         '<th style="padding:10px;text-align:center;">打率</th>'
@@ -140,8 +153,8 @@ def _build_batter_table_html(players: list[ClusterPlayerEntry]) -> str:
 
 
 def _build_pitcher_table_html(players: list[ClusterPlayerEntry]) -> str:
-    """投手 (position == 投手、 staff 除く) のみ含む table。 背番号順。"""
-    pitchers = [p for p in players if (p.position or "") == "投手" and not _is_staff_entry(p)]
+    """投手 (登録区分=投手、 staff 除く) のみ含む table。 背番号順。"""
+    pitchers = [p for p in players if not _is_staff_entry(p) and _group_of(p) == "投手"]
     if not pitchers:
         return ""
     sorted_players = sorted(pitchers, key=_jersey_sort_key)
@@ -188,55 +201,105 @@ def _build_pitcher_table_html(players: list[ClusterPlayerEntry]) -> str:
     )
 
 
+_MILITARY_ORDER = ("一軍", "二軍", "三軍", "巡回")
+
+
 def _build_staff_table_html(players: list[ClusterPlayerEntry]) -> str:
-    """監督・コーチ 一覧 table。 役職 + name link (stats 列なし)。 背番号順。"""
+    """監督・コーチ 一覧 table。 軍 (一軍/二軍/三軍/巡回) で小見出し分け、 役職 + name link。"""
     staff = [p for p in players if _is_staff_entry(p)]
     if not staff:
         return ""
-    # 監督を先頭、 その後コーチを背番号順
-    staff_sorted = sorted(
-        staff,
-        key=lambda p: (0 if (p.role or "") == "manager" else 1,) + _jersey_sort_key(p),
-    )
-    rows = []
-    for p in staff_sorted:
-        pillar_url = f"/data/{p.slug}/"
-        jersey = p.jersey_number or "-"
-        pos = p.position or ("監督" if (p.role or "") == "manager" else "コーチ")
-        rows.append(
-            f'<tr style="border-bottom:1px solid #eee;">'
-            f'<td style="padding:8px 10px;text-align:center;color:#555;font-weight:600;">{_esc(jersey)}</td>'
-            f'<td style="padding:8px 10px;"><a href="{_esc(pillar_url)}" '
-            'style="color:#1976d2;text-decoration:none;font-weight:600;">'
-            f'{_esc(p.name)}</a></td>'
-            f'<td style="padding:8px 10px;font-size:13px;color:#666;">{_esc(pos)}</td>'
-            '</tr>'
+    by_mil: dict[str, list[ClusterPlayerEntry]] = {}
+    for p in staff:
+        by_mil.setdefault(p.military or "一軍", []).append(p)
+    blocks = []
+    for mil in _MILITARY_ORDER:
+        members = by_mil.get(mil)
+        if not members:
+            continue
+        members_sorted = sorted(
+            members,
+            key=lambda p: (0 if (p.role or "") == "manager" else 1,) + _jersey_sort_key(p),
+        )
+        rows = []
+        for p in members_sorted:
+            pillar_url = f"/data/{p.slug}/"
+            jersey = p.jersey_number or "-"
+            pos = p.position or ("監督" if (p.role or "") == "manager" else "コーチ")
+            rows.append(
+                f'<tr style="border-bottom:1px solid #eee;">'
+                f'<td style="padding:8px 10px;text-align:center;color:#555;font-weight:600;">{_esc(jersey)}</td>'
+                f'<td style="padding:8px 10px;"><a href="{_esc(pillar_url)}" '
+                'style="color:#1976d2;text-decoration:none;font-weight:600;">'
+                f'{_esc(p.name)}</a></td>'
+                f'<td style="padding:8px 10px;font-size:13px;color:#666;">{_esc(pos)}</td>'
+                '</tr>'
+            )
+        blocks.append(
+            f'<h3 style="font-size:14px;margin:14px 0 6px;color:#5d4037;">{mil} ({len(members_sorted)} 名)</h3>'
+            '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
+            '<thead><tr style="background:#fafafa;text-align:left;">'
+            '<th style="padding:8px 10px;text-align:center;">背番号</th>'
+            '<th style="padding:8px 10px;">名前</th>'
+            '<th style="padding:8px 10px;">役職</th>'
+            '</tr></thead>'
+            f'<tbody>{"".join(rows)}</tbody></table>'
         )
     return (
         '<section class="ys-cluster-staff-table" '
         'style="background:#fff;border:1px solid #eee;padding:14px;margin:0 0 20px;border-radius:4px;">'
-        f'<h2 style="font-size:16px;margin:0 0 10px;">監督・コーチ 一覧 ({len(staff_sorted)} 名)</h2>'
+        f'<h2 style="font-size:16px;margin:0 0 4px;">監督・コーチ 一覧 ({len(staff)} 名)</h2>'
         '<div style="overflow-x:auto;">'
-        '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
-        '<thead><tr style="background:#fafafa;text-align:left;">'
-        '<th style="padding:10px;text-align:center;">背番号</th>'
-        '<th style="padding:10px;">名前</th>'
-        '<th style="padding:10px;">役職</th>'
-        '</tr></thead>'
-        f'<tbody>{"".join(rows)}</tbody>'
-        '</table>'
+        f'{"".join(blocks)}'
         '</div></section>'
     )
 
 
-def _build_player_table_html(players: list[ClusterPlayerEntry]) -> str:
-    """野手 + 投手 + 監督・コーチ の 3 表に分離。 空 list は placeholder."""
-    if not players:
+def _build_ikusei_table_html(ikusei_entries: list[tuple[str, str]]) -> str:
+    """育成選手 一覧 table (氏名 + ポジション)。 個別ページは作らないため link なし。"""
+    if not ikusei_entries:
+        return ""
+    rows = []
+    for name, pos in ikusei_entries:
+        rows.append(
+            f'<tr style="border-bottom:1px solid #eee;">'
+            f'<td style="padding:8px 10px;font-weight:600;color:#5d4037;">{_esc(name)}</td>'
+            f'<td style="padding:8px 10px;font-size:13px;color:#666;">{_esc(pos)}</td>'
+            '</tr>'
+        )
+    return (
+        '<section class="ys-cluster-ikusei-table" '
+        'style="background:#fff;border:1px solid #eee;padding:14px;margin:0 0 20px;border-radius:4px;">'
+        f'<h2 style="font-size:16px;margin:0 0 6px;">育成選手 一覧 ({len(ikusei_entries)} 名)</h2>'
+        '<p style="font-size:12px;color:#666;margin:0 0 10px;">支配下登録選手とは別枠の育成契約選手。 '
+        '一軍出場記録が積み上がり次第、 個別データページを追加予定。</p>'
+        '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
+        '<thead><tr style="background:#fafafa;text-align:left;">'
+        '<th style="padding:10px;">名前</th>'
+        '<th style="padding:10px;">ポジション</th>'
+        '</tr></thead>'
+        f'<tbody>{"".join(rows)}</tbody>'
+        '</table></section>'
+    )
+
+
+def _build_player_table_html(
+    players: list[ClusterPlayerEntry],
+    ikusei_entries: list[tuple[str, str]] | None = None,
+) -> str:
+    """支配下 4 区分 (投手/捕手/内野手/外野手) + 育成枠 + 監督・コーチ に分離。"""
+    if not players and not ikusei_entries:
         return '<p style="font-size:13px;color:#888;margin:0;">対象選手データを準備中です。</p>'
     return (
-        _build_batter_table_html(players)
+        _build_pitcher_table_html(players)
         + "\n"
-        + _build_pitcher_table_html(players)
+        + _build_batter_group_table_html(players, "捕手", "catcher")
+        + "\n"
+        + _build_batter_group_table_html(players, "内野手", "infielder")
+        + "\n"
+        + _build_batter_group_table_html(players, "外野手", "outfielder")
+        + "\n"
+        + _build_ikusei_table_html(ikusei_entries or [])
         + "\n"
         + _build_staff_table_html(players)
         + '<p style="font-size:11px;color:#999;margin:8px 0 0;">'
@@ -249,7 +312,7 @@ def _build_footnote_html(players_count: int) -> str:
     return (
         '<section class="ys-cluster-footnote" style="font-size:12px;color:#888;margin:24px 0 0;">'
         f'<p style="margin:0;">読売ジャイアンツの支配下選手・監督・コーチ {players_count} 名分の'
-        '個別データページを公開中です（育成選手は順次追加予定）。</p>'
+        '個別データページを公開中です（育成選手は一覧のみ、 一軍出場後に個別ページ追加予定）。</p>'
         '</section>'
     )
 
@@ -301,11 +364,18 @@ def _build_jsonld(players: list[ClusterPlayerEntry]) -> str:
     )
 
 
-def render_cluster_html(players: list[ClusterPlayerEntry]) -> str:
-    """Cluster page の WP post.content として入る HTML を返す."""
+def render_cluster_html(
+    players: list[ClusterPlayerEntry],
+    ikusei_entries: list[tuple[str, str]] | None = None,
+) -> str:
+    """Cluster page の WP post.content として入る HTML を返す.
+
+    players = 支配下選手 + 監督・コーチ (個別ページあり)。 ikusei_entries =
+    育成選手 [(name, position)] (育成枠の一覧のみ、 個別ページなし)。
+    """
     sections = [
         _build_intro_html(),
-        _build_player_table_html(players),
+        _build_player_table_html(players, ikusei_entries),
         _build_footnote_html(len(players)),
         _build_jsonld(players),
     ]

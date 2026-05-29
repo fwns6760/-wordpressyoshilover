@@ -46,7 +46,11 @@ user 追加指示「投/捕/内/外で分ける、育成は枠に、コーチ監
 - 個別ページ対象 = 支配下66 + コーチ監督28 = 94(育成は枠のみ)。
 - deploy: image `pos-split-d32af6e`、execution SUCCESS、live verify 済(クラスター6見出し +
   軍別4小見出し、石川達也=投手ページに是正)。test 46 passed。
-- **残**: コーチ・監督の生涯成績(選手時代の通算)= insight.db に無いため公式記録 curation 必要(次便)。
+- **コーチ・監督 生涯成績 = LIVE (commit `91c66c1`)**: insight.db に過去データ無いため
+  NPB.jp/Wikipedia 公式記録から28名分の現役 NPB 通算成績を収集 (`config/coach_career_stats.json`、
+  推測ゼロ)。 監督コーチ個別ページに「現役時代 通算成績」section 追加。 image `career-91c66c1`、
+  live verify (阿部=2282試合.284 2132安打406本、 内海=335登板135勝3.24)。 全28名カバー。
+- **過去残**: コーチ・監督の生涯成績は完了。
   育成個別ページは未作成(枠一覧のみ、user 確認済)。旧16育成 個別ページは orphan として残置(削除は user 判断)。
 
 ## 3. options

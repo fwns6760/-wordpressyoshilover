@@ -52,6 +52,8 @@ at_bat_details は 1,185 行存在、 batter raw 値はあるが canonical 補�
 
 **残り 3 metric (#1 RISP / #3 vs左右 / #4 カウント)**: at_bat_details.batter_canonical
 backfill (Phase A) 必須で BLOCKED 継続。 read-side only で解けるのは #2 venue / #5 inning まで。
+なお at_bat_details は 20 試合分のみ収録 (5/06〜、 batting_logs は 52 試合) で season 全試合を
+cover しない点にも留意。
 
 ---
 
@@ -76,19 +78,8 @@ backfill (Phase A) 必須で BLOCKED 継続。 read-side only で解けるのは
   insight.db 系の検証は production copy (GCS `baseballsite-yoshilover-insight/insight.db`)
   必須。 [[feedback_local_is_dev_only_production_is_canonical]] の通り。
 
-**metric #5 inning split (序盤/中盤/終盤 別打率) = LIVE_DEPLOYED_VERIFIED (2026-06-01)** (commit `7c792bd` / image `inning-split-7c792bd`)
-
-- `batting_logs.atbats_json` (player_canonical 健在、 9 要素配列 index=イニング 1回..9回) を
-  既存 tested `parse_atbat` 相当の `_classify_atbat` で per-PA 分類 → 序盤(1-3)/中盤(4-6)/終盤(7-9) に bucket。
-  at_bat_details.batter_canonical (全 NULL) 非依存の read-side only 実装 (#2 venue と同パターン)。
-- production 全 5,652 行 verify: 帯別 AB/H は season 合計の ~97-99% (undercount 1-3% は同一回複数打席の
-  box 1 セル圧縮のみ、 H は完全一致)。 live verify /data/yoshikawa-naoki 序盤.194/中盤.208/終盤.286。
-- deploy: Job image flip + execution `data-site-publisher-6l87n` SUCCESS。 env flag 無し、 追加コスト¥0。
-
-**残り 3 metric (#1 RISP / #3 vs左右 / #4 カウント)**: production の
-at_bat_details (1,478 行、 batter_canonical 全 NULL) 修復が必要。 走者状況 / 投手 hand / 球種カウントが必要で
-at_bat_details backfill (Phase A) 必須。 ただし at_bat_details は 20 試合分のみ収録 (5/06〜) で
-season 全試合 cover していない点に留意 (batting_logs は 52 試合)。
+> note: 2026-06-01 の #5 inning split 完了詳細は上の「## 進捗 (2026-06-01)」へ集約済
+> (並行 doc commit `ec1271e` の重複記載を整理)。
 
 ## 3. 修復 plan (2 PR 想定)
 

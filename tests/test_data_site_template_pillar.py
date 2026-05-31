@@ -110,6 +110,26 @@ class RenderPillarHtmlTests(unittest.TestCase):
         html = render_pillar_html(p)
         self.assertNotIn("ys-pillar-venue-split", html)
 
+    def test_inning_split_section_rendered(self) -> None:
+        p = PillarPlayerInfo(name="吉川尚輝", slug="yoshikawa-naoki", position="内野手", jersey_number="2")
+        p.inning_split_stats = [
+            ("序盤", 38, 7, 7 / 38),
+            ("中盤", 25, 5, 5 / 25),
+            ("終盤", 28, 8, 8 / 28),
+        ]
+        html = render_pillar_html(p)
+        self.assertIn("ys-pillar-inning-split", html)
+        self.assertIn("序盤", html)
+        self.assertIn("中盤", html)
+        self.assertIn("終盤", html)
+        self.assertIn("大手未掲載", html)
+        self.assertIn(".286", html)  # 8/28 終盤 avg
+
+    def test_inning_split_section_skipped_when_empty(self) -> None:
+        p = PillarPlayerInfo(name="丸佳浩", slug="maru-yoshihiro", position="外野手", jersey_number="8")
+        html = render_pillar_html(p)
+        self.assertNotIn("ys-pillar-inning-split", html)
+
     def test_manager_renders_staff_profile_no_stats(self) -> None:
         p = PillarPlayerInfo(name="阿部慎之助", slug="abe-shinnosuke", position="監督",
                              jersey_number="83", role="manager")

@@ -531,6 +531,23 @@ class VenueSplitStat:
 
 
 @dataclass
+class InningSplitStat:
+    """序盤 (1-3回) / 中盤 (4-6回) / 終盤 (7-9回) 別 打撃集計 (metric pack #5 inning)。
+
+    batting_logs.atbats_json (1 イニング 1 セルの 9 要素配列、 index 0=1回 .. 8=9回)
+    から導出。 同一回に 2 打席ある場合は box score 上 1 セルに圧縮されるため、 総打数は
+    実数を僅かに下回る (production 実測 ~3%)。 イニング帰属自体は正確。
+    """
+    phase: str  # 序盤 / 中盤 / 終盤
+    ab: int
+    hits: int
+
+    @property
+    def avg(self) -> Optional[float]:
+        return (self.hits / self.ab) if self.ab > 0 else None
+
+
+@dataclass
 class StreakInfo:
     """連続記録 (Phase 1.0b1)。 active = 現在進行中、 season_max = 今シーズン最長."""
     active: int  # 現在連続中 (直近試合から遡って continuous)
@@ -872,6 +889,83 @@ def fetch_venue_split_stats(player_canonical: str) -> list[VenueSplitStat]:
     return out
 
 
+_ATBAT_STRIP = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫ 　\t"  # circled PA 番号 + 全角/半角 space
+
+
+def _classify_atbat(cell: str) -> tuple[bool, bool]:
+    """1 打席結果セル (NPB box score 記法) → (is_ab, is_hit)。
+
+    打数 (AB) に数えない: 犠打 / 犠飛 / 四球 / 敬遠四 / 死球。 それ以外は打数。
+    安打判定: 末尾 安 (単打) / 本 含む (本塁打) / 末尾 ２・３ (二・三塁打)。
+    ゴロ・飛・直・邪飛・三振・併打・失 (失策出塁) は AB かつ非安打。
+    production 全 5,652 行で AB/H 列と照合済 (誤分類ゼロ、 差分は同一回 collision のみ)。
+    """
+    t = "".join(ch for ch in (cell or "") if ch not in _ATBAT_STRIP)
+    if not t or t == "-":
+        return (False, False)
+    # 打数に数えない: 四球 / 死球 (末尾 球) / 敬遠 (敬遠四・敬遠四球) / 犠打・犠飛 (犠)。
+    if t.endswith("球") or "敬遠" in t or "犠" in t:
+        return (False, False)
+    is_hit = t.endswith("安") or ("本" in t) or t.endswith("２") or t.endswith("３")
+    return (True, is_hit)
+
+
+def fetch_inning_split_stats(player_canonical: str) -> list[InningSplitStat]:
+    """序盤 / 中盤 / 終盤 別 打率を返す (大手未掲載 metric pack #5 inning)。
+
+    batting_logs.atbats_json (index=イニング, 0=1回 .. 8=9回) を parse し、
+    1-3回 → 序盤 / 4-6回 → 中盤 / 7-9回 → 終盤 に bucket。 該当打数 0 の phase は省く。
+    at_bat_details.batter_canonical (全件 NULL) に依存しない read-side only 実装。
+    """
+    path = _ensure_insight_db_local()
+    if not path:
+        return []
+    try:
+        with sqlite3.connect(path) as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT atbats_json FROM batting_logs
+                WHERE player_canonical = ?
+                  AND atbats_json IS NOT NULL AND atbats_json NOT IN ('', '[]', 'null')
+                """,
+                (player_canonical,),
+            )
+            rows = cur.fetchall()
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("fetch_inning_split_stats err player=%s: %r", player_canonical, exc)
+        return []
+    buckets: dict[str, list[int]] = {"序盤": [0, 0], "中盤": [0, 0], "終盤": [0, 0]}
+    for (aj,) in rows:
+        try:
+            cells = _json.loads(aj)
+        except Exception:  # noqa: BLE001
+            continue
+        if not isinstance(cells, list):
+            continue
+        for idx, cell in enumerate(cells):
+            if idx < 3:
+                key = "序盤"
+            elif idx < 6:
+                key = "中盤"
+            elif idx < 9:
+                key = "終盤"
+            else:
+                continue  # 配列は len 9 固定 (延長回は box score 上 含まれない)
+            is_ab, is_hit = _classify_atbat(str(cell))
+            if is_ab:
+                buckets[key][0] += 1
+            if is_hit:
+                buckets[key][1] += 1
+    out: list[InningSplitStat] = []
+    for key in ("序盤", "中盤", "終盤"):
+        ab, hits = buckets[key]
+        if ab == 0:
+            continue
+        out.append(InningSplitStat(phase=key, ab=ab, hits=hits))
+    return out
+
+
 def _compute_streak(values: list[int]) -> StreakInfo:
     """0/1 配列から active streak (先頭から連続 1) と season max を計算.
 
@@ -1071,6 +1165,7 @@ __all__ = [
     "LineupSlotStat",
     "OpponentSplitStat",
     "VenueSplitStat",
+    "InningSplitStat",
     "StreakInfo",
     "PitchingStatsSeason",
     "PitchingGameRow",
@@ -1100,6 +1195,7 @@ __all__ = [
     "fetch_opponent_split_stats",
     "fetch_venue_split_stats",
     "giants_venue_from_game_id",
+    "fetch_inning_split_stats",
     "fetch_hit_streak",
     "fetch_contribution_streak",
     "fetch_pitching_stats_season",

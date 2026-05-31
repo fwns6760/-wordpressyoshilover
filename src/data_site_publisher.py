@@ -37,6 +37,7 @@ from src.data_site_query import (
     fetch_lineup_slot_stats,
     fetch_opponent_split_stats,
     fetch_venue_split_stats,
+    fetch_inning_split_stats,
     fetch_pitching_stats_season,
     fetch_recent_games,
     fetch_recent_pitching_games,
@@ -251,6 +252,10 @@ def _build_pillar_info(player_name: str) -> PillarPlayerInfo | None:
     info.venue_split_stats = [
         (v.venue, v.games, v.ab, v.hits, v.rbi, v.avg)
         for v in fetch_venue_split_stats(player_name)
+    ]
+    info.inning_split_stats = [
+        (i.phase, i.ab, i.hits, i.avg)
+        for i in fetch_inning_split_stats(player_name)
     ]
     # Phase 1.0b1 streak
     hit_streak = fetch_hit_streak(player_name)

@@ -1,6 +1,21 @@
 # assignments — 現場担当と次アクション
 
-最終更新: 2026-05-29 JST (10:20 445 title 日付化 + 大手 source 追加 deploy)
+最終更新: 2026-06-01 JST (447 metric #5 イニング別打率 LIVE_DEPLOYED_VERIFIED)
+
+## 2026-06-01 session update
+
+### 447 — data-site metric #5 イニング別 (序盤/中盤/終盤 別打率) LIVE_DEPLOYED_VERIFIED
+
+commit `7c792bd` / image `data-site-publisher:inning-split-7c792bd` / Job execution
+`data-site-publisher-5sv85` SUCCESS。 `batting_logs.atbats_json` (index=イニング) を
+read-side only で parse、 序盤(1-3回)/中盤(4-6回)/終盤(7-9回) の打率を pillar に追加。
+ETL/backfill 不要・¥0。 classifier は production 全 5,652 行で AB/H 照合済 (誤分類ゼロ、
+差分は同一回 collision のみ)。 live verify `/data/yoshikawa-naoki` 序盤 .194 / 中盤 .208 /
+終盤 .286。 data-site test 62 passed。
+
+447 で read-side only に解ける metric は #2 venue + #5 inning の 2 個で打ち止め。
+残り #1 RISP / #3 vs左右 / #4 カウントは at_bat_details.batter_canonical backfill
+(Phase A) 必須で BLOCKED 継続。 詳細 = parent `docs/handoff/session_logs/2026-06-01_data_site_447_inning_split.md`。
 
 ## 2026-05-29 session update
 

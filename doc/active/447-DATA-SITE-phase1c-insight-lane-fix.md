@@ -29,6 +29,32 @@ ticket 444 で実装した data-site Phase 1.5 (31 player Pillar) で、 「大�
 
 at_bat_details は 1,185 行存在、 batter raw 値はあるが canonical 補完がない。
 
+## 進捗 (2026-06-01)
+
+**metric #5 イニング別 (序盤/中盤/終盤 別打率) = LIVE_DEPLOYED_VERIFIED** (commit `7c792bd`)
+
+- ticket 当初の Phase A 依存を回避、 **read-side only** で実装 (venue #2 と同パターン)。
+  `batting_logs.atbats_json` (1 イニング 1 セルの 9 要素配列、 index 0=1回..8=9回) を
+  parse、 1-3回→序盤 / 4-6回→中盤 / 7-9回→終盤 に bucket。
+- **index→イニング mapping 検証済**: production 全 5,652 行が len=9 固定。 `_classify_atbat`
+  (NPB box score 記法 → is_ab/is_hit) を production の AB/H 列と全件照合 → 誤分類ゼロ、
+  差分 AB 3.1% / H 0.9% は **全て同一回 2 打席 collision** (1 セル圧縮で総打数を僅かに
+  下回る) のみ。 mapping 自体は正確。 本文に collision 注記を表示。
+- 単位は 3 phase bucket を採用 (per-inning は 1 回あたり標本小さく .000/1.000 ノイズ、
+  3 bucket なら 60-80 AB/phase で堅牢、 fan 価値「終盤に強い」narrative も出る)。
+- insight.db 変更 / ETL / backfill **不要**、 追加コスト ¥0。
+- impl: `data_site_query.py` (InningSplitStat / _classify_atbat / fetch_inning_split_stats)
+  + `data_site_template_pillar.py` (_build_inning_split_html) + publisher 配線。
+  test +5 (classifier 4 + fetch 2 + template 2)、 data-site suite **62 passed**。
+- deploy: image `data-site-publisher:inning-split-7c792bd` (Cloud Build SUCCESS) /
+  Job execution `data-site-publisher-5sv85` SUCCESS。 live verify:
+  `/data/yoshikawa-naoki` 序盤 36/7 .194 / 中盤 24/5 .208 / 終盤 28/8 .286 (production 一致)。
+
+**残り 3 metric (#1 RISP / #3 vs左右 / #4 カウント)**: at_bat_details.batter_canonical
+backfill (Phase A) 必須で BLOCKED 継続。 read-side only で解けるのは #2 venue / #5 inning まで。
+
+---
+
 ## 進捗 (2026-05-29)
 
 **metric #2 venue (球場別 本拠地/ビジター) = LIVE_DEPLOYED_VERIFIED** (commit `f1bd93f`)

@@ -36,3 +36,10 @@
 - inning/venue split surprise を x-post-mail 候補に。 公開 X 自動投稿はしない (§11、 メール候補まで)
 - 設計確定: 検出閾値 (gap>=.120 + AB gate)、 Candidate 仕様、 pick_candidates 統合、 dedup、 env flag、 test 計画
 - doc/active/448-XPOST-data-split-surprise-candidate.md
+
+## ③ 差別化データ投稿 (LIVE_DEPLOYED 2026-06-01)
+- build_data_split_candidates (x_post_mail_lane) + ENABLE_X_POST_DATA_SPLIT で orchestrator append
+- commit c81ccc2 / image data-split-c81ccc2、 x-post-mail-lane Job 更新 + flag ON
+- bug fix: SQLite HAVING で SELECT alias 不可 → SUM() 明示 (alias だと 0 件 silent だった)
+- verify: exec x-post-mail-lane-x4tqf SUCCESS、 log「data_split: built 2 candidates」「data_split appended: base=0 data_split=2 total=2」「mail send result: status=sent」
+- 公開 X 自動投稿は未解放 (§11 user 判断)。 候補=オペレーターメールまで

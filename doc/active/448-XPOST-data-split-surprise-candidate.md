@@ -3,7 +3,10 @@
 ## 1. ticket header
 
 - **ticket id**: 448
-- **status**: READY_FOR_IMPL (設計確定、 実装は次の focused 便)
+- **status**: LIVE_DEPLOYED (2026-06-01、 commit `c81ccc2` / image `data-split-c81ccc2`、 ENABLE_X_POST_DATA_SPLIT=1)
+  - 候補=メールまで。 公開 X 自動投稿への昇格は **user 判断** (§11) で未実施
+  - production 実データで 5 候補確認 (ダルベック序盤.295/終盤.160、 吉川ビジター.343/本拠地.151、 岸田終盤.423 等)
+  - bug fix: SQLite HAVING で SELECT alias 不可 → SUM() 明示 (alias だと 0 件 silent)
 - **owner**: Claude Code
 - **lane**: x-post-mail-lane (候補生成のみ。 公開 X 自動投稿はしない)
 - **created**: 2026-06-01

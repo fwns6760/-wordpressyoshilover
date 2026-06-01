@@ -2197,10 +2197,15 @@ def fetch_giants_upcoming(limit: int = 6) -> list[dict]:
     except Exception as exc:  # noqa: BLE001
         LOG.warning("fetch_giants_upcoming err: %r", exc)
         return []
-    # 本日の試合に予告先発を付与。 相手略号が日程の相手と一致する時のみ(誤ペアリング防止)。
-    if games and games[0].get("date") == today.isoformat():
+    # 直近の試合に予告先発を付与。 日付一致でなく「相手略号が日程の相手と一致」で判定
+    # (Job は UTC、 試合は JST で date.today() がズレるため日付一致は不可。 cross-check で
+    #  誤ペアリング防止しつつ TZ 非依存にする)。
+    if games:
         st = fetch_giants_starters()
-        if st and _NPB_ABBR_TEAM.get(st.get("opp_abbr", "")) == games[0].get("opp"):
+        mapped = _NPB_ABBR_TEAM.get(st.get("opp_abbr", "")) if st else None
+        LOG.info("upcoming starters: st=%s mapped=%s game0_opp=%s game0_date=%s",
+                 st, mapped, games[0].get("opp"), games[0].get("date"))
+        if st and mapped == games[0].get("opp"):
             games[0]["starter_g"] = st.get("giants")
             games[0]["starter_o"] = st.get("opp")
     return games

@@ -1,5 +1,13 @@
 # 452 data-site 状況別データ深化 + データ堀の投資判断
 
+## /data/schedule(日程・結果)LIVE(2026-06-01)
+
+- 新規ページ `/data/schedule`(`data_site_template_schedule.py` + `fetch_giants_schedule` + publisher 配線)。
+  巨人の日程・結果を月別・1行1試合(勝=緑/負=灰・スコア・本拠地ビジター)で表示。games 由来・追加source無し。
+- image `data-site-publisher:schedule-b655062` / execution `kjdgc` / 20 tests pass。
+- **live verify: `https://yoshilover.com/data/schedule` http200、52試合行・5月/4月/3月ブロック表示**。
+- 残りページ: /data/team(球団ランキング)/ /data/leaders(各種記録)/ /data/legends hub。leaders は並行アクター 453(順位)と要調整。
+
 ## Phase B LIVE_DEPLOYED_VERIFIED(2026-06-01)
 
 - 曜日別 / 月別 / 交流戦別 split を選手ページに追加、image `data-site-publisher:phaseB-860c592`、

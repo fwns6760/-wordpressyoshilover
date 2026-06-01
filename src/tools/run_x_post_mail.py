@@ -172,6 +172,21 @@ def _data_split_max_per_run() -> int:
     return _resolve_int_env("X_POST_DATA_SPLIT_MAX", 2, min_value=0)
 
 
+def _video_radar_enabled() -> bool:
+    """451: env flag for 動画レーダー (公式/OB/メディア YouTube の懐かし/ファン動画候補)。
+
+    Default OFF。 ON 時のみ pick_candidates 後に video_radar 候補を append。
+    flag OFF では既存挙動完全不変 (rollback 余地)。
+    """
+    raw = (os.environ.get("ENABLE_X_POST_VIDEO_RADAR") or "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _video_radar_max_per_run() -> int:
+    """451: 動画候補数 / fire の上限 (default 3)。"""
+    return _resolve_int_env("X_POST_VIDEO_RADAR_MAX", 3, min_value=0)
+
+
 def _gemma_branding_enabled() -> bool:
     """392: env flag for Gemma 4 + Tavily REST branding candidate.
 
@@ -1522,6 +1537,31 @@ def main(argv: Sequence[str] | None = None) -> int:
                 LOG.info(
                     "data_split appended: base=%d data_split=%d total=%d",
                     before, len(ds_new), len(candidates),
+                )
+
+    # 451: flag ON 時、 公式/OB/メディア YouTube の「懐かし・ファン反応」動画候補を append。
+    # 転載しない (URL 紹介のみ)、 公開 X 自動投稿はしない (候補=メールまで)。 flag OFF で既存不変。
+    if _video_radar_enabled():
+        vr_max = _video_radar_max_per_run()
+        if vr_max > 0:
+            try:
+                vr_candidates = lane.build_video_radar_candidates(
+                    db_path,
+                    now=now_jst,
+                    max_count=vr_max,
+                    dedup_set=dedup_set,
+                )
+            except Exception as _vr_exc:  # noqa: BLE001
+                LOG.warning("video_radar build failed: %r", _vr_exc)
+                vr_candidates = []
+            _existing_sigs_vr = {getattr(c, "signature", "") for c in candidates}
+            vr_new = [c for c in vr_candidates if c.signature not in _existing_sigs_vr]
+            if vr_new:
+                before = len(candidates)
+                candidates = candidates + vr_new
+                LOG.info(
+                    "video_radar appended: base=%d video=%d total=%d",
+                    before, len(vr_new), len(candidates),
                 )
 
     # 392: flag ON 時は news_opinion fallback (template) を skip し、 Gemma 4

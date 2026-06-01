@@ -3214,5 +3214,50 @@ class BuildDataSplitCandidatesTests(unittest.TestCase):
         self.assertEqual(cands, [])
 
 
+class BuildVideoRadarCandidatesTests(unittest.TestCase):
+    """451: 動画レーダー候補 (公式/OB YouTube、 転載なし URL 紹介)。"""
+
+    _FEED = (
+        "<feed xmlns:yt='http://www.youtube.com/xml/schemas/2015'>"
+        "<title>巨人公式</title>"
+        "<entry><yt:videoId>VIDA</yt:videoId>"
+        "<title>【名場面】坂本勇人 2013年 伝説のサヨナラ</title>"
+        "<published>2026-05-30T10:00:00+00:00</published></entry>"
+        "</feed>"
+    )
+
+    def test_builds_candidate_with_url_and_no_repost_note(self):
+        from unittest import mock
+        from src import x_post_mail_lane as lane
+        with mock.patch(
+            "src.video_radar.load_radar_channels",
+            return_value=[{"channel_id": "UCx", "name": "巨人公式", "role": "official", "status": "confirmed"}],
+        ):
+            cands = lane.build_video_radar_candidates(
+                db_path=None, max_count=3, fetch_fn=lambda url: self._FEED,
+            )
+        self.assertEqual(len(cands), 1)
+        c = cands[0]
+        self.assertEqual(c.metric, "video_radar")
+        self.assertIn("watch?v=VIDA", c.post_text)         # URL 紹介
+        self.assertIn("#巨人", c.post_text)
+        self.assertEqual(c.signature, "video_radar|VIDA")
+        self.assertNotIn("さん", c.post_text)               # 敬称なし
+        self.assertIn("転載", c.draft_text)                 # 権利注記 (転載しない)
+
+    def test_dedup_set_skips(self):
+        from unittest import mock
+        from src import x_post_mail_lane as lane
+        with mock.patch(
+            "src.video_radar.load_radar_channels",
+            return_value=[{"channel_id": "UCx", "name": "巨人公式", "role": "official", "status": "confirmed"}],
+        ):
+            cands = lane.build_video_radar_candidates(
+                db_path=None, max_count=3, fetch_fn=lambda url: self._FEED,
+                dedup_set={"video_radar|VIDA"},
+            )
+        self.assertEqual(cands, [])
+
+
 if __name__ == "__main__":
     unittest.main()

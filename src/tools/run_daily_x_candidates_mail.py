@@ -44,6 +44,9 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     p.add_argument("--to", default=None)
     p.add_argument("--send-empty", action="store_true",
                    help="候補0でも送る(既定は0件なら送らない)")
+    p.add_argument("--max-mails", type=int,
+                   default=int(os.environ.get("DAILY_X_CANDIDATES_MAX_MAILS", "10")),
+                   help="1 fire で送る最大メール数(flood 防止、既定10)")
     return p.parse_args(argv)
 
 
@@ -71,35 +74,44 @@ def main(argv: Sequence[str] | None = None) -> int:
         LOG.warning("insight.db unavailable → 一軍候補 skip(昇格候補のみになる可能性)")
 
     result = dxc.generate()
-    n_ich = len(result["ichigun"])
-    n_mov = len(result["roster_moves"])
-    LOG.info("candidates: ichigun=%d roster_moves=%d", n_ich, n_mov)
+    cands = dxc.flatten_candidates(result)
+    LOG.info("candidates: news=%d hidden_hot=%d total=%d",
+             len(result.get("news", [])), len(result.get("hidden_hot", [])), len(cands))
 
-    if (n_ich + n_mov) == 0 and not args.send_empty:
+    if not cands and not args.send_empty:
         LOG.info("候補0件 → 送信せず exit 0(--send-empty で強制送信可)")
         return 0
 
-    subject, text_body, html_body = dxc.build_mail_bodies(result, date_label=date_label)
+    # 1候補 = 1メール(他の mail lane と同じ。多すぎ防止に上限)
+    cands = cands[: args.max_mails]
+    total = len(cands)
 
     if args.dry_run:
-        print("--- DRY RUN SUBJECT ---")
-        print(subject)
-        print("--- DRY RUN TEXT (head) ---")
-        print(text_body[:2500])
+        for i, c in enumerate(cands, 1):
+            subject, text_body, _ = dxc.build_single_mail(c, date_label=date_label, idx=i, total=total)
+            print(f"--- DRY RUN MAIL {i}/{total}: {subject} ---")
+            print(text_body[:600])
         return 0
 
-    request = bridge.MailRequest(
-        to=recipients,
-        subject=subject,
-        text_body=text_body,
-        html_body=html_body,
-        metadata={"lane": "daily-x-candidates", "ichigun": str(n_ich), "moves": str(n_mov)},
-    )
-    LOG.info("Sending mail to %s ...", recipients)
-    result_mail = bridge.send(request, dry_run=False)
-    LOG.info("mail send result: status=%s reason=%s refused=%s",
-             result_mail.status, result_mail.reason, result_mail.refused_recipients)
-    return 0 if result_mail.status in {"sent", "dry_run"} else 1
+    sent = 0
+    failures = 0
+    for i, c in enumerate(cands, 1):
+        subject, text_body, html_body = dxc.build_single_mail(c, date_label=date_label, idx=i, total=total)
+        request = bridge.MailRequest(
+            to=recipients,
+            subject=subject,
+            text_body=text_body,
+            html_body=html_body,
+            metadata={"lane": "daily-x-candidates", "seq": f"{i}/{total}", "bucket": c.bucket},
+        )
+        res = bridge.send(request, dry_run=False)
+        if res.status == "sent":
+            sent += 1
+        else:
+            failures += 1
+            LOG.warning("mail %d/%d not sent: status=%s reason=%s", i, total, res.status, res.reason)
+    LOG.info("daily-x-candidates done: sent=%d/%d failures=%d", sent, total, failures)
+    return 0 if failures == 0 else 1
 
 
 if __name__ == "__main__":

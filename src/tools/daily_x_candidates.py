@@ -248,86 +248,196 @@ def collect_roster_move_candidates(limit_posts: int = 40) -> list[Candidate]:
     return out
 
 
+def _fetch_recent_posts(limit_posts: int = 30) -> list[dict]:
+    """直近 WP 記事(title/link)を read-only GET。creds 無しなら []。"""
+    base = os.environ.get("WP_URL", "").strip().rstrip("/")
+    user = os.environ.get("WP_USER", "").strip()
+    pw = os.environ.get("WP_APP_PASSWORD", "").strip()
+    if not (base and user and pw):
+        LOG.info("WP creds 無し → ニュース連動は skip")
+        return []
+    try:
+        r = requests.get(
+            base + "/wp-json/wp/v2/posts",
+            params={"per_page": limit_posts, "_fields": "title,link,date", "orderby": "date", "order": "desc"},
+            auth=HTTPBasicAuth(user, pw),
+            timeout=20,
+        )
+        if not r.ok:
+            LOG.warning("WP posts fetch fail status=%d", r.status_code)
+            return []
+        return r.json() or []
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("WP posts fetch err: %r", exc)
+        return []
+
+
+def _giants_match_map(cur: sqlite3.Cursor) -> dict[str, str]:
+    """記事タイトル照合用 key→canonical。full(空白有/無)優先、姓は fallback。"""
+    roster = _giants_roster(cur)
+    full_keys: dict[str, str] = {}
+    surname_keys: dict[str, str] = {}
+    for n in roster:
+        full_keys[n.replace(" ", "")] = n
+        full_keys[n] = n
+        sur = n.split(" ")[0] if " " in n else n[:2]
+        surname_keys.setdefault(sur, n)  # 先勝ち(姓衝突は full 優先で吸収)
+    # full を優先するため後ろに surname を merge(full に無い key のみ)
+    for k, v in surname_keys.items():
+        full_keys.setdefault(k, v)
+    return full_keys
+
+
+def _pitching_number(cur: sqlite3.Cursor, player: str, snap: str) -> Optional[tuple[str, str]]:
+    """投手の数字(防御率)。last_7d → season の順。微小サンプルは誇張防止で除外。
+
+    sample_size < 3 の scope は採用しない(防御率0.00・セ1位 のような 1-2 回の
+    誇張を避け、 記事テキストの二軍成績 fallback に回す)。 セ順位は sample>=10 のみ。
+    """
+    for scope in ("last_7d", "season"):
+        r = cur.execute(
+            """SELECT metric_value, sample_size, league_rank FROM advanced_metric_snapshots
+               WHERE team_code='g' AND player_canonical=? AND snapshot_date=? AND scope=? AND metric_name='ERA'""",
+            (player, snap, scope),
+        ).fetchone()
+        if r and r[0] is not None and (r[1] or 0) >= 3:
+            rank_s = f"・セ{r[2]}位" if r[2] and r[2] <= 10 and (r[1] or 0) >= 10 else ""
+            label = "直近7日" if scope == "last_7d" else "今季"
+            return f"{player} {label} 防御率{r[0]:.2f}(投球回基準{r[1]}){rank_s}", f"insight.db {scope}"
+    return None
+
+
+def _article_number(title: str) -> Optional[str]:
+    """記事タイトルから数字を抽出(二軍/昇格の fallback、出典=記事)。"""
+    nums: list[str] = []
+    for pat in NUM_PATTERNS:
+        nums.extend(pat.findall(title))
+    if not nums:
+        return None
+    return " / ".join(dict.fromkeys(nums))[:60]
+
+
+def collect_news_anchored(cur: sqlite3.Cursor, posts: list[dict]) -> list[Candidate]:
+    """ニュース起点: 各記事の関連巨人選手にデータを紐付ける(RSS=鮮度ゲート内蔵)。
+
+    一軍打者→last_7d打率 / 投手→防御率 / 二軍・DB不在→記事タイトル内の数字。
+    自前の【巨人データ】post はデータ連動が冗長なので除外。
+    """
+    snap = cur.execute("SELECT MAX(snapshot_date) FROM advanced_metric_snapshots").fetchone()[0]
+    gmap = _giants_match_map(cur)
+    out: list[Candidate] = []
+    emitted: set[str] = set()  # 同一選手は最初に出た記事1本だけ(重複排除)
+    for p in posts:
+        title = (p.get("title", {}) or {}).get("rendered", "") or ""
+        link = p.get("link", "")
+        if title.startswith("【巨人データ】"):
+            continue  # 自前データ post には付けない
+        matched: list[str] = []
+        for key, canon in gmap.items():
+            if key in title and canon not in matched:
+                matched.append(canon)
+        if not matched:
+            continue
+        for player in matched[:3]:
+            if player in emitted:
+                continue
+            emitted.add(player)
+            num = _fresh_number(cur, player, snap)  # 一軍打者(日付ベース)
+            if num:
+                number, source, note = num[0], num[1], ""
+            else:
+                pit = _pitching_number(cur, player, snap)
+                if pit:
+                    number, source, note = pit[0], pit[1], ""
+                else:
+                    art = _article_number(title)
+                    if not art:
+                        continue  # DB も記事数字も無ければ skip(捏造しない)
+                    number = f"{player} … {art}"
+                    source = link
+                    note = "数字は記事タイトル由来。本文で正確に確認の上で使用"
+            out.append(Candidate(
+                bucket="ニュース連動",
+                player=f"{player}(記事: {title.strip()[:34]}…)",
+                number=number,
+                meaning="今日のニュースの選手 ＝ 反応が来やすい旬の話題にデータを添える",
+                source=link if source.startswith("http") or not link else f"{source} / {link}",
+                note=note,
+            ))
+    return out
+
+
 def generate(limit_ichigun: int = 6) -> dict:
     path = _db_path()
-    ichigun: list[Candidate] = []
+    posts = _fetch_recent_posts()
+    news: list[Candidate] = []
+    hidden_hot: list[Candidate] = []
     if path:
         with sqlite3.connect(path) as conn:
-            ichigun = collect_ichigun_candidates(conn.cursor())[:limit_ichigun]
+            cur = conn.cursor()
+            news = collect_news_anchored(cur, posts)
+            news_players = {c.player.split("(")[0] for c in news}
+            # ニュースに出ていない「隠れ好調」だけを DB signal から補完
+            for c in collect_ichigun_candidates(cur):
+                if c.player not in news_players:
+                    hidden_hot.append(c)
+                if len(hidden_hot) >= limit_ichigun:
+                    break
     else:
-        LOG.warning("insight.db 不在(INSIGHT_DB_PATH 未設定)→ 一軍候補 skip")
-    moves = collect_roster_move_candidates()
-    return {"ichigun": ichigun, "roster_moves": moves}
+        LOG.warning("insight.db 不在(INSIGHT_DB_PATH 未設定)→ DB 連動 skip")
+    return {"news": news, "hidden_hot": hidden_hot}
 
 
-def build_mail_bodies(result: dict, *, date_label: str = "") -> tuple[str, str, str]:
-    """候補 dict → (subject, text_body, html_body)。投稿はしない、選別用の通知のみ。"""
-    ichigun = result["ichigun"]
-    moves = result["roster_moves"]
-    total = len(ichigun) + len(moves)
-    subject = f"【巨人】今日のXデータ候補 {date_label}({total}件)".strip()
+def flatten_candidates(result: dict) -> list[Candidate]:
+    """送信順に1本のリスト化(ニュース連動 → 隠れ好調)。"""
+    return list(result.get("news", [])) + list(result.get("hidden_hot", []))
 
-    text_lines = [
-        "今日のX投稿候補(手動選別用 / 投稿はされません)",
-        "各候補は 数字/意味/一言 テンプレ。一言はあなたが埋めてください。",
+
+def _esc(s: str) -> str:
+    return (s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def build_single_mail(c: Candidate, *, date_label: str, idx: int, total: int) -> tuple[str, str, str]:
+    """1候補 = 1メール(他の mail lane と同じく1件ずつ)。(subject, text, html)。"""
+    seq = f"({idx}/{total})" if total > 1 else ""
+    head = c.player.split("(")[0]
+    subject = f"【巨人Xデータ】{seq} {head} {date_label}".strip()
+
+    text_body = "\n".join([
+        f"今日のX投稿候補 {seq}（手動選別用 / 投稿はされません）",
         "",
-        f"■ 一軍・調子(ロスター∩鮮度ゲート通過) {len(ichigun)}件",
-    ]
-    for c in ichigun:
-        text_lines.append("")
-        text_lines.append(c.render())
-    text_lines.append("")
-    text_lines.append(f"■ 二軍/昇格・抹消(記事タイトル由来) {len(moves)}件")
-    for c in moves:
-        text_lines.append("")
-        text_lines.append(c.render())
-    if total == 0:
-        text_lines.append("\n(候補なし)")
-    text_body = "\n".join(text_lines)
+        c.render(),
+        "",
+        "─ 一言を埋めてそのままXへ。使わないなら無視でOK。",
+    ])
 
-    def esc(s: str) -> str:
-        return (s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-
-    def card(c: "Candidate") -> str:
-        src = f'<a href="{esc(c.source)}">{esc(c.source)}</a>' if c.source.startswith("http") else esc(c.source)
-        note = f'<div style="color:#999;font-size:12px;">※ {esc(c.note)}</div>' if c.note else ""
-        return (
-            '<div style="border:1px solid #eee;border-radius:6px;padding:10px 12px;margin:0 0 10px;">'
-            f'<div style="font-weight:600;color:#5d4037;">【{esc(c.bucket)}】{esc(c.player)}</div>'
-            f'<div>数字：{esc(c.number)}</div>'
-            f'<div>意味：{esc(c.meaning)}</div>'
-            '<div style="color:#1976d2;">一言：(ファン向けの一言をここに)</div>'
-            f'<div style="color:#888;font-size:12px;">出典：{src}</div>'
-            f'{note}</div>'
-        )
-
+    src = (f'<a href="{_esc(c.source)}">記事/出典を開く</a>'
+           if c.source.startswith("http") else _esc(c.source))
+    note = f'<div style="color:#999;font-size:12px;margin-top:6px;">※ {_esc(c.note)}</div>' if c.note else ""
     html_body = (
-        '<div style="font-family:sans-serif;max-width:640px;">'
-        f'<h2 style="font-size:17px;">今日のX投稿候補 {esc(date_label)}</h2>'
-        '<p style="font-size:12px;color:#666;">手動選別用 / 投稿はされません。一言はあなたが埋めてください。</p>'
-        f'<h3 style="font-size:14px;">■ 一軍・調子 {len(ichigun)}件</h3>'
-        + "".join(card(c) for c in ichigun)
-        + f'<h3 style="font-size:14px;">■ 二軍/昇格・抹消 {len(moves)}件</h3>'
-        + "".join(card(c) for c in moves)
-        + ('<p>(候補なし)</p>' if total == 0 else '')
-        + '</div>'
+        '<div style="font-family:sans-serif;max-width:560px;">'
+        f'<div style="font-size:12px;color:#888;">今日のX投稿候補 {_esc(seq)} / 手動選別用・投稿はされません</div>'
+        '<div style="border:1px solid #eee;border-radius:8px;padding:14px;margin:8px 0;">'
+        f'<div style="font-weight:600;color:#5d4037;margin-bottom:6px;">【{_esc(c.bucket)}】{_esc(c.player)}</div>'
+        f'<div style="margin:2px 0;">数字：{_esc(c.number)}</div>'
+        f'<div style="margin:2px 0;">意味：{_esc(c.meaning)}</div>'
+        '<div style="margin:2px 0;color:#1976d2;">一言：（ファン向けの一言をここに）</div>'
+        f'<div style="margin-top:6px;color:#888;font-size:12px;">出典：{src}</div>'
+        f'{note}</div></div>'
     )
     return subject, text_body, html_body
 
 
 def _print_report(result: dict) -> None:
-    ichigun = result["ichigun"]
-    moves = result["roster_moves"]
+    cands = flatten_candidates(result)
     print("=" * 60)
-    print("今日のX投稿候補(449 §5 RSS話題ゲート / read-only / 投稿はしない)")
+    print("今日のX投稿候補(449 §5 ニュース連動 / read-only / 投稿はしない)")
+    print(f"news={len(result.get('news', []))} hidden_hot={len(result.get('hidden_hot', []))} 計{len(cands)}件")
     print("=" * 60)
-    print(f"\n■ 一軍・調子(insight.db、ロスター∩鮮度ゲート通過) {len(ichigun)}件")
-    for c in ichigun:
-        print("\n" + c.render())
-    print(f"\n\n■ 二軍/昇格・抹消(記事タイトル由来) {len(moves)}件")
-    for c in moves:
-        print("\n" + c.render())
-    if not ichigun and not moves:
+    for i, c in enumerate(cands, 1):
+        print(f"\n--- {i}/{len(cands)} ---")
+        print(c.render())
+    if not cands:
         print("\n候補なし(DB/WP creds を確認)")
 
 

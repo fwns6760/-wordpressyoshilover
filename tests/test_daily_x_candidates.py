@@ -113,5 +113,41 @@ class IchigunPipelineTests(unittest.TestCase):
         self.assertIn(".444", cands["岸田 行倫"].number)
 
 
+class NewsAnchoredTests(IchigunPipelineTests):
+    """ニュース起点: 記事タイトルの巨人選手にデータを紐付ける(ゲート①の DB を継承)。"""
+
+    def test_news_links_giants_player_data(self) -> None:
+        conn = sqlite3.connect(self.tmp.name)
+        posts = [
+            {"title": {"rendered": "巨人・岸田行倫が決勝打 好調キープ"}, "link": "https://x/1"},
+            {"title": {"rendered": "【巨人データ】岸田行倫 打率セ2位"}, "link": "https://x/2"},  # 自前→除外
+            {"title": {"rendered": "阪神・佐藤輝明が満塁弾"}, "link": "https://x/3"},  # 他球団→紐付かない
+        ]
+        cands = dxc.collect_news_anchored(conn.cursor(), posts)
+        conn.close()
+        joined = " ".join(c.player + c.number for c in cands)
+        self.assertIn("岸田 行倫", joined)         # 記事の巨人選手にデータ紐付け
+        self.assertIn(".444", joined)               # last_7d データ
+        self.assertNotIn("佐藤輝明", joined)         # 他球団は紐付かない
+        # 【巨人データ】post は除外(冗長回避)
+        self.assertTrue(all("x/2" not in c.source for c in cands))
+
+
+class SingleMailTests(unittest.TestCase):
+    def test_one_candidate_per_mail(self) -> None:
+        c = dxc.Candidate("ニュース連動", "岸田 行倫(記事: …)", "直近7日 打率.444", "旬の話題", "https://x/1")
+        subj, text, html = dxc.build_single_mail(c, date_label="2026-06-01", idx=2, total=5)
+        self.assertIn("(2/5)", subj)
+        self.assertIn("岸田 行倫", subj)
+        self.assertIn(".444", text)
+        self.assertIn("一言", html)
+
+    def test_flatten_order(self) -> None:
+        res = {"news": [dxc.Candidate("ニュース連動", "A", "n", "m", "")],
+               "hidden_hot": [dxc.Candidate("直近変化型", "B", "n", "m", "")]}
+        flat = dxc.flatten_candidates(res)
+        self.assertEqual([c.player for c in flat], ["A", "B"])
+
+
 if __name__ == "__main__":
     unittest.main()

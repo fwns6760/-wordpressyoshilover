@@ -147,8 +147,16 @@ DB を全スキャンするのではなく、**RSS が拾った旬の話題を�
 - 例: `6/2 投稿2 / 良かった=昇格理由型 / 投稿2・見送り5・迷い1`
 - 1週間後に「3型のどれが効いたか」を振り返り、広げるか判断。
 
-### 将来の準自動化(B、今週はやらない)
-「今日の記事に出た player × insight.db 日付ベース stat」を join した日次候補リスト + 記事からの数値抽出(正規表現ベース)。**新規 Gemini 不要・新規 source 不要**。手動運用で勝ち型が見えてから着手。
+### 準自動化(B)── 2026-06-01 LIVE_DEPLOYED(user GO)
+
+毎朝 候補リストをメール送信する read-only Job として稼働開始。**投稿はしない**(手動選別用の通知のみ)。
+
+- ツール: `src/tools/daily_x_candidates.py`(候補生成、ロスター∩最終出場∩日付ベース数字)+ `run_daily_x_candidates_mail.py`(GCS pull → 生成 → SMTP 送信)
+- infra: Cloud Run Job `daily-x-candidates-mail`(image `daily-xcand-aa185b2`)+ Scheduler `daily-x-candidates-mail-trigger`(**毎朝 7:30 JST**)。SMTP は kobayashi mail lane と同経路。
+- 宛先: `fwns6760@gmail.com`。候補0件の日は送信しない。
+- **新規 Gemini なし / 新規 source なし / X API なし / WP は read-only GET / 投稿なし**。コスト: 既存無料枠内(1日1 fire)。
+- 初回実機: 2026-06-01 execution `daily-x-candidates-mail-xr87v` → `status=sent`(一軍6 + 昇格3 件)。
+- 運用: 毎朝メールから 448 §3 の型で手動選別 → X 手動投稿。1週間で効いた型を見る。
 
 ## 6. 今週やらないこと(再掲・HOLD)
 

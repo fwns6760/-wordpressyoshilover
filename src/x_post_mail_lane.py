@@ -1669,9 +1669,20 @@ def build_video_radar_candidates(
     def _detect(text: str) -> str:
         return detect_giants_player_name(text, alias_map=alias_map)
 
+    # RSSHub 叩きすぎ防止: fetch_buzzing_players と gather_buzz_posts は同じ 8 feed を
+    # 同 URL で読むため、 1 fire 内で同 URL を 1 回だけ取得する memo cache を噛ませる
+    # (16→8 fetch/fire)。 試合帯は 15 分おき発火なので RSSHub レート対策に効く。
+    _base_fetch = fetch_fn or _vr._default_fetch
+    _fetch_cache: dict = {}
+
+    def _cached_fetch(url: str) -> str:
+        if url not in _fetch_cache:
+            _fetch_cache[url] = _base_fetch(url)
+        return _fetch_cache[url]
+
     # X バズ signal (RSSHub 経由、 X API 不使用)。 取得失敗は空で続行 (graceful)。
     try:
-        buzz_counts = _vr.fetch_buzzing_players(detect_player_fn=_detect, fetch_fn=fetch_fn)
+        buzz_counts = _vr.fetch_buzzing_players(detect_player_fn=_detect, fetch_fn=_cached_fetch)
     except Exception as exc:  # noqa: BLE001
         LOG.info("x_buzz buzz skip: %r", exc)
         buzz_counts = {}
@@ -1682,7 +1693,7 @@ def build_video_radar_candidates(
     try:
         posts = _vr.gather_buzz_posts(
             detect_player_fn=_detect,
-            fetch_fn=fetch_fn,
+            fetch_fn=_cached_fetch,
             buzz_players=buzz_players,
             min_score=min_score,
             now=now,
@@ -2415,7 +2426,7 @@ def phase_freshness_max_age_hours(now: datetime) -> float:
     label = x_impression_timing_label(now)
     L = _X_IMPRESSION_TIMING_LABELS
     if label == L["in_game_strong"]:
-        return 3.0   # 試合中 = 即 (ライブの今)
+        return 0.5   # 試合中 = 即 (直近30分、 15分おき発火に合わせライブの今だけ)
     if label == L["postgame_peak"]:
         return 6.0   # 試合直後
     if label in (L["lineup"], L["pregame_db"]):

@@ -59,7 +59,7 @@ def extract_rss_keywords(
             if key in seen:
                 continue
             seen.add(key)
-            out.append({"player": player, "events": events, "title": title})
+            out.append({"player": player, "events": events, "title": title, "url": item.get("url", "")})
     return out
 
 
@@ -186,6 +186,67 @@ def build_quote_captions(
             "player": player,
             "headline": headline,
             "caption": f"{player}、{stem}…！{data}。",
+        })
+    return out
+
+
+def _caption_for(db_path: str, player: str, events: list) -> Optional[str]:
+    """player + events → ヨシラバー声のコメント+データ 1 行 (quote/reply 共通)。"""
+    headline = headline_from_events(events)
+    stem = headline.rstrip("！!")
+    pit = _player_pitching(db_path, player)
+    bat = _player_batting(db_path, player)
+    is_pitcher = bool(pit and (not bat or any(w in events for w in ("完投", "完封", "好投", "奪三振", "勝利"))))
+    if is_pitcher and pit:
+        era = f"・防御率{pit['era']:.2f}" if pit["era"] is not None else ""
+        data = f"今季{pit['games']}登板{era}・{pit['k']}K"
+    elif bat and bat["avg"] is not None:
+        avg = f"{bat['avg']:.3f}".lstrip("0")
+        data = f"今季打率{avg}・{bat['h']}安打{bat['rbi']}打点"
+    else:
+        return None
+    return f"{player}、{stem}…！{data}。"
+
+
+def build_reply_candidates(
+    db_path: str,
+    *,
+    fetch_fn: Optional[Callable[[str], str]] = None,
+    max_replies: int = 5,
+    detect_player_fn: Optional[Callable[[str], str]] = None,
+) -> list[dict]:
+    """大手巨人アカ投稿への『リプライ候補』。 同じヨシラバー声 + 大手投稿URL/tweet_id。
+
+    user が大手投稿にリプ → 大手の客層に露出 (小規模アカウントのインプ近道)。 巨人選手限定。
+    Returns [{player, reply, url, tweet_id, headline}]。
+    """
+    import re as _re2
+    if detect_player_fn is None:
+        from src.x_post_mail_lane import detect_giants_player_name, _load_giants_player_aliases
+        _am = _load_giants_player_aliases()
+
+        def detect_player_fn(t: str) -> str:  # noqa: E731
+            return detect_giants_player_name(t, alias_map=_am)
+
+    kws = extract_rss_keywords(detect_player_fn=detect_player_fn, fetch_fn=fetch_fn)
+    out: list[dict] = []
+    used: set[str] = set()
+    for kw in kws:
+        if len(out) >= max_replies:
+            break
+        player, events, url = kw["player"], kw["events"], kw.get("url", "")
+        if player in used or not url or not _is_giants(db_path, player):
+            continue
+        m = _re2.search(r"/status/(\d+)", url)
+        if not m:
+            continue
+        cap = _caption_for(db_path, player, events)
+        if not cap:
+            continue
+        used.add(player)
+        out.append({
+            "player": player, "reply": cap, "url": url,
+            "tweet_id": m.group(1), "headline": headline_from_events(events),
         })
     return out
 

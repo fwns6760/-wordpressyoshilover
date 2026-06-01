@@ -959,6 +959,9 @@ class Candidate:
     # 451 (2026-06-01): 引用RT 候補 (x_buzz_post) の元ツイート URL。 空でなければ HTML mail の
     # X 投稿ボタンを quote intent (text=コメント&url=元ツイート) にして引用RTで開く (半自動)。
     quote_url: str = ""
+    # 451 (2026-06-01): リプライ候補の対象 tweet id。 空でなければ HTML mail のボタンを
+    # reply intent (in_reply_to) にして、 大手投稿への返信として開く (インプ近道)。
+    reply_to_id: str = ""
     # 438 Phase 1 (2026-05-27): comment 系候補 (GEMMA_BRANDING) の og:image
     # 添付。 ``image_bytes`` が空でなければ既存 437 image gen path を bypass
     # して この bytes をそのまま GCS upload + share-x-cand に乗せる。
@@ -3703,6 +3706,14 @@ def encode_x_quote_intent_url(text: str, quote_url: str) -> str:
     return f"{_X_INTENT_URL_BASE}?text={enc_text}&url={enc_url}"
 
 
+def encode_x_reply_intent_url(text: str, tweet_id: str) -> str:
+    """リプライ用 X Web Intent URL。 ``in_reply_to`` で対象 tweet への返信として開く
+    (text=ヨシラバー声のリプ文)。 大手投稿に返信=大観客に露出 (インプ近道)。 半自動。"""
+    enc_text = _url_quote(text or "", safe="")
+    tid = _url_quote(str(tweet_id or ""), safe="")
+    return f"{_X_INTENT_URL_BASE}?text={enc_text}&in_reply_to={tid}"
+
+
 # ---------------------------------------------------------------------------
 # Mail composition
 # ---------------------------------------------------------------------------
@@ -4293,7 +4304,11 @@ def _compose_html_body(
     for idx, cand in enumerate(candidates, start=1):
         post_text = _candidate_post_text(cand)
         cand_quote_url = getattr(cand, "quote_url", "") or ""
-        if cand_quote_url:
+        cand_reply_id = getattr(cand, "reply_to_id", "") or ""
+        if cand_reply_id:
+            # 451: リプライ候補は reply intent (大手投稿への返信) で開く
+            intent_url = encode_x_reply_intent_url(post_text, cand_reply_id)
+        elif cand_quote_url:
             # 451: 引用RT 候補は quote intent (コメント + 元ツイート) で開く
             intent_url = encode_x_quote_intent_url(post_text, cand_quote_url)
         else:
@@ -4336,6 +4351,8 @@ def _compose_html_body(
         button_href = share_x_url or intent_url
         if share_x_url:
             button_label = "🐦 画像つきで X に投稿"
+        elif cand_reply_id:
+            button_label = "💬 この投稿にリプライ"
         elif cand_quote_url:
             button_label = "🐦 引用RTで X に投稿"
         else:

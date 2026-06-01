@@ -193,6 +193,12 @@ def _quote_captions_enabled() -> bool:
     return raw in {"1", "true", "yes", "on"}
 
 
+def _reply_candidates_enabled() -> bool:
+    """451: 「リプライ候補」(大手投稿への返信、 インプ近道) をメールに出すか (default OFF)。"""
+    raw = (os.environ.get("ENABLE_X_POST_REPLY_CANDIDATES") or "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
 def _video_radar_llm_enabled() -> bool:
     """451: 引用RTコメントを Gemini 3.1 Flash Lite で生成するか (default OFF)。
 
@@ -1624,6 +1630,37 @@ def main(argv: Sequence[str] | None = None) -> int:
             before = len(candidates)
             candidates = candidates + cap_cands
             LOG.info("quote_captions appended: base=%d cap=%d total=%d", before, len(cap_cands), len(candidates))
+
+    # 451: 「💬リプライ候補」(大手投稿 + 同じヨシラバー声のリプ文)。 大手投稿に返信=大観客に
+    # 露出 (小規模アカウントのインプ近道)。 1タップ返信ボタン (reply intent)。 flag ON 時のみ。
+    if _reply_candidates_enabled() and db_path:
+        try:
+            from src import sns_topic_cards as _tc2
+            reps = _tc2.build_reply_candidates(db_path, max_replies=5)
+        except Exception as _rep_exc:  # noqa: BLE001
+            LOG.warning("reply_candidates build failed: %r", _rep_exc)
+            reps = []
+        rep_cands = []
+        for r in reps:
+            sig = "reply_cand|" + r["tweet_id"]
+            if dedup_set is not None and sig in dedup_set:
+                continue
+            draft = (
+                f"返信先(大手投稿): {r['url']}\n"
+                f"リプ文: {r['reply']}\n\n"
+                "※ ボタンで返信画面が開く(リプ文入り)→ 投稿。 大手の客層に露出=インプ近道。"
+            )
+            rep_cands.append(lane.Candidate(
+                title=f"💬 リプライ候補: {r['player']} {r['headline']}",
+                metric="reply_candidate", period_label="リプライ候補",
+                draft_text=draft, char_count=len(r["reply"]), signature=sig,
+                post_text=r["reply"], focus_player=r["player"], reply_to_id=r["tweet_id"],
+                why_now="大手投稿に返信=インプ近道", source_material_type="reply_candidate",
+            ))
+        if rep_cands:
+            before = len(candidates)
+            candidates = candidates + rep_cands
+            LOG.info("reply_candidates appended: base=%d rep=%d total=%d", before, len(rep_cands), len(candidates))
 
     # 392: flag ON 時は news_opinion fallback (template) を skip し、 Gemma 4
     # + Tavily REST で branding candidate を 1-3 件生成して append する。

@@ -100,5 +100,36 @@ class QuoteCaptionsTests(unittest.TestCase):
         self.assertIn("10K", cap)              # データ行 (pitching_logs K=10)
 
 
+class ReplyCandidatesTests(unittest.TestCase):
+    def _db(self):
+        fd, path = tempfile.mkstemp(suffix=".db"); os.close(fd)
+        conn = sqlite3.connect(path)
+        conn.execute("CREATE TABLE batting_logs (game_id TEXT, team_name TEXT, player_canonical TEXT, AB INT, H INT, RBI INT)")
+        conn.execute("CREATE TABLE pitching_logs (game_id TEXT, team_name TEXT, player_canonical TEXT, result_mark TEXT, K INT, IP REAL, ER INT)")
+        conn.execute("INSERT INTO pitching_logs VALUES ('g1','巨人','竹丸和幸','○',10,8.0,1)")
+        conn.commit(); conn.close()
+        self.addCleanup(lambda: os.path.exists(path) and os.remove(path))
+        return path
+
+    def test_reply_candidate_keeps_target_url_and_voice(self):
+        feed = ("<rss><channel><item><title>竹丸和幸 プロ初完投 8回10K</title>"
+                "<link>https://x.com/hochi_giants/status/12345</link></item></channel></rss>")
+        reps = tc.build_reply_candidates(
+            self._db(), fetch_fn=lambda u: feed, max_replies=3,
+            detect_player_fn=lambda t: "竹丸和幸" if "竹丸" in t else "",
+        )
+        self.assertEqual(len(reps), 1)
+        self.assertEqual(reps[0]["tweet_id"], "12345")     # 返信先 tweet id
+        self.assertIn("status/12345", reps[0]["url"])
+        self.assertIn("プロ初完投", reps[0]["reply"])       # 同じ声
+        self.assertIn("10K", reps[0]["reply"])             # データ
+
+    def test_reply_intent_url(self):
+        from src.x_post_mail_lane import encode_x_reply_intent_url
+        u = encode_x_reply_intent_url("竹丸和幸 痺れた", "12345")
+        self.assertIn("in_reply_to=12345", u)
+        self.assertIn("text=", u)
+
+
 if __name__ == "__main__":
     unittest.main()

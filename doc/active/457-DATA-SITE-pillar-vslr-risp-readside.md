@@ -31,6 +31,17 @@
 - チーム横断ランキング記事の出力に regression 無し(既存 aggregator を壊さない)。
 - targeted pytest green、production DB copy preview で1選手 verify。
 
+## 設計判断(2026-06-01 深掘りで判明・着手前に解決)
+
+`at_bat_details` には **打数(official AB)列が無い**。result_text から AB を導く分類器も未実装(現存は `ranking_article_publisher._is_hit_result` と `insight_etl.parse_rbi_from_result_text` のみ)。稼働中の vs左右/RISP **lane は PA / 安打 / 打点 集計で「打率」を出していない**。
+→ pillar で 打率 を出すには **official AB 分類器(四球/死球/犠打/犠飛/打撃妨害 等を AB から除外)を新規実装する必要**があり、誤分類は公開記事の事実誤り(致命的 NG)に直結する。文脈圧下で雑に書かない。
+
+**選択肢**:
+- (A) official AB 分類器を新規実装 + fixture で厳密に固める → pillar の他 split と同じ「打率」で統一(推奨だが慎重なテスト必須)
+- (B) lane と同じ PA / 安打 / 打点 + 安打率(安打/PA)を表示し、official 打率 は出さない(AB 誤分類リスク回避・但し他 split の打率と表記が不揃い)
+
+次着手時に (A) を基本線とし、AB 分類器を `insight_etl` に追加(NPB result_text の語彙を fixture 化)。これが 457 の最初のサブタスク。
+
 ## 依存
 
-なし(read-side ルートは backfill 不要)。447 は本 ticket 完了で CLOSE/統合。
+なし(read-side ルートは backfill 不要)。447 は本 ticket 完了で CLOSE/統合。**着手前に上記 AB 分類器の設計を確定**(456 と違い単純横展開でない)。

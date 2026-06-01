@@ -150,7 +150,16 @@ user 要望 (本日 PM、 対話で段階確定) を反映。 全便 image rebui
 - データ/ランキング系 X-post 画像 (437) + SNS カードのフッターが `@yoshilover_giants` (実在しないハンドル) だった。
   実アカウント `@yoshilover6760` に修正。 commit `8d7231a` (`x_post_image_gen_v2.py` / `x_post_image_gen.py` / `sns_card.py`)。
 
-### 9.6 未確定 / 次手
-- 実 fire での結果確認 (古い記事/古い投稿が消えるか、 動画候補が出るか) は次の自然 fire 待ち。
-- 保留: 動画コメントを既存 `_SYSTEM_PROMPT_YOSHILOVER` voice に統一 + フェーズ hint で例1/2/3 トーンに寄せる (GO 待ち、 本日は未実装)。
+### 9.6 voice 仕様準拠への載せ替え (commit `0b1f6d5`、 LIVE)
+- user 指摘「ヨシラバーvoiceでない / フーガ缶詰を混ぜたもの」+ 仕様書確認
+  (`doc/reference/x_post_mail_branding_spec.md` L70/104/105): フーガ `@EH87EazmV9D2eSw`=長文分析・試合後振り返り /
+  缶詰 `@kandume92`=試合中LIVE・連呼 / ヨシラバーvoice=両者のリアルpost合成 few-shot。
+- 当初 `build_quote_rt_comment` は私の手書き近似 prompt だった (= voice ズレの原因)。 仕様書の合成 voice
+  `_build_system_prompt` (統合 prompt + 時間帯トーン hint) を土台に載せ替え。 時間帯は now の hour 自動:
+  17-22=試合中熱量 ramp (完了形禁止) / 22時以降=祝杯全開 / 昼=落ち着いた期待、 18-21時は缶詰寄り persona。
+- `vr_comment_fn` が `now_jst` を渡す。 ローカル Gemini 鍵なしのため実 LLM 出力は次 fire の mail で確認。
+
+### 9.7 未確定 / 次手
+- 実 fire での結果確認 (古い記事/古い投稿が消えるか、 動画候補が出るか、 voice がフーガ+缶詰に乗ってるか) は次の自然 fire 待ち。
 - 締めすぎ (記事が全然出ない) があれば窓を緩める調整余地あり (`phase_freshness_max_age_hours` 1 箇所)。
+- インプ施策の多くは既実装と判明 (reply intent / x_impression_timing_label / data-split の hashtag)。 新規起票は重複調査後。

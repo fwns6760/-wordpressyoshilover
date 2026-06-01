@@ -1624,8 +1624,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                     try:
                         from src import x_post_branding_gen as _vr_xbg
 
-                        def vr_comment_fn(post_text, player, phase_hint="", _k=_vr_key, _g=_vr_xbg):  # noqa: E731
-                            return _g.build_quote_rt_comment(post_text, player, phase_hint, gemini_api_key=_k)
+                        def vr_comment_fn(post_text, player, phase_hint="", _k=_vr_key, _g=_vr_xbg, _now=now_jst):  # noqa: E731
+                            # voice は spec の フーガ+缶詰 合成 (_build_system_prompt)。 時間帯トーンは now から自動。
+                            return _g.build_quote_rt_comment(post_text, player, gemini_api_key=_k, now=_now)
                     except Exception as _vr_imp_exc:  # noqa: BLE001
                         LOG.warning("video_radar LLM comment unavailable: %r", _vr_imp_exc)
                         vr_comment_fn = None

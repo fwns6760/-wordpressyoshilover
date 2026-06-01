@@ -1091,35 +1091,38 @@ def build_quote_rt_comment(
     gemini_api_key: str,
     model_id: str = _GEMMA_BRANDING_MODEL,
     temperature: float = 0.9,
+    now=None,
 ) -> str:
-    """451: X バズ投稿への引用RTコメントを Gemini 3.1 Flash Lite で生成 (ヨシラバー voice)。
+    """451: X バズ投稿への引用RTコメントを Gemini で生成。
 
-    元投稿の出来事に反応する短文。 失敗 / safety NG / 捏造数字 / api_key 無し → 空文字
-    (caller は LLM なしの出来事 template に fallback する)。 投稿に無い数字は hallucination
-    として破棄 (verified_text = 元投稿 + 選手名)。
+    voice は spec (doc/reference/x_post_mail_branding_spec.md L70/104/105) の
+    **フーガ (長文分析・試合後振り返り) + 缶詰 (試合中LIVE・連呼) 合成** をそのまま使う。
+    base = ``_build_system_prompt`` (統合 voice + 時間帯トーン hint)。 時間帯は ``now`` の hour
+    から自動 (17-22=試合中熱量 ramp / 22時以降=祝杯全開 / 昼=落ち着いた期待)、 18-21時は缶詰寄り。
+    ``phase_hint`` は後方互換で受けるが、 now があれば _build_system_prompt の時間帯 hint が正本。
+    失敗 / safety NG / 捏造数字 / api_key 無し → 空文字 (caller は template fallback)。
     """
     log = _logging.getLogger("x_post_branding_gen")
     src = (post_text or "").strip()
     who = (player or "").strip()
     if not src or not gemini_api_key:
         return ""
+    from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+    _jst = _tz(_td(hours=9))
+    now_jst = now.astimezone(_jst) if now is not None else _dt.now(_jst)
+    hour = int(now_jst.hour)
+    today = now_jst.strftime("%Y-%m-%d")
+    persona = "kandume" if 18 <= hour <= 21 else "fuuga"  # 試合中帯は缶詰寄り
+    base_voice = _build_system_prompt(hour, today, persona=persona)
     prompt = "\n".join([
-        "あなたは熱心な巨人ファン。次の X 投稿（動画つき）を見て、引用RT / 自分の投稿に添える",
-        "短いコメントを、実際に試合を見て一喜一憂しているファンの voice で書く。",
-        "ルール（ヨシラバー voice、 違反したら出力しない）:",
-        "- 投稿の出来事に素直に反応する。実況や編集者ぶった俯瞰・煽りはしない。",
-        f"- 選手はフルネーム（例: {who}）。「さん」「君」などの敬称はつけない。",
-        "- ハッシュタグ・メディア名・URL は書かない。",
-        "- 投稿に書いていない数字・事実を足さない（捏造禁止）。",
-        "- 順位や rate 数字（◯位 / .345 / 防御率1.85 等）は書かない。数字に触れるなら『数字を残してる』等にぼかす。",
-        "- 断定語（絶対 / 間違いなく / 必ず）、強批判（戦犯 / クビ / 無能）、他球団・相手ファン煽りは禁止。",
-        "- 編集者ぶった定型（ついに / 我が軍 / 物語がここから / いよいよ / 連覇のピース）は使わない。",
-        "- ファンらしい語彙（ガチで凄い / とんでもない / 噛み締める / あつい / ナイスー 等）は OK。",
-        "- 短文を改行で2〜3行に並べる（段落 narrative にしない）。60〜120字程度。",
-        "  コメント本文のみ出力（前置き・説明・引用符なし）。",
-        f"- {phase_hint}" if phase_hint else "",
+        base_voice,
         "",
+        "----",
+        "【今回のタスク: 引用RTコメント (動画つき投稿への反応)】",
+        "上記 voice のまま、 次の X 投稿に反応する引用RTコメントを書く。",
         f"対象選手: {who or '(不明)'}",
+        "60〜120字、 短文を改行で2〜3行 (1 行 1 観点)。 投稿に無い数字・事実は足さない。",
+        "コメント本文のみ出力 (前置き・説明・引用符なし)。",
         f"X 投稿: 「{src}」",
         "",
         "引用RTコメント:",

@@ -45,6 +45,7 @@ from src.data_site_query import (
     fetch_team_leaders,
     fetch_team_rankings,
     fetch_giants_team_record,
+    fetch_team_leaders,
     fetch_player_npb_ranks,
     fetch_pitching_stats_season,
     fetch_pitcher_opponent_split_stats,
@@ -97,6 +98,9 @@ from src.data_site_template_team import (
     render_team_html,
     render_team_title,
     render_team_excerpt,
+    render_ranking_html,
+    render_ranking_title,
+    render_ranking_excerpt,
 )
 from src.data_site_template_pillar import (
     PillarPlayerInfo,
@@ -501,6 +505,18 @@ def publish_phase1() -> dict[str, object]:
     )
     LOG.info("team upsert slug=team page_id=%s action=%s metrics=%d",
              team_result.page_id, team_result.action, len(team_rankings))
+
+    # ranking ページ upsert (選手別 球団内ランキング HUB、 462) — parent=cluster → /data/ranking/
+    leaders = fetch_team_leaders()
+    ranking_result = _upsert_page(
+        slug="ranking",
+        title=render_ranking_title(),
+        content_html=render_ranking_html(leaders),
+        parent=cluster_page_id,
+        excerpt=render_ranking_excerpt(leaders),
+    )
+    LOG.info("ranking upsert slug=ranking page_id=%s action=%s cats=%d",
+             ranking_result.page_id, ranking_result.action, len(leaders))
 
     summary = {
         "status": "ok",

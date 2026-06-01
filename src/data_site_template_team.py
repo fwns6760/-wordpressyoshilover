@@ -99,3 +99,59 @@ def render_team_html(rankings: dict, team_record: dict = None) -> str:
         f'<p style="margin-top:16px;"><a href="{CLUSTER_URL}">← 選手データ一覧へ</a></p>'
         '</div>'
     )
+
+
+# --- 462: 選手ランキング HUB (/data/ranking、 fetch_team_leaders 由来、 pillar 回遊) ---
+def render_ranking_title() -> str:
+    return "巨人 選手ランキング 2026【本塁打・打点・打率・防御率ほか】 | 巨人データ"
+
+
+def render_ranking_excerpt(leaders: dict) -> str:
+    cats = "・".join(list(leaders.keys())[:6]) if leaders else "本塁打・打点・打率"
+    return (f"読売ジャイアンツ2026の選手別 球団内ランキング（{cats}）。毎日更新、"
+            "各選手名から詳細データページへ。")
+
+
+def _ranking_block(cat: str, entries: list) -> str:
+    from src.data_site_slug import player_slug  # lazy import (循環回避)
+
+    def _link(name: str) -> str:
+        try:
+            return f"/data/{player_slug(name)}/"
+        except Exception:  # noqa: BLE001
+            return ""
+
+    rows = ""
+    for i, e in enumerate(entries):
+        href = _link(e.player)
+        name_html = (f'<a href="{href}" style="flex:1;color:#1a1a1a;text-decoration:none;">{_esc(e.player)}</a>'
+                     if href else f'<span style="flex:1;">{_esc(e.player)}</span>')
+        rows += (
+            '<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-bottom:1px solid #f0f0f0;">'
+            f'<span style="width:24px;color:#e25400;text-align:center;font-weight:700;">{i + 1}</span>'
+            f'{name_html}'
+            f'<span style="color:#c0392b;font-weight:700;">{_esc(e.display)}</span></div>'
+        )
+    return (
+        '<section class="ys-card" style="margin:0 0 14px;">'
+        f'<h2 style="font-size:16px;margin:0 0 6px;">巨人 {_esc(cat)} ランキング</h2>'
+        f'{rows}</section>'
+    )
+
+
+def render_ranking_html(leaders: dict) -> str:
+    nav = (
+        '<nav class="ys-breadcrumb" style="font-size:12px;color:#666;margin:0 0 12px;">'
+        f'<a href="{SITE_BASE}/" style="color:#666;">Home</a> › '
+        f'<a href="{CLUSTER_URL}" style="color:#666;">巨人選手データ</a> › <span>選手ランキング</span></nav>'
+    )
+    blocks = "".join(_ranking_block(c, e) for c, e in (leaders or {}).items() if e)
+    return (
+        '<div style="font-family:sans-serif;max-width:640px;">'
+        f'{nav}'
+        '<h1 style="font-size:20px;margin:0 0 4px;">巨人 選手ランキング 2026</h1>'
+        '<p style="font-size:13px;color:#666;margin:0 0 14px;">球団内の選手別ランキング。毎日更新。各選手名から詳細データへ。</p>'
+        f'{blocks or "<p>データ準備中</p>"}'
+        f'<p style="margin-top:16px;"><a href="{CLUSTER_URL}">← 選手データ一覧へ</a></p>'
+        '</div>'
+    )

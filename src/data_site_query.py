@@ -2072,6 +2072,77 @@ def fetch_npb_cl_standings(year: int = 2026) -> list[dict]:
         return []
 
 
+_GIANTS_NAMES = {"巨人", "読売", "読売ジャイアンツ"}
+
+
+def parse_giants_upcoming(html_text: str, year: int, today, limit: int = 6) -> list[dict]:
+    """NPB月間日程 HTML から巨人の未来試合を抽出 (459/C、 純粋関数で test 可)。
+
+    返り値: [{"date","opp","home_away","time","place"}, ...] 日付昇順、 score 未確定(未来)のみ。
+    team1=本拠 / team2=ビジター(NPB日程表記)。 予告先発は本ページに無い(空)ため非掲載。
+    """
+    date_pos = [
+        (m.start(), int(m.group(1)), int(m.group(2)))
+        for m in re.finditer(r"(\d{1,2})/(\d{1,2})（[日月火水木金土]）", html_text)
+    ]
+    out: list[dict] = []
+    for tm in re.finditer(
+        r'class="team1"[^>]*>(.*?)</[^>]+>.*?class="team2"[^>]*>(.*?)</[^>]+>', html_text, re.S
+    ):
+        t1 = re.sub(r"<[^>]+>", "", _html.unescape(tm.group(1))).strip()
+        t2 = re.sub(r"<[^>]+>", "", _html.unescape(tm.group(2))).strip()
+        if t1 not in _GIANTS_NAMES and t2 not in _GIANTS_NAMES:
+            continue
+        mo = da = None
+        for p, m_, d_ in date_pos:
+            if p <= tm.start():
+                mo, da = m_, d_
+            else:
+                break
+        if mo is None:
+            continue
+        try:
+            gd = date(year, mo, da)
+        except ValueError:
+            continue
+        if gd < today:
+            continue
+        win = html_text[tm.end():tm.end() + 500]
+        sc1 = re.search(r'class="score1"[^>]*>(.*?)</', win, re.S)
+        score1 = re.sub(r"<[^>]+>", "", _html.unescape(sc1.group(1))).strip() if sc1 else ""
+        if score1:  # 既に結果あり = 過去
+            continue
+        tmt = re.search(r'class="time"[^>]*>(.*?)</', win, re.S)
+        plc = re.search(r'class="place"[^>]*>(.*?)</', win, re.S)
+        out.append({
+            "date": gd.isoformat(),
+            "opp": (t2 if t1 in _GIANTS_NAMES else t1),
+            "home_away": ("本拠地" if t1 in _GIANTS_NAMES else "ビジター"),
+            "time": (re.sub(r"<[^>]+>", "", _html.unescape(tmt.group(1))).strip() if tmt else ""),
+            "place": (re.sub(r"<[^>]+>", "", _html.unescape(plc.group(1))).strip() if plc else ""),
+        })
+        if len(out) >= limit:
+            break
+    return out
+
+
+def fetch_giants_upcoming(limit: int = 6) -> list[dict]:
+    """巨人の今後の試合を NPB公式月間日程から scrape (459/C)。 当月の未消化試合。"""
+    try:
+        today = date.today()
+    except Exception:  # noqa: BLE001
+        return []
+    url = f"https://npb.jp/games/{today.year}/schedule_{today.month:02d}_detail.html"
+    try:
+        r = requests.get(url, timeout=10)
+        r.raise_for_status()
+        r.encoding = "utf-8"
+        return parse_giants_upcoming(r.text, today.year, today, limit=limit)
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("fetch_giants_upcoming err: %r", exc)
+        return []
+
+
 def fetch_giants_team_record() -> dict:
     """巨人 チーム成績サマリー (games から、 459)。
 

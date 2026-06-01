@@ -49,8 +49,34 @@ def _row_html(r) -> str:
     )
 
 
-def render_schedule_html(rows: list) -> str:
-    """日程・結果ページ本文。月ごとにグルーピング(新しい月が上)。"""
+def _build_upcoming_card(upcoming: list) -> str:
+    """今後の試合カード (459/C、 NPB公式日程 scrape)。"""
+    if not upcoming:
+        return ""
+    rows = ""
+    for u in upcoming:
+        md = str(u.get("date", ""))[5:].replace("-", "/")
+        rows += (
+            '<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;'
+            'border-radius:6px;margin:0 0 6px;background:#fff8f2;">'
+            f'<span style="width:42px;color:#666;font-size:13px;">{_esc(md)}</span>'
+            f'<span style="width:46px;font-size:12px;color:#888;">{_esc(u.get("time"))}</span>'
+            f'<span style="flex:1;font-size:13px;">{_esc(u.get("home_away"))} vs {_esc(u.get("opp"))}</span>'
+            f'<span style="font-size:12px;color:#888;">{_esc(u.get("place"))}</span>'
+            '</div>'
+        )
+    return (
+        '<section class="ys-card" style="margin:0 0 16px;">'
+        '<h2 style="font-size:16px;margin:0 0 8px;">📅 今後の試合 '
+        '<span style="font-size:11px;color:#e25400;">毎日更新</span></h2>'
+        f'{rows}'
+        '<p style="font-size:11px;color:#999;margin:6px 0 0;">出典: NPB公式日程</p>'
+        '</section>'
+    )
+
+
+def render_schedule_html(rows: list, upcoming: list = None) -> str:
+    """日程・結果ページ本文。今後の試合(上) + 結果を月ごとにグルーピング(新しい月が上)。"""
     by_month: dict[str, list] = {}
     order: list[str] = []
     for r in rows:
@@ -82,6 +108,7 @@ def render_schedule_html(rows: list) -> str:
         '<h1 style="font-size:20px;margin:0 0 4px;">巨人 試合日程・結果 2026</h1>'
         '<p style="font-size:13px;color:#666;margin:0 0 14px;">勝=緑 / 負=灰。スコア・対戦相手・本拠地/ビジターを月別に。</p>'
     )
+    upcoming_card = _build_upcoming_card(upcoming or [])
     body = "".join(blocks) if blocks else "<p>データ準備中</p>"
     back = f'<p style="margin-top:16px;"><a href="{CLUSTER_URL}">← 選手データ一覧へ</a></p>'
-    return head + body + back + "</div>"
+    return head + upcoming_card + body + back + "</div>"

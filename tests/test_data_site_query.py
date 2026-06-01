@@ -498,3 +498,27 @@ class StandingsParseTests(unittest.TestCase):
         self.assertTrue(g["is_giants"])
         # 交流戦表の巨人(.500) は混入しない (seen で重複排除)
         self.assertEqual(sum(1 for r in rows if r["team"] == "巨人"), 1)
+
+
+class UpcomingParseTests(unittest.TestCase):
+    """459/C parse_giants_upcoming (NPB日程 HTML、 未来試合のみ抽出、 純粋関数)。"""
+
+    FIXTURE = (
+        '<div>6/1（月）<span class="team1">巨人</span><span class="team2">中日</span>'
+        '<span class="score1">3</span><span class="time">18:00</span><span class="place">バンテリンD</span></div>'
+        '<div>6/2（火）<span class="team1">巨人</span><span class="team2">オリックス</span>'
+        '<span class="score1"></span><span class="time">18:00</span><span class="place">東京ドーム</span></div>'
+        '<div>6/2（火）<span class="team1">阪神</span><span class="team2">広島</span>'
+        '<span class="score1"></span><span class="time">18:00</span><span class="place">甲子園</span></div>'
+    )
+
+    def test_parse_future_only(self) -> None:
+        from data_site_query import parse_giants_upcoming
+        from datetime import date as _date
+        rows = parse_giants_upcoming(self.FIXTURE, 2026, _date(2026, 6, 2))
+        self.assertEqual(len(rows), 1)  # 6/1(過去)除外, 阪神戦(非巨人)除外
+        u = rows[0]
+        self.assertEqual(
+            (u["date"], u["opp"], u["home_away"], u["time"], u["place"]),
+            ("2026-06-02", "オリックス", "本拠地", "18:00", "東京ドーム"),
+        )

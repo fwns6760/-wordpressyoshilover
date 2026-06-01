@@ -45,6 +45,7 @@ from src.data_site_query import (
     fetch_team_leaders,
     fetch_team_rankings,
     fetch_giants_team_record,
+    fetch_giants_upcoming,
     fetch_npb_cl_standings,
     fetch_recent_hot,
     fetch_team_leaders,
@@ -465,7 +466,7 @@ def publish_phase1() -> dict[str, object]:
     sched_result = _upsert_page(
         slug="schedule",
         title=render_schedule_title(),
-        content_html=render_schedule_html(sched_rows),
+        content_html=render_schedule_html(sched_rows, upcoming=fetch_giants_upcoming()),
         parent=cluster_page_id,
         excerpt=render_schedule_excerpt(sched_rows),
     )

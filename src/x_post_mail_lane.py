@@ -1275,6 +1275,7 @@ def build_news_opinion_candidate(
     source_name: str = "",
     source_excerpt: str = "",
     now: Optional[datetime] = None,  # noqa: ARG001 - kept for caller symmetry/tests
+    comment_fn=None,
 ) -> Optional[Candidate]:
     """Build a fallback X candidate from explicit source text only.
 
@@ -1293,7 +1294,17 @@ def build_news_opinion_candidate(
     excerpt = _truncate_text(source_excerpt, 120)
     material_type, material_label = _classify_news_material(title, excerpt)
     source_topic_family = _infer_source_topic_family(title, excerpt)
-    post_text = _build_source_backed_post_text(player, material_type)
+    # voice化 (A、 2026-06-01): comment_fn (フーガ+缶詰 LLM) があれば記事に反応する voice を生成。
+    # 失敗 / 未設定 / 未検証数字混入は空 → 従来の安全テンプレに fallback (数値未照合の安全担保は維持)。
+    post_text = ""
+    if comment_fn:
+        try:
+            post_text = (comment_fn(f"{title}。{excerpt}", player) or "").strip()
+        except Exception as exc:  # noqa: BLE001
+            LOG.info("news_opinion comment_fn skip: %r", exc)
+            post_text = ""
+    if not post_text:
+        post_text = _build_source_backed_post_text(player, material_type)
     proof_lines = [
         "【根拠: RSS/ニュース候補】",
         f"材料種別: {material_label} ({material_type})",
@@ -1403,6 +1414,7 @@ def build_data_split_candidates(
     min_phase_ab: int = 20,
     min_venue_ab: int = 30,
     dedup_set: Optional[set[str]] = None,
+    comment_fn=None,
 ) -> list[Candidate]:
     """448: 巨人 regular の「序盤/中盤/終盤」「本拠地/ビジター」別打率の大きな差を
     検出し、 大手未掲載の差別化 X 投稿候補 (メール) を作る。
@@ -1516,6 +1528,18 @@ def build_data_split_candidates(
         if dedup_set is not None and signature in dedup_set:
             LOG.info("data_split dedup skip %s", signature)
             continue
+        # voice化 (B、 2026-06-01): comment_fn (フーガ+缶詰 LLM) があれば、 データへの
+        # フーガ風の一言の読みを頭に足す (数字は表側に残す)。 rate 数字を渡さない neutral 文を
+        # source にして echo を防ぐ。 失敗/空なら lead 無しで従来の表のみ (graceful)。
+        if comment_fn:
+            neutral = title.split(" (")[0]  # 「岡本和真 序盤に強い」 (rate 抜き)
+            try:
+                lead = (comment_fn(neutral, canon) or "").strip()
+            except Exception as exc:  # noqa: BLE001
+                LOG.info("data_split comment_fn skip: %r", exc)
+                lead = ""
+            if lead:
+                post_text = f"{lead}\n\n{post_text}"
         draft = "\n".join([
             "【根拠: 巨人選手データ (大手未掲載 split)】",
             db_fact_line,

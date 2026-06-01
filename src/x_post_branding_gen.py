@@ -1068,6 +1068,7 @@ def build_quote_rt_comment(
     model_id: str = _GEMMA_BRANDING_MODEL,
     temperature: float = 0.9,
     now=None,
+    subject: str = "X投稿",
 ) -> str:
     """451: X バズ投稿への引用RTコメントを Gemini で生成。
 
@@ -1094,14 +1095,14 @@ def build_quote_rt_comment(
         base_voice,
         "",
         "----",
-        "【今回のタスク: 引用RTコメント (動画つき投稿への反応)】",
-        "上記 voice のまま、 次の X 投稿に反応する引用RTコメントを書く。",
+        f"【今回のタスク: {subject}への反応コメント】",
+        f"上記 voice のまま、 次の{subject}に反応するヨシラバーのコメントを書く。",
         f"対象選手: {who or '(不明)'}",
-        "60〜120字、 短文を改行で2〜3行 (1 行 1 観点)。 投稿に無い数字・事実は足さない。",
+        "60〜120字、 会話的に短く (1〜2文 / 多くて3行)。 元ネタに無い数字・事実は足さない。",
         "コメント本文のみ出力 (前置き・説明・引用符なし)。",
-        f"X 投稿: 「{src}」",
+        f"{subject}: 「{src}」",
         "",
-        "引用RTコメント:",
+        "コメント:",
     ])
     try:
         from google import genai

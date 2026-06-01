@@ -209,6 +209,27 @@ def _video_radar_llm_enabled() -> bool:
     return raw in {"1", "true", "yes", "on"}
 
 
+def _make_voiced_comment_fn(now_jst, subject):
+    """A/B (2026-06-01): フーガ+缶詰 voice で text に反応する短文を返す closure を作る。
+
+    news_opinion (A) / data-split (B) を全面 voice 化するための共通 factory。 key 無し /
+    import 失敗 → None を返し、 caller (builder) は従来の安全テンプレに graceful fallback。
+    voice は `build_quote_rt_comment` (= `_build_system_prompt` 経由の合成 voice + 時間帯トーン)。
+    """
+    key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GEMMA_BRANDING_GEMINI_API_KEY") or ""
+    if not key:
+        return None
+    try:
+        from src import x_post_branding_gen as _xbg
+    except Exception:  # noqa: BLE001
+        return None
+
+    def _fn(text, player, _k=key, _g=_xbg, _now=now_jst, _s=subject):
+        return _g.build_quote_rt_comment(text, player, gemini_api_key=_k, now=_now, subject=_s)
+
+    return _fn
+
+
 def _gemma_branding_enabled() -> bool:
     """392: env flag for Gemma 4 + Tavily REST branding candidate.
 
@@ -443,6 +464,7 @@ def _fetch_news_opinion_fallback_candidates(
     max_candidates: int,
     now: datetime,
     recent_player_counts: dict[str, int] | None = None,
+    comment_fn=None,
 ) -> list[lane.Candidate]:
     """Fill sparse data mails with source-backed news/opinion candidates.
 
@@ -527,6 +549,7 @@ def _fetch_news_opinion_fallback_candidates(
                 source_name=str(source.get("name") or ""),
                 player_name=player,
                 now=now,
+                comment_fn=comment_fn,  # A: フーガ+缶詰 voice (None なら従来テンプレ)
             )
             if cand is None:
                 continue
@@ -1595,6 +1618,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     now=now_jst,
                     max_count=ds_max,
                     dedup_set=dedup_set,
+                    comment_fn=_make_voiced_comment_fn(now_jst, "このデータ"),  # B: フーガ風の一言
                 )
             except Exception as _ds_exc:  # noqa: BLE001
                 LOG.warning("data_split build failed: %r", _ds_exc)
@@ -1767,6 +1791,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             max_candidates=news_priority_count,
             now=now_jst,
             recent_player_counts=recent_player_counts,
+            comment_fn=_make_voiced_comment_fn(now_jst, "ニュース記事"),  # A: フーガ+缶詰 voice
         )
         if fallback_candidates:
             before = len(candidates)
@@ -1791,6 +1816,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             max_candidates=args.max_candidates,
             now=now_jst,
             recent_player_counts=recent_player_counts,
+            comment_fn=_make_voiced_comment_fn(now_jst, "ニュース記事"),  # A: フーガ+缶詰 voice
         )
         if fallback_candidates:
             before = len(candidates)

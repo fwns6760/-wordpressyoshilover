@@ -63,36 +63,39 @@ user が 1 日数回受け取る mail に **巨人 X 投稿案** を並べる。
 4. Gemma 4 31B に system prompt + few-shot 例 + DB fact + Tavily snippet を渡して post 本文 1 件生成
 5. spec 382 hard rule validator で safety check (URL / 媒体名 / 未検証数字 / hashtag 禁止)
 
-**system prompt の構成** (`src/x_post_branding_gen.py:51` `_SYSTEM_PROMPT_BASE`):
-- 「あなたは熱心な巨人ファンとして X 投稿案を書きます」
-- hard rule (媒体名 / URL / hashtag / 未検証数字 全禁止、280 字以内、非元巨人 MLB NG)
-- トーン規定 (本物の巨人ファンらしく、煽り定型語 NG: 「ついに」「我が軍」「いよいよ」等)
-- **few-shot 例 2 件**: フーガ + 缶詰 のリアル post から合成した例 (試合後祝杯 / 試合前展望)
-- **時間帯 tone hint** (実装済、`_build_system_prompt`):
-  - 5-11 時 (朝便): softer、余韻、「噛み締めながら〜」
-  - 11-17 時 (lunch / afternoon): 落ち着いた期待感
-  - 17-22 時 (evening): ワクワク前のめり、「今夜は〜」
-  - 22-5 時 (postgame): 祝杯 / 悔しさ全開、「完勝!」「ガチ凄い」
+**モデル**: `gemini-3.1-flash-lite` (2026-05-22 に gemma-4-31b-it から swap、 free tier、 `_GEMMA_BRANDING_MODEL`)。
+投稿は短い (フーガ中央80字 / 缶詰中央53字) ので、 品質はモデルでなく **prompt (特に few-shot) 次第**。
+
+**voice = フーガ + 缶詰 の合成** (2026-06-01 再設計、 実投稿40件ずつ分析。 `_SYSTEM_PROMPT_YOSHILOVER` + `_build_system_prompt`):
+
+- **フーガ** (`@EH87EazmV9D2eSw`): 起用・打順・継投・運用・人事を推論する戦術派。 中央80字。
+  語尾「〜気がする / 〜だよな / 〜かな」。 事実→なぜ→今後の先読み。 短くても判断が入る (「有原炎上」「浦田は当たりっぽいな」)
+- **缶詰** (`@kandume92`): 辛口の本音・ユーモア・ライブ熱。 中央53字。 辛口+理由+擁護着地
+  (「昨日の打線は流石に物足りない。ただ2連投明けで〜。竹丸、次は頼れる存在に」)。 試合中は連呼・絶叫 (「うおおお！！」)
+
+**2 モード (フェーズ駆動、 `_build_system_prompt` の time_tone_hint)**:
+- **考察モード** (試合前 / 試合後 / 日中): 意見 + 理由 + 戦術の読み を会話的散文で短く。 few-shot 例A-D
+- **ライブモード** (試合中 17-22 時): 缶詰の即時反応・連呼・絶叫 OK、 ただし一言の状況・読みは入れる。 few-shot 例E-F
+
+**旧 voice の反省 (2026-06-01、 これを禁止)**:
+- 「完勝！ / 7連勝！！ / ガチで噛み締める」 式の **短い感嘆を改行で積むだけの作りポエム** = 最も嫌われる
+- 中身 (理由・戦術・読み) の無い応援、 感嘆詞だけの行
+- 旧ルール (「短文連投+改行」「感嘆詞のみの行OK」「140字未満禁止」) がポエムを強制+水増し誘発 → 撤廃
+
+**ルール (hard、 code 側 `_gemma_branding_safety_check` でも gate)**:
+- 媒体名 / URL / hashtag / 未検証数字 / 順位・rate (◯位 / .345 / 防御率1.85) 禁止
+- 個人攻撃 (使えない / 戦犯 / クビ / 無能)・差別・事実超え断定 (絶対 / 必ず)・他球団煽り 禁止
+- **辛口は建設的なら OK** (歯がゆさ・本音 → 理由 / 擁護 / 期待に着地)
+- 長さ 80-180 字目安 (短くてよい、 水増し禁止)、 選手フルネーム敬称なし
+
+**適用範囲**: gemma branding (`build_gemma_branding_candidate`) + 動画引用RT (`build_quote_rt_comment`)。 両方 `_build_system_prompt` 経由なので 1 箇所で全 lane 反映。
 
 **env flag**:
-- `X_POST_MAIL_GEMMA_GEN_ENABLED=1` (prod ON)
-- `X_POST_MAIL_GEMMA_GEN_MAX=2` (default、便あたり 2 件)
-- `GEMINI_API_KEY` / `TAVILY_API_KEY` (Secret Manager binding)
+- `X_POST_MAIL_GEMMA_GEN_ENABLED=1` (prod ON) / `X_POST_MAIL_GEMMA_GEN_MAX=2` / `GEMINI_API_KEY` / `TAVILY_API_KEY`
 
-**silent skip 条件** (どれか hit したら None 返却、log は出る):
-- player 不正 / 巨人 roster 不一致
-- API key 不足
-- Tavily 結果 0 件 (factual ground 無し → hallucination 抑制で生成しない)
-- Gemma 失敗 (rate limit / network 等)
-- spec 382 safety_check 失敗
+**silent skip 条件**: player 不正 / API key 不足 / Tavily 0 件 / Gemini 失敗 / safety_check 失敗 → None (log は出る)
 
-**コスト**:
-- Gemini API Gemma 4 31B: **free tier**
-- Tavily API: 1,000 credits/月、現状 5 便 × 2 件 = 10 query/日 = 300 query/月 (限度内)
-
-**TODO 検討中**:
-- Tavily query にファン視点 keyword 追加 (`巨人 {player} 反応 ファン` 等)
-- few-shot 例に「試合中 LIVE 実況」型 (缶詰の voice) を追加
+**コスト**: Gemini `gemini-3.1-flash-lite` = free tier / Tavily 1,000 credits/月 (現状 ~300/月、 限度内)。 ※「free tier ¥0」は 24h billing 実測で確認すること (過去事故あり)。
 
 ### 3.3 fan_voice (試合時間帯のみ、新規、TODO)
 

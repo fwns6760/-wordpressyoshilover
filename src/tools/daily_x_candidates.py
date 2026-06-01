@@ -73,18 +73,67 @@ class Candidate:
     meaning: str         # 意味: 行(データ由来の事実テンプレ)
     source: str          # 出典(DB last_7d / 記事URL)
     note: str = ""       # 補足(鮮度・要確認 等)
+    comment: str = ""    # 一言ドラフト(テンプレ自動生成、LLM不使用、編集前提)
 
     def render(self) -> str:
+        comment = self.comment or "(ファン向けの一言をここに / 448 テンプレ)"
         lines = [
             f"【{self.bucket}】{self.player}",
             f"数字：{self.number}",
             f"意味：{self.meaning}",
-            "一言：(ファン向けの一言をここに / 448 テンプレ)",
+            f"一言(下書き・調整可)：{comment}",
             f"出典：{self.source}",
         ]
         if self.note:
             lines.append(f"※ {self.note}")
         return "\n".join(lines)
+
+
+def _short_name(player: str) -> str:
+    """表示用の短い選手名(記事注記やスペースを除く)。"""
+    return player.split("(")[0].replace(" ", "").strip()
+
+
+def _auto_comment(bucket: str, player: str, number: str) -> str:
+    """一言ドラフトをテンプレで自動生成(LLM不使用・コスト¥0・編集前提)。
+
+    number 内のキーワードで型を判定し、選手名/数字を織り込む。同一文の連発を避けるため
+    選手名+数字長で deterministic に variant を選ぶ(乱数なし=テスト安定)。
+    """
+    name = _short_name(player)
+    pick = (len(player) + len(number)) % 3
+
+    if "防御率" in number:
+        variants = [
+            f"{name}の状態の良さ、数字でも裏が取れてる。",
+            f"この内容なら{name}は期待していい。次の登板が楽しみ。",
+            f"{name}、結果も中身も来てる。覚えておきたい投手。",
+        ]
+    elif "打率" in number or "OPS" in number or "出塁率" in number:
+        variants = [
+            f"{name}、今ちょうど来てる時期。試合前に押さえておきたい数字。",
+            f"この数字を見ると{name}が話題なのも納得。",
+            f"地味に{name}が効いてる。打線が回る理由はここ。",
+        ]
+    elif "番" in number:  # 打順・起用
+        variants = [
+            f"{name}のこの起用、データで見ると意図が読める。",
+            f"なぜ{name}がここ?を数字で補足するとこう見える。",
+            f"{name}の打順、ちゃんと理由がありそう。",
+        ]
+    elif ("連続" in number) or ("本" in number) or ("号" in number) or ("初勝利" in number):
+        variants = [
+            f"{name}、地味だけどこれが続くと大きい。",
+            f"止まらないうちに{name}のこの記録は見ておきたい。",
+            f"{name}のこの数字、もっと注目されていい。",
+        ]
+    else:  # 二軍・昇格・記事数字 ほか
+        variants = [
+            f"なぜ今{name}が話題か、この数字を見ると腑に落ちる。",
+            f"{name}の上がり方、数字が説明してくれてる。",
+            f"{name}、この内容なら見ておいて損はない。",
+        ]
+    return variants[pick]
 
 
 def _db_path() -> Optional[str]:
@@ -199,7 +248,8 @@ def collect_ichigun_candidates(cur: sqlite3.Cursor) -> list[Candidate]:
             "出塁/安打が途切れず続いている＝打線が繋がりやすい" if is_streak
             else "直近で数字が上がっている＝今が旬の選手"
         )
-        out.append(Candidate(bucket, player, number, meaning, source, note))
+        out.append(Candidate(bucket, player, number, meaning, source, note,
+                             comment=_auto_comment(bucket, player, number)))
     return out
 
 
@@ -363,6 +413,7 @@ def collect_news_anchored(cur: sqlite3.Cursor, posts: list[dict]) -> list[Candid
                 meaning="今日のニュースの選手 ＝ 反応が来やすい旬の話題にデータを添える",
                 source=link if source.startswith("http") or not link else f"{source} / {link}",
                 note=note,
+                comment=_auto_comment("ニュース連動", player, number),
             ))
     return out
 
@@ -403,12 +454,18 @@ def build_single_mail(c: Candidate, *, date_label: str, idx: int, total: int) ->
     head = c.player.split("(")[0]
     subject = f"【巨人Xデータ】{seq} {head} {date_label}".strip()
 
+    comment = c.comment or "（ファン向けの一言をここに）"
+    # そのまま X に貼れる下書き(数字 + 一言)。コピペ用に1ブロックで用意。
+    x_draft = f"{c.number}\n\n{comment}"
     text_body = "\n".join([
         f"今日のX投稿候補 {seq}（手動選別用 / 投稿はされません）",
         "",
         c.render(),
         "",
-        "─ 一言を埋めてそのままXへ。使わないなら無視でOK。",
+        "─ Xコピペ用(下書き、調整可) ─",
+        x_draft,
+        "",
+        "─ そのまま貼って一言だけ直せばOK。使わないなら無視でOK。",
     ])
 
     src = (f'<a href="{_esc(c.source)}">記事/出典を開く</a>'
@@ -421,9 +478,13 @@ def build_single_mail(c: Candidate, *, date_label: str, idx: int, total: int) ->
         f'<div style="font-weight:600;color:#5d4037;margin-bottom:6px;">【{_esc(c.bucket)}】{_esc(c.player)}</div>'
         f'<div style="margin:2px 0;">数字：{_esc(c.number)}</div>'
         f'<div style="margin:2px 0;">意味：{_esc(c.meaning)}</div>'
-        '<div style="margin:2px 0;color:#1976d2;">一言：（ファン向けの一言をここに）</div>'
+        f'<div style="margin:2px 0;color:#1976d2;">一言(下書き・調整可)：{_esc(comment)}</div>'
         f'<div style="margin-top:6px;color:#888;font-size:12px;">出典：{src}</div>'
-        f'{note}</div></div>'
+        f'{note}</div>'
+        '<div style="background:#fafafa;border-radius:8px;padding:12px;margin:8px 0;">'
+        '<div style="font-size:12px;color:#888;margin-bottom:4px;">Xコピペ用(下書き)</div>'
+        f'<div style="white-space:pre-wrap;font-size:13px;">{_esc(x_draft)}</div>'
+        '</div></div>'
     )
     return subject, text_body, html_body
 

@@ -131,6 +131,8 @@ class NewsAnchoredTests(IchigunPipelineTests):
         self.assertNotIn("佐藤輝明", joined)         # 他球団は紐付かない
         # 【巨人データ】post は除外(冗長回避)
         self.assertTrue(all("x/2" not in c.source for c in cands))
+        # 全候補に一言ドラフトが入る
+        self.assertTrue(cands and all(c.comment for c in cands))
 
 
 class SingleMailTests(unittest.TestCase):
@@ -141,6 +143,24 @@ class SingleMailTests(unittest.TestCase):
         self.assertIn("岸田 行倫", subj)
         self.assertIn(".444", text)
         self.assertIn("一言", html)
+
+    def test_auto_comment_filled_by_type(self) -> None:
+        # 打率系 / 防御率系 / 打順系 で異なる型の一言が入る(空でない)
+        bat = dxc._auto_comment("ニュース連動", "岸田 行倫", "岸田 行倫 直近7日 打率.444(12打席)")
+        pit = dxc._auto_comment("ニュース連動", "戸郷翔征", "戸郷翔征 直近7日 防御率1.29(投球回基準7)")
+        lineup = dxc._auto_comment("直近変化型", "井上温大", "井上温大 今試合6番")
+        self.assertTrue(bat and pit and lineup)
+        self.assertIn("岸田", bat)
+        self.assertIn("戸郷", pit)
+        self.assertIn("井上", lineup)
+
+    def test_single_mail_has_x_draft(self) -> None:
+        c = dxc.Candidate("ニュース連動", "岸田 行倫", "直近7日 打率.444", "旬", "https://x/1",
+                          comment="今ちょうど来てる。")
+        _, text, html = dxc.build_single_mail(c, date_label="2026-06-01", idx=1, total=3)
+        self.assertIn("Xコピペ用", text)
+        self.assertIn("今ちょうど来てる。", text)
+        self.assertIn("今ちょうど来てる。", html)
 
     def test_flatten_order(self) -> None:
         res = {"news": [dxc.Candidate("ニュース連動", "A", "n", "m", "")],

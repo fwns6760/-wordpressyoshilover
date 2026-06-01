@@ -33,6 +33,16 @@ class InlineImage:
 
 
 @dataclass(frozen=True)
+class Attachment:
+    """汎用の添付ファイル (inline 画像と違い、 本文に埋め込まず添付として付ける)。"""
+
+    filename: str
+    data: bytes
+    maintype: str = "text"
+    subtype: str = "markdown"
+
+
+@dataclass(frozen=True)
 class MailRequest:
     to: list[str]
     subject: str
@@ -42,6 +52,7 @@ class MailRequest:
     reply_to: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
     inline_images: list[InlineImage] = field(default_factory=list)
+    attachments: list[Attachment] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -267,6 +278,14 @@ def _build_message(request: MailRequest, *, sender: str, recipients: list[str]) 
                     cid=f"<{cid}>",
                     filename=img.filename or f"{cid}.{img.mime_subtype}",
                 )
+    # 汎用添付 (multipart/mixed へ昇格)。 inline 画像の後に付ける。
+    for att in getattr(request, "attachments", None) or []:
+        message.add_attachment(
+            att.data,
+            maintype=att.maintype,
+            subtype=att.subtype,
+            filename=att.filename,
+        )
     return message
 
 

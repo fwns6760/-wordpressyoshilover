@@ -3244,14 +3244,22 @@ class BuildVideoRadarCandidatesTests(unittest.TestCase):
         c = cands[0]
         self.assertEqual(c.metric, "x_buzz_post")
         self.assertEqual(c.focus_player, "坂本勇人")
-        # 本文は native (外部リンクを貼らない)
+        # 本文は native (外部リンクを貼らない) — yoshilover voice、 hashtag 無し
         self.assertNotIn("http", c.post_text)
-        self.assertIn("#巨人", c.post_text)
-        self.assertTrue(c.signature.startswith("xbuzz|"))
-        # 元投稿 URL は draft (引用RT/リプライ先) に入る
-        self.assertIn("引用RT/リプライ先", c.draft_text)
-        self.assertIn("https://x.com/yomiuri_giants/status/", c.draft_text)
+        self.assertNotIn("#", c.post_text)
         self.assertNotIn("さん", c.post_text)
+        # 引用元ツイート URL は quote_url に乗る (HTML mail の引用RTボタン用)
+        self.assertEqual(c.quote_url, "https://x.com/yomiuri_giants/status/111")
+        self.assertTrue(c.signature.startswith("xbuzz|"))
+        self.assertIn("引用RT/リプライ先", c.draft_text)
+
+    def test_quote_intent_url_for_buzz_candidate(self):
+        from src.x_post_mail_lane import encode_x_quote_intent_url
+        url = encode_x_quote_intent_url("坂本勇人 きてる！", "https://x.com/y/status/9")
+        self.assertIn("intent/post", url)
+        self.assertIn("text=", url)
+        self.assertIn("url=", url)  # 引用元ツイートが quote として開く
+        self.assertIn("status%2F9", url)  # url= は percent-encoded
 
     def test_dedup_set_skips(self):
         from src import x_post_mail_lane as lane

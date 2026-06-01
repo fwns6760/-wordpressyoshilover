@@ -956,6 +956,9 @@ class Candidate:
     # dropped candidates are not rendered in the mail.
     why_now: str = ""
     dedup_reason: str = ""
+    # 451 (2026-06-01): 引用RT 候補 (x_buzz_post) の元ツイート URL。 空でなければ HTML mail の
+    # X 投稿ボタンを quote intent (text=コメント&url=元ツイート) にして引用RTで開く (半自動)。
+    quote_url: str = ""
     # 438 Phase 1 (2026-05-27): comment 系候補 (GEMMA_BRANDING) の og:image
     # 添付。 ``image_bytes`` が空でなければ既存 437 image gen path を bypass
     # して この bytes をそのまま GCS upload + share-x-cand に乗せる。
@@ -1613,16 +1616,20 @@ def build_video_radar_candidates(
         tag = p["type_tag"]
         src_text = _truncate_text(str(p.get("text") or "").replace("\n", " ").strip(), 140)
         handle = p.get("handle", "")
-        # 引用RT コメント案 (native、 本文に外部リンクを貼らない)
-        if tag == "Xで話題" and player:
-            post_text = f"いま X で話題の{player}。ファンの反応がアツい。#巨人 #ジャイアンツ"
+        # 引用RT コメント案 — ヨシラバー voice (ファン目線・一喜一憂・フルネーム・敬称なし、
+        # 媒体ぶらず hashtag 無し)。 LLM 不使用の template (Gemini 増やさない)。
+        # native (本文に外部リンクを貼らない。 引用元は intent の url= で quote として開く)。
+        who = player or "巨人"
+        if tag == "Xで話題":
+            post_text = f"{who}、きてるね…！ファンもざわついてる。これは見ておきたい。"
         elif tag == "懐かし・名場面":
-            who = player or "巨人"
-            post_text = f"【懐かし】{who}のこの話題、刺さる人いるはず。#巨人 #ジャイアンツ"
+            post_text = f"うわ、これ懐かしい…！{who}のこの場面、何度見てもいいなあ。"
+        elif tag == "好プレー・反応":
+            post_text = f"{who}、ナイスプレー…！こういうの、地味に効くんだよな。"
         elif player:
-            post_text = f"{player}、注目の一件。#巨人 #ジャイアンツ"
+            post_text = f"{player}、ちょっと注目しておきたい一件。"
         else:
-            post_text = "巨人の注目の話題。#巨人 #ジャイアンツ"
+            post_text = "巨人、今日も見逃せない動きがあるね。"
         draft = "\n".join([
             f"【引用RT候補: {tag}】",
             f"検出選手: {player or '(なし)'}",
@@ -1644,6 +1651,7 @@ def build_video_radar_candidates(
             signature=signature,
             post_text=post_text,
             focus_player=player,
+            quote_url=url,
             why_now="X バズ投稿 (引用RT、 native)",
             source_material_type="x_buzz_post",
         ))
@@ -3600,6 +3608,18 @@ def encode_x_intent_url(text: str) -> str:
     return f"{_X_INTENT_URL_BASE}?text={encoded}"
 
 
+def encode_x_quote_intent_url(text: str, quote_url: str) -> str:
+    """引用RT 用 X Web Intent URL。 ``text`` (コメント) + ``url`` (引用元ツイート) を
+    付け、 X の compose を「引用ツイート (quote)」として開く (半自動: user が投稿を押すだけ)。
+
+    382 系の text-only rule は新規投稿向け。 ここは引用元ツイート = X-native な quote
+    であり外部リンクではないため url= を付ける (x_buzz_post 候補のみで使用)。
+    """
+    enc_text = _url_quote(text or "", safe="")
+    enc_url = _url_quote(quote_url or "", safe="")
+    return f"{_X_INTENT_URL_BASE}?text={enc_text}&url={enc_url}"
+
+
 # ---------------------------------------------------------------------------
 # Mail composition
 # ---------------------------------------------------------------------------
@@ -4189,7 +4209,12 @@ def _compose_html_body(
     rows_html: list[str] = []
     for idx, cand in enumerate(candidates, start=1):
         post_text = _candidate_post_text(cand)
-        intent_url = encode_x_intent_url(post_text)
+        cand_quote_url = getattr(cand, "quote_url", "") or ""
+        if cand_quote_url:
+            # 451: 引用RT 候補は quote intent (コメント + 元ツイート) で開く
+            intent_url = encode_x_quote_intent_url(post_text, cand_quote_url)
+        else:
+            intent_url = encode_x_intent_url(post_text)
         char_count = _candidate_char_count(cand)
         over = char_count > X_CHAR_LIMIT
         counter_color = "#b71c1c" if over else "#666"
@@ -4226,7 +4251,12 @@ def _compose_html_body(
         if share_x_button_urls and idx - 1 < len(share_x_button_urls):
             share_x_url = share_x_button_urls[idx - 1] or ""
         button_href = share_x_url or intent_url
-        button_label = "🐦 画像つきで X に投稿" if share_x_url else "🐦 X で投稿"
+        if share_x_url:
+            button_label = "🐦 画像つきで X に投稿"
+        elif cand_quote_url:
+            button_label = "🐦 引用RTで X に投稿"
+        else:
+            button_label = "🐦 X で投稿"
         rows_html.append(
             "<div style=\"border-left:3px solid #f57f17;"
             "padding:10px 14px;margin:14px 0;background:#fff8e1;"

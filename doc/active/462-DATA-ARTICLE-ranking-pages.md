@@ -2,7 +2,9 @@
 
 - **種別**: 実装 / **priority**: P2(parity) / **effort**: M
 - **親**: 443 / 設計: `455...md` §17 Phase1 / GH: #126
-- **status**: READY
+- **status**: LIVE_DEPLOYED_VERIFIED (2026-06-01)
+- **実績**: commit `b0dc60bf`、image `data-site-publisher:ranking-b0dc60bf`、execute SUCCESS。/data/ranking 新設(fetch_team_leaders の8カテゴリ leaderboard、各選手→pillar 回遊)。verify = page 76423 に「巨人 本塁打/防御率 ランキング」+ **pillar 回遊リンク64本**反映確認。data-site test 103 passed。
+- **note**: 当初案の `/data/ranking/{metric}/` 個別面でなく、1 HUB に全カテゴリ集約(回遊と保守性優先)。指標別個別面は需要次第で follow-up。
 
 ## 背景(parity・実測)
 

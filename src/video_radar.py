@@ -87,20 +87,42 @@ def _strip_html(s: str) -> str:
     return _re.sub(r"\s+", " ", s).strip()
 
 
+# X 投稿に動画が付いているかの判定マーカー。 RSSHub の twitter feed は description 内に
+# 動画ポスターを <img src="https://pbs.twimg.com/amplify_video_thumb/..."> 等で埋め込む
+# (実 feed で確認済 2026-06-01)。 これらを含む投稿だけが「動画をポスト」長押しの対象になる。
+_VIDEO_THUMB_MARKERS = (
+    "amplify_video_thumb",   # native 動画アップロード
+    "ext_tw_video_thumb",    # 外部 / 旧形式動画
+    "tweet_video_thumb",     # アニメ GIF (X 上は動画扱い)
+    "<video",                # 稀に video 要素そのもの
+    "video/mp4",
+    "/video/1",
+)
+
+
+def _has_video_markup(desc_html: str) -> bool:
+    """description (生 HTML) に動画ポスター/動画要素マーカーがあれば True。"""
+    s = (desc_html or "").lower()
+    return any(m in s for m in _VIDEO_THUMB_MARKERS)
+
+
 def _extract_rss_items(xml: str) -> list[dict]:
-    """RSSHub の twitter feed (RSS 2.0) から各 item の {text, url} を抽出。"""
+    """RSSHub の twitter feed (RSS 2.0) から各 item の {text, url, has_video} を抽出。"""
     out: list[dict] = []
     for item in _re.findall(r"<item\b.*?</item>", xml or "", _re.S | _re.I):
         parts = []
+        desc_raw = ""
         for tag in ("title", "description"):
             m = _re.search(rf"<{tag}\b[^>]*>(.*?)</{tag}>", item, _re.S | _re.I)
             if m:
                 parts.append(m.group(1))
+                if tag == "description":
+                    desc_raw = m.group(1)
         text = _strip_html(" ".join(parts))
         link_m = _re.search(r"<link\b[^>]*>(.*?)</link>", item, _re.S | _re.I)
         url = _strip_html(link_m.group(1)) if link_m else ""
         if text:
-            out.append({"text": text, "url": url})
+            out.append({"text": text, "url": url, "has_video": _has_video_markup(desc_raw)})
     return out
 
 
@@ -145,11 +167,16 @@ def gather_buzz_posts(
     buzz_players: Optional[set[str]] = None,
     limit: int = 30,
     min_score: int = 2,
+    require_video: bool = True,
 ) -> list[dict]:
     """巨人系 X account の投稿を巡回し、 引用RT 候補に値する投稿を score 降順で返す。
 
-    各 dict: ``text / url / handle / player / score / type_tag``。 X 内で完結する
+    各 dict: ``text / url / handle / player / score / type_tag / has_video``。 X 内で完結する
     引用RT/リプライ用なので、 YouTube 等の外部リンクは扱わない。
+
+    ``require_video=True`` (既定) のとき、 **動画が付いた投稿だけ** を候補にする。
+    動画なし投稿では「動画をポスト」長押しが無意味で、 動画こそがインプを稼ぐため
+    (user 2026-06-01)。 動画判定は description の動画サムネ/動画要素マーカー (実 feed 検証済)。
     """
     fetch = fetch_fn or _default_fetch
     handles = handles or _BUZZ_HANDLES
@@ -164,6 +191,9 @@ def gather_buzz_posts(
             text = item.get("text", "")
             url = item.get("url", "")
             if not text or not url or url in seen_urls:
+                continue
+            has_video = bool(item.get("has_video"))
+            if require_video and not has_video:
                 continue
             try:
                 player = detect_player_fn(text) or ""
@@ -180,6 +210,7 @@ def gather_buzz_posts(
                 "player": player,
                 "score": score,
                 "type_tag": tag,
+                "has_video": has_video,
             })
     out.sort(key=lambda d: d["score"], reverse=True)
     return out

@@ -30,6 +30,7 @@ class PillarPlayerInfo:
     jersey_number: str      # 背番号 文字列 (例: "2" / "92")
     role: str = "player"    # player / manager / coach
     featured_image_url: str = ""   # H1 直下に出す写真 URL (空なら team mark)
+    featured_media_id: Optional[int] = None  # WP featured_media id (SNS 共有 og:image 用、 None なら未設定)
     short_review: str = ""  # AI 短評 200-500 字 (空なら section omit)
     related_topic_links: list[tuple[str, str]] = field(default_factory=list)
     # related_topic_links = [(url, title), ...] (既存記事の link、 関連 Topic = Pillar → Topic)
@@ -846,10 +847,40 @@ def render_pillar_title(player: PillarPlayerInfo) -> str:
     return f"{head}{bracket} | 巨人選手データ"
 
 
+def render_pillar_excerpt(player: PillarPlayerInfo) -> str:
+    """WP page.excerpt = SNS 共有 / 検索の meta description。
+
+    SEO SIMPLE PACK は excerpt を og:description / meta description に使う。 excerpt 未設定だと
+    本文 (パンくず + 成績表) から自動生成され「Home › 巨人選手データ › … 238820.227384」 等の
+    崩れたプレビューになり共有 CTR を落とすため、 役割別にクリーンな 1 文を返す。
+    """
+    name = player.name
+    pos = player.position or "選手"
+    is_ob = player.role == "ob" or player.ob_profile is not None
+    if is_ob:
+        return f"{name}（元巨人）の通算成績とプロフィール。現役時代の記録や関連ニュースをまとめた巨人選手データ。"
+    if player.role in ("manager", "coach"):
+        return f"{name}（巨人{pos}）のプロフィールと現役時代の通算成績。関連ニュースもまとめた巨人選手データ。"
+    if "投手" in pos and player.has_pitching_stats:
+        era = f"・防御率{player.pitch_era:.2f}" if player.pitch_era is not None else ""
+        return (
+            f"{name}の{SEASON_LABEL}投手成績。{player.pitch_wins}勝{player.pitch_losses}敗{era}、"
+            f"{player.pitch_k}奪三振。登板イニング別・対戦相手別など、大手にない巨人投手データ。"
+        )
+    if player.has_stats:
+        avg = f"打率{_fmt_avg(player.season_avg)}・" if player.season_avg is not None else ""
+        return (
+            f"{name}の{SEASON_LABEL}打撃成績。{avg}{player.season_hits}安打{player.season_rbi}打点。"
+            f"本拠地/ビジター別・序盤/中盤/終盤別の打率など、大手にない巨人選手データ。"
+        )
+    return f"{name}（巨人{pos}）の{SEASON_LABEL}成績・データページ。打撃成績や関連ニュースをまとめた巨人選手データ。"
+
+
 __all__ = [
     "PillarPlayerInfo",
     "render_pillar_html",
     "render_pillar_title",
+    "render_pillar_excerpt",
     "CLUSTER_URL",
     "SITE_BASE",
 ]

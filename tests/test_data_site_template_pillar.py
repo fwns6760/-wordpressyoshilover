@@ -10,7 +10,61 @@ from src.data_site_template_pillar import (
     PillarPlayerInfo,
     render_pillar_html,
     render_pillar_title,
+    render_pillar_excerpt,
 )
+
+
+class RenderPillarExcerptTests(unittest.TestCase):
+    """SNS 共有 / meta description 用 excerpt (崩れたパンくず+数字を防ぐ)。"""
+
+    def _clean(self, text: str) -> None:
+        # パンくず / 生 stats 羅列 が混ざらず、 句点で終わる 1 文であること
+        self.assertNotIn("Home ›", text)
+        self.assertNotIn("›", text)
+        self.assertTrue(text.endswith("。"))
+        self.assertLessEqual(len(text), 120)
+
+    def test_batter_excerpt(self):
+        p = PillarPlayerInfo(
+            name="吉川尚輝", slug="yoshikawa-naoki", position="内野手", jersey_number="2",
+            role="player", has_stats=True, season_avg=0.227, season_hits=20, season_rbi=8,
+        )
+        ex = render_pillar_excerpt(p)
+        self._clean(ex)
+        self.assertIn("吉川尚輝", ex)
+        self.assertIn("打率.227", ex)
+        self.assertIn("序盤/中盤/終盤", ex)
+
+    def test_pitcher_excerpt(self):
+        p = PillarPlayerInfo(
+            name="戸郷翔征", slug="togo-shosei", position="投手", jersey_number="20",
+            role="player", has_pitching_stats=True, pitch_wins=5, pitch_losses=3,
+            pitch_era=2.45, pitch_k=80,
+        )
+        ex = render_pillar_excerpt(p)
+        self._clean(ex)
+        self.assertIn("戸郷翔征", ex)
+        self.assertIn("5勝3敗", ex)
+        self.assertIn("防御率2.45", ex)
+
+    def test_manager_excerpt(self):
+        p = PillarPlayerInfo(
+            name="阿部慎之助", slug="abe-shinnosuke", position="監督", jersey_number="",
+            role="manager",
+        )
+        ex = render_pillar_excerpt(p)
+        self._clean(ex)
+        self.assertIn("阿部慎之助", ex)
+        self.assertIn("通算成績", ex)
+
+    def test_no_stats_placeholder_excerpt(self):
+        p = PillarPlayerInfo(
+            name="新人選手", slug="rookie", position="内野手", jersey_number="99",
+            role="player", has_stats=False,
+        )
+        ex = render_pillar_excerpt(p)
+        self._clean(ex)
+        self.assertIn("新人選手", ex)
 
 
 class RenderPillarHtmlTests(unittest.TestCase):

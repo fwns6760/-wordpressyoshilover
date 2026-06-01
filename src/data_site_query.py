@@ -457,6 +457,55 @@ def find_player_featured_image_url(player_name: str) -> str:
         return ""
 
 
+def find_player_featured_media_id(player_name: str) -> Optional[int]:
+    """player tag を持つ 直近 publish 記事の featured_media attachment id を返す。
+
+    用途: data ページ自身の WP featured_media に set し、 SNS 共有時の og:image を
+    汎用既定画像ではなく選手写真にする (SEO SIMPLE PACK は featured image を og:image
+    に使う)。 find_player_featured_image_url と同じ「最初に source_url が取れる post」を
+    選ぶので、 ページ本文の写真と og:image が一致する。 無ければ None。
+    """
+    creds = _wp_creds()
+    if not creds:
+        return None
+    base, auth = creds
+    tag_id = find_player_tag_id(player_name)
+    if tag_id is None:
+        return None
+    try:
+        r = requests.get(
+            base + "/wp-json/wp/v2/posts",
+            params={
+                "tags": tag_id,
+                "status": "publish",
+                "per_page": 5,
+                "orderby": "date",
+                "order": "desc",
+                "_fields": "id,featured_media",
+            },
+            auth=auth,
+            timeout=30,
+        )
+        if not r.ok:
+            return None
+        for post in (r.json() or []):
+            fm = post.get("featured_media")
+            if not fm:
+                continue
+            mr = requests.get(
+                base + f"/wp-json/wp/v2/media/{int(fm)}",
+                params={"_fields": "source_url"},
+                auth=auth,
+                timeout=15,
+            )
+            if mr.ok and str((mr.json() or {}).get("source_url", "")).strip():
+                return int(fm)
+        return None
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("find_player_featured_media_id err player=%s: %r", player_name, exc)
+        return None
+
+
 @dataclass
 class BattingStatsSeason:
     """打撃 season summary。 全 None なら data 無し (insight.db 未収録 / 出場 0)。"""
@@ -1189,6 +1238,7 @@ __all__ = [
     "find_player_tag_id",
     "fetch_related_topic_links",
     "find_player_featured_image_url",
+    "find_player_featured_media_id",
     "fetch_batting_stats_season",
     "fetch_recent_games",
     "fetch_lineup_slot_stats",

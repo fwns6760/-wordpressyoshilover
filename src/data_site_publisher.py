@@ -43,6 +43,7 @@ from src.data_site_query import (
     fetch_recent_pitching_games,
     fetch_related_topic_links,
     find_player_featured_image_url,
+    find_player_featured_media_id,
     load_phase1_player_names,
     load_data_site_target_names,
     load_ikusei_entries,
@@ -64,6 +65,7 @@ from src.data_site_template_pillar import (
     PillarPlayerInfo,
     render_pillar_html,
     render_pillar_title,
+    render_pillar_excerpt,
 )
 
 
@@ -121,6 +123,7 @@ def _upsert_page(
     content_html: str,
     parent: int = 0,
     featured_media_id: int | None = None,
+    excerpt: str = "",
 ) -> UpsertResult:
     """WP page を upsert (slug 一致なら PUT、 無ければ POST)."""
     if _dry_run_enabled():
@@ -142,6 +145,8 @@ def _upsert_page(
     }
     if featured_media_id:
         payload["featured_media"] = featured_media_id
+    if excerpt:
+        payload["excerpt"] = excerpt
 
     existing_id = _find_page_id_by_slug(slug, parent=parent)
     try:
@@ -190,6 +195,7 @@ def _build_pillar_info(player_name: str) -> PillarPlayerInfo | None:
             jersey_number="",
             role="ob",
             featured_image_url=find_player_featured_image_url(player_name),
+            featured_media_id=find_player_featured_media_id(player_name),
             short_review="",
             related_topic_links=fetch_related_topic_links(player_name, limit=20),
             ob_profile=ob,
@@ -201,6 +207,7 @@ def _build_pillar_info(player_name: str) -> PillarPlayerInfo | None:
     slug = player_slug(player_name)
     related = fetch_related_topic_links(player_name, limit=20)
     image_url = find_player_featured_image_url(player_name)
+    media_id = find_player_featured_media_id(player_name)
     # 登録ポジションは NPB 公式分類を優先 (roster.position は stale: 例 石川達也は
     # roster「打者」だが公式「投手」)。 支配下でなければ roster.position に fallback。
     official_pos = shihai_position_group(player_name)
@@ -211,6 +218,7 @@ def _build_pillar_info(player_name: str) -> PillarPlayerInfo | None:
         jersey_number=roster.jersey_number,
         role=roster.role,
         featured_image_url=image_url,
+        featured_media_id=media_id,
         short_review="",  # Phase 1.0 は AI 短評 未接続、 後 phase で追加
         related_topic_links=related,
     )
@@ -375,6 +383,8 @@ def publish_phase1() -> dict[str, object]:
             title=title,
             content_html=html,
             parent=cluster_page_id,
+            featured_media_id=info.featured_media_id,
+            excerpt=render_pillar_excerpt(info),
         )
         LOG.info(
             "pillar upsert slug=%s page_id=%s action=%s related=%d image=%s",

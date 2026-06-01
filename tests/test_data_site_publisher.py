@@ -14,10 +14,11 @@ from src.data_site_query import RosterPlayer
 
 
 class BuildPillarInfoTests(unittest.TestCase):
+    @mock.patch("src.data_site_publisher.find_player_featured_media_id", return_value=44424)
     @mock.patch("src.data_site_publisher.find_player_featured_image_url", return_value="https://yoshilover.com/img/sample.jpg")
     @mock.patch("src.data_site_publisher.fetch_related_topic_links", return_value=[("https://yoshilover.com/73041/", "title1")])
     @mock.patch("src.data_site_publisher.load_roster_player")
-    def test_build_pillar_info_basic(self, m_roster, m_topic, m_img):
+    def test_build_pillar_info_basic(self, m_roster, m_topic, m_img, m_media):
         m_roster.return_value = RosterPlayer(
             name="坂本勇人", position="内野手", jersey_number="6", role="player", aliases=["坂本勇人"]
         )
@@ -28,6 +29,8 @@ class BuildPillarInfoTests(unittest.TestCase):
         self.assertEqual(info.position, "内野手")
         self.assertEqual(info.jersey_number, "6")
         self.assertEqual(info.featured_image_url, "https://yoshilover.com/img/sample.jpg")
+        # SNS 共有 og:image 用に featured_media_id が info に乗ること
+        self.assertEqual(info.featured_media_id, 44424)
         self.assertEqual(len(info.related_topic_links), 1)
 
     @mock.patch("src.data_site_publisher.load_roster_player", return_value=None)
@@ -37,12 +40,13 @@ class BuildPillarInfoTests(unittest.TestCase):
 
 class PublishPhase1DryRunTests(unittest.TestCase):
     @mock.patch.dict(os.environ, {"DATA_SITE_DRY_RUN": "1"}, clear=False)
+    @mock.patch("src.data_site_publisher.find_player_featured_media_id", return_value=None)
     @mock.patch("src.data_site_publisher.find_player_featured_image_url", return_value="")
     @mock.patch("src.data_site_publisher.fetch_related_topic_links", return_value=[])
     @mock.patch("src.data_site_publisher.load_ob_names", return_value=[])
     @mock.patch("src.data_site_publisher.load_roster_player")
     @mock.patch("src.data_site_publisher.load_data_site_target_names", return_value=["吉川尚輝", "坂本勇人", "丸佳浩"])
-    def test_dry_run_returns_ok(self, m_names, m_roster, m_ob, m_topic, m_img):
+    def test_dry_run_returns_ok(self, m_names, m_roster, m_ob, m_topic, m_img, m_media):
         def roster_side(name):
             return RosterPlayer(
                 name=name,

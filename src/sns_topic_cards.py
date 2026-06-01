@@ -121,6 +121,75 @@ def _player_pitching(db_path: str, name: str) -> Optional[dict]:
     return {"games": g, "w": w, "l": l, "k": k, "ip": ip, "er": er, "era": era}
 
 
+def _is_giants(db_path: str, name: str) -> bool:
+    """insight.db で team_name='巨人' として実在する選手か (NER 誤検出=他球団を除外)。"""
+    try:
+        with _sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
+            for tbl in ("batting_logs", "pitching_logs"):
+                r = conn.execute(
+                    f"SELECT 1 FROM {tbl} WHERE player_canonical=? AND team_name='巨人' LIMIT 1",
+                    (name,),
+                ).fetchone()
+                if r:
+                    return True
+    except Exception:  # noqa: BLE001
+        return False
+    return False
+
+
+def build_quote_captions(
+    db_path: str,
+    *,
+    fetch_fn: Optional[Callable[[str], str]] = None,
+    max_captions: int = 5,
+    detect_player_fn: Optional[Callable[[str], str]] = None,
+) -> list[dict]:
+    """今日の『動画引用キャプション』(ヨシラバーコメント + データ) を返す。
+
+    user が X で動画を長押し引用する時に貼るテキスト。 RSS の出来事キーワードで選手を拾い、
+    **巨人選手に限定** (NER 誤検出=他球団を除外) し、 insight.db の今季実数字を 1 行足す。
+    Returns [{player, headline, caption}]。 描画/画像 不要 (テキストのみ)。
+    """
+    if detect_player_fn is None:
+        from src.x_post_mail_lane import detect_giants_player_name, _load_giants_player_aliases
+        _am = _load_giants_player_aliases()
+
+        def detect_player_fn(t: str) -> str:  # noqa: E731
+            return detect_giants_player_name(t, alias_map=_am)
+
+    kws = extract_rss_keywords(detect_player_fn=detect_player_fn, fetch_fn=fetch_fn)
+    out: list[dict] = []
+    used: set[str] = set()
+    for kw in kws:
+        if len(out) >= max_captions:
+            break
+        player, events = kw["player"], kw["events"]
+        if player in used or not _is_giants(db_path, player):
+            continue
+        headline = headline_from_events(events)
+        stem = headline.rstrip("！!")
+        pit = _player_pitching(db_path, player)
+        bat = _player_batting(db_path, player)
+        is_pitcher = bool(
+            pit and (not bat or any(w in events for w in ("完投", "完封", "好投", "奪三振", "勝利")))
+        )
+        if is_pitcher and pit:
+            era = f"・防御率{pit['era']:.2f}" if pit["era"] is not None else ""
+            data = f"今季{pit['games']}登板{era}・{pit['k']}K"
+        elif bat and bat["avg"] is not None:
+            avg = f"{bat['avg']:.3f}".lstrip("0")
+            data = f"今季打率{avg}・{bat['h']}安打{bat['rbi']}打点"
+        else:
+            continue
+        used.add(player)
+        out.append({
+            "player": player,
+            "headline": headline,
+            "caption": f"{player}、{stem}…！{data}。",
+        })
+    return out
+
+
 def build_topic_cards(
     db_path: str,
     *,

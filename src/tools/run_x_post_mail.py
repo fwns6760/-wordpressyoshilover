@@ -187,6 +187,12 @@ def _video_radar_max_per_run() -> int:
     return _resolve_int_env("X_POST_VIDEO_RADAR_MAX", 3, min_value=0)
 
 
+def _quote_captions_enabled() -> bool:
+    """451: 「今日の動画引用キャプション」をメールに出すか (default OFF)。"""
+    raw = (os.environ.get("ENABLE_X_POST_QUOTE_CAPTIONS") or "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
 def _video_radar_llm_enabled() -> bool:
     """451: 引用RTコメントを Gemini 3.1 Flash Lite で生成するか (default OFF)。
 
@@ -1588,6 +1594,36 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "video_radar appended: base=%d video=%d total=%d",
                     before, len(vr_new), len(candidates),
                 )
+
+    # 451: 「今日の動画引用キャプション」(ヨシラバーコメント+データ)。 user が X で動画を
+    # 長押し引用する時に貼るテキスト。 巨人選手限定。 flag ON 時のみ append。
+    if _quote_captions_enabled() and db_path:
+        try:
+            from src import sns_topic_cards as _tc
+            caps = _tc.build_quote_captions(db_path, max_captions=5)
+        except Exception as _cap_exc:  # noqa: BLE001
+            LOG.warning("quote_captions build failed: %r", _cap_exc)
+            caps = []
+        cap_cands = []
+        for c in caps:
+            sig = "quote_caption|" + c["player"]
+            if dedup_set is not None and sig in dedup_set:
+                continue
+            draft = (
+                f"{c['caption']}\n\n"
+                "※ X で該当の動画を長押し → 引用 → このキャプションを貼って投稿。"
+            )
+            cap_cands.append(lane.Candidate(
+                title=f"🎬 動画引用: {c['player']} {c['headline']}",
+                metric="quote_caption", period_label="動画引用キャプション",
+                draft_text=draft, char_count=len(c["caption"]), signature=sig,
+                post_text=c["caption"], focus_player=c["player"],
+                why_now="今日の話題 (動画引用用)", source_material_type="quote_caption",
+            ))
+        if cap_cands:
+            before = len(candidates)
+            candidates = candidates + cap_cands
+            LOG.info("quote_captions appended: base=%d cap=%d total=%d", before, len(cap_cands), len(candidates))
 
     # 392: flag ON 時は news_opinion fallback (template) を skip し、 Gemma 4
     # + Tavily REST で branding candidate を 1-3 件生成して append する。

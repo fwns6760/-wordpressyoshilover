@@ -66,5 +66,39 @@ class BuildTopicCardsTests(unittest.TestCase):
         self.assertIn("竹丸和幸", cards[0]["html"])
 
 
+class QuoteCaptionsTests(unittest.TestCase):
+    def _db(self):
+        fd, path = tempfile.mkstemp(suffix=".db"); os.close(fd)
+        conn = sqlite3.connect(path)
+        conn.execute("CREATE TABLE batting_logs (game_id TEXT, team_name TEXT, player_canonical TEXT, AB INT, H INT, RBI INT)")
+        conn.execute("CREATE TABLE pitching_logs (game_id TEXT, team_name TEXT, player_canonical TEXT, result_mark TEXT, K INT, IP REAL, ER INT)")
+        # 巨人投手 + 他球団投手(NER誤検出想定)
+        conn.executemany("INSERT INTO pitching_logs VALUES (?,?,?,?,?,?,?)", [
+            ("g1", "巨人", "竹丸和幸", "○", 10, 8.0, 1),
+            ("g2", "楽天", "他球団投手", "○", 9, 6.0, 2),
+        ])
+        conn.commit(); conn.close()
+        self.addCleanup(lambda: os.path.exists(path) and os.remove(path))
+        return path
+
+    def test_caption_giants_only_with_data(self):
+        feed = (
+            "<rss><channel>"
+            "<item><title>竹丸和幸 プロ初完投 8回10K</title><link>http://x/1</link></item>"
+            "<item><title>他球団投手 完投</title><link>http://x/2</link></item>"
+            "</channel></rss>"
+        )
+        caps = tc.build_quote_captions(
+            self._db(), fetch_fn=lambda u: feed, max_captions=5,
+            detect_player_fn=lambda t: ("竹丸和幸" if "竹丸" in t else ("他球団投手" if "他球団" in t else "")),
+        )
+        names = [c["player"] for c in caps]
+        self.assertIn("竹丸和幸", names)        # 巨人=残る
+        self.assertNotIn("他球団投手", names)   # 他球団=除外 (giants verify)
+        cap = next(c for c in caps if c["player"] == "竹丸和幸")["caption"]
+        self.assertIn("プロ初完投", cap)
+        self.assertIn("10K", cap)              # データ行 (pitching_logs K=10)
+
+
 if __name__ == "__main__":
     unittest.main()

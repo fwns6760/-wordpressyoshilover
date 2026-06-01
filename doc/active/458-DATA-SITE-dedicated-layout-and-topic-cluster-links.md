@@ -2,7 +2,13 @@
 
 - **種別**: 実装 / **priority**: P1(設計の核) / **effort**: M
 - **親**: 443 / 設計: `455...md` §2(導線)/ §9(実装規約)/ §7(コンポーネント) / GH: #122
-- **status**: READY
+- **status**: PARTIAL_LIVE_VERIFIED (2026-06-01) — データ側トピクラ(中心→spoke回遊)LIVE、 記事→pillar逆リンクは記事path別セッション
+- **方針修正(user 2026-06-01)**:「トピクラは真ん中(pillar=データ)から構成すればいい」。記事生成 path を触らず、pillar 中心の spoke 回遊をデータ層で構成。
+- **実績(データ側)**: commit `df99de9f`、image `topiccluster-df99de9f`、execute SUCCESS。
+  - pillar に「データサイト内ナビ」(全選手/ランキング/チーム成績)追加、cluster intro に ranking/team リンク追加。verify = 吉川・cluster とも /data/ranking・/data/team リンク反映確認。
+  - 既存確認済(中心→spoke): pillar→同ポジ選手(`related_players`)/ pillar→関連記事(`related_topic`)/ cluster・ranking・今日の注目 →pillar。
+  - = **pillar(データ中心)⇄ cluster hub ⇄ ranking ⇄ team ⇄ 同ポジ選手 ⇄ 関連記事 の回遊が成立**。
+- **残(記事 path 起因・別セッション)**: ①記事→pillar 逆リンク(通常記事本文に「📊データ→」自動挿入)= 記事生成 path を touch。③専用 layout は pillar が既に scoped デザイン(_build_style_block)で記事テンプレ脱却済。記事単位 SNS シェアは defer。
 
 ## 背景(深掘り 1次source)
 

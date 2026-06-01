@@ -44,7 +44,9 @@ _logger = logging.getLogger(__name__)
 
 RSSHUB_BASE = "https://rsshub-487178857517.asia-northeast1.run.app"
 # 巨人専門アカウント = 全 post 通す (team news が keyword 無しでも巨人確定)
-GIANTS_SPECIALIST_HANDLES = ["yomiuri_giants", "TokyoGiants", "hochi_giants", "Sanspo_Giants"]
+# 巨人公式は @TokyoGiants。 旧 yomiuri_giants は RSSHub で死にデータ (1月の「@趣味」RT) を
+# 返す死にハンドルだったため除外 (実feed検証済 2026-06-01)。
+GIANTS_SPECIALIST_HANDLES = ["TokyoGiants", "hochi_giants", "Sanspo_Giants"]
 # 大手の野球全般アカウント = 全12球団 post を含むため巨人 relevance filter を適用
 # (巨人 + 元巨人 OB MLB 岡本/菅野 のみ通過、 大谷 等 非 OB MLB は drop)
 MAJOR_GENERAL_HANDLES = [

@@ -16,7 +16,9 @@ from urllib.request import Request as _Request, urlopen as _urlopen
 
 # 445 と同じ自前 RSSHub (X→RSS bridge)。
 _RSSHUB_BASE = "https://rsshub-487178857517.asia-northeast1.run.app"
-_BUZZ_HANDLES = ["yomiuri_giants", "TokyoGiants", "hochi_giants", "Sanspo_Giants"]
+# 巨人公式は @TokyoGiants (82万 follower、 実feed検証済 2026-06-01)。 旧 yomiuri_giants は
+# RSSHub で「@趣味」の1月の古いRTしか返さない死にハンドルだったため除外。
+_BUZZ_HANDLES = ["TokyoGiants", "hochi_giants", "Sanspo_Giants"]
 
 # 「懐かしい / 名場面」系シグナル
 _NOSTALGIA_MARKERS = (

@@ -15,7 +15,8 @@ from src import sns_card as _card
 from src import video_radar as _vr  # RSSHub fetch + item 抽出を再利用
 
 # 巨人系 media / 公式 X (RSSHub handle)。 sns_realtime_topic と同じ系。
-_MEDIA_HANDLES = ["TokyoGiants", "yomiuri_giants", "hochi_giants", "Sanspo_Giants"]
+# 旧 yomiuri_giants は RSSHub 死にハンドルのため除外 (実feed検証済 2026-06-01、 公式= TokyoGiants)。
+_MEDIA_HANDLES = ["TokyoGiants", "hochi_giants", "Sanspo_Giants"]
 
 # 出来事キーワード (検出対象)
 _EVENT_WORDS = (

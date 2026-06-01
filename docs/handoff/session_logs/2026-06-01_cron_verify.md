@@ -57,3 +57,9 @@
   確実配信: video_radar を apply_x_impression_policy の dedup_player_in_mail から除外
 - commit 833db70、 image video-radar-833db70、 tests 146 pass
 - verify: exec qm4wn、 buzz=竹丸和幸20 等、 built 3、 appended base=1 video=3 total=4、 impression_drop ゼロ、 mail sent
+
+## 451 PIVOT (user「YouTubeいらない」「Xのポストから拾える」) — Xバズ投稿の引用RT候補
+- YouTube channel scan 廃止 → RSSHub で巨人系X account投稿を読み「引用RT/リプライ」候補に。X内完結・本文に外部リンク無し (リーチ維持)・一記事一本
+- video_radar: classify_post + gather_buzz_posts、build_video_radar_candidates 書き換え、metric x_buzz_post
+- commit deee586、image xbuzz-deee586、tests 143 pass
+- live 確認: 実投稿から リチャード(二軍特大HR)/吉川尚輝/竹丸和幸(プロ初完投) の引用RT候補生成 (x.com/.../status/...)

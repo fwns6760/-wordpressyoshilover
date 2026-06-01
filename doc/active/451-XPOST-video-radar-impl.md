@@ -1,5 +1,12 @@
 # 451 XPOST video-nostalgia-radar 実装 (今日の動画候補3件をメールに)
 
+> **2026-06-01 PIVOT (user)**: 「YouTube いらない」「X のポストから拾える?」「X に受け込む形」。
+> 外部リンク (YouTube) は X でリーチが落ちるため、 **YouTube channel scan を廃止**し、
+> **RSSHub で拾った巨人系 X account の投稿そのものを「引用RT/リプライ」候補**にする方式へ変更。
+> X 内完結・本文に外部リンクを貼らない・一記事一本。 commit `deee586`、 metric `x_buzz_post`。
+> live 確認: 実投稿から リチャード/吉川尚輝/竹丸和幸 の引用RT候補 (x.com/.../status/...) 生成。
+> (旧 YouTube channel scan 実装 730bb2a〜833db70 は廃止。 §4 以下は旧設計の記録として残置)
+
 ## 1. ticket header
 
 - **ticket id**: 451

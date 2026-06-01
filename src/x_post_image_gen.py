@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "templates"
 DEFAULT_SIZE = 1080
 PNG_MAX_BYTES = 500 * 1024  # 500KB — X / WP 帯域圧迫を回避
-DEFAULT_FOOTER_HANDLE = "@yoshilover_giants"
+DEFAULT_FOOTER_HANDLE = "@yoshilover6760"
 DEFAULT_FOOTER_META = "巨人データ"
 
 

@@ -16,7 +16,7 @@ import html as _html
 from typing import Optional
 
 CARD_SIZE = 1080
-_HANDLE = "@yoshilover_giants"
+_HANDLE = "@yoshilover6760"
 _BRAND = "ヨシラバー 巨人データ"
 _SITE = "yoshilover.com/data"
 

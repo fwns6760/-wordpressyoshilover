@@ -9,12 +9,14 @@
   WHERE を `REPLACE(...' ','')` 比較に修正。吉川は元々一致で OK、岸田は修正後 OK。
 - 並行アクターの UI 刷新(`cef367f` ys-card/オレンジ/順位バッジ)と同居して deploy(結合 48-63 tests pass)。
 
-### ⚠️ 残る pre-existing bug(報告、未修正)
+### ✅ 広域 name-match bug 修正完了 LIVE(2026-06-01、user「バグがあるなら修正」)
 
-- **既存 split(venue / opponent / lineup_slot / season 等)も同じ空白ずれで、岸田のような
-  spacing-mismatch 選手では空**(`data_site_query.py` の他 fetch も `player_canonical = ?` 完全一致)。
-- 今回は私の split(+inning)のみ修正。広域修正(全 fetch を空白無視 or 名前 resolver 1 本)は
-  並行アクターの shared code 編集中のため**未着手=要コーディネート**。data サイト全体の品質に効く。
+- `data_site_query.py` の **全 fetch(9箇所)の `player_canonical = ?` を `REPLACE(...' ','')` 空白無視マッチに統一**。
+  → venue / opponent / 打順別 / season / recent / streak / 投手 / NPB順位バッジ(453)が、target名(空白なし)
+  と insight.db canonical(空白あり)不一致の選手(岸田 等)でも全て出るように。
+- image `data-site-publisher:namefix-5840dbc` / execution `q5ndp` / 63 tests pass。
+- **live verify: 岸田行倫ページに 今シーズン/打順別/vs各球団/本拠地ビジター/曜日別/月別/交流戦 全 section 復活**。
+- data サイト全体の品質穴(spacing-mismatch 選手の section 欠落)を解消。
 
 ## 実装状況(2026-06-01、Phase B 一次)
 

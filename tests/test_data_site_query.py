@@ -166,3 +166,95 @@ class DateBasedSplitTests(unittest.TestCase):
         d = {s.label: s for s in fetch_month_split_stats("岸田 行倫")}
         self.assertIn("5月", d); self.assertIn("4月", d)
         self.assertEqual(d["5月"].ab, 7)
+
+
+class PitcherOpponentSplitTests(unittest.TestCase):
+    """投手 vs 各球団 split (456 投手 split 横展開)。"""
+
+    def setUp(self) -> None:
+        from data_site_query import (  # noqa: F401
+            fetch_pitcher_opponent_split_stats,
+            fetch_pitcher_venue_split_stats,
+            fetch_pitcher_weekday_split_stats,
+            fetch_pitcher_month_split_stats,
+            fetch_pitcher_interleague_split_stats,
+        )
+        self.fn = fetch_pitcher_opponent_split_stats
+        self.fn_venue = fetch_pitcher_venue_split_stats
+        self.fn_weekday = fetch_pitcher_weekday_split_stats
+        self.fn_month = fetch_pitcher_month_split_stats
+        self.fn_interleague = fetch_pitcher_interleague_split_stats
+        self.tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        self.tmp.close()
+        conn = sqlite3.connect(self.tmp.name)
+        conn.executescript(
+            "CREATE TABLE pitching_logs(game_id TEXT, player_canonical TEXT, IP REAL, "
+            "K INT, BB INT, H_allowed INT, HR_allowed INT, ER INT, pitches INT, result_mark TEXT);"
+            "CREATE TABLE games(game_id TEXT, opponent TEXT, game_date TEXT);"
+        )
+        # vs 阪神 2登板 (IP 6.0+5.0=11.0, K 9, ER 3) / vs 中日 1登板 (IP 7.0, ER 0)
+        data = [
+            ("2026-05-01:g-t-01", "阪神", 6.0, 5, 1),
+            ("2026-05-08:t-g-02", "阪神", 5.0, 4, 2),
+            ("2026-05-15:g-d-03", "中日", 7.0, 8, 0),
+            ("2026-06-01:g-h-01", "ソフトバンク", 4.0, 3, 1),  # 交流戦 (パ=h) / 本拠地
+        ]
+        for gid, opp, ip, k, er in data:
+            conn.execute("INSERT INTO games(game_id,opponent,game_date) VALUES(?,?,?)",
+                         (gid, opp, gid.split(":")[0]))
+            conn.execute(
+                "INSERT INTO pitching_logs(game_id,player_canonical,IP,K,BB,H_allowed,"
+                "HR_allowed,ER,pitches,result_mark) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                (gid, "戸郷 翔征", ip, k, 0, 0, 0, er, 0, ""),
+            )
+        conn.commit(); conn.close()
+        self._prev = os.environ.get("INSIGHT_DB_PATH")
+        os.environ["INSIGHT_DB_PATH"] = self.tmp.name
+
+    def tearDown(self) -> None:
+        if self._prev is None:
+            os.environ.pop("INSIGHT_DB_PATH", None)
+        else:
+            os.environ["INSIGHT_DB_PATH"] = self._prev
+        os.unlink(self.tmp.name)
+
+    def test_aggregation_and_era(self) -> None:
+        d = {row[0]: row for row in self.fn("戸郷 翔征")}
+        _, g, ip, k, er, era = d["阪神"]
+        self.assertEqual((g, k, er), (2, 9, 3))
+        self.assertAlmostEqual(ip, 11.0, places=1)
+        self.assertAlmostEqual(era, 3 * 9.0 / 11.0, places=2)
+        _, g2, _ip2, _k2, er2, era2 = d["中日"]
+        self.assertEqual((g2, er2), (1, 0))
+        self.assertAlmostEqual(era2, 0.0)
+
+    def test_readside_fuzzy_match(self) -> None:
+        # space 有無に依存しない (read-side REPLACE、 batter_canonical backfill 不要)
+        self.assertTrue(self.fn("戸郷翔征"))
+
+    def test_unknown_player_empty(self) -> None:
+        self.assertEqual(self.fn("存在しない投手"), [])
+
+    def test_venue_split(self) -> None:
+        d = {row[0]: row for row in self.fn_venue("戸郷 翔征")}
+        # 本拠地 = g-t-01 + g-d-03 + g-h-01 (3登板, IP 6+7+4=17.0)
+        self.assertEqual(d["本拠地"][1], 3)
+        self.assertAlmostEqual(d["本拠地"][2], 17.0, places=1)
+        # ビジター = t-g-02 (1登板, IP 5.0)
+        self.assertEqual(d["ビジター"][1], 1)
+        self.assertAlmostEqual(d["ビジター"][2], 5.0, places=1)
+
+    def test_interleague_split(self) -> None:
+        d = {row[0]: row for row in self.fn_interleague("戸郷 翔征")}
+        self.assertEqual(d["リーグ戦"][1], 3)   # 阪神x2 + 中日
+        self.assertEqual(d["交流戦"][1], 1)      # ソフトバンク(パ)
+
+    def test_month_split(self) -> None:
+        d = {row[0]: row for row in self.fn_month("戸郷 翔征")}
+        self.assertEqual(d["5月"][1], 3)
+        self.assertEqual(d["6月"][1], 1)
+
+    def test_weekday_split(self) -> None:
+        rows = self.fn_weekday("戸郷 翔征")
+        self.assertTrue(rows)
+        self.assertEqual(sum(r[1] for r in rows), 4)  # 全登板が曜日バケットに帰属

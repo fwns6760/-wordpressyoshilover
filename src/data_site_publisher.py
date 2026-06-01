@@ -46,6 +46,11 @@ from src.data_site_query import (
     fetch_team_rankings,
     fetch_player_npb_ranks,
     fetch_pitching_stats_season,
+    fetch_pitcher_opponent_split_stats,
+    fetch_pitcher_venue_split_stats,
+    fetch_pitcher_weekday_split_stats,
+    fetch_pitcher_month_split_stats,
+    fetch_pitcher_interleague_split_stats,
     fetch_recent_games,
     fetch_recent_pitching_games,
     fetch_related_topic_links,
@@ -337,6 +342,12 @@ def _build_pillar_info(player_name: str) -> PillarPlayerInfo | None:
             (p.game_date, p.opponent, p.result_mark, p.ip, p.h_allowed, p.k, p.bb, p.er)
             for p in pitching_recent
         ]
+    # 456: 投手 split 5種 (非投手は pitching_logs 行ゼロで [] を返す)
+    info.pitch_opponent_split_stats = fetch_pitcher_opponent_split_stats(player_name)
+    info.pitch_venue_split_stats = fetch_pitcher_venue_split_stats(player_name)
+    info.pitch_weekday_split_stats = fetch_pitcher_weekday_split_stats(player_name)
+    info.pitch_month_split_stats = fetch_pitcher_month_split_stats(player_name)
+    info.pitch_interleague_split_stats = fetch_pitcher_interleague_split_stats(player_name)
     return info
 
 

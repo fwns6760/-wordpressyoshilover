@@ -89,6 +89,12 @@ class PillarPlayerInfo:
     has_pitching_stats: bool = False
     recent_pitching_games: list[tuple[str, str, str, float, int, int, int, int]] = field(default_factory=list)
     # recent_pitching_games = [(date, opp, result_mark, ip, h, k, bb, er), ...]
+    # 456: 投手 split [(label, G, IP, K, ER, ERA), ...]
+    pitch_opponent_split_stats: list[tuple[str, int, float, int, int, Optional[float]]] = field(default_factory=list)
+    pitch_venue_split_stats: list[tuple[str, int, float, int, int, Optional[float]]] = field(default_factory=list)
+    pitch_weekday_split_stats: list[tuple[str, int, float, int, int, Optional[float]]] = field(default_factory=list)
+    pitch_month_split_stats: list[tuple[str, int, float, int, int, Optional[float]]] = field(default_factory=list)
+    pitch_interleague_split_stats: list[tuple[str, int, float, int, int, Optional[float]]] = field(default_factory=list)
 
 
 CLUSTER_URL = "https://yoshilover.com/data/"
@@ -506,6 +512,77 @@ def _build_pitching_recent_html(player: PillarPlayerInfo) -> str:
     )
 
 
+def _build_pitch_opponent_split_html(player: PillarPlayerInfo) -> str:
+    """投手 vs 各球団 投球成績 (456 投手 split、 打者 _build_opponent_split_html の投手版)。"""
+    if not player.pitch_opponent_split_stats:
+        return ""
+    rows_html = "\n".join(
+        '<tr>'
+        f'<td class="ys-k">{_esc(opp)}</td><td>{g}</td><td>{_fmt_ip(ip)}</td>'
+        f'<td>{k}</td><td>{er}</td><td class="ys-avg">{_fmt_era(era)}</td>'
+        '</tr>'
+        for (opp, g, ip, k, er, era) in player.pitch_opponent_split_stats
+    )
+    return (
+        '<div class="ys-card">'
+        '<h2>vs 各球団 投球成績 <span class="ys-tag">大手未掲載</span></h2>'
+        '<p class="ys-note">対戦相手別の投球内容。 得意 / 苦手な球団が防御率で浮き出る。</p>'
+        '<table><thead><tr>'
+        '<th>相手</th><th>登板</th><th>投球回</th><th>奪三振</th><th>自責</th><th>防御率</th>'
+        '</tr></thead>'
+        f'<tbody>{rows_html}</tbody></table>'
+        '</div>'
+    )
+
+
+def _pitch_split_card(title: str, note: str, first_header: str, stats: list[tuple]) -> str:
+    """投手 split 共通カード (登板/投球回/奪三振/自責/防御率)。 456。"""
+    if not stats:
+        return ""
+    rows_html = "\n".join(
+        '<tr>'
+        f'<td class="ys-k">{_esc(lbl)}</td><td>{g}</td><td>{_fmt_ip(ip)}</td>'
+        f'<td>{k}</td><td>{er}</td><td class="ys-avg">{_fmt_era(era)}</td>'
+        '</tr>'
+        for (lbl, g, ip, k, er, era) in stats
+    )
+    return (
+        '<div class="ys-card">'
+        f'<h2>{_esc(title)} <span class="ys-tag">大手未掲載</span></h2>'
+        f'<p class="ys-note">{_esc(note)}</p>'
+        '<table><thead><tr>'
+        f'<th>{_esc(first_header)}</th><th>登板</th><th>投球回</th><th>奪三振</th><th>自責</th><th>防御率</th>'
+        '</tr></thead>'
+        f'<tbody>{rows_html}</tbody></table>'
+        '</div>'
+    )
+
+
+def _build_pitch_venue_split_html(player: PillarPlayerInfo) -> str:
+    return _pitch_split_card(
+        "本拠地 / ビジター 別 投球成績",
+        "東京ドーム (本拠地) と 敵地 (ビジター) でどう違うか。 home / away の相性が見える。",
+        "球場", player.pitch_venue_split_stats,
+    )
+
+
+def _build_pitch_weekday_split_html(player: PillarPlayerInfo) -> str:
+    stats = [(f"{lbl}曜", g, ip, k, er, era)
+             for (lbl, g, ip, k, er, era) in player.pitch_weekday_split_stats]
+    return _pitch_split_card("曜日別 投球成績", "デーゲーム多めの土日 / ナイターの平日 でどう違うか。",
+                             "曜日", stats)
+
+
+def _build_pitch_month_split_html(player: PillarPlayerInfo) -> str:
+    return _pitch_split_card("月別 投球成績", "シーズンを通した調子の波。 今が好調か不調か。",
+                             "月", player.pitch_month_split_stats)
+
+
+def _build_pitch_interleague_split_html(player: PillarPlayerInfo) -> str:
+    return _pitch_split_card("交流戦 / リーグ戦 別 投球成績", "パ相手の交流戦と、 セ内のリーグ戦での違い。",
+                             "区分", player.pitch_interleague_split_stats)
+
+
 def _is_pitcher(player: PillarPlayerInfo) -> bool:
     """position が「投手」 なら True (打撃 section omit)."""
     return (player.position or "").strip() == "投手"
@@ -842,6 +919,11 @@ def render_pillar_html(player: PillarPlayerInfo) -> str:
         stats_sections = [
             _build_pitching_season_html(player),
             _build_pitching_recent_html(player),
+            _build_pitch_opponent_split_html(player),
+            _build_pitch_venue_split_html(player),
+            _build_pitch_weekday_split_html(player),
+            _build_pitch_month_split_html(player),
+            _build_pitch_interleague_split_html(player),
         ]
     else:
         stats_sections = [

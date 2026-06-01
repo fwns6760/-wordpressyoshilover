@@ -985,6 +985,64 @@ def fetch_interleague_split_stats(player_canonical: str) -> list[SplitStat]:
     return _bucket_splits(rows, key, ["リーグ戦", "交流戦"])
 
 
+@dataclass
+class GameDetail:
+    """1 試合の巨人 box score (data/game ページ用、Phase B 452)。"""
+    game_id: str
+    game_date: str
+    opponent: str
+    home_away: str
+    giants_score: Optional[int]
+    opp_score: Optional[int]
+    result: str
+    summary: str
+    batting: list[tuple]   # (slot, position, name, AB, R, H, RBI)
+    pitching: list[tuple]  # (name, IP, H, K, BB, ER, mark)
+
+
+def fetch_game_detail(game_id: str) -> Optional[GameDetail]:
+    """巨人 1 試合の box score(打順別打撃 + 投手)を返す。巨人戦でなければ None。"""
+    venue = giants_venue_from_game_id(game_id)
+    if venue is None:
+        return None
+    path = _ensure_insight_db_local()
+    if not path:
+        return None
+    try:
+        with sqlite3.connect(path) as conn:
+            cur = conn.cursor()
+            g = cur.execute(
+                "SELECT game_date,opponent,giants_score,opp_score,result,COALESCE(one_line_summary,'') "
+                "FROM games WHERE game_id=?", (game_id,)).fetchone()
+            if not g:
+                return None
+            bat = cur.execute(
+                "SELECT slot_order,position,player_display,COALESCE(AB,0),COALESCE(R,0),"
+                "COALESCE(H,0),COALESCE(RBI,0) FROM batting_logs "
+                "WHERE game_id=? AND team_role='giants' ORDER BY slot_order, is_sub", (game_id,)).fetchall()
+            pit = cur.execute(
+                "SELECT player_display,COALESCE(IP,0.0),COALESCE(H_allowed,0),COALESCE(K,0),"
+                "COALESCE(BB,0),COALESCE(ER,0),COALESCE(result_mark,'') FROM pitching_logs "
+                "WHERE game_id=? AND team_role='giants' ORDER BY appearance_order", (game_id,)).fetchall()
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("fetch_game_detail err %s: %r", game_id, exc)
+        return None
+    res_jp = {"win": "勝", "loss": "負", "draw": "分", "tie": "分"}.get(str(g[4] or "").lower(), "")
+    return GameDetail(
+        game_id=game_id, game_date=str(g[0])[:10], opponent=str(g[1] or ""),
+        home_away="本拠地" if venue == "home" else "ビジター",
+        giants_score=int(g[2]) if g[2] is not None else None,
+        opp_score=int(g[3]) if g[3] is not None else None,
+        result=res_jp, summary=str(g[5] or ""),
+        batting=[tuple(r) for r in bat], pitching=[tuple(r) for r in pit],
+    )
+
+
+def game_slug(game_id: str) -> str:
+    """game_id → 安定 slug。例 '2026-05-31:f-g-03' → 'game-2026-05-31-f-g-03'。"""
+    return "game-" + game_id.replace(":", "-")
+
+
 _CENTRAL_TEAM_JP = {"g": "巨人", "t": "阪神", "db": "DeNA", "c": "広島", "s": "ヤクルト", "d": "中日"}
 
 
@@ -1561,6 +1619,150 @@ def fetch_recent_pitching_games(player_canonical: str, limit: int = 5) -> list[P
         )
         for r in rows
     ]
+
+
+def fetch_pitcher_opponent_split_stats(player_canonical: str) -> list[tuple]:
+    """投手 vs 各球団 集計 (456 投手 split 横展開、 打者 fetch_opponent_split_stats の投手版)。
+
+    pitching_logs JOIN games で opponent GROUP BY、 IP は NPB 0.1/0.2 形式を
+    _normalize_npb_ip_sum で正規化して ERA を算出。 read-side のみ、 新 ETL 不要。
+    返り値: [(opponent, G, IP, K, ER, ERA), ...] (ERA は ip=0 で None)。
+    """
+    path = _ensure_insight_db_local()
+    if not path:
+        return []
+    try:
+        with sqlite3.connect(path) as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT g.opponent,
+                       COUNT(DISTINCT p.game_id) as g,
+                       COALESCE(SUM(p.IP), 0) as ip_raw,
+                       COALESCE(SUM(p.K), 0) as k,
+                       COALESCE(SUM(p.ER), 0) as er
+                FROM pitching_logs p
+                JOIN games g ON p.game_id = g.game_id
+                WHERE REPLACE(p.player_canonical,' ','') = REPLACE(?,' ','')
+                  AND g.opponent IS NOT NULL AND g.opponent <> ''
+                GROUP BY g.opponent
+                ORDER BY g.opponent
+                """,
+                (player_canonical,),
+            )
+            rows = cur.fetchall()
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("fetch_pitcher_opponent_split_stats err player=%s: %r", player_canonical, exc)
+        return []
+    out: list[tuple] = []
+    for r in rows:
+        ip = _normalize_npb_ip_sum(float(r[2] or 0.0))
+        er = int(r[4] or 0)
+        era = (er * 9.0 / ip) if ip > 0 else None
+        out.append((str(r[0]), int(r[1] or 0), ip, int(r[3] or 0), er, era))
+    return out
+
+
+def _fetch_pitcher_game_rows(player_canonical: str) -> list[tuple]:
+    """投手の (game_id, game_date, IP, K, ER) を返す(曜日/月/交流戦 split 共通の素)。"""
+    path = _ensure_insight_db_local()
+    if not path:
+        return []
+    try:
+        with sqlite3.connect(path) as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT p.game_id, g.game_date, COALESCE(p.IP,0.0), COALESCE(p.K,0), COALESCE(p.ER,0)
+                FROM pitching_logs p JOIN games g ON p.game_id = g.game_id
+                WHERE REPLACE(p.player_canonical,' ','') = REPLACE(?,' ','')
+                  AND g.game_date IS NOT NULL
+                """,
+                (player_canonical,),
+            )
+            return cur.fetchall()
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("_fetch_pitcher_game_rows err player=%s: %r", player_canonical, exc)
+        return []
+
+
+def _bucket_pitcher_splits(rows: list[tuple], key_fn, order: list[str]) -> list[tuple]:
+    """投手 rows を key_fn でバケットし、 order 順で (label, G, IP, K, ER, ERA) 化。
+
+    IP は raw SUM を _normalize_npb_ip_sum で正規化、 ERA を算出。 IP<=0 のバケットは省く。
+    """
+    agg: dict[str, list] = {}
+    for game_id, game_date, ip, k, er in rows:
+        key = key_fn(game_id, game_date)
+        if key is None:
+            continue
+        b = agg.setdefault(key, [set(), 0.0, 0, 0])
+        b[0].add(game_id)
+        b[1] += float(ip or 0.0)
+        b[2] += int(k or 0)
+        b[3] += int(er or 0)
+    out: list[tuple] = []
+    keys = order if order else sorted(agg.keys())
+    for key in keys:
+        if key not in agg:
+            continue
+        ip = _normalize_npb_ip_sum(agg[key][1])
+        if ip <= 0:
+            continue
+        er = agg[key][3]
+        era = (er * 9.0 / ip) if ip > 0 else None
+        out.append((key, len(agg[key][0]), ip, agg[key][2], er, era))
+    return out
+
+
+def fetch_pitcher_venue_split_stats(player_canonical: str) -> list[tuple]:
+    """投手 本拠地 / ビジター 別 (456)。 home/away は game_id から判定。"""
+    rows = _fetch_pitcher_game_rows(player_canonical)
+    label = {"home": "本拠地", "away": "ビジター"}
+
+    def key(gid, _gd):
+        return label.get(giants_venue_from_game_id(str(gid or "")))
+
+    return _bucket_pitcher_splits(rows, key, ["本拠地", "ビジター"])
+
+
+def fetch_pitcher_weekday_split_stats(player_canonical: str) -> list[tuple]:
+    """投手 曜日別 (456)。"""
+    rows = _fetch_pitcher_game_rows(player_canonical)
+
+    def key(_gid, gdate):
+        try:
+            return _WEEKDAY_JP[date.fromisoformat(str(gdate)[:10]).weekday()]
+        except ValueError:
+            return None
+
+    return _bucket_pitcher_splits(rows, key, _WEEKDAY_JP)
+
+
+def fetch_pitcher_month_split_stats(player_canonical: str) -> list[tuple]:
+    """投手 月別 (456)。"""
+    rows = _fetch_pitcher_game_rows(player_canonical)
+
+    def key(_gid, gdate):
+        try:
+            return f"{int(str(gdate)[5:7])}月"
+        except (ValueError, IndexError):
+            return None
+
+    return _bucket_pitcher_splits(rows, key, [f"{m}月" for m in range(3, 12)])
+
+
+def fetch_pitcher_interleague_split_stats(player_canonical: str) -> list[tuple]:
+    """投手 交流戦 / リーグ戦 別 (456、 対戦相手コードから判定)。"""
+    rows = _fetch_pitcher_game_rows(player_canonical)
+
+    def key(gid, _gd):
+        opp = _opp_code(str(gid or ""))
+        if opp is None:
+            return None
+        return "交流戦" if opp in _PA_TEAM_CODES else "リーグ戦"
+
+    return _bucket_pitcher_splits(rows, key, ["リーグ戦", "交流戦"])
 
 
 __all__ = [

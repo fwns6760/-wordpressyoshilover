@@ -11,6 +11,9 @@ import unittest
 from src.data_site_query import (
     giants_venue_from_game_id,
     fetch_inning_split_stats,
+    fetch_weekday_split_stats,
+    fetch_month_split_stats,
+    fetch_interleague_split_stats,
     _classify_atbat,
 )
 
@@ -115,3 +118,51 @@ class FetchInningSplitStatsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DateBasedSplitTests(unittest.TestCase):
+    """曜日別/月別/交流戦別 split (Phase B 452)。"""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        self.tmp.close()
+        conn = sqlite3.connect(self.tmp.name)
+        conn.executescript(
+            "CREATE TABLE advanced_metric_snapshots(player_canonical TEXT, team_code TEXT);"
+            "CREATE TABLE batting_logs(game_id TEXT, player_canonical TEXT, AB INT, H INT);"
+            "CREATE TABLE games(game_id TEXT, game_date TEXT);"
+        )
+        # 2026-05-29(金) vs f=交流戦 / 2026-05-22(金) vs t=リーグ戦 / 2026-04-05(日)
+        rows = [
+            ("2026-05-29:f-g-01", "2026-05-29", 4, 2),
+            ("2026-05-22:g-t-09", "2026-05-22", 3, 0),
+            ("2026-04-05:g-s-01", "2026-04-05", 4, 1),
+        ]
+        for gid, gd, ab, h in rows:
+            conn.execute("INSERT INTO games VALUES(?,?)", (gid, gd))
+            conn.execute("INSERT INTO batting_logs VALUES(?,?,?,?)", (gid, "岸田 行倫", ab, h))
+        conn.commit(); conn.close()
+        self._prev = os.environ.get("INSIGHT_DB_PATH")
+        os.environ["INSIGHT_DB_PATH"] = self.tmp.name
+
+    def tearDown(self) -> None:
+        if self._prev is None:
+            os.environ.pop("INSIGHT_DB_PATH", None)
+        else:
+            os.environ["INSIGHT_DB_PATH"] = self._prev
+        os.unlink(self.tmp.name)
+
+    def test_weekday(self) -> None:
+        d = {s.label: s for s in fetch_weekday_split_stats("岸田 行倫")}
+        self.assertEqual((d["金"].ab, d["金"].hits), (7, 2))   # 5/29 + 5/22 = 金2試合
+        self.assertIn("日", d)                                  # 4/05 日
+
+    def test_interleague(self) -> None:
+        d = {s.label: s for s in fetch_interleague_split_stats("岸田 行倫")}
+        self.assertEqual((d["交流戦"].ab, d["交流戦"].hits), (4, 2))   # vs f
+        self.assertEqual(d["リーグ戦"].ab, 7)                          # vs t + vs s
+
+    def test_month(self) -> None:
+        d = {s.label: s for s in fetch_month_split_stats("岸田 行倫")}
+        self.assertIn("5月", d); self.assertIn("4月", d)
+        self.assertEqual(d["5月"].ab, 7)

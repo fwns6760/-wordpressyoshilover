@@ -45,6 +45,7 @@ from src.data_site_query import (
     fetch_team_leaders,
     fetch_team_rankings,
     fetch_giants_team_record,
+    fetch_recent_hot,
     fetch_team_leaders,
     fetch_player_npb_ranks,
     fetch_pitching_stats_season,
@@ -423,7 +424,8 @@ def publish_phase1() -> dict[str, object]:
         return {"status": "abort", "reason": "no_pillar_infos"}
 
     # Cluster upsert (parent=0)。 育成=一覧のみ、 OB=chip リンク (個別ページあり)。
-    cluster_html = render_cluster_html(cluster_entries, load_ikusei_entries(), ob_entries)
+    cluster_html = render_cluster_html(cluster_entries, load_ikusei_entries(), ob_entries,
+                                       hot=fetch_recent_hot())
     cluster_title = render_cluster_title()
     cluster_result = _upsert_page(
         slug="data",

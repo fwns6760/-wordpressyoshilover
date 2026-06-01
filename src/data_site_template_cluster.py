@@ -389,10 +389,39 @@ def _build_jsonld(players: list[ClusterPlayerEntry]) -> str:
     )
 
 
+def _build_hot_html(hot: dict | None) -> str:
+    """今日の注目 (直近5試合HOT、 460)。 server-rendered (JS不要・WP安全)。"""
+    b = (hot or {}).get("batter") or []
+    p = (hot or {}).get("pitcher") or []
+    if not b and not p:
+        return ""
+    from src.data_site_slug import player_slug  # lazy import (循環回避)
+
+    def _line(name, disp, rk, tot):
+        try:
+            href = f"/data/{player_slug(name)}/"
+        except Exception:  # noqa: BLE001
+            href = ""
+        nm = (f'<a href="{href}" style="color:#1a1a1a;text-decoration:none;font-weight:600;">{_esc(name)}</a>'
+              if href else f'<strong>{_esc(name)}</strong>')
+        rks = f'<span style="color:#888;font-size:12px;">（リーグ{rk}位）</span>' if rk else ""
+        return f'<li style="padding:5px 0;border-bottom:1px solid #fff0e6;">{nm} {_esc(disp)} {rks}</li>'
+
+    items = "".join(_line(*x) for x in (b + p))
+    return (
+        '<section style="background:#fff8f2;border:1px solid #ffd9bf;border-radius:12px;padding:14px;margin:0 0 16px;">'
+        '<h2 style="font-size:16px;margin:0 0 6px;color:#e25400;">📈 直近5試合の注目選手</h2>'
+        '<p style="font-size:12px;color:#777;margin:0 0 8px;">毎朝更新。 今ホットな巨人の選手。</p>'
+        f'<ul style="list-style:none;padding:0;margin:0;font-size:14px;">{items}</ul>'
+        '</section>'
+    )
+
+
 def render_cluster_html(
     players: list[ClusterPlayerEntry],
     ikusei_entries: list[tuple[str, str]] | None = None,
     ob_entries: list[tuple[str, str]] | None = None,
+    hot: dict | None = None,
 ) -> str:
     """Cluster page の WP post.content として入る HTML を返す.
 
@@ -402,6 +431,7 @@ def render_cluster_html(
     """
     sections = [
         _build_intro_html(),
+        _build_hot_html(hot),
         _build_player_table_html(players, ikusei_entries, ob_entries),
         _build_footnote_html(len(players)),
         _build_jsonld(players),

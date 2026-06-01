@@ -10,7 +10,26 @@ from src.data_site_template_cluster import (
     ClusterPlayerEntry,
     render_cluster_html,
     render_cluster_title,
+    _build_hot_html,
 )
+
+
+class HotCardTests(unittest.TestCase):
+    """460: 今日の注目カード (直近5HOT、 server-rendered)。"""
+
+    def test_render_with_pillar_link(self) -> None:
+        hot = {"batter": [("吉川尚輝", "OPS .950", 3, 144)],
+               "pitcher": [("戸郷翔征", "防御率 1.20", 2, 60)]}
+        html = _build_hot_html(hot)
+        self.assertIn("直近5試合の注目選手", html)
+        self.assertIn("吉川尚輝", html)
+        self.assertIn("OPS .950", html)
+        self.assertIn("/data/yoshikawa-naoki/", html)
+        self.assertIn("防御率 1.20", html)
+
+    def test_empty_safe(self) -> None:
+        self.assertEqual(_build_hot_html({"batter": [], "pitcher": []}), "")
+        self.assertEqual(_build_hot_html(None), "")
 
 
 class RenderClusterHtmlTests(unittest.TestCase):

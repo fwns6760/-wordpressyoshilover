@@ -1974,6 +1974,52 @@ def fetch_sabermetrics(player_canonical: str, is_pitcher: bool) -> list[tuple]:
     return []
 
 
+def fetch_recent_hot(top_n: int = 3) -> dict:
+    """直近5試合の注目選手 (460 今日の注目カード)。 advanced_metric_snapshots last_5_games 最新。
+
+    返り値: {"batter": [(name, "OPS .950", rank, total), ...],
+             "pitcher": [(name, "防御率 1.20", rank, total), ...]}。
+    sample_size gate (打者>=8 / 投手>=5) で 1打席 .999 等のノイズを除外。 無ければ空 list。
+    """
+    path = _ensure_insight_db_local()
+    out: dict = {"batter": [], "pitcher": []}
+    if not path:
+        return out
+    try:
+        with sqlite3.connect(path) as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT player_canonical, metric_value, league_rank, league_total "
+                "FROM advanced_metric_snapshots WHERE team_code='g' AND scope='last_5_games' "
+                "AND metric_name='OPS' AND COALESCE(sample_size,0)>=8 "
+                "AND snapshot_date=(SELECT MAX(snapshot_date) FROM advanced_metric_snapshots "
+                "  WHERE scope='last_5_games' AND metric_name='OPS') "
+                "ORDER BY metric_value DESC LIMIT ?",
+                (int(top_n),),
+            )
+            for n, v, rk, tot in cur.fetchall():
+                out["batter"].append((str(n), f"OPS {_fmt_sabr('OPS', v)}", rk, tot))
+            cur.execute(
+                "SELECT player_canonical, metric_value, league_rank, league_total "
+                "FROM advanced_metric_snapshots WHERE team_code='g' AND scope='last_5_games' "
+                "AND metric_name='ERA' AND COALESCE(sample_size,0)>=5 "
+                "AND snapshot_date=(SELECT MAX(snapshot_date) FROM advanced_metric_snapshots "
+                "  WHERE scope='last_5_games' AND metric_name='ERA') "
+                "ORDER BY metric_value ASC LIMIT ?",
+                (int(top_n),),
+            )
+            for n, v, rk, tot in cur.fetchall():
+                try:
+                    disp = f"防御率 {float(v):.2f}"
+                except (TypeError, ValueError):
+                    disp = "防御率 -"
+                out["pitcher"].append((str(n), disp, rk, tot))
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("fetch_recent_hot err: %r", exc)
+        return {"batter": [], "pitcher": []}
+    return out
+
+
 def fetch_giants_team_record() -> dict:
     """巨人 チーム成績サマリー (games から、 459)。
 

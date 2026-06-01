@@ -1377,6 +1377,170 @@ def build_fan_voice_candidate(
     )
 
 
+_DATA_SPLIT_INNING_METRIC = "inning_split_surprise"
+_DATA_SPLIT_VENUE_METRIC = "venue_split_surprise"
+
+
+def _fmt_avg3(value: float) -> str:
+    """打率を .296 形式 (1 未満は先頭 0 を落とす) で返す。"""
+    s = f"{value:.3f}"
+    return s.lstrip("0") if value < 1 else s
+
+
+def build_data_split_candidates(
+    db_path: str,
+    *,
+    now: Optional[datetime] = None,
+    max_count: int = 2,
+    min_season_ab: int = 80,
+    min_gap: float = 0.120,
+    min_phase_ab: int = 20,
+    min_venue_ab: int = 30,
+    dedup_set: Optional[set[str]] = None,
+) -> list[Candidate]:
+    """448: 巨人 regular の「序盤/中盤/終盤」「本拠地/ビジター」別打率の大きな差を
+    検出し、 大手未掲載の差別化 X 投稿候補 (メール) を作る。
+
+    insight.db read-only。 公開 X 自動投稿はしない (候補=メールまで)。 配列 index=
+    イニングの 9 要素 atbats_json を 447 と同じ ``_classify_atbat`` で分類し、 venue は
+    既存 ``giants_venue_from_game_id`` (game_id NPB code) で判定する。 player_canonical は
+    フルネーム (例 吉川尚輝) なのでそのまま literal title に使う ([[feedback_x_post_player_naming_full_name]])。
+    """
+    if now is None:
+        now = datetime.now(JST)
+    if not db_path:
+        return []
+    try:
+        from src.data_site_query import _classify_atbat, giants_venue_from_game_id
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("build_data_split_candidates import failed: %r", exc)
+        return []
+    try:
+        with _sqlite3.connect(db_path) as conn:
+            cur = conn.cursor()
+            players = cur.execute(
+                "SELECT player_canonical, SUM(COALESCE(AB,0)) AS ab "
+                "FROM batting_logs WHERE team_name='巨人' AND player_canonical IS NOT NULL "
+                "GROUP BY player_canonical HAVING SUM(COALESCE(AB,0)) >= ? ORDER BY ab DESC",
+                (int(min_season_ab),),
+            ).fetchall()
+            rows_by_player: dict[str, list[tuple]] = {}
+            for (canon, _ab) in players:
+                rows_by_player[canon] = cur.execute(
+                    "SELECT game_id, COALESCE(AB,0), COALESCE(H,0), atbats_json "
+                    "FROM batting_logs WHERE player_canonical=?",
+                    (canon,),
+                ).fetchall()
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("build_data_split_candidates query failed: %r", exc)
+        return []
+
+    out: list[Candidate] = []
+    for canon, season_rows in rows_by_player.items():
+        if len(out) >= max_count:
+            break
+        # --- inning split (序盤 1-3 / 中盤 4-6 / 終盤 7-9) ---
+        inn = {"序盤": [0, 0], "中盤": [0, 0], "終盤": [0, 0]}
+        venue = {"本拠地": [0, 0], "ビジター": [0, 0]}
+        for game_id, ab, h, aj in season_rows:
+            v = giants_venue_from_game_id(str(game_id or ""))
+            vlabel = {"home": "本拠地", "away": "ビジター"}.get(v or "")
+            if vlabel:
+                venue[vlabel][0] += int(ab or 0)
+                venue[vlabel][1] += int(h or 0)
+            try:
+                cells = _json.loads(aj) if aj else []
+            except Exception:  # noqa: BLE001
+                cells = []
+            if not isinstance(cells, list):
+                continue
+            for idx, cell in enumerate(cells):
+                key = "序盤" if idx < 3 else ("中盤" if idx < 6 else ("終盤" if idx < 9 else None))
+                if key is None:
+                    continue
+                is_ab, is_hit = _classify_atbat(str(cell))
+                if is_ab:
+                    inn[key][0] += 1
+                if is_hit:
+                    inn[key][1] += 1
+
+        best: Optional[tuple] = None  # (gap, metric, signature, title, post_text, db_fact_line, sample, sample_label)
+        # inning surprise
+        if all(inn[k][0] >= min_phase_ab for k in inn):
+            avgs = {k: inn[k][1] / inn[k][0] for k in inn}
+            hi = max(avgs, key=avgs.get)
+            lo = min(avgs, key=avgs.get)
+            gap = avgs[hi] - avgs[lo]
+            if gap >= min_gap:
+                post = (
+                    f"{canon}、今季は{hi}に強い。{hi}の打率は{_fmt_avg3(avgs[hi])}で、"
+                    f"{lo}の{_fmt_avg3(avgs[lo])}を大きく上回る。時間帯で見える勝負強さ。#巨人 #ジャイアンツ"
+                )
+                fact = (
+                    f"{hi}打率 {_fmt_avg3(avgs[hi])} ({inn[hi][1]}安打/{inn[hi][0]}打数) "
+                    f"｜序盤{_fmt_avg3(avgs['序盤'])}/中盤{_fmt_avg3(avgs['中盤'])}/終盤{_fmt_avg3(avgs['終盤'])}"
+                )
+                best = (gap, _DATA_SPLIT_INNING_METRIC, f"data_split|{canon}|inning",
+                        f"{canon} {hi}に強い (打率{_fmt_avg3(avgs[hi])})", post, fact,
+                        inn[hi][0], f"今季{hi} {inn[hi][0]}打数")
+        # venue surprise (prefer the larger-gap split if both qualify)
+        if all(venue[k][0] >= min_venue_ab for k in venue):
+            havg = venue["本拠地"][1] / venue["本拠地"][0]
+            aavg = venue["ビジター"][1] / venue["ビジター"][0]
+            gap = abs(havg - aavg)
+            if gap >= min_gap and (best is None or gap > best[0]):
+                hi_label, hi_avg = ("本拠地", havg) if havg >= aavg else ("ビジター", aavg)
+                lo_label, lo_avg = ("ビジター", aavg) if hi_label == "本拠地" else ("本拠地", havg)
+                hi_ab, hi_h = venue[hi_label]
+                post = (
+                    f"{canon}、{hi_label}での打率{_fmt_avg3(hi_avg)}が{lo_label}({_fmt_avg3(lo_avg)})を大きく上回る。"
+                    f"{'home' if hi_label=='本拠地' else 'ロード'}向きの今季。#巨人 #ジャイアンツ"
+                )
+                fact = (
+                    f"{hi_label}打率 {_fmt_avg3(hi_avg)} ({hi_h}安打/{hi_ab}打数) "
+                    f"｜本拠地{_fmt_avg3(havg)}/ビジター{_fmt_avg3(aavg)}"
+                )
+                best = (gap, _DATA_SPLIT_VENUE_METRIC, f"data_split|{canon}|venue",
+                        f"{canon} {hi_label}に強い (打率{_fmt_avg3(hi_avg)})", post, fact,
+                        hi_ab, f"今季{hi_label} {hi_ab}打数")
+
+        if best is None:
+            continue
+        gap, metric, signature, title, post_text, db_fact_line, sample, sample_label = best
+        if dedup_set is not None and signature in dedup_set:
+            LOG.info("data_split dedup skip %s", signature)
+            continue
+        draft = "\n".join([
+            "【根拠: 巨人選手データ (大手未掲載 split)】",
+            db_fact_line,
+            "出典: insight.db (NPB official box score 集計)",
+            f"参照: https://yoshilover.com/data/",
+            "",
+            "【X 投稿案 (user が手で投稿)】",
+            post_text,
+            "",
+            "※ 同一回 2 打席は box 1 セル圧縮で総打数が実数を僅かに下回る。安打数は一致。",
+        ])
+        out.append(Candidate(
+            title=title,
+            metric=metric,
+            period_label="今シーズン",
+            draft_text=draft,
+            char_count=len(post_text),
+            signature=signature,
+            post_text=post_text,
+            focus_player=canon,
+            db_fact_line=db_fact_line,
+            team_level="first",
+            sample_size=int(sample),
+            sample_label=sample_label,
+            why_now="data-site 差別化 metric (大手未掲載)",
+            source_material_type="data_split",
+        ))
+    LOG.info("data_split: built %d candidates (max=%d)", len(out), max_count)
+    return out
+
+
 def _rebuild_ranks_within_central(rows: list[dict]) -> list[dict]:
     """After filtering to セ-only, rewrite ``rank`` so the column shows
     1..N within the 6-team scope (not the 12-team residual).

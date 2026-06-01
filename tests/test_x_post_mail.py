@@ -3134,5 +3134,85 @@ class SnapshotPathBattingMetricsTests(unittest.TestCase):
         self.assertIn("佐藤輝明", names)
 
 
+class BuildDataSplitCandidatesTests(unittest.TestCase):
+    """448: 序盤/中盤/終盤・本拠地/ビジター別打率 surprise 候補。"""
+
+    def _make_db(self, rows):
+        import sqlite3 as _sq
+        import tempfile as _tf
+        import os as _os
+        fd, path = _tf.mkstemp(suffix=".db")
+        _os.close(fd)
+        conn = _sq.connect(path)
+        conn.execute(
+            "CREATE TABLE batting_logs (game_id TEXT, team_name TEXT, "
+            "player_canonical TEXT, AB INT, H INT, atbats_json TEXT)"
+        )
+        conn.executemany("INSERT INTO batting_logs VALUES (?,?,?,?,?,?)", rows)
+        conn.commit()
+        conn.close()
+        self.addCleanup(lambda: _os.path.exists(path) and _os.remove(path))
+        return path
+
+    def test_inning_surprise_emitted_with_full_name_no_honorific(self):
+        import json as _j
+        # 序盤=全安打 / 終盤=全三振 の極端 player を 30 試合分。 home game_id。
+        arr = _j.dumps(["左前安", "左前安", "-", "投ゴロ", "投ゴロ", "-", "三 振", "三 振", ""])
+        rows = [
+            (f"2026-05-{d:02d}:g-t-01", "巨人", "強打者", 6, 2, arr)
+            for d in range(1, 31)
+        ]
+        db = self._make_db(rows)
+        from src.x_post_mail_lane import build_data_split_candidates
+        cands = build_data_split_candidates(db, max_count=5)
+        self.assertEqual(len(cands), 1)
+        c = cands[0]
+        self.assertEqual(c.metric, "inning_split_surprise")
+        self.assertIn("強打者", c.title)
+        self.assertIn("序盤に強い", c.title)
+        self.assertNotIn("さん", c.post_text)
+        self.assertNotIn("君", c.post_text)
+        self.assertIn("#巨人", c.post_text)
+        self.assertIn("序盤打率", c.db_fact_line)
+        self.assertEqual(c.signature, "data_split|強打者|inning")
+        self.assertEqual(c.focus_player, "強打者")
+
+    def test_below_gap_threshold_skipped(self):
+        import json as _j
+        arr = _j.dumps(["左前安", "投ゴロ", "-", "左前安", "投ゴロ", "-", "左前安", "投ゴロ", ""])
+        rows = [
+            (f"2026-05-{d:02d}:g-t-01", "巨人", "平凡打者", 6, 3, arr)
+            for d in range(1, 31)
+        ]
+        db = self._make_db(rows)
+        from src.x_post_mail_lane import build_data_split_candidates
+        self.assertEqual(build_data_split_candidates(db, max_count=5), [])
+
+    def test_low_season_ab_skipped(self):
+        import json as _j
+        arr = _j.dumps(["左前安", "左前安", "-", "投ゴロ", "投ゴロ", "-", "三 振", "三 振", ""])
+        rows = [
+            (f"2026-05-{d:02d}:g-t-01", "巨人", "控え", 6, 2, arr)
+            for d in range(1, 6)  # AB ~30 < 80
+        ]
+        db = self._make_db(rows)
+        from src.x_post_mail_lane import build_data_split_candidates
+        self.assertEqual(build_data_split_candidates(db, max_count=5), [])
+
+    def test_dedup_set_skips_signature(self):
+        import json as _j
+        arr = _j.dumps(["左前安", "左前安", "-", "投ゴロ", "投ゴロ", "-", "三 振", "三 振", ""])
+        rows = [
+            (f"2026-05-{d:02d}:g-t-01", "巨人", "強打者", 6, 2, arr)
+            for d in range(1, 31)
+        ]
+        db = self._make_db(rows)
+        from src.x_post_mail_lane import build_data_split_candidates
+        cands = build_data_split_candidates(
+            db, max_count=5, dedup_set={"data_split|強打者|inning"}
+        )
+        self.assertEqual(cands, [])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1677,6 +1677,7 @@ def build_video_radar_candidates(
             fetch_fn=fetch_fn,
             buzz_players=buzz_players,
             min_score=min_score,
+            now=now,
         )
     except Exception as exc:  # noqa: BLE001
         LOG.warning("x_buzz gather failed: %r", exc)

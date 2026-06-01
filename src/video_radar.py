@@ -11,6 +11,8 @@ read-only 巡回し、「懐かしい・ファンが面白い・いま話題」�
 from __future__ import annotations
 
 import re as _re
+from datetime import datetime as _datetime, timezone as _timezone
+from email.utils import parsedate_to_datetime as _parsedate_to_datetime
 from typing import Callable, Optional
 from urllib.request import Request as _Request, urlopen as _urlopen
 
@@ -120,8 +122,19 @@ def _has_video_markup(desc_html: str) -> bool:
     return any(m in s for m in _VIDEO_THUMB_MARKERS)
 
 
+def _parse_pubdate(item: str):
+    """item の <pubDate> を tz-aware datetime に。 取れなければ None。"""
+    m = _re.search(r"<pubDate\b[^>]*>(.*?)</pubDate>", item, _re.S | _re.I)
+    if not m:
+        return None
+    try:
+        return _parsedate_to_datetime(m.group(1).strip())
+    except (TypeError, ValueError, IndexError):
+        return None
+
+
 def _extract_rss_items(xml: str) -> list[dict]:
-    """RSSHub の twitter feed (RSS 2.0) から各 item の {text, url, has_video} を抽出。"""
+    """RSSHub の twitter feed (RSS 2.0) から各 item の {text, url, has_video, published_at} を抽出。"""
     out: list[dict] = []
     for item in _re.findall(r"<item\b.*?</item>", xml or "", _re.S | _re.I):
         parts = []
@@ -136,7 +149,12 @@ def _extract_rss_items(xml: str) -> list[dict]:
         link_m = _re.search(r"<link\b[^>]*>(.*?)</link>", item, _re.S | _re.I)
         url = _strip_html(link_m.group(1)) if link_m else ""
         if text:
-            out.append({"text": text, "url": url, "has_video": _has_video_markup(desc_raw)})
+            out.append({
+                "text": text,
+                "url": url,
+                "has_video": _has_video_markup(desc_raw),
+                "published_at": _parse_pubdate(item),
+            })
     return out
 
 
@@ -182,6 +200,8 @@ def gather_buzz_posts(
     limit: int = 30,
     min_score: int = 2,
     require_video: bool = True,
+    now: Optional[_datetime] = None,
+    max_age_hours: float = 48.0,
 ) -> list[dict]:
     """巨人系 X account の投稿を巡回し、 引用RT 候補に値する投稿を score 降順で返す。
 
@@ -191,9 +211,14 @@ def gather_buzz_posts(
     ``require_video=True`` (既定) のとき、 **動画が付いた投稿だけ** を候補にする。
     動画なし投稿では「動画をポスト」長押しが無意味で、 動画こそがインプを稼ぐため
     (user 2026-06-01)。 動画判定は description の動画サムネ/動画要素マーカー (実 feed 検証済)。
+
+    ``max_age_hours`` (既定 48h) より古い投稿は除外する (user 2026-06-01「古いデータ出さない」)。
+    feed には最大 1 週間前の投稿が混ざるため、 pubDate ベースで鮮度 gate する。 投稿日時不明は
+    判定不能なので通す (RSSHub は通常 RFC1123 を返すので稀)。
     """
     fetch = fetch_fn or _default_fetch
     handles = handles or _BUZZ_HANDLES
+    now = now or _datetime.now(_timezone.utc)
     out: list[dict] = []
     seen_urls: set[str] = set()
     for h in handles:
@@ -209,6 +234,11 @@ def gather_buzz_posts(
             has_video = bool(item.get("has_video"))
             if require_video and not has_video:
                 continue
+            published_at = item.get("published_at")
+            if published_at is not None:
+                age_h = (now - published_at).total_seconds() / 3600.0
+                if age_h > max_age_hours:
+                    continue
             try:
                 player = detect_player_fn(text) or ""
             except Exception:  # noqa: BLE001

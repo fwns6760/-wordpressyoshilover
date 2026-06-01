@@ -156,6 +156,7 @@ DB を全スキャンするのではなく、**RSS が拾った旬の話題を�
   - 自前【巨人データ】post 除外、同一選手は重複排除
   - 補完: ニュースに出ていない「隠れ好調」を DB signal から少数追加(ロスター∩最終出場ゲート)
 - **1候補=1メール**(他 mail lane と同形式、user 要望。`--max-mails` 既定10)。
+- **一言ドラフト自動生成 + Xコピペ用ブロック**(半自動化、user 要望): 全候補に型別テンプレ一言(打率/防御率/打順/記録/二軍)を付与し、数字+一言をそのまま X に貼れる形で同梱。**LLM不使用・¥0・編集前提**。自然文 LLM 生成(Gemini)はコスト増のため不採用(要れば §11 コスト判断)。
 - ツール: `src/tools/daily_x_candidates.py` + `run_daily_x_candidates_mail.py`
 - infra: Cloud Run Job `daily-x-candidates-mail`(image `daily-xcand-856115b`)+ Scheduler `daily-x-candidates-mail-trigger`(**毎朝 7:30 JST**)。SMTP は kobayashi mail lane と同経路、宛先 `fwns6760@gmail.com`。
 - **新規 Gemini なし / 新規 source なし / X API なし / WP は read-only GET / 投稿なし**。コスト: 既存無料枠内(1日1 fire)。

@@ -383,6 +383,22 @@ read-only 巡回し、 **動画つき投稿**を「引用RT / X公式『動画�
 - → **媒体 relay / RT を減らし、 フーガ缶詰 voice のオリジナル投稿を増やす** のが王道
 - 裏取り済の施策: 連投スレッド (2人とも多用、 缶詰 45%) / ポール (缶詰が実施) / 高頻度化 (rivals 8-9 投稿/日)
 
+#### 定期実施 (recurring、 voice をズラさないための運用)
+
+フーガ / 缶詰 の voice・話題・形式は変化する。 これを取り込み続けないと、 ヨシラバー voice が
+古い模写に固まる。 **定期的に 3 アカウント (フーガ / 缶詰 / ヨシラバー) を再分析する**。
+
+- **頻度**: 月 1 回目安 (シーズン中は voice が変わりやすいので随時)
+- **方法** (read-only、 RSSHub、 X API 不使用、 ¥0):
+  - `https://rsshub-487178857517.../twitter/user/{handle}?limit=40` で 3 アカウントを取得
+    (フーガ `@EH87EazmV9D2eSw` / 缶詰 `@kandume92` / 自分 `@yoshilover6760`)
+  - 計測: 投稿頻度 / 時間帯 / 形式 (RT・画像・動画・アンケ) / 連投率 / 字数 / 語尾 / 話題
+- **見るべき signal**:
+  - フーガ/缶詰: 新しい語彙・話題・形式 (例: 缶詰がアンケ多用し始めた 等) → voice prompt の few-shot へ反映
+  - ヨシラバー: **RT 比率 / 媒体タイトル転載の比率** が下がっているか (= オリジナル voice 比率が上がってるか)
+- 結果は本節の比較表を更新し、 必要なら `_SYSTEM_PROMPT_YOSHILOVER` の few-shot / ルールを調整
+- ※ いいね/RT の実数は RSSHub では取れない (他人 timeline read 不可)。 取るなら `kobayashi_meigen_mail_lane` の手法調査が前提
+
 ## :material-folder-file: 関連 file
 
 - メイン (候補組み立て + メール組み立て): `src/x_post_mail_lane.py`

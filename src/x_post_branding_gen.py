@@ -1097,6 +1097,7 @@ def build_quote_rt_comment(
     (caller は LLM なしの出来事 template に fallback する)。 投稿に無い数字は hallucination
     として破棄 (verified_text = 元投稿 + 選手名)。
     """
+    log = _logging.getLogger("x_post_branding_gen")
     src = (post_text or "").strip()
     who = (player or "").strip()
     if not src or not gemini_api_key:

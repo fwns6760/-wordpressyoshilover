@@ -3336,6 +3336,37 @@ class XBuzzPlayerFactTests(unittest.TestCase):
         self.assertEqual(_x_buzz_player_fact(None, "誰か"), "")
 
 
+class BuildQuoteRtCommentTests(unittest.TestCase):
+    """451: Flash Lite 引用RTコメント生成 (post-API path、 log NameError regression)。"""
+
+    def _patch_genai(self, text):
+        import sys, types
+        from unittest import mock
+        fake_client = mock.MagicMock()
+        fake_client.models.generate_content.return_value = types.SimpleNamespace(text=text)
+        fake_genai = types.SimpleNamespace(Client=lambda api_key=None: fake_client)
+        google_mod = sys.modules.get("google") or types.ModuleType("google")
+        setattr(google_mod, "genai", fake_genai)
+        return mock.patch.dict(sys.modules, {"google": google_mod, "google.genai": fake_genai})
+
+    def test_returns_comment_post_api(self):
+        from src import x_post_branding_gen as xbg
+        with self._patch_genai("坂本勇人、サヨナラ最高だ！しびれた。"):
+            out = xbg.build_quote_rt_comment("坂本勇人 サヨナラ", "坂本勇人", gemini_api_key="k")
+        self.assertEqual(out, "坂本勇人、サヨナラ最高だ！しびれた。")  # log NameError 回帰防止
+
+    def test_hallucinated_number_rejected(self):
+        from src import x_post_branding_gen as xbg
+        # 投稿に無い "100号" を出したら捏造として破棄 → ""
+        with self._patch_genai("坂本勇人、通算100号おめでとう！"):
+            out = xbg.build_quote_rt_comment("坂本勇人 サヨナラ", "坂本勇人", gemini_api_key="k")
+        self.assertEqual(out, "")
+
+    def test_empty_key_returns_empty(self):
+        from src import x_post_branding_gen as xbg
+        self.assertEqual(xbg.build_quote_rt_comment("x", "y", gemini_api_key=""), "")
+
+
 class VideoRadarImpressionPolicyTests(unittest.TestCase):
     """451: 動画候補は同選手のデータ候補が居ても落とさず確実に届ける。"""
 

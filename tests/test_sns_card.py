@@ -23,7 +23,7 @@ class PlayerCardTests(unittest.TestCase):
 
     def test_player_card_no_rank_pill_when_missing(self):
         h = sc.render_player_card_html(name="新人", season_avg=0.25, hits=5, rbi=2, games=10)
-        self.assertNotIn("NPB", h)  # rank 無しなら pill 出さない
+        self.assertNotIn('class="rankpill"', h)  # rank 無しなら順位 pill 出さない
         self.assertIn("新人", h)
 
 
@@ -33,7 +33,9 @@ class LateInningCardTests(unittest.TestCase):
             name="岸田行倫", position="捕手",
             soban=0.207, chuban=0.267, shuban=0.423, shuban_h=11, shuban_ab=26,
         )
-        self.assertIn("終盤に強い男", h)
+        # 「終盤」 は強調 span で囲まれるため分割される → 各片で検証
+        self.assertIn("に強い男", h)
+        self.assertIn('<span class="em">終盤</span>', h)
         self.assertIn("岸田行倫", h)
         self.assertIn(".423", h)
         self.assertIn("11安打/26打数", h)

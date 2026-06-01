@@ -6,6 +6,12 @@
 > X 内完結・本文に外部リンクを貼らない・一記事一本。 commit `deee586`、 metric `x_buzz_post`。
 > live 確認: 実投稿から リチャード/吉川尚輝/竹丸和幸 の引用RT候補 (x.com/.../status/...) 生成。
 > (旧 YouTube channel scan 実装 730bb2a〜833db70 は廃止。 §4 以下は旧設計の記録として残置)
+>
+> **半自動 + ヨシラバー voice (commit `a63e36d`)**: HTML メールに「🐦 引用RTで X に投稿」ボタン
+> (`encode_x_quote_intent_url` = text=コメント&url=元ツイートの quote intent)。 タップ → X が
+> 引用RT(コメント+元ツイート入り)で開く → 投稿押すだけ = 半自動。 X API 不使用 (client 側 intent)、
+> 公開X自動投稿でもない (user が最後に押す)。 コメントは ヨシラバー voice の template
+> (ファン目線・フルネーム・敬称なし・媒体ぶらず hashtag 無し、 LLM 不使用)。
 
 ## 1. ticket header
 

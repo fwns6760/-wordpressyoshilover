@@ -42,6 +42,13 @@
 
 次着手時に (A) を基本線とし、AB 分類器を `insight_etl` に追加(NPB result_text の語彙を fixture 化)。これが 457 の最初のサブタスク。
 
+### 着手済みの基礎(2026-06-01・prod insight.db 735 PA で検証済)
+
+- **official AB 分類器の語彙確定**: non-AB = `フォアボール / 四球 / 敬遠 / デッドボール / 死球 / 犠牲バント / 犠打 / 犠牲フライ / 犠飛 / 打撃妨害`(result_text から `（…）` 注釈除去後に部分一致)。それ以外(三振/ゴロ/フライ/ライナー/ヒット/ツーベース/スリーベース/ホームラン/併殺打)は AB。prod 735 PA で AB=673/nonAB=62/誤分類0 を実証。`is_official_at_bat(result_text)` として `insight_etl` に追加予定。
+- **hit 判定の正規表現バグを修正済(commit `c3f14c9`、image `insight-nightly:hit-fix-c3f14c9` deploy 済)**: 旧 `_HIT_RESULT_RE` がカタカナ安打(ヒット/ツーベース/スリーベース)を取りこぼし、 vs左右/RISP 記事の安打数が過少だった。`ヒット|ツーベース|スリーベース` 追加で修正。457 pillar はこの修正後の hit 判定を再利用する。
+- **throws**: 投手左右は `config/npb_pitcher_throws.json`(405 投手)。`current_pitcher` 名で join。
+- **残**: `is_official_at_bat` 実装+fixture → pillar `fetch_vs_lr_split_stats` / `fetch_risp_split_stats`(read-side `REPLACE(batter,' ','')=player`)→ field/builder/publisher → test → data-site-publisher deploy → verify。
+
 ## 依存
 
 なし(read-side ルートは backfill 不要)。447 は本 ticket 完了で CLOSE/統合。**着手前に上記 AB 分類器の設計を確定**(456 と違い単純横展開でない)。

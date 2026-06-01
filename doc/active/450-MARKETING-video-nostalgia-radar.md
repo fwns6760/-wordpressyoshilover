@@ -93,6 +93,7 @@ OB 個人チャンネルは confirmed のみ、 かつ「紹介・リンク」�
 
 ## 9. next action
 
-- (user 判断) §8 最小施策を今週試すか / §6 自動化を将来 ticket 化するか
+- §6 自動化 = **ticket 化済 → `doc/active/451-XPOST-video-radar-impl.md`** (2026-06-01 user 「チケット」)。実装は user GO 後
+- (user 判断) §8 最小施策を今週手動で試すかは任意 (451 と独立)
 - (Claude 自律・別便) NPB 公式 YouTube の channel_id を web verify して棚に追加(read-only 調査便)
 - 本 ticket は DOC_ONLY。 実装着手は別 ticket で user GO 後

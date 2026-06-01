@@ -104,3 +104,52 @@
 - **Phase 2** (別 ticket): NPB 公式 YT 追加 / 記念日 calendar 拡充 / 公式 X oEmbed 巡回 / 型別精度調整
 - **公開 X 自動投稿への昇格は §11 user 判断** (別途)
 - 着手前に NPB 公式 YT channel_id の web verify 便 (read-only) を 1 本挟む
+
+## 9. 2026-06-01 PM フォローアップ実装 (user hearing 反映、 全 LIVE_DEPLOYED)
+
+user 要望 (本日 PM、 対話で段階確定) を反映。 全便 image rebuild + Job update 済 (x-post-mail-lane)。
+最終 image `x-post-mail-lane:all-posts-fresh-2cbb445`、 Scheduler は flush / lineup / game-1 / game-2 全 ENABLED。
+
+### 9.1 動画つき投稿だけを候補化 (require_video)
+- 背景: 動画なし投稿では X 公式「動画をポスト」長押しが無意味、 動画こそインプを稼ぐ (user)。
+- 実装: `video_radar.gather_buzz_posts(require_video=True)` 既定。 description の動画サムネマーカー
+  (`amplify_video_thumb` / `ext_tw_video_thumb` / `tweet_video_thumb` / `<video` / `video/mp4`) で判定。
+- commit `b7c70e8`。 live verify: 60→動画つき9件。
+
+### 9.2 動画 source を 8 アカウントに拡張 (user 指定 + 実feed検証)
+- 旧 `yomiuri_giants` は RSSHub で 1月の「@趣味」RT 1件のみの死にハンドル → 除外 (commit `db54fe3`、
+  fetch リスト video_radar / sns_realtime_topic / sns_topic_cards から削除)。 巨人公式 = `@TokyoGiants`。
+- 新リスト (全ハンドル実feed検証済 = 実在/鮮度/動画): `TokyoGiants`(読売ジャイアンツ公式) / `hochi_giants`(報知) /
+  `Sanspo_Giants`(サンスポ、動画多) / `tospo_giants`(東スポ巨人) / `SponichiGiants`(スポニチ巨人) /
+  `koba_nikkan`(小早川宗一郎・日刊、練習動画) / `ntv_baseball`(DRAMATIC BASEBALL 2026・日テレ巨人中継、動画最多) /
+  `DAZNJPNBaseball`(DAZNベースボール)。 「読売ジャイアンツ」=「ジャイアンツ公式」= @TokyoGiants (同一)。
+- commit `4843af2`。 live verify: 動画つき候補 9→35件。
+
+### 9.3 X 公式「動画をポスト」手順 + 元ポストリンク (UI/UX)
+- メール各動画候補に「▶ 元の動画ポストを開く」リンク (`quote_url` 直リンク) と、 緑の手順ボックス
+  (① 元ポストを開く ② 動画を長押し →「動画をポスト」③ コメントを貼って投稿) を併記。
+- 根拠: X 公式機能「動画をポスト」(長押し → リポスト+引用のいいとこ取り、 元投稿に自動帰属) = 転載でない (web確認済)。
+- commit `5fe4d27` (元ポストリンク) → `b99d763` (手順ボックス + 文言「▶ 元の動画ポストを開く」)。
+- プレビュー HTML: `doc/active/yoshilover_mail_ux_preview.html` (実 `_compose_html_body` で生成)。
+
+### 9.4 鮮度フィルタ (フェーズ別) を全ポストに統一
+- user「48hは長い。 試合中は即、 試合前はその日」「全ポストでそうして」。
+- フェーズ別 max_age (`x_post_mail_lane.phase_freshness_max_age_hours`、 判定は既存 `x_impression_timing_label`):
+  - 試合中 (19:00-21:45) = **3h** / 試合後 (21:45-23:30) = **6h** / 試合前・スタメン (16:00-19:00) = **12h** / 朝・昼・午後・通常 = **24h**
+- 適用経路:
+  - 動画 (x_buzz): `gather_buzz_posts(now, max_age_hours)`、 pubDate ベース。 commit `f595d5d` → `d9abc75`。
+  - news_opinion RSS fallback: `_entry_published_dt` で公開日抽出 + フェーズ gate 新設。 **日付不明は strict skip**
+    (user「古い記事はダメ」)。 `skipped_stale` / `skipped_no_date` を log。
+  - tag_scrape: `max_age_days` 既定 7→1。
+  - fan_voice: `lookback_hours` 固定24→フェーズ別。
+  - commit `2cbb445`。
+- 対象外 (元々当日もの): gemma branding (当日DB + Tavily 同日生成) / データ系候補 (当日 stats、 insight.db stale 中止 gate 済)。
+
+### 9.5 関連: 画像フッターの X ハンドル修正
+- データ/ランキング系 X-post 画像 (437) + SNS カードのフッターが `@yoshilover_giants` (実在しないハンドル) だった。
+  実アカウント `@yoshilover6760` に修正。 commit `8d7231a` (`x_post_image_gen_v2.py` / `x_post_image_gen.py` / `sns_card.py`)。
+
+### 9.6 未確定 / 次手
+- 実 fire での結果確認 (古い記事/古い投稿が消えるか、 動画候補が出るか) は次の自然 fire 待ち。
+- 保留: 動画コメントを既存 `_SYSTEM_PROMPT_YOSHILOVER` voice に統一 + フェーズ hint で例1/2/3 トーンに寄せる (GO 待ち、 本日は未実装)。
+- 締めすぎ (記事が全然出ない) があれば窓を緩める調整余地あり (`phase_freshness_max_age_hours` 1 箇所)。

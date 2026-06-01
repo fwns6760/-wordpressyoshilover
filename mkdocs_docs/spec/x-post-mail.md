@@ -269,9 +269,64 @@
     | `ENABLE_SHARE_X_BUTTON` | 1 | 候補 PNG を GCS upload + 画像つきボタン |
     | `X_POST_MAIL_FAN_VOICE_ENABLED` | 0 | 1 で FAN_VOICE 候補を append (19-23 時のみ) |
 
+## :material-video: 動画候補 (x_buzz_post / 451) と鮮度ルール
+
+2026-06-01 実装 (ticket 451 §9)。 巨人系 X account を自前 RSSHub (X→RSS、 X API 不使用) で
+read-only 巡回し、 **動画つき投稿**を「引用RT / X公式『動画をポスト』」候補としてメールに出す。
+
+### 動画 source (8 account)
+
+`src/video_radar.py:_BUZZ_HANDLES`。 全ハンドル実 feed 検証済 (実在 / 鮮度 / 動画サムネ):
+
+| handle | 主体 | 備考 |
+| --- | --- | --- |
+| `TokyoGiants` | 読売ジャイアンツ公式 | =「ジャイアンツ公式」(同一) |
+| `hochi_giants` | スポーツ報知 巨人取材班 | |
+| `Sanspo_Giants` | サンスポ 巨人 | 動画多 |
+| `tospo_giants` | 東スポ 巨人担当 | |
+| `SponichiGiants` | スポニチ 巨人担当 | |
+| `koba_nikkan` | 小早川宗一郎 (日刊) | 練習動画 |
+| `ntv_baseball` | DRAMATIC BASEBALL 2026 (日テレ巨人中継) | 動画最多 |
+| `DAZNJPNBaseball` | DAZN ベースボール | |
+
+旧 `yomiuri_giants` は RSSHub で死にデータ (1月の「@趣味」RT) を返す死にハンドルのため除外。
+
+### 動画判定 (require_video)
+
+`gather_buzz_posts(require_video=True)` 既定。 RSS description の動画サムネ/動画要素マーカー
+(`amplify_video_thumb` / `ext_tw_video_thumb` / `tweet_video_thumb` / `<video` / `video/mp4`) を含む投稿のみ採用。
+動画なし投稿では X 公式「動画をポスト」長押しが無意味なため。
+
+### メール UI (動画候補)
+
+- 「🐦 引用RTで X に投稿」ボタン (quote intent) + 「▶ 元の動画ポストを開く」リンク (`quote_url` 直リンク)。
+- 緑の手順ボックス: ① 元ポストを開く ② 動画を長押し →「動画をポスト」③ コメントを貼って投稿。
+  (X 公式「動画をポスト」= リポスト+引用のいいとこ取り、 元投稿に自動帰属、 転載でない)。
+
+### 鮮度ルール (フェーズ別、 全ポスト統一)
+
+`src/x_post_mail_lane.py:phase_freshness_max_age_hours(now)` (判定は `x_impression_timing_label`)。
+「古いデータを出さない」「試合中は即、 試合前はその日」(user 2026-06-01) を全ポストに統一適用:
+
+| フェーズ | 時刻 (JST) | max_age |
+| --- | --- | --- |
+| 試合中 (in_game_strong) | 19:00-21:45 | 3h |
+| 試合後 (postgame_peak) | 21:45-23:30 | 6h |
+| 試合前 / スタメン | 16:00-19:00 | 12h |
+| 朝 / 昼 / 午後 / 通常 | その他 | 24h |
+
+適用経路:
+
+- 動画 (x_buzz): pubDate ベース gate。
+- news_opinion RSS fallback: `run_x_post_mail._entry_published_dt` で公開日抽出 + gate。 **日付不明は strict skip**。
+- tag_scrape: `max_age_days` 既定 1。
+- fan_voice: `lookback_hours` フェーズ別。
+- **対象外** (元々当日もの): gemma branding (当日 DB + Tavily 同日) / データ系候補 (当日 stats、 insight.db stale gate 済)。
+
 ## :material-folder-file: 関連 file
 
 - メイン (候補組み立て + メール組み立て): `src/x_post_mail_lane.py`
+- 動画候補 (RSSHub buzz + 動画判定 + 鮮度): `src/video_radar.py`
 - 画像生成: `src/x_post_image_gen_v2.py` (Pillow + Noto Sans CJK)
 - 画像→X 投稿アップロード: `src/x_post_image_attach_x.py`
 - CLI 直接投稿ツール: `src/tools/post_x_with_image.py`

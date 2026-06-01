@@ -1,5 +1,21 @@
 # 452 data-site 状況別データ深化 + データ堀の投資判断
 
+## Phase B LIVE_DEPLOYED_VERIFIED(2026-06-01)
+
+- 曜日別 / 月別 / 交流戦別 split を選手ページに追加、image `data-site-publisher:phaseB-860c592`、
+  execution `d5xx6`、115 pillar 更新。**live verify: 吉川尚輝 + 岸田行倫 で3 section 表示(cache回避済)**。
+- **verify 中に root cause bug を発見・修正**: target 名(`岸田行倫` 空白なし)と insight.db
+  `player_canonical`(`岸田 行倫` 空白あり)の不一致で split query が空振り。曜日/月/交流戦/イニングの
+  WHERE を `REPLACE(...' ','')` 比較に修正。吉川は元々一致で OK、岸田は修正後 OK。
+- 並行アクターの UI 刷新(`cef367f` ys-card/オレンジ/順位バッジ)と同居して deploy(結合 48-63 tests pass)。
+
+### ⚠️ 残る pre-existing bug(報告、未修正)
+
+- **既存 split(venue / opponent / lineup_slot / season 等)も同じ空白ずれで、岸田のような
+  spacing-mismatch 選手では空**(`data_site_query.py` の他 fetch も `player_canonical = ?` 完全一致)。
+- 今回は私の split(+inning)のみ修正。広域修正(全 fetch を空白無視 or 名前 resolver 1 本)は
+  並行アクターの shared code 編集中のため**未着手=要コーディネート**。data サイト全体の品質に効く。
+
 ## 実装状況(2026-06-01、Phase B 一次)
 
 - **コード完成・検証済(未commit、HOLD)**: 曜日別 / 月別 / 交流戦別 split を実装。

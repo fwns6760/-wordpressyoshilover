@@ -217,6 +217,17 @@ def ob_legend(name: str) -> Optional[dict]:
     return load_ob_legends().get("stats", {}).get(_norm_name(name))
 
 
+def load_ob_legend_entries() -> list[dict]:
+    """OB・レジェンドを config order で full profile dict のリストに (legends hub 用)。"""
+    out = []
+    for n in load_ob_names():
+        e = ob_legend(n)
+        if e:
+            e = dict(e); e.setdefault("display_name", n)
+            out.append(e)
+    return out
+
+
 def staff_military_level(position: str) -> str:
     """コーチ position 文字列から 軍 level を返す ('一軍'/'二軍'/'三軍'/'巡回')。"""
     p = position or ""
@@ -1536,6 +1547,7 @@ __all__ = [
     "load_ob_legends",
     "load_ob_names",
     "ob_legend",
+    "load_ob_legend_entries",
     "load_roster_player",
     "find_player_tag_id",
     "fetch_related_topic_links",

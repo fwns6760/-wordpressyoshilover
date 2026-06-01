@@ -59,6 +59,7 @@ from src.data_site_query import (
     coach_career_stat,
     load_ob_names,
     ob_legend,
+    load_ob_legend_entries,
     load_roster_player,
 )
 from src.data_site_slug import player_slug
@@ -76,6 +77,11 @@ from src.data_site_template_leaders import (
     render_leaders_html,
     render_leaders_title,
     render_leaders_excerpt,
+)
+from src.data_site_template_legends import (
+    render_legends_html,
+    render_legends_title,
+    render_legends_excerpt,
 )
 from src.data_site_template_pillar import (
     PillarPlayerInfo,
@@ -444,6 +450,18 @@ def publish_phase1() -> dict[str, object]:
     )
     LOG.info("leaders upsert slug=leaders page_id=%s action=%s stats=%d",
              leaders_result.page_id, leaders_result.action, len(leaders))
+
+    # legends ページ upsert (OB・レジェンド hub、Phase B 452) — parent=cluster → /data/legends/
+    ob_list = load_ob_legend_entries()
+    legends_result = _upsert_page(
+        slug="legends",
+        title=render_legends_title(),
+        content_html=render_legends_html(ob_list),
+        parent=cluster_page_id,
+        excerpt=render_legends_excerpt(ob_list),
+    )
+    LOG.info("legends upsert slug=legends page_id=%s action=%s ob=%d",
+             legends_result.page_id, legends_result.action, len(ob_list))
 
     summary = {
         "status": "ok",

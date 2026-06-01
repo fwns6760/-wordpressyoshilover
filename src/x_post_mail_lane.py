@@ -1678,6 +1678,7 @@ def build_video_radar_candidates(
             buzz_players=buzz_players,
             min_score=min_score,
             now=now,
+            max_age_hours=video_radar_max_age_hours(now),
         )
     except Exception as exc:  # noqa: BLE001
         LOG.warning("x_buzz gather failed: %r", exc)
@@ -2390,6 +2391,20 @@ def x_impression_timing_label(now: datetime) -> str:
     if 21 * 60 + 45 <= minute_of_day < 23 * 60 + 30:
         return _X_IMPRESSION_TIMING_LABELS["postgame_peak"]
     return _X_IMPRESSION_TIMING_LABELS["standard"]
+
+
+def video_radar_max_age_hours(now: datetime) -> float:
+    """451 (user 2026-06-01「48hは長い。試合中は即、試合前はその日」): 動画候補の鮮度窓を
+    試合フェーズで切り替える。 試合中はライブ即時性、 試合前後はその日に寄せる。"""
+    label = x_impression_timing_label(now)
+    L = _X_IMPRESSION_TIMING_LABELS
+    if label == L["in_game_strong"]:
+        return 3.0   # 試合中 = 即 (ライブの今)
+    if label == L["postgame_peak"]:
+        return 6.0   # 試合直後
+    if label in (L["lineup"], L["pregame_db"]):
+        return 12.0  # 試合前 = その日
+    return 24.0      # 朝 / 昼 / 午後 / 通常 = 当日
 
 
 def _candidate_why_now(candidate: Candidate, now: datetime) -> str:

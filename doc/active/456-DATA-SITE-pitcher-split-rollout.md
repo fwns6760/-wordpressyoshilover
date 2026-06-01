@@ -2,7 +2,8 @@
 
 - **種別**: 実装 / **priority**: P1(最大の見た目改善・最安) / **effort**: S
 - **親**: 443 / 設計: `doc/active/455-DATA-SITE-redesign-sitemap-wireframe-uiux.md` §13-1 / GH: #120
-- **status**: READY
+- **status**: LIVE_DEPLOYED_VERIFIED (2026-06-01)
+- **実績**: commit `fcce907`(code+test)/ `9593e4d`(docs)、image `data-site-publisher:pitcher-split-fcce907`(digest `sha256:33b4ffaa…`)、Job 更新 + execution `data-site-publisher-5wkkb` SUCCESS。data-site test 89 passed(regression 0)。verify = WP REST page 73585(戸郷)stored content に 5 split section(vs球団/本拠ビジター/曜日/月/交流戦)全部反映確認(modified 2026-06-01 20:48 JST)。公開 HTML は page-cache 自然失効待ち。
 
 ## 背景(深掘り 1次source)
 

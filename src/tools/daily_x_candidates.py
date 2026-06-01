@@ -520,9 +520,57 @@ def _is_pitcher(cur: sqlite3.Cursor, player: str) -> bool:
     return bool(r and r[0])
 
 
+def _is_starter(cur: sqlite3.Cursor, player: str) -> bool:
+    """先発投手か(登板の過半が start_inning=1)。先発は週1なので窓を変える。"""
+    s = cur.execute("SELECT COUNT(*) FROM pitching_logs WHERE player_canonical=? AND start_inning=1",
+                    (player,)).fetchone()
+    tot = cur.execute("SELECT COUNT(*) FROM pitching_logs WHERE player_canonical=?",
+                      (player,)).fetchone()
+    sn, tn = (s[0] if s else 0), (tot[0] if tot else 0)
+    return sn > 0 and sn * 2 >= tn
+
+
+def _fmt_ip_jp(ip: float) -> str:
+    """NPB 投球回表記。7.0→「7回」 / 6.333→「6回1/3」 / 1.667→「1回2/3」。"""
+    whole = int(ip)
+    frac = int(round((ip - whole) * 3))
+    if frac == 3:
+        whole += 1
+        frac = 0
+    return f"{whole}回" + {0: "", 1: "1/3", 2: "2/3"}[frac]
+
+
+def _last_start_line(cur: sqlite3.Cursor, player: str) -> Optional[tuple[str, str]]:
+    """先発の前回登板内容。良い登板(自責<=2 or QS or 勝利)のみ返す。"""
+    r = cur.execute(
+        """SELECT g.game_date, p.IP, p.ER, p.K, p.result_mark
+           FROM pitching_logs p JOIN games g ON p.game_id=g.game_id
+           WHERE p.player_canonical=? AND p.start_inning=1 ORDER BY g.game_date DESC LIMIT 1""",
+        (player,),
+    ).fetchone()
+    if not r:
+        return None
+    gdate, ip, er, k, mark = r
+    ip = float(ip or 0)
+    er = int(er or 0)
+    good = er <= 2 or (ip >= 6 and er <= 3) or mark == "○"
+    if not good:
+        return None  # 炎上した前回登板はポストにしない → season/記事へ fallback
+    win = " 勝利投手" if mark == "○" else ""
+    parts = gdate.split("-")
+    md = f"{int(parts[1])}/{int(parts[2])}" if len(parts) == 3 else gdate
+    line = f"{_short_name(player)} 前回登板({md}) {_fmt_ip_jp(ip)}{er}失点{int(k or 0)}奪三振{win}"
+    return line, "insight.db pitching_logs(前回先発)"
+
+
 def _player_number(cur: sqlite3.Cursor, player: str, snap: str) -> Optional[tuple[str, str]]:
-    """ポジションに応じた数字を返す。投手→防御率 / 野手→打率。型違いは出さない。"""
+    """ポジションに応じた数字。先発→前回登板内容 / 救援→防御率 / 野手→打率。"""
     if _is_pitcher(cur, player):
+        if _is_starter(cur, player):
+            ls = _last_start_line(cur, player)
+            if ls:
+                return ls  # 先発は「直近7日」でなく前回登板の中身
+            # 炎上 or データ無 → season 防御率へ fallback
         return _pitching_number(cur, player, snap)
     return _fresh_number(cur, player, snap)
 

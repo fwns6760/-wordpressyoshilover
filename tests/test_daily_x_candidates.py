@@ -229,6 +229,48 @@ class PositionAndPositiveGateTests(unittest.TestCase):
         self.assertFalse(dxc._is_positive_hook("◯◯ 防御率5.40(投球回基準10)", is_pitcher=True))  # 悪い側除外
 
 
+class StarterInningTests(unittest.TestCase):
+    def test_fmt_ip_jp(self) -> None:
+        self.assertEqual(dxc._fmt_ip_jp(7.0), "7回")
+        self.assertEqual(dxc._fmt_ip_jp(6.333), "6回1/3")
+        self.assertEqual(dxc._fmt_ip_jp(1.667), "1回2/3")
+
+    def test_last_start_line_db(self) -> None:
+        tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        tmp.close()
+        conn = sqlite3.connect(tmp.name)
+        conn.executescript(
+            "CREATE TABLE pitching_logs(game_id TEXT, player_canonical TEXT, start_inning INT, IP REAL, ER INT, K INT, result_mark TEXT);"
+            "CREATE TABLE games(game_id TEXT, game_date TEXT);"
+        )
+        conn.execute("INSERT INTO games VALUES('g1','2026-05-27')")
+        conn.execute("INSERT INTO pitching_logs VALUES('g1','戸郷翔征',1,7.0,1,6,'○')")
+        conn.commit()
+        cur = conn.cursor()
+        self.assertTrue(dxc._is_starter(cur, "戸郷翔征"))
+        line, _ = dxc._last_start_line(cur, "戸郷翔征")
+        self.assertIn("前回登板(5/27)", line)
+        self.assertIn("7回1失点6奪三振", line)
+        self.assertIn("勝利投手", line)
+        conn.close()
+        os.unlink(tmp.name)
+
+    def test_blowup_start_not_posted(self) -> None:
+        tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        tmp.close()
+        conn = sqlite3.connect(tmp.name)
+        conn.executescript(
+            "CREATE TABLE pitching_logs(game_id TEXT, player_canonical TEXT, start_inning INT, IP REAL, ER INT, K INT, result_mark TEXT);"
+            "CREATE TABLE games(game_id TEXT, game_date TEXT);"
+        )
+        conn.execute("INSERT INTO games VALUES('g1','2026-05-04')")
+        conn.execute("INSERT INTO pitching_logs VALUES('g1','某投手',1,5.0,5,5,'●')")  # 5失点黒星
+        conn.commit()
+        self.assertIsNone(dxc._last_start_line(conn.cursor(), "某投手"))  # 炎上はポストしない
+        conn.close()
+        os.unlink(tmp.name)
+
+
 class ExtractQuoteTests(unittest.TestCase):
     def test_keeps_speech_drops_noise(self) -> None:
         html = ('<p>見出し</p>'

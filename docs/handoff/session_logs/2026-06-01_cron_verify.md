@@ -51,3 +51,9 @@
 - verify: exec kq85n、 buzz=竹丸和幸18/リチャード5/佐々木3 等、 built 3 (38ch scan)、 appended base=2 video=3 total=5、 mail sent
 - 転載しない(URL紹介のみ)/Gemini・X API不使用/追加課金なし(RSSHub既稼働)/公開X自動投稿は§11未解放
 - Phase2 改善: buzz NER 誤検出 (名前出るだけの無関係動画) の Giants-relevance gate
+
+## 451 refine (user「ばずってた動画を内容込みでmail」「一記事一本」) LIVE_VERIFIED
+- 一記事一本: 動画は選手ごと1本 dedup / 内容: media:description 抜粋を draft に掲載 /
+  確実配信: video_radar を apply_x_impression_policy の dedup_player_in_mail から除外
+- commit 833db70、 image video-radar-833db70、 tests 146 pass
+- verify: exec qm4wn、 buzz=竹丸和幸20 等、 built 3、 appended base=1 video=3 total=4、 impression_drop ゼロ、 mail sent

@@ -3,7 +3,19 @@
 ## 1. ticket header
 
 - **ticket id**: 451
-- **status**: READY_FOR_IMPL (実装は user GO 後。 公開 X 自動投稿への昇格は別途 §11 user 判断)
+- **status**: LIVE_DEPLOYED_VERIFIED (2026-06-01。 image `video-radar-eb2f583`、 ENABLE_X_POST_VIDEO_RADAR=1。 公開 X 自動投稿への昇格は別途 §11 user 判断)
+  - verify: exec `x-post-mail-lane-kq85n` SUCCESS、 log「video_radar buzz players: 竹丸和幸18/リチャード5/…」
+    「video_radar: built 3 candidates (scanned 38 channels)」「video_radar appended: base=2 video=3 total=5」「mail send result: status=sent」
+  - **既知の改善余地 (Phase 2)**: buzz 選手 NER がタイトルに名前が出るだけ/誤検出の動画を拾うことがある
+    (例: 岸田が検出された西武の動画)。 人がメールで選ぶ前提で許容だが、 Giants-relevance gate / NER 精度上げが次手
+  - scope 更新 (user 2026-06-01): チャンネルは **全部対象** (status=excluded のみ除外)。 拾う基準は「懐かしい・ファンが面白い」
+  - **X バズ駆動 (user「RSSハブ入れて」)**: 445 と同じ自前 RSSHub (X→RSS、 X API 不使用) で巨人系 X 4 account を読み、
+    言及の多い = いま X でバズってる選手を検出 → その選手の公式/OB 動画を最優先 (+3「Xで話題」tag) で拾う
+  - 実装: `src/video_radar.py` (load_radar_channels / classify_video / gather_radar_videos / fetch_buzzing_players)
+    + `x_post_mail_lane.build_video_radar_candidates` + `run_x_post_mail` ENABLE_X_POST_VIDEO_RADAR (default OFF)
+  - commit `730bb2a` (YouTube radar) → `eb2f583` (RSSHub buzz 駆動)。 tests 144 pass
+  - live 確認: RSSHub buzz 本日 竹丸和幸18/リチャード5/佐々木俊輔3 等、 公式/OB 動画候補も生成確認
+  - 出力は URL 紹介のみ・転載しない / Gemini・X API 不使用 / 追加課金なし (RSSHub は 445 用に既稼働)
 - **owner**: Claude Code
 - **lane**: x-post-mail-lane (候補生成のみ。 公開 X 自動投稿はしない)
 - **created**: 2026-06-01

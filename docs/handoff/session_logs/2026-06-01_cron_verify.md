@@ -43,3 +43,11 @@
 - bug fix: SQLite HAVING で SELECT alias 不可 → SUM() 明示 (alias だと 0 件 silent だった)
 - verify: exec x-post-mail-lane-x4tqf SUCCESS、 log「data_split: built 2 candidates」「data_split appended: base=0 data_split=2 total=2」「mail send result: status=sent」
 - 公開 X 自動投稿は未解放 (§11 user 判断)。 候補=オペレーターメールまで
+
+## 451 video-nostalgia-radar (Xバズ駆動、 LIVE_DEPLOYED_VERIFIED 2026-06-01)
+- user「RSSハブ入れて」→ 445 と同じ自前 RSSHub (X→RSS、X API不使用) で巨人系X4accountを読み、
+  言及多い=バズ選手を検出 → 公式/OB動画を最優先で x-post-mail 候補化。 チャンネル全部 (excluded除外)
+- commit 730bb2a (YouTube radar) → eb2f583 (RSSHub buzz)。 image video-radar-eb2f583、 flag ON、 tests 144 pass
+- verify: exec kq85n、 buzz=竹丸和幸18/リチャード5/佐々木3 等、 built 3 (38ch scan)、 appended base=2 video=3 total=5、 mail sent
+- 転載しない(URL紹介のみ)/Gemini・X API不使用/追加課金なし(RSSHub既稼働)/公開X自動投稿は§11未解放
+- Phase2 改善: buzz NER 誤検出 (名前出るだけの無関係動画) の Giants-relevance gate

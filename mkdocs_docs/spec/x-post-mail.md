@@ -443,6 +443,25 @@ Cloud Scheduler `rival-account-analysis-monthly` (毎月 1 日 09:00 JST)。 X A
 - **不可触 (完成済)**: 画像 (438/437) / 動画 (video radar) / 記録・成績取得 / voice (フーガ缶詰)
 - 検証: test 154 + コメントbuilder 3 pass。 竹丸和幸コメントで `【竹丸和幸】「…思ったよりいけるなと…」` 生成確認
 
+## :material-lightbulb-on: 残課題・次のインプ計画 (2026-06-01)
+
+優先順 (計測なしの施策追加は当て物 = 避ける):
+
+1. **最優先 = 検証**: 実メール / 実投稿 (@yoshilover6760) で 2026-06-01 の全変更 (ポエム消滅 / 選手・監督・コーチ名入り /
+   ①たんぱく②フーガ比率 / コメント速報 / データたんぱく) が効いてるか確認。 **週次QA routine の結果** (claude.ai 実行履歴 or メール) を読む。
+   ※ ローカルに Gemini 鍵なし → 実 LLM 出力はメール / 履歴で見る。
+2. **残施策 (計測してから着手)**:
+   - **連投スレッド** (rival 裏取り: 缶詰 45% / フーガ 28% が多用)
+   - **ポール / アンケート** (缶詰が実施 = ブランド適合)
+   - **効果学習** (どの型 / 時間 / 選手が伸びたか実測 → voice・型・時間を寄せる。 `kobayashi_meigen_mail_lane` の
+     like / retweet 取得手法を流用できるか調査が前提。 X Free API は他人 timeline read 不可)
+3. 計測 (効果学習) が施策の土台。 それ無しの poll / thread 追加は推測打ち。
+
+### 定期分析の自動化 (稼働中)
+- 月次: Cloud Run Job `rival-account-analysis` + Scheduler (毎月1日)
+- 週次: `/schedule` routine `yoshilover-weekly-xpost-qa` (`trig_01NkwtTe6KGmWrimNnNY5N9s`、 月曜 09:07 JST、
+  RSSHub で 5 アカ分析 → Gmail 送信 + 実行履歴出力。 repo 依存なし自己完結、 Max 枠で動作)
+
 ## :material-folder-file: 関連 file
 
 - メイン (候補組み立て + メール組み立て): `src/x_post_mail_lane.py`

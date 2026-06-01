@@ -162,7 +162,9 @@ DB を全スキャンするのではなく、**RSS が拾った旬の話題を�
 - 画像 tag は `daily-xcand-0755f77` に更新。
 - ツール: `src/tools/daily_x_candidates.py` + `run_daily_x_candidates_mail.py`
 - infra: Cloud Run Job `daily-x-candidates-mail`(image `daily-xcand-856115b`)+ Scheduler `daily-x-candidates-mail-trigger`(**毎朝 7:30 JST**)。SMTP は kobayashi mail lane と同経路、宛先 `fwns6760@gmail.com`。
-- **新規 Gemini なし / 新規 source なし / X API なし / WP は read-only GET / 投稿なし**。コスト: 既存無料枠内(1日1 fire)。
+- **Flash Lite polish(2026-06-01 user GO)**: `gemini-3.1-flash-lite` で検証事実を「データ+文字で引きつける」本文に整形。**数字はコードでロック**(出力の rate 数字が事実外なら却下)+ **データ保持必須**(数字を落としたふわふわ文は却下)→ 数字ハルシネーション不可。失敗/却下時は fact 版に自動 fallback。`DAILY_X_CANDIDATES_USE_LLM=1` + secret `gemini-api-key`。
+  - コスト: flash-lite ~13 call/日(短文)。**過去のGeminiコスト誤見積り教訓([[project_2026_05_22_gemini_flash_cost_revert]])に従い 24h 課金実測で確認**(¥0 とは断定しない)。
+- **新規 source なし / X API なし / WP は read-only GET / 投稿なし**。
 - 実機: 2026-06-01 execution `daily-x-candidates-mail-njdvf` → **sent=10/10**(news9 + hidden4 = 13、上限10送信)。
 - 運用: 毎朝 届く1件ずつのメールから 448 §3 の型で選び、一言を足して X 手動投稿。1週間で効いた型を見る。
 

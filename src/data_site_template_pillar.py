@@ -94,6 +94,23 @@ def _esc(text: str) -> str:
     return _html.escape(str(text or ""), quote=True)
 
 
+def _build_lead_html(player: "PillarPlayerInfo") -> str:
+    """ページ冒頭の lead 文 (SNS 共有 og:description / SEO meta description 用)。
+
+    SEO SIMPLE PACK は固定ページの description を WP excerpt ではなく本文先頭テキストから
+    自動生成する。 そのため breadcrumb より前に clean な 1 文を置き、 共有プレビューが
+    「Home › 巨人選手データ › …数字羅列」 ではなく説明文で始まるようにする。
+    """
+    lead = render_pillar_excerpt(player)
+    if not lead:
+        return ""
+    return (
+        '<p class="ys-pillar-lead" '
+        'style="font-size:14px;line-height:1.7;color:#333;margin:0 0 12px;">'
+        f'{_esc(lead)}</p>'
+    )
+
+
 def _build_breadcrumb_html(name: str) -> str:
     """Pillar 上部の breadcrumb (Home → 選手データ → {player})。"""
     return (
@@ -804,6 +821,7 @@ def render_pillar_html(player: PillarPlayerInfo) -> str:
             _build_inning_split_html(player),
         ]
     sections = [
+        _build_lead_html(player),
         _build_breadcrumb_html(player.name),
         _build_featured_image_html(player),
         _build_short_review_html(player),

@@ -92,6 +92,13 @@ class RenderPillarHtmlTests(unittest.TestCase):
         self.assertIn('https://yoshilover.com/data/', html)
         self.assertIn("巨人選手データ", html)
 
+    def test_lead_paragraph_precedes_breadcrumb(self) -> None:
+        # SSP の auto description が breadcrumb ではなく lead 文で始まるよう、
+        # lead <p> が breadcrumb より前に出ること
+        html = render_pillar_html(self.player)
+        self.assertIn('class="ys-pillar-lead"', html)
+        self.assertLess(html.index("ys-pillar-lead"), html.index("ys-breadcrumb"))
+
     def test_featured_image_included(self) -> None:
         html = render_pillar_html(self.player)
         self.assertIn("https://yoshilover.com/wp-content/sample.jpg", html)

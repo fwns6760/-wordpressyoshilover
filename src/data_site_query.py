@@ -886,7 +886,8 @@ def _fetch_player_game_rows(player_canonical: str) -> list[tuple]:
                 """
                 SELECT b.game_id, g.game_date, COALESCE(b.AB,0), COALESCE(b.H,0)
                 FROM batting_logs b JOIN games g ON b.game_id = g.game_id
-                WHERE b.player_canonical = ? AND g.game_date IS NOT NULL
+                WHERE REPLACE(b.player_canonical,' ','') = REPLACE(?,' ','')
+                  AND g.game_date IS NOT NULL
                 """,
                 (player_canonical,),
             )
@@ -1147,7 +1148,7 @@ def fetch_inning_split_stats(player_canonical: str) -> list[InningSplitStat]:
             cur.execute(
                 """
                 SELECT atbats_json FROM batting_logs
-                WHERE player_canonical = ?
+                WHERE REPLACE(player_canonical,' ','') = REPLACE(?,' ','')
                   AND atbats_json IS NOT NULL AND atbats_json NOT IN ('', '[]', 'null')
                 """,
                 (player_canonical,),

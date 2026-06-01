@@ -69,15 +69,61 @@ class GatherBuzzPostsTests(unittest.TestCase):
     def test_filters_and_sorts_with_url(self):
         def detect(t):
             return "坂本勇人" if "坂本" in t else ""
+        # この test は score フィルタの検証。 動画/鮮度ゲートは別 test で扱うため無効化。
         posts = vr.gather_buzz_posts(
             detect_player_fn=detect, fetch_fn=lambda u: _FEED,
             handles=["yomiuri_giants"], buzz_players={"坂本勇人"}, min_score=2,
+            require_video=False, max_age_hours=1e9,
         )
         # 坂本のバズ投稿のみ残る (本日の練習は score<2)
         self.assertEqual(len(posts), 1)
         self.assertEqual(posts[0]["player"], "坂本勇人")
         self.assertEqual(posts[0]["url"], "https://x.com/yomiuri_giants/status/111")
         self.assertEqual(posts[0]["type_tag"], "Xで話題")
+
+    def test_require_video_keeps_only_video_posts(self):
+        # 動画サムネ (amplify_video_thumb) を持つ投稿だけ残す。
+        feed = (
+            "<rss><channel>"
+            "<item><title>坂本勇人 サヨナラ満塁ホームラン</title>"
+            "<description>劇的 &lt;img src=&quot;https://pbs.twimg.com/amplify_video_thumb/1/img/a.jpg&quot;&gt;</description>"
+            "<link>https://x.com/y/status/1</link></item>"
+            "<item><title>坂本勇人 また活躍</title><description>写真のみ "
+            "&lt;img src=&quot;https://pbs.twimg.com/media/b.jpg&quot;&gt;</description>"
+            "<link>https://x.com/y/status/2</link></item>"
+            "</channel></rss>"
+        )
+        det = lambda t: "坂本勇人" if "坂本" in t else ""  # noqa: E731
+        posts = vr.gather_buzz_posts(
+            detect_player_fn=det, fetch_fn=lambda u: feed, handles=["y"],
+            buzz_players={"坂本勇人"}, min_score=2, require_video=True, max_age_hours=1e9,
+        )
+        self.assertEqual([p["url"] for p in posts], ["https://x.com/y/status/1"])
+        self.assertTrue(posts[0]["has_video"])
+
+    def test_max_age_hours_drops_old_posts(self):
+        from datetime import datetime, timezone
+        feed = (
+            "<rss><channel>"
+            "<item><title>坂本勇人 サヨナラ満塁ホームラン</title>"
+            "<description>新しい &lt;img src=&quot;https://pbs.twimg.com/amplify_video_thumb/1/img/a.jpg&quot;&gt;</description>"
+            "<link>https://x.com/y/status/1</link>"
+            "<pubDate>Mon, 01 Jun 2026 09:00:00 GMT</pubDate></item>"
+            "<item><title>坂本勇人 古い満塁ホームラン</title>"
+            "<description>古い &lt;img src=&quot;https://pbs.twimg.com/amplify_video_thumb/2/img/b.jpg&quot;&gt;</description>"
+            "<link>https://x.com/y/status/2</link>"
+            "<pubDate>Mon, 25 May 2026 09:00:00 GMT</pubDate></item>"
+            "</channel></rss>"
+        )
+        det = lambda t: "坂本勇人" if "坂本" in t else ""  # noqa: E731
+        now = datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc)  # 6/1 09:00 から 3h
+        posts = vr.gather_buzz_posts(
+            detect_player_fn=det, fetch_fn=lambda u: feed, handles=["y"],
+            buzz_players={"坂本勇人"}, min_score=2, require_video=True,
+            now=now, max_age_hours=24,
+        )
+        # 24h 以内の 1 件のみ (5/25 の古い投稿は除外)
+        self.assertEqual([p["url"] for p in posts], ["https://x.com/y/status/1"])
 
     def test_fetch_error_skipped(self):
         def boom(u):

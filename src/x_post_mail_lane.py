@@ -1550,12 +1550,13 @@ def build_data_split_candidates(
 _VIDEO_RADAR_METRIC = "x_buzz_post"
 
 
-def _x_buzz_event_comment(text: str, player: str) -> str:
+def _x_buzz_event_comment(text: str, player: str, phase: str = "") -> str:
     """451: 引用元 X 投稿の「出来事」に反応する引用RTコメントを返す (LLM 不使用)。
 
     元投稿に事実 (完投 / 特大HR / 奪三振数 等) が書いてあるので、 それを拾って
     ヨシラバー voice (ファン目線・フルネーム・敬称なし・hashtag 無し) で反応する。
     シーズン平均など出来事と無関係な数字は貼らない (矛盾を避ける)。
+    ``phase`` (試合前/試合中/試合後) があれば、 出来事が拾えない時の汎用文をフェーズに合わせる。
     """
     t = text or ""
     who = (player or "巨人").strip()
@@ -1593,6 +1594,13 @@ def _x_buzz_event_comment(text: str, player: str) -> str:
         return f"{who}、ここから乗っていってほしい…！"
     if any(p in t for p in ("勝利", "連勝", "勝ち越", "快勝", "勝った")):
         return f"{who}、ナイスゲーム…！この勢いで。"
+    # 出来事が拾えない (練習動画 等) 時の汎用文。 フェーズで温度を変える。
+    if phase == "試合前":
+        return f"{who}、今日も楽しみだ…！"
+    if phase == "試合中":
+        return f"{who}、この流れに乗りたい…！"
+    if phase == "試合後":
+        return f"{who}、今日のこれは効いた…！"
     return f"{who}、これは見ておきたい一件。"
 
 
@@ -1684,6 +1692,7 @@ def build_video_radar_candidates(
         LOG.warning("x_buzz gather failed: %r", exc)
         return []
 
+    phase_label, phase_hint = _video_comment_phase_hint(now)
     out: list[Candidate] = []
     used_players: set[str] = set()
     for p in posts:
@@ -1707,15 +1716,20 @@ def build_video_radar_candidates(
         # 引用RT コメント案 — まず LLM (comment_fn、 Gemini 3.1 Flash Lite) で元投稿に反応した
         # ヨシラバー voice を生成。 失敗 / 未設定なら LLM なしの出来事 template に fallback
         # (graceful)。 どちらも 出来事と無関係なシーズン平均は本文に貼らない (矛盾回避)。
+        # フェーズ (試合前/中/後) で voice トーンを切り替える (既存 voice の例1/2/3 に対応)。
         post_text = ""
         if comment_fn:
             try:
-                post_text = (comment_fn(p.get("text", ""), player) or "").strip()
+                try:
+                    post_text = (comment_fn(p.get("text", ""), player, phase_hint) or "").strip()
+                except TypeError:
+                    # 旧 2 引数 comment_fn (tests 等) との後方互換
+                    post_text = (comment_fn(p.get("text", ""), player) or "").strip()
             except Exception as exc:  # noqa: BLE001
                 LOG.info("x_buzz comment_fn failed: %r", exc)
                 post_text = ""
         if not post_text:
-            post_text = _x_buzz_event_comment(p.get("text", ""), player)
+            post_text = _x_buzz_event_comment(p.get("text", ""), player, phase=phase_label)
         fact = _x_buzz_player_fact(db_path, player) if player else ""
         draft = "\n".join([
             f"【引用RT候補: {tag}】",
@@ -2407,6 +2421,22 @@ def phase_freshness_max_age_hours(now: datetime) -> float:
     if label in (L["lineup"], L["pregame_db"]):
         return 12.0  # 試合前 = その日
     return 24.0      # 朝 / 昼 / 午後 / 通常 = 当日
+
+
+def _video_comment_phase_hint(now: datetime) -> tuple[str, str]:
+    """451 (user 2026-06-01): 動画引用RTコメントのトーンを試合フェーズで切り替えるための
+    (phase_label, llm_hint) を返す。 トーンの中身は既存 ``_SYSTEM_PROMPT_YOSHILOVER`` の
+    例1=試合後 / 例2=試合中 / 例3=試合前 に対応 (新トーン創作はしない)。"""
+    label = x_impression_timing_label(now)
+    L = _X_IMPRESSION_TIMING_LABELS
+    if label == L["in_game_strong"]:
+        return ("試合中", "いまは試合中。 ライブで今この瞬間に反応する熱量で。 "
+                "勝敗の完了断定は避け『ここで踏ん張れば』『次の回次第』など流動的に。")
+    if label == L["postgame_peak"]:
+        return ("試合後", "いまは試合直後。 結果を噛み締める余韻と、 活躍した選手を讃えるトーンで。")
+    if label in (L["lineup"], L["pregame_db"]):
+        return ("試合前", "いまは試合前。 これからへの期待・ワクワク。 注目選手や先発への期待を込めて。")
+    return ("通常", "落ち着いた振り返り・小ネタのトーンで。")
 
 
 def _candidate_why_now(candidate: Candidate, now: datetime) -> str:

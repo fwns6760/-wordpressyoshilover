@@ -1624,8 +1624,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                     try:
                         from src import x_post_branding_gen as _vr_xbg
 
-                        def vr_comment_fn(post_text, player, _k=_vr_key, _g=_vr_xbg):  # noqa: E731
-                            return _g.build_quote_rt_comment(post_text, player, gemini_api_key=_k)
+                        def vr_comment_fn(post_text, player, phase_hint="", _k=_vr_key, _g=_vr_xbg):  # noqa: E731
+                            return _g.build_quote_rt_comment(post_text, player, phase_hint, gemini_api_key=_k)
                     except Exception as _vr_imp_exc:  # noqa: BLE001
                         LOG.warning("video_radar LLM comment unavailable: %r", _vr_imp_exc)
                         vr_comment_fn = None

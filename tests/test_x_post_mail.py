@@ -2503,16 +2503,20 @@ class XPostMailEntrypointFreshnessTests(unittest.TestCase):
         from src.tools import run_x_post_mail
         import src.x_post_mail_lane as lane
 
+        # 鮮度ゲート (フェーズ別、 日付不明は strict skip) に対応するため published を付与。
+        # now=2026-05-18 13:07 JST (昼=24h窓) に対し 03:00 GMT=12:00 JST = 約1h前 → 通る。
         entries = [
             {
                 "title": "巨人・浦田俊輔が攻守で存在感",
                 "link": "https://example.test/urata",
                 "summary": "浦田俊輔の話題",
+                "published": "Mon, 18 May 2026 03:00:00 GMT",
             },
             {
                 "title": "巨人・岸田行倫が攻守で存在感",
                 "link": "https://example.test/kishida",
                 "summary": "岸田行倫の話題",
+                "published": "Mon, 18 May 2026 03:00:00 GMT",
             },
         ]
         with patch.object(
@@ -2545,6 +2549,7 @@ class XPostMailEntrypointFreshnessTests(unittest.TestCase):
                 "title": "巨人・岸田行倫が攻守で存在感",
                 "link": "https://news.ntv.co.jp/category/sports/abcd1234",
                 "summary": "読売ジャイアンツの話題",
+                "published": "Mon, 18 May 2026 03:00:00 GMT",
             }
         ]
         with patch.object(
@@ -3218,9 +3223,13 @@ class BuildVideoRadarCandidatesTests(unittest.TestCase):
     """451: X バズ投稿の引用RT候補 (YouTube 不使用、 外部リンク無し、 X 内完結)。"""
 
     # RSSHub twitter feed 風 RSS。 坂本の投稿 1 件。
+    # require_video=True に対応するため description に動画サムネ (amplify_video_thumb) を含める。
+    # pubDate は固定 (テストは now 既定 = 実行時刻だが、 video path は日付不明を keep するため省略可)。
     _FEED = (
         "<rss><channel>"
         "<item><title>坂本勇人 サヨナラ満塁ホームラン</title>"
+        "<description>坂本勇人 サヨナラ満塁ホームラン "
+        "&lt;img src=&quot;https://pbs.twimg.com/amplify_video_thumb/111/img/abc.jpg&quot;&gt;</description>"
         "<link>https://x.com/yomiuri_giants/status/111</link></item>"
         "</channel></rss>"
     )

@@ -63,3 +63,10 @@
 - video_radar: classify_post + gather_buzz_posts、build_video_radar_candidates 書き換え、metric x_buzz_post
 - commit deee586、image xbuzz-deee586、tests 143 pass
 - live 確認: 実投稿から リチャード(二軍特大HR)/吉川尚輝/竹丸和幸(プロ初完投) の引用RT候補生成 (x.com/.../status/...)
+
+## 451 引用RTコメント Flash Lite 化 (user「品質上がるなら」) LIVE
+- build_quote_rt_comment (gemini-3.1-flash-lite、既存brandingと同model) で元投稿に反応した引用RTコメント生成。安全check+捏造数字ガード流用、失敗時はLLMなし出来事templateにfallback
+- flag ENABLE_X_POST_VIDEO_RADAR_LLM=1。commit 2fa6bd6 → 900c33a (log NameError fix: 初回deployでLLM呼ばれてたがlog未定義で全件silent fallbackしてた本番bugを検出・修正)
+- verify (exec fc4nm): quote_rt_comment_built 吉川80字/岸田83字、竹丸は safety(「見殺し」)でtemplate fallback、mail sent。3 call/run、24h合算82回
+- コスト: 既存brandingと同model従量。2026-05-22ルール = billing console 実額確認 未実施 (CLI不可、user/console側)
+- 既知: 安全フィルタが良コメント(「見殺し」等の野球用語)を弾くことがある→tuning余地

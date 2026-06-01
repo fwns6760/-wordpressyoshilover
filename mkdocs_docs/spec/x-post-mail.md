@@ -323,9 +323,45 @@ read-only 巡回し、 **動画つき投稿**を「引用RT / X公式『動画�
 - fan_voice: `lookback_hours` フェーズ別。
 - **対象外** (元々当日もの): gemma branding (当日 DB + Tavily 同日) / データ系候補 (当日 stats、 insight.db stale gate 済)。
 
+## :material-account-voice: ヨシラバー voice (フーガ + 缶詰 2モード、 2026-06-01 再設計)
+
+`_SYSTEM_PROMPT_YOSHILOVER` + `_build_system_prompt` (`src/x_post_branding_gen.py`)。
+モデルは `gemini-3.1-flash-lite` (free tier)。 投稿は短い (フーガ中央80字 / 缶詰中央53字) ので
+品質は **prompt (特に few-shot) 次第**。 gemma branding + 動画引用RT 両方に同じ voice が効く。
+
+### モデルにした実在2アカウント (実投稿40件ずつ分析)
+
+| | account | 特徴 | 語尾 |
+| --- | --- | --- | --- |
+| フーガ | `@EH87EazmV9D2eSw` | 起用・打順・継投・運用・人事を**推論する戦術派**。事実→なぜ→今後。短くても判断が入る | 〜気がする / 〜だよな / 〜かな |
+| 缶詰 | `@kandume92` | **辛口の本音 + 理由 + 擁護着地**、ユーモア。試合中は連呼・絶叫 | 〜ですね / 〜してんな / 〜だわ |
+
+### 2 モード (フェーズ駆動)
+
+| モード | 発動 | 中身 |
+| --- | --- | --- |
+| 考察モード | 試合前 / 試合後 / 日中 | 意見 + 理由 + 戦術の読み を会話的散文で短く (例A-D) |
+| ライブモード | 試合中 17-22時 | 缶詰の即時反応・連呼・絶叫 OK、ただし一言の状況・読みは入れる (例E-F) |
+
+### 旧 voice の反省 (これを禁止)
+
+- 「完勝！ / 7連勝！！ / ガチで噛み締める」式の **短い感嘆を改行で積むだけの作りポエム** = 最も嫌われる
+- 中身 (理由・戦術・読み) の無い応援、感嘆詞だけの行
+- 旧ルール (「短文連投+改行」「感嘆詞のみの行OK」「140字未満禁止」) がポエム強制 + 水増し誘発 → 撤廃
+
+### ルール (hard、 `_gemma_branding_safety_check` でも gate)
+
+- 媒体名 / URL / hashtag / 未検証数字 / 順位・rate (◯位 / .345) 禁止
+- 個人攻撃 (使えない / 戦犯 / クビ / 無能)・差別・事実超え断定 (絶対 / 必ず)・他球団煽り 禁止
+- **辛口は建設的なら OK** (歯がゆさ・本音 → 理由 / 擁護 / 期待に着地)
+- 長さ 80-180字目安 (短くてよい、水増し禁止)、選手フルネーム敬称なし
+
+> 詳細正本: `doc/reference/x_post_mail_branding_spec.md` §3.2
+
 ## :material-folder-file: 関連 file
 
 - メイン (候補組み立て + メール組み立て): `src/x_post_mail_lane.py`
+- voice 生成 (フーガ+缶詰 2モード): `src/x_post_branding_gen.py`
 - 動画候補 (RSSHub buzz + 動画判定 + 鮮度): `src/video_radar.py`
 - 画像生成: `src/x_post_image_gen_v2.py` (Pillow + Noto Sans CJK)
 - 画像→X 投稿アップロード: `src/x_post_image_attach_x.py`

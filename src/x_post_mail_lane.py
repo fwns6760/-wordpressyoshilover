@@ -4357,16 +4357,28 @@ def _compose_html_body(
             button_label = "🐦 引用RTで X に投稿"
         else:
             button_label = "🐦 X で投稿"
-        # 451 followup: 元投稿 (動画つきの場合あり) を直接開けるリンクを併記する。
-        # user 運用「X の動画を長押しして投稿」を支援 (どれが動画ポストか分かる導線)。
+        # 451 followup: 元投稿 (動画つき) を開くリンク + X 公式「動画をポスト」手順を併記。
+        # user 運用 = 動画を長押し →「動画をポスト」(リポスト+引用の公式機能、 元投稿に
+        # 自動帰属) → コメントを貼って投稿。 引用RT ボタンより native 動画でリーチが出る。
         open_original_html = ""
+        video_howto_html = ""
         if cand_quote_url:
             open_original_html = (
                 f"<a href=\"{_html.escape(cand_quote_url)}\" "
                 "style=\"display:inline-block;padding:8px 14px;"
                 "background:#fff;color:#000;text-decoration:none;border-radius:6px;"
                 "font-size:13px;font-weight:600;border:1px solid #000;\">"
-                "▶ 元のXポストを開く（動画はここで長押し）</a>"
+                "▶ 元の動画ポストを開く</a>"
+            )
+            video_howto_html = (
+                "<div style=\"font-size:12px;color:#33691e;background:#f1f8e9;"
+                "border:1px solid #c5e1a5;border-radius:4px;padding:8px 10px;"
+                "margin-top:8px;line-height:1.6;\">"
+                "🎬 <b>動画で投稿する手順</b>（X公式「動画をポスト」）<br>"
+                "① 上の「▶ 元の動画ポストを開く」をタップ<br>"
+                "② 動画を<b>長押し</b> →「<b>動画をポスト</b>」を選ぶ<br>"
+                "③ 上のコメント案を貼り付けて投稿"
+                "</div>"
             )
         rows_html.append(
             "<div style=\"border-left:3px solid #f57f17;"
@@ -4394,6 +4406,7 @@ def _compose_html_body(
             f"<div style=\"font-size:11px;color:{counter_color};\">"
             f"{char_count} / {X_CHAR_LIMIT} 字{counter_suffix}</div>"
             "</div>"
+            f"{video_howto_html}"
             "</div>"
         )
     return (

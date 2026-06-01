@@ -2,7 +2,12 @@
 
 - **種別**: 実装 / **priority**: P2 / **effort**: M
 - **親**: 443 / 設計: `455...md` §13-3 / **454(standings-etl)を包含/再編** / GH: #123
-- **status**: READY
+- **status**: PARTIAL_LIVE_VERIFIED (2026-06-01) — チーム成績カードは LIVE、 順位表/未来試合は data-block
+- **実績(feasible部)**: commit `bb78d24`、image `data-site-publisher:team-record-bb78d24`、execute SUCCESS。/data/team に「巨人 チーム成績」カード(勝敗分/勝率/得点失点/得失点差/連勝連敗/本拠地ビジター別)。verify = page 76294 に 26-24-2 / .520 / 得失点差-17 / 1連敗 / 本拠地13-14・ビジター13-10 反映確認。data-site test 99 passed。
+- **data-block(未対応・要 source)**:
+  - **セ6球団 順位表**: `standings_snapshots` が prod **空(populate 無)** → 別途 standings ETL/source が必要(元 454 の主眼)。
+  - **未来試合 / 予告先発**: `games` は max=当日まで・予告先発カラム無し → 別 source 必要。
+  - チーム打撃投手守備のフル集計列(得点圏/盗塁/出塁率 等)は logs から追加集計で拡張可能(follow-up)。
 
 ## 背景(深掘り・実取得)
 

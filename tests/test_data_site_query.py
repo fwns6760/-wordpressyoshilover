@@ -369,3 +369,54 @@ class VsLrSplitTests(unittest.TestCase):
 
     def test_unknown_player_empty(self) -> None:
         self.assertEqual(self.fn("存在しない 選手"), [])
+
+
+class SabermetricsTests(unittest.TestCase):
+    """461 セイバーメトリクス (advanced_metric_snapshots、 最新 snapshot 選択)。"""
+
+    def setUp(self) -> None:
+        from data_site_query import fetch_sabermetrics  # noqa: F401
+        self.fn = fetch_sabermetrics
+        self.tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        self.tmp.close()
+        conn = sqlite3.connect(self.tmp.name)
+        conn.executescript(
+            "CREATE TABLE advanced_metric_snapshots(snapshot_date TEXT, scope TEXT, "
+            "player_canonical TEXT, metric_name TEXT, metric_value REAL, "
+            "league_rank INT, league_total INT);"
+        )
+        rows = [
+            ("2026-05-01", "last_30d", "吉川尚輝", "OPS", 0.700, 50, 144),   # 古い→不採用
+            ("2026-06-01", "last_30d", "吉川尚輝", "OPS", 0.812, 12, 144),   # 最新
+            ("2026-06-01", "last_30d", "吉川尚輝", "ISO", 0.150, 30, 144),
+            ("2026-06-01", "last_30d", "吉川尚輝", "BB_pct", 0.085, 20, 144),
+            ("2026-06-01", "last_30d", "戸郷翔征", "ERA", 3.38, 8, 60),
+            ("2026-06-01", "last_30d", "戸郷翔征", "FIP", 3.10, 6, 60),
+        ]
+        for r in rows:
+            conn.execute("INSERT INTO advanced_metric_snapshots VALUES(?,?,?,?,?,?,?)", r)
+        conn.commit(); conn.close()
+        self._prev = os.environ.get("INSIGHT_DB_PATH")
+        os.environ["INSIGHT_DB_PATH"] = self.tmp.name
+
+    def tearDown(self) -> None:
+        if self._prev is None:
+            os.environ.pop("INSIGHT_DB_PATH", None)
+        else:
+            os.environ["INSIGHT_DB_PATH"] = self._prev
+        os.unlink(self.tmp.name)
+
+    def test_batter_latest_snapshot_and_format(self) -> None:
+        d = {lbl: (val, rank, total) for (lbl, val, rank, total) in self.fn("吉川尚輝", False)}
+        self.assertEqual(d["OPS"][0], ".812")      # 最新 snapshot (.700 でない)
+        self.assertEqual(d["OPS"][1], 12)
+        self.assertEqual(d["ISO"][0], ".150")
+        self.assertEqual(d["BB%"][0], "8.5%")
+
+    def test_pitcher_spec(self) -> None:
+        d = {lbl: val for (lbl, val, rank, total) in self.fn("戸郷翔征", True)}
+        self.assertEqual(d["防御率"], "3.38")
+        self.assertEqual(d["FIP"], "3.10")
+
+    def test_unknown_player_empty(self) -> None:
+        self.assertEqual(self.fn("存在しない", False), [])

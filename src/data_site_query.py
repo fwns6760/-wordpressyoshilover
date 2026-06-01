@@ -1911,6 +1911,69 @@ def fetch_vs_lr_split_stats(player_canonical: str) -> list[tuple]:
     return out
 
 
+# --- 461: セイバーメトリクス (advanced_metric_snapshots、 site はライバル超えのため全指標表示) ---
+# whitelist の × (FIP/wOBA/ISO/WHIP 等) は「ポスト」非表示の話で、 data-site には適用しない
+# (user 2026-06-01「だからサイトだから、ライバルサイトに上回るものがほしい。ポストはいらない」)。
+_SABR_BATTER = [("OPS", "OPS"), ("ISO", "ISO"), ("wOBA", "wOBA"), ("BABIP", "BABIP"),
+                ("BB%", "BB_pct"), ("K%", "K_pct"), ("出塁率", "OBP"), ("長打率", "SLG")]
+_SABR_PITCHER = [("防御率", "ERA"), ("FIP", "FIP"), ("xFIP", "xFIP"), ("WHIP", "WHIP"),
+                 ("奪三振率(K/9)", "K_per_9"), ("与四球率(BB/9)", "BB_per_9"),
+                 ("被本塁打率(HR/9)", "HR_per_9"), ("K/BB", "K_BB")]
+
+
+def _fmt_sabr(name: str, v) -> str:
+    if v is None:
+        return "-"
+    try:
+        v = float(v)
+    except (TypeError, ValueError):
+        return "-"
+    if name in ("BB_pct", "K_pct"):
+        return f"{v * 100:.1f}%"
+    if name in ("AVG", "OBP", "SLG", "OPS", "ISO", "wOBA", "BABIP"):
+        s = f"{v:.3f}"
+        return s[1:] if s.startswith("0.") else s
+    return f"{v:.2f}"  # ERA/FIP/xFIP/WHIP/K_per_9/BB_per_9/HR_per_9/K_BB
+
+
+def fetch_sabermetrics(player_canonical: str, is_pitcher: bool) -> list[tuple]:
+    """選手の最新セイバーメトリクス snapshot を返す (461)。
+
+    返り値: [(label, 値str, league_rank, league_total), ...]。 daily snapshot の最新日を採用。
+    scope は last_30d 優先、 無ければ last_5_games に fallback。
+    """
+    path = _ensure_insight_db_local()
+    if not path:
+        return []
+    spec = _SABR_PITCHER if is_pitcher else _SABR_BATTER
+    for scope in ("last_30d", "last_5_games"):
+        try:
+            with sqlite3.connect(path) as conn:
+                cur = conn.cursor()
+                cur.execute(
+                    "SELECT metric_name, metric_value, league_rank, league_total "
+                    "FROM advanced_metric_snapshots "
+                    "WHERE REPLACE(player_canonical,' ','')=REPLACE(?,' ','') AND scope=? "
+                    "AND snapshot_date=(SELECT MAX(snapshot_date) FROM advanced_metric_snapshots "
+                    "  WHERE REPLACE(player_canonical,' ','')=REPLACE(?,' ','') AND scope=?)",
+                    (player_canonical, scope, player_canonical, scope),
+                )
+                rows = cur.fetchall()
+        except Exception as exc:  # noqa: BLE001
+            LOG.warning("fetch_sabermetrics err player=%s: %r", player_canonical, exc)
+            return []
+        if rows:
+            by_name = {r[0]: (r[1], r[2], r[3]) for r in rows}
+            out: list[tuple] = []
+            for label, name in spec:
+                if name in by_name:
+                    v, rank, total = by_name[name]
+                    out.append((label, _fmt_sabr(name, v), rank, total))
+            if out:
+                return out
+    return []
+
+
 __all__ = [
     "RosterPlayer",
     "BattingStatsSeason",

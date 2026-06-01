@@ -18,6 +18,15 @@
 
 実装側 (現状コード) が本 whitelist に違反している場合、本 file が正、code 側を修正する。
 
+### ★適用範囲の明確化 (2026-06-01 user 決定)
+
+本 whitelist が統治するのは **「ポスト」= data-insight 起源の記事 draft / publish / mail 通知 / X 投稿候補** のみ。
+**data-site の選手ページ (pillar `/data/{slug}/` / cluster / 443-466 系) は本 whitelist 非適用。**
+data-site は「ライバルサイト (my-favorite-giants / baseballdata) を上回る」ことが目的なので、
+× 指標 (WHIP/FIP/wOBA/ISO/BB%/K%/K/BB) や split (対左右/vs球団/ホームアウェイ) も **site では表示してよい**。
+user 明示: 「だからサイトだから、ライバルサイトに上回るものがほしい。ポストはいらない」。
+→ L28「site 非表示」は **post/mail/X 文脈での非露出**を指し、data-site 選手ページには適用しない。
+
 ---
 
 ## 表記 rule

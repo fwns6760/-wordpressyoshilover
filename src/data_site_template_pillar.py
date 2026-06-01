@@ -67,6 +67,8 @@ class PillarPlayerInfo:
     risp_split_stats: list[tuple[str, int, int, Optional[float]]] = field(default_factory=list)
     # 457: 対左/右投手 [(label, AB, H, AVG), ...]
     vs_lr_split_stats: list[tuple[str, int, int, Optional[float]]] = field(default_factory=list)
+    # 461: セイバーメトリクス [(label, 値str, league_rank, league_total), ...]
+    sabermetric_stats: list[tuple] = field(default_factory=list)
     # Phase B (452): 曜日別 / 月別 / 交流戦別 = [(label, G, AB, H, AVG), ...]
     weekday_split_stats: list[tuple[str, int, int, int, Optional[float]]] = field(default_factory=list)
     month_split_stats: list[tuple[str, int, int, int, Optional[float]]] = field(default_factory=list)
@@ -400,6 +402,27 @@ def _build_interleague_split_html(player: PillarPlayerInfo) -> str:
         '<h2>交流戦 / リーグ戦 別 打率 <span class="ys-tag">大手未掲載</span></h2>'
         '<p class="ys-note">パ相手の交流戦と、 セ内のリーグ戦での違い。</p>'
         f'<div class="ys-bars">{bars}</div>'
+        '</div>'
+    )
+
+
+def _build_sabermetrics_html(player: PillarPlayerInfo) -> str:
+    """セイバーメトリクス (461、 site はライバル超えのため全指標表示)。"""
+    if not player.sabermetric_stats:
+        return ""
+    rows_html = "\n".join(
+        '<tr>'
+        f'<td class="ys-k">{_esc(lbl)}</td><td class="ys-avg">{_esc(val)}</td>'
+        f'<td>{("リーグ " + str(rank) + "/" + str(total) + "位") if rank else "-"}</td>'
+        '</tr>'
+        for (lbl, val, rank, total) in player.sabermetric_stats
+    )
+    return (
+        '<div class="ys-card">'
+        '<h2>セイバーメトリクス <span class="ys-tag">大手未掲載</span></h2>'
+        '<p class="ys-note">大手メディアが出さない高度指標 (直近30日)。 リーグ内順位つきで強みが一目で分かる。</p>'
+        '<table><thead><tr><th>指標</th><th>値</th><th>リーグ内順位</th></tr></thead>'
+        f'<tbody>{rows_html}</tbody></table>'
         '</div>'
     )
 
@@ -958,6 +981,7 @@ def render_pillar_html(player: PillarPlayerInfo) -> str:
             _build_pitch_weekday_split_html(player),
             _build_pitch_month_split_html(player),
             _build_pitch_interleague_split_html(player),
+            _build_sabermetrics_html(player),
         ]
     else:
         stats_sections = [
@@ -973,6 +997,7 @@ def render_pillar_html(player: PillarPlayerInfo) -> str:
             _build_interleague_split_html(player),
             _build_risp_split_html(player),
             _build_vs_lr_split_html(player),
+            _build_sabermetrics_html(player),
         ]
     sections = [
         _build_lead_html(player),

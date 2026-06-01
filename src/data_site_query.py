@@ -1974,6 +1974,74 @@ def fetch_sabermetrics(player_canonical: str, is_pitcher: bool) -> list[tuple]:
     return []
 
 
+def fetch_giants_team_record() -> dict:
+    """巨人 チーム成績サマリー (games から、 459)。
+
+    返り値: {wins, losses, draws, win_pct, runs_for, runs_against, run_diff,
+             streak, streak_kind ('W'/'L'/''), home (W,L), away (W,L)}。
+    順位/ゲーム差は standings_snapshots が未 populate のため含めない (データ制約)。
+    未来試合/予告先発も games に無いため非対応。
+    """
+    path = _ensure_insight_db_local()
+    if not path:
+        return {}
+    try:
+        with sqlite3.connect(path) as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT game_id, result, giants_score, opp_score FROM games ORDER BY game_date")
+            rows = cur.fetchall()
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("fetch_giants_team_record err: %r", exc)
+        return {}
+    g = [r for r in rows if giants_venue_from_game_id(str(r[0] or "")) is not None]
+    if not g:
+        return {}
+    w = l = t = rf = ra = 0
+    hw = hl = aw = al = 0
+    seq: list[str] = []
+    for gid, result, gs, os_ in g:
+        venue = giants_venue_from_game_id(str(gid or ""))
+        rf += int(gs or 0)
+        ra += int(os_ or 0)
+        if result == "win":
+            w += 1
+            seq.append("W")
+            if venue == "home":
+                hw += 1
+            else:
+                aw += 1
+        elif result == "loss":
+            l += 1
+            seq.append("L")
+            if venue == "home":
+                hl += 1
+            else:
+                al += 1
+        else:
+            t += 1
+            seq.append("T")
+    streak = 0
+    kind = ""
+    for s in reversed(seq):
+        if s == "T":
+            break
+        if kind == "":
+            kind = s
+            streak = 1
+        elif s == kind:
+            streak += 1
+        else:
+            break
+    decided = w + l
+    return {
+        "wins": w, "losses": l, "draws": t,
+        "win_pct": (w / decided) if decided > 0 else None,
+        "runs_for": rf, "runs_against": ra, "run_diff": rf - ra,
+        "streak": streak, "streak_kind": kind,
+        "home": (hw, hl), "away": (aw, al),
+    }
+
+
 __all__ = [
     "RosterPlayer",
     "BattingStatsSeason",

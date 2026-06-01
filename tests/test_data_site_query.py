@@ -420,3 +420,48 @@ class SabermetricsTests(unittest.TestCase):
 
     def test_unknown_player_empty(self) -> None:
         self.assertEqual(self.fn("存在しない", False), [])
+
+
+class TeamRecordTests(unittest.TestCase):
+    """459 巨人 チーム成績 (games 由来)。"""
+
+    def setUp(self) -> None:
+        from data_site_query import fetch_giants_team_record  # noqa: F401
+        self.fn = fetch_giants_team_record
+        self.tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        self.tmp.close()
+        conn = sqlite3.connect(self.tmp.name)
+        conn.executescript(
+            "CREATE TABLE games(game_id TEXT, game_date TEXT, result TEXT, "
+            "giants_score INT, opp_score INT);"
+        )
+        rows = [
+            ("2026-04-01:g-t-01", "2026-04-01", "win", 3, 1),    # home win
+            ("2026-04-02:t-g-01", "2026-04-02", "loss", 0, 2),   # away loss
+            ("2026-04-03:g-d-01", "2026-04-03", "win", 5, 4),    # home win
+            ("2026-04-04:g-d-02", "2026-04-04", "draw", 2, 2),   # home draw
+            ("2026-04-05:s-g-01", "2026-04-05", "loss", 1, 6),   # away loss (最新→1連敗)
+            ("2026-04-06:t-x-01", "2026-04-06", "win", 9, 0),    # 巨人不在 → 除外
+        ]
+        for r in rows:
+            conn.execute("INSERT INTO games VALUES(?,?,?,?,?)", r)
+        conn.commit(); conn.close()
+        self._prev = os.environ.get("INSIGHT_DB_PATH")
+        os.environ["INSIGHT_DB_PATH"] = self.tmp.name
+
+    def tearDown(self) -> None:
+        if self._prev is None:
+            os.environ.pop("INSIGHT_DB_PATH", None)
+        else:
+            os.environ["INSIGHT_DB_PATH"] = self._prev
+        os.unlink(self.tmp.name)
+
+    def test_record(self) -> None:
+        r = self.fn()
+        self.assertEqual((r["wins"], r["losses"], r["draws"]), (2, 2, 1))
+        self.assertAlmostEqual(r["win_pct"], 0.5)
+        self.assertEqual((r["runs_for"], r["runs_against"], r["run_diff"]), (11, 15, -4))
+        self.assertEqual((r["streak"], r["streak_kind"]), (1, "L"))
+        self.assertEqual(r["home"], (2, 0))
+        self.assertEqual(r["away"], (0, 2))
+        # 巨人不在 game (t-x-01) は除外されている (win 3 にならない)

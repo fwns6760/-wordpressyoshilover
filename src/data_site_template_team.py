@@ -52,18 +52,49 @@ def _rank_block(metric: str, rows: list) -> str:
     )
 
 
-def render_team_html(rankings: dict) -> str:
+def _build_team_record_card(rec: dict) -> str:
+    """巨人 チーム成績カード (459、 games 由来)。 順位/GB は standings 未populate のため非掲載。"""
+    if not rec or (rec.get("wins", 0) + rec.get("losses", 0) + rec.get("draws", 0)) == 0:
+        return ""
+    wp = rec.get("win_pct")
+    wp_s = (f"{wp:.3f}"[1:] if (wp is not None and wp < 1) else (f"{wp:.3f}" if wp is not None else "-"))
+    rd = rec.get("run_diff", 0)
+    rd_s = f"+{rd}" if rd > 0 else str(rd)
+    kind, n = rec.get("streak_kind", ""), rec.get("streak", 0)
+    streak_s = (f"{n}連勝" if kind == "W" else (f"{n}連敗" if kind == "L" else "-"))
+    hw, hl = rec.get("home", (0, 0))
+    aw, al = rec.get("away", (0, 0))
+    td = 'style="padding:6px;"'
+    tdb = 'style="padding:6px;font-weight:600;"'
+    return (
+        '<div style="background:#fff;border:1px solid #ffe0cc;border-radius:12px;padding:16px;margin:0 0 16px;">'
+        '<h2 style="font-size:16px;margin:0 0 10px;">巨人 チーム成績 '
+        '<span style="font-size:11px;color:#e25400;">毎日更新</span></h2>'
+        '<table style="width:100%;border-collapse:collapse;font-size:13px;text-align:center;"><tbody>'
+        f'<tr><td {td}>勝-敗-分</td><td {tdb}>{rec["wins"]}-{rec["losses"]}-{rec["draws"]}</td>'
+        f'<td {td}>勝率</td><td {tdb}>{wp_s}</td></tr>'
+        f'<tr><td {td}>得点-失点</td><td {td}>{rec["runs_for"]}-{rec["runs_against"]}</td>'
+        f'<td {td}>得失点差</td><td {tdb}>{rd_s}</td></tr>'
+        f'<tr><td {td}>連勝/連敗</td><td {td}>{streak_s}</td>'
+        f'<td {td}>本拠地/ビジター</td><td {td}>{hw}勝{hl}敗 / {aw}勝{al}敗</td></tr>'
+        '</tbody></table></div>'
+    )
+
+
+def render_team_html(rankings: dict, team_record: dict = None) -> str:
     nav = (
         '<nav class="ys-breadcrumb" style="font-size:12px;color:#666;margin:0 0 12px;">'
         f'<a href="{SITE_BASE}/" style="color:#666;">Home</a> › '
         f'<a href="{CLUSTER_URL}" style="color:#666;">巨人選手データ</a> › <span>球団成績</span></nav>'
     )
     blocks = "".join(_rank_block(m, rankings.get(m) or []) for m in _METRIC_ORDER)
+    record_card = _build_team_record_card(team_record or {})
     return (
         '<div style="font-family:sans-serif;max-width:640px;">'
         f'{nav}'
         '<h1 style="font-size:20px;margin:0 0 4px;">巨人 球団成績・セ・リーグ順位 2026</h1>'
-        '<p style="font-size:13px;color:#666;margin:0 0 14px;">セ・リーグ6球団の打率・本塁打・防御率ランキング。巨人をハイライト。</p>'
+        '<p style="font-size:13px;color:#666;margin:0 0 14px;">巨人のチーム成績と、セ・リーグ6球団の打率・本塁打・防御率ランキング。</p>'
+        f'{record_card}'
         f'{blocks or "<p>データ準備中</p>"}'
         f'<p style="margin-top:16px;"><a href="{CLUSTER_URL}">← 選手データ一覧へ</a></p>'
         '</div>'

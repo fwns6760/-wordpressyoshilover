@@ -143,6 +143,51 @@ def render_player_card_html(
     return _doc(body)
 
 
+def render_pitcher_card_html(
+    *,
+    name: str,
+    headline: str = "",
+    era: Optional[float] = None,
+    wins: int = 0,
+    losses: int = 0,
+    k: int = 0,
+    ip: Optional[float] = None,
+    games: int = 0,
+    point_line: str = "",
+    year: str = "2026",
+) -> str:
+    """投手データカード HTML。 防御率 hero + 勝敗/奪三振/投球回/登板。 headline=出来事見出し。"""
+    def _era(v: Optional[float]) -> str:
+        return f"{v:.2f}" if v is not None else "-"
+    hook = (
+        f'<div class="hook"><span class="em">{_esc(headline)}</span></div>'
+        if headline else ""
+    )
+    subs = [
+        (f"{wins}勝{losses}敗", "勝敗"), (str(k), "奪三振"),
+        (f"{ip:.1f}" if ip is not None else "-", "投球回"), (str(games), "登板"),
+    ]
+    subs_html = "".join(
+        f'<div class="s"><div class="v">{_esc(v)}</div><div class="l">{_esc(l)}</div></div>'
+        for v, l in subs
+    )
+    pt = f'<div class="pt">{_esc(point_line)}</div>' if point_line else ""
+    body = (
+        '<div class="card">' + _header_html(year) +
+        '<div class="bd">'
+        f'{hook}'
+        f'<div class="name" style="margin-top:18px;">{_esc(name)}<span class="pos">投手</span></div>'
+        '<div class="hero"><div>'
+        f'<div class="v">{_era(era)}</div><div class="l">防御率</div></div></div>'
+        f'<div class="subs">{subs_html}</div>'
+        f'{pt}'
+        '</div>' +
+        _footer_html(f"{year}シーズン ・ NPB公式box集計") +
+        '</div>'
+    )
+    return _doc(body)
+
+
 def render_late_inning_card_html(
     *,
     name: str,

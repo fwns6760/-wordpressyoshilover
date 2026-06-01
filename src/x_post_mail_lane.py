@@ -1547,6 +1547,42 @@ def build_data_split_candidates(
 _VIDEO_RADAR_METRIC = "x_buzz_post"
 
 
+def _x_buzz_player_fact(db_path: Optional[str], canonical: str) -> str:
+    """451: 引用RT コメントを濃くするため、 insight.db から選手の今季実数字を 1 行で返す。
+
+    read-only SELECT only。 打者は 打率/安打/打点 (AB>=10)、 それ未満で投手 record があれば
+    防御率/奪三振。 取れなければ空文字 (caller は数字なしの voice コメントに fallback)。
+    """
+    if not db_path or not canonical:
+        return ""
+    try:
+        with _sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
+            cur = conn.cursor()
+            row = cur.execute(
+                "SELECT COALESCE(SUM(AB),0), COALESCE(SUM(H),0), COALESCE(SUM(RBI),0) "
+                "FROM batting_logs WHERE player_canonical=?",
+                (canonical,),
+            ).fetchone()
+            ab, h, rbi = (int(row[0]), int(row[1]), int(row[2])) if row else (0, 0, 0)
+            if ab >= 10:
+                avg = h / ab
+                avg_s = f"{avg:.3f}".lstrip("0")
+                return f"今季打率{avg_s}・{h}安打{rbi}打点"
+            # 投手 fallback (登板数 + 奪三振 + 防御率)
+            prow = cur.execute(
+                "SELECT COUNT(*), COALESCE(SUM(K),0), COALESCE(SUM(ER),0), COALESCE(SUM(IP),0.0) "
+                "FROM pitching_logs WHERE player_canonical=?",
+                (canonical,),
+            ).fetchone()
+            if prow and int(prow[0]) > 0:
+                g, k, er, ip = int(prow[0]), int(prow[1]), int(prow[2]), float(prow[3])
+                era = f"・防御率{(er * 9.0 / ip):.2f}" if ip > 0 else ""
+                return f"今季{g}登板{era}・{k}奪三振"
+    except Exception as exc:  # noqa: BLE001
+        LOG.info("x_buzz player fact skip %s: %r", canonical, exc)
+    return ""
+
+
 def build_video_radar_candidates(
     db_path: Optional[str] = None,
     *,
@@ -1616,18 +1652,20 @@ def build_video_radar_candidates(
         tag = p["type_tag"]
         src_text = _truncate_text(str(p.get("text") or "").replace("\n", " ").strip(), 140)
         handle = p.get("handle", "")
-        # 引用RT コメント案 — ヨシラバー voice (ファン目線・一喜一憂・フルネーム・敬称なし、
-        # 媒体ぶらず hashtag 無し)。 LLM 不使用の template (Gemini 増やさない)。
-        # native (本文に外部リンクを貼らない。 引用元は intent の url= で quote として開く)。
+        # 引用RT コメント案 — ヨシラバー voice (ファン目線・フルネーム・敬称なし・媒体ぶらず
+        # hashtag 無し)。 内容を濃くするため insight.db の今季実数字を 1 行差し込む
+        # (LLM 不使用、 Gemini 増やさない)。 native (本文に外部リンク無し、 引用元は quote)。
         who = player or "巨人"
-        if tag == "Xで話題":
-            post_text = f"{who}、きてるね…！ファンもざわついてる。これは見ておきたい。"
+        fact = _x_buzz_player_fact(db_path, player) if player else ""
+        fact_clause = f"{fact}。" if fact else ""
+        if tag == "Xで話題" and player:
+            post_text = f"いま X で話題の{player}。{fact_clause}この勢い、見逃せない。"
         elif tag == "懐かし・名場面":
-            post_text = f"うわ、これ懐かしい…！{who}のこの場面、何度見てもいいなあ。"
-        elif tag == "好プレー・反応":
-            post_text = f"{who}、ナイスプレー…！こういうの、地味に効くんだよな。"
+            post_text = f"これは懐かしい…！{who}のこの場面、{fact_clause}何度見てもいいなあ。"
+        elif tag == "好プレー・反応" and player:
+            post_text = f"{player}、ナイスプレー…！{fact_clause}こういうの効くんだよな。"
         elif player:
-            post_text = f"{player}、ちょっと注目しておきたい一件。"
+            post_text = f"{player}、{fact_clause}ここから乗っていってほしい。"
         else:
             post_text = "巨人、今日も見逃せない動きがあるね。"
         draft = "\n".join([

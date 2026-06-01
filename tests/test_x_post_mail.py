@@ -3275,6 +3275,46 @@ class BuildVideoRadarCandidatesTests(unittest.TestCase):
         self.assertEqual(again, [])
 
 
+class XBuzzPlayerFactTests(unittest.TestCase):
+    """451: 引用RT コメントを濃くする今季実数字 (insight.db read-only)。"""
+
+    def _db(self, batting=None, pitching=None):
+        import sqlite3 as _sq, tempfile as _tf, os as _os
+        fd, path = _tf.mkstemp(suffix=".db"); _os.close(fd)
+        conn = _sq.connect(path)
+        conn.execute("CREATE TABLE batting_logs (player_canonical TEXT, AB INT, H INT, RBI INT)")
+        conn.execute("CREATE TABLE pitching_logs (player_canonical TEXT, K INT, ER INT, IP REAL)")
+        for r in (batting or []):
+            conn.execute("INSERT INTO batting_logs VALUES (?,?,?,?)", r)
+        for r in (pitching or []):
+            conn.execute("INSERT INTO pitching_logs VALUES (?,?,?,?)", r)
+        conn.commit(); conn.close()
+        self.addCleanup(lambda: _os.path.exists(path) and _os.remove(path))
+        return path
+
+    def test_batter_fact(self):
+        from src.x_post_mail_lane import _x_buzz_player_fact
+        db = self._db(batting=[("佐々木俊輔", 60, 18, 5), ("佐々木俊輔", 30, 6, 2)])
+        fact = _x_buzz_player_fact(db, "佐々木俊輔")
+        self.assertIn("打率.267", fact)  # 24/90
+        self.assertIn("24安打", fact)
+        self.assertIn("7打点", fact)
+
+    def test_pitcher_fact_when_no_bats(self):
+        from src.x_post_mail_lane import _x_buzz_player_fact
+        db = self._db(pitching=[("竹丸和幸", 10, 3, 9.0), ("竹丸和幸", 9, 0, 9.0)])
+        fact = _x_buzz_player_fact(db, "竹丸和幸")
+        self.assertIn("2登板", fact)
+        self.assertIn("19奪三振", fact)
+        self.assertIn("防御率", fact)
+
+    def test_empty_when_no_data(self):
+        from src.x_post_mail_lane import _x_buzz_player_fact
+        db = self._db()
+        self.assertEqual(_x_buzz_player_fact(db, "無名選手"), "")
+        self.assertEqual(_x_buzz_player_fact(None, "誰か"), "")
+
+
 class VideoRadarImpressionPolicyTests(unittest.TestCase):
     """451: 動画候補は同選手のデータ候補が居ても落とさず確実に届ける。"""
 

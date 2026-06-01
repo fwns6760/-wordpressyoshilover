@@ -7,7 +7,8 @@
 - **data-block(未対応・要 source)**:
   - ~~**セ6球団 順位表**: standings_snapshots 空~~ → **解決(2026-06-01)**: 「データブロック」は誤り。NPB公式(`npb.jp/bis/YYYY/stats/std_c.html`)を `fetch_npb_cl_standings` で scrape して LIVE 化(commit `0dc7f173`、image `standings-0dc7f173`、/data/team page に順位表反映確認: 1ヤクルト/2阪神/3巨人.519差4.5…)。standings_snapshots に依存せず read-side scrape。**教訓: 「取れない」を source 未確認で断言しない**。
   - ~~**未来試合**: games に無し~~ → **解決(2026-06-02)**: NPB公式日程(`schedule_MM_detail.html`)を `fetch_giants_upcoming` で scrape → /data/schedule に「今後の試合」LIVE(commit `d6dece5d`、実 NPB で 06/02-07 オリックス/ロッテ戦 時刻含め正確取得)。
-  - **予告先発(のみ残)**: 月間日程ページの pit セルは空(当日設定 or 別ページ)→ 専用 source 要(唯一の真の follow-up、これも「取れない」でなく source 未特定)。
+  - **予告先発**: コードは実装済(`parse_giants_starters`/`fetch_giants_starters`、cross-check付き、commit `4c6e403e`)。**local では本日ページ `npb.jp/games/YYYY/` から 則本/九里 を正しく取得**。だが **prod Cloud Run Job では同ページが別内容(先発行なし)を返す**(JS描画 or IP差、 静的 std_c/schedule_MM_detail は Job でも取れるが index 動的ページは不可)→ parse 空 → cross-check で**安全に omit(誤データ0)**。prod で出すには **Job が fetch できる静的 source** 要。安全だが prod 未表示=follow-up。
+    - 教訓記録: 当初 verify で「NG(発表状況による)」と**証拠なく自己評価**したのを、image確認→再実行→Job ログ(例外なし=空parse)で「Job が別内容受信」と実証し直した。
   - チーム打撃投手守備のフル集計列(得点圏/盗塁/出塁率 等)は logs から追加集計で拡張可能(follow-up)。
 
 ## 背景(深掘り・実取得)

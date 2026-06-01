@@ -624,26 +624,11 @@ def _esc(s: str) -> str:
     return (s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
-def build_single_mail(c: Candidate, *, date_label: str, idx: int, total: int) -> tuple[str, str, str]:
-    """1候補 = 1メール(他の mail lane と同じく1件ずつ)。(subject, text, html)。"""
-    seq = f"({idx}/{total})" if total > 1 else ""
+def _card_html(c: Candidate, idx: int) -> str:
+    """1候補のカード HTML(本文 + Xポスト/記事ボタン + 出典)。"""
     head = c.player.split("(")[0]
-    subject = f"【巨人Xデータ】{seq} {head} {date_label}".strip()
-
-    # そのまま X に貼れる本文 = post_text(全行 検証事実 or 願望)。
     x_draft = c.post_text()
     intent = _x_intent_url(x_draft)
-
-    text_lines = [
-        f"今日のX投稿候補 {seq}（手動選別用 / 投稿はされません）",
-        "",
-        c.render(),
-        "",
-        f"▶ ワンタップ投稿(本文prefill): {intent}",
-        "─ そのまま貼ってOK。手直ししたければ最後の一言だけ。",
-    ]
-    text_body = "\n".join(text_lines)
-
     src = (f'<a href="{_esc(c.source)}">記事/出典を開く</a>'
            if c.source.startswith("http") else _esc(c.source))
     note = f'<div style="color:#999;font-size:12px;margin-top:6px;">※ {_esc(c.note)}</div>' if c.note else ""
@@ -661,18 +646,44 @@ def build_single_mail(c: Candidate, *, date_label: str, idx: int, total: int) ->
         'padding:11px 18px;border-radius:9999px;font-size:14px;margin:4px 0;">記事を読む</a>'
         if c.article_url.startswith("http") else ""
     )
-    html_body = (
-        '<div style="font-family:sans-serif;max-width:560px;">'
-        f'<div style="font-size:12px;color:#888;">今日のX投稿候補 {_esc(seq)} / 手動選別用</div>'
-        '<div style="border:1px solid #eee;border-radius:8px;padding:14px;margin:8px 0;">'
-        f'<div style="font-weight:600;color:#5d4037;margin-bottom:6px;">【{_esc(c.bucket)}】{_esc(head)}</div>'
+    return (
+        '<div style="border:1px solid #eee;border-radius:8px;padding:14px;margin:0 0 16px;">'
+        f'<div style="font-weight:600;color:#5d4037;margin-bottom:6px;">{idx}. 【{_esc(c.bucket)}】{_esc(head)}</div>'
         '<div style="background:#fafafa;border-radius:8px;padding:12px;margin:6px 0;">'
-        '<div style="font-size:12px;color:#888;margin-bottom:4px;">そのまま貼れる本文</div>'
         f'<div style="white-space:pre-wrap;font-size:14px;line-height:1.6;">{_esc(x_draft)}</div></div>'
         f'{quote_caution}'
         f'<div style="margin-top:8px;">{btn}{read_btn}</div>'
         f'<div style="margin-top:6px;color:#888;font-size:12px;">出典：{src}</div>'
-        f'{note}</div></div>'
+        f'{note}</div>'
+    )
+
+
+def _card_text(c: Candidate, idx: int) -> str:
+    head = c.player.split("(")[0]
+    x_draft = c.post_text()
+    return "\n".join([
+        f"── {idx}. 【{c.bucket}】{head} ──",
+        x_draft,
+        f"▶ ポスト: {_x_intent_url(x_draft)}",
+        (f"出典: {c.source}" if c.source else ""),
+    ])
+
+
+def build_combined_mail(cands: list[Candidate], *, date_label: str) -> tuple[str, str, str]:
+    """全候補を1通にまとめる(各候補=カード + Xポストボタン)。(subject, text, html)。"""
+    n = len(cands)
+    subject = f"【巨人Xデータ】今日の候補 {n}件 {date_label}".strip()
+    text_body = "\n\n".join(
+        [f"今日のX投稿候補 {n}件（手動選別用 / 投稿はされません）"]
+        + [_card_text(c, i) for i, c in enumerate(cands, 1)]
+        + ["─ 各ポストボタンで本文入りのX作成画面が開きます。"]
+    )
+    cards = "".join(_card_html(c, i) for i, c in enumerate(cands, 1))
+    html_body = (
+        '<div style="font-family:sans-serif;max-width:600px;">'
+        f'<div style="font-size:13px;color:#666;margin-bottom:10px;">今日のX投稿候補 {n}件 / 手動選別用・投稿はされません。気に入った候補のボタンを押すと本文入りのX作成画面が開きます。</div>'
+        f'{cards or "<p>候補なし</p>"}'
+        '</div>'
     )
     return subject, text_body, html_body
 

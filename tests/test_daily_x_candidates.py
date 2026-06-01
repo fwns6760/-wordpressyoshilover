@@ -160,29 +160,26 @@ class PostCompositionTests(unittest.TestCase):
         self.assertFalse(dxc._has_hook(thin))     # 打順だけ→除外
         self.assertTrue(dxc._has_hook(thin_quote))  # 発言があれば可
 
-    def test_single_mail_uses_post_text(self) -> None:
-        c = dxc.Candidate("ニュース連動", "岸田 行倫(記事: …)", "岸田行倫 直近7日 打率.444",
-                          "https://x/1", reaction="今日も期待したい。", article_url="https://y/9")
-        subj, text, html = dxc.build_single_mail(c, date_label="2026-06-01", idx=2, total=5)
-        self.assertIn("(2/5)", subj)
-        self.assertIn(".444", text)
-        self.assertIn("今日も期待したい。", html)   # post_text の願望
-        self.assertIn("そのまま貼れる本文", html)
-
-    def test_cta_button_links_to_x_intent(self) -> None:
-        c = dxc.Candidate("ニュース連動", "岸田 行倫", "岸田行倫 直近7日 打率.444", "https://x/1",
-                          reaction="頼む。", article_url="https://y/9")
-        _, text, html = dxc.build_single_mail(c, date_label="2026-06-01", idx=1, total=3)
-        self.assertIn("x.com/intent/post?text=", html)   # CTA ボタン
-        self.assertIn("ポストする", html)
-        self.assertIn("記事を読む", html)                  # 記事URLあれば読むボタン
-        self.assertIn("x.com/intent/post?text=", text)   # text 版にも intent URL
+    def test_combined_mail_one_email_all_cards(self) -> None:
+        cands = [
+            dxc.Candidate("ニュース連動", "岸田 行倫(記事: …)", "岸田行倫 直近7日 打率.444",
+                          "https://x/1", reaction="今日も期待したい。", article_url="https://y/9"),
+            dxc.Candidate("直近変化型", "キャベッジ", "キャベッジ 7試合連続安打", "db",
+                          reaction="続けてほしい。"),
+        ]
+        subj, text, html = dxc.build_combined_mail(cands, date_label="2026-06-01")
+        self.assertIn("2件", subj)                         # 1通に2件
+        self.assertIn(".444", html)
+        self.assertIn("キャベッジ", html)                   # 両方含む
+        self.assertEqual(html.count("𝕏 にポストする"), 2)   # 候補ごとにボタン
+        self.assertIn("今日も期待したい。", html)
+        self.assertIn("記事を読む", html)                   # 記事URLあるカードに
 
     def test_quote_shown_with_caution(self) -> None:
         c = dxc.Candidate("ニュース連動", "浦田俊輔", "浦田俊輔 直近7日 .273", "https://x/1",
                           quote="何とか打って恩返しをできたらと…やりました！",
                           reaction="期待したい。")
-        _, _, html = dxc.build_single_mail(c, date_label="2026-06-01", idx=1, total=1)
+        _, _, html = dxc.build_combined_mail([c], date_label="2026-06-01")
         self.assertIn("やりました", html)
         self.assertIn("発言の主は記事で確認", html)         # 発言主の注意書き
 

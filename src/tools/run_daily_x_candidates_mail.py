@@ -46,7 +46,7 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
                    help="候補0でも送る(既定は0件なら送らない)")
     p.add_argument("--max-mails", type=int,
                    default=int(os.environ.get("DAILY_X_CANDIDATES_MAX_MAILS", "10")),
-                   help="1 fire で送る最大メール数(flood 防止、既定10)")
+                   help="1通に詰める候補の最大件数(既定10)")
     return p.parse_args(argv)
 
 
@@ -82,36 +82,25 @@ def main(argv: Sequence[str] | None = None) -> int:
         LOG.info("候補0件 → 送信せず exit 0(--send-empty で強制送信可)")
         return 0
 
-    # 1候補 = 1メール(他の mail lane と同じ。多すぎ防止に上限)
-    cands = cands[: args.max_mails]
-    total = len(cands)
+    cands = cands[: args.max_mails]  # 1通に詰める件数上限
+    subject, text_body, html_body = dxc.build_combined_mail(cands, date_label=date_label)
 
     if args.dry_run:
-        for i, c in enumerate(cands, 1):
-            subject, text_body, _ = dxc.build_single_mail(c, date_label=date_label, idx=i, total=total)
-            print(f"--- DRY RUN MAIL {i}/{total}: {subject} ---")
-            print(text_body[:600])
+        print(f"--- DRY RUN: {subject} ({len(cands)}件 / 1通) ---")
+        print(text_body[:2500])
         return 0
 
-    sent = 0
-    failures = 0
-    for i, c in enumerate(cands, 1):
-        subject, text_body, html_body = dxc.build_single_mail(c, date_label=date_label, idx=i, total=total)
-        request = bridge.MailRequest(
-            to=recipients,
-            subject=subject,
-            text_body=text_body,
-            html_body=html_body,
-            metadata={"lane": "daily-x-candidates", "seq": f"{i}/{total}", "bucket": c.bucket},
-        )
-        res = bridge.send(request, dry_run=False)
-        if res.status == "sent":
-            sent += 1
-        else:
-            failures += 1
-            LOG.warning("mail %d/%d not sent: status=%s reason=%s", i, total, res.status, res.reason)
-    LOG.info("daily-x-candidates done: sent=%d/%d failures=%d", sent, total, failures)
-    return 0 if failures == 0 else 1
+    request = bridge.MailRequest(
+        to=recipients,
+        subject=subject,
+        text_body=text_body,
+        html_body=html_body,
+        metadata={"lane": "daily-x-candidates", "count": str(len(cands))},
+    )
+    res = bridge.send(request, dry_run=False)
+    LOG.info("daily-x-candidates done: status=%s count=%d reason=%s",
+             res.status, len(cands), res.reason)
+    return 0 if res.status == "sent" else 1
 
 
 if __name__ == "__main__":

@@ -30,6 +30,15 @@
 
 → KPI: **検索流入 / index 数 / 対象クエリ順位 / リッチリザルト表示**(PV単体でなく検索面)。
 
+## 保留 TODO(記録、本丸ではない)
+
+- **サイトタイトル変更(user 手動)**: WP管理画面 → SEO SIMPLE PACK → 一般設定 → サイトのタイトルを
+  `ヨシラバー｜巨人 成績・データ・速報掲示板` に変更。
+  - 状況(2026-06-01 現物確認): WP コア blogname は API で変更済だが、`<title>`/`og:site_name` は
+    **SEO SIMPLE PACK 3.6.2 が上書き**しており REST から触れない → **user 手動が必要**。
+  - 変更後、Claude が live `<title>`/og を再 verify。
+  - 優先度: 低(本丸=データ SEO 差別化。タイトルは後でよい)。
+
 ## 1. ticket header
 
 - **ticket id**: 452(450/451 は並行アクターの video-radar が使用中のため 452)

@@ -59,6 +59,7 @@ nav:
       - メール lane の住み分け: spec/mail-lanes.md
       - X インプ向上プラン: spec/x-impression-plan.md
       - 巨人選手データサイト (per-player daily): spec/data-site.md
+      - データサイト 目標設計図 (ベンチ対比, 452): spec/data-site-target-design.md
       - データサイト 状況別スプリット拡張 (452): spec/data-site-situational-splits.md
       - 巨人 SNS リアルタイム話題 (sns-realtime-topic): spec/sns-realtime-topic.md
   - 運用 (Operations):

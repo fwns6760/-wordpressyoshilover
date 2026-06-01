@@ -522,3 +522,27 @@ class UpcomingParseTests(unittest.TestCase):
             (u["date"], u["opp"], u["home_away"], u["time"], u["place"]),
             ("2026-06-02", "オリックス", "本拠地", "18:00", "東京ドーム"),
         )
+
+
+class StartersParseTests(unittest.TestCase):
+    """459/C parse_giants_starters (予告先発、 (巨)ペア抽出、 純粋関数)。"""
+
+    FIXTURE = (
+        '<tr><td>先発</td><td>(巨) <a href="/bis/players/1.html">則　本</a></td></tr>'
+        '<tr><td>先発</td><td>(オ) <a href="/bis/players/2.html">九里</a></td></tr>'
+        '<tr><td>先発</td><td>(ヤ) <a href="/bis/players/3.html">松本健</a></td></tr>'
+        '<tr><td>先発</td><td>(ロ) <a href="/bis/players/4.html">ジャクソン</a></td></tr>'
+    )
+
+    def test_parse_giants_pair(self) -> None:
+        from data_site_query import parse_giants_starters
+        d = parse_giants_starters(self.FIXTURE)
+        self.assertEqual(d.get("giants"), "則本")   # 全角space除去
+        self.assertEqual(d.get("opp"), "九里")
+        self.assertEqual(d.get("opp_abbr"), "オ")    # cross-check 用(=オリックス)
+
+    def test_no_giants(self) -> None:
+        from data_site_query import parse_giants_starters
+        html = ('<tr><td>先発</td><td>(ヤ) <a href="x">A</a></td></tr>'
+                '<tr><td>先発</td><td>(ロ) <a href="y">B</a></td></tr>')
+        self.assertEqual(parse_giants_starters(html), {})

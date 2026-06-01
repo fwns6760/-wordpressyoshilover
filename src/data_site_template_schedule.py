@@ -56,13 +56,19 @@ def _build_upcoming_card(upcoming: list) -> str:
     rows = ""
     for u in upcoming:
         md = str(u.get("date", ""))[5:].replace("-", "/")
+        starter = ""
+        if u.get("starter_g"):
+            starter = (f'<div style="font-size:12px;color:#e25400;margin:2px 0 0 50px;">'
+                       f'予告先発: {_esc(u.get("starter_g"))} vs {_esc(u.get("starter_o"))}</div>')
         rows += (
-            '<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;'
-            'border-radius:6px;margin:0 0 6px;background:#fff8f2;">'
+            '<div style="padding:8px 10px;border-radius:6px;margin:0 0 6px;background:#fff8f2;">'
+            '<div style="display:flex;align-items:center;gap:8px;">'
             f'<span style="width:42px;color:#666;font-size:13px;">{_esc(md)}</span>'
             f'<span style="width:46px;font-size:12px;color:#888;">{_esc(u.get("time"))}</span>'
             f'<span style="flex:1;font-size:13px;">{_esc(u.get("home_away"))} vs {_esc(u.get("opp"))}</span>'
             f'<span style="font-size:12px;color:#888;">{_esc(u.get("place"))}</span>'
+            '</div>'
+            f'{starter}'
             '</div>'
         )
     return (

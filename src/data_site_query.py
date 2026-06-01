@@ -2126,6 +2126,55 @@ def parse_giants_upcoming(html_text: str, year: int, today, limit: int = 6) -> l
     return out
 
 
+def parse_giants_starters(html_text: str) -> dict:
+    """NPB本日ページから巨人戦の予告先発を抽出 (459/C、 純粋関数)。
+
+    `<td>先発</td><td>(略) <a>投手名</a></td>` が2行=1試合。 (巨) を含むペアを巨人戦とみなす。
+    返り値: {"giants": 巨人先発, "opp": 相手先発} or {}。 確定発表のみ(予測でない)。
+    """
+    pairs = re.findall(
+        r"<td>\s*先発\s*</td>\s*<td>\s*\(([^)]{1,3})\)\s*<a[^>]*>(.*?)</a>", html_text, re.S
+    )
+
+    def _clean(s: str) -> str:
+        return re.sub(r"\s+", "", _html.unescape(re.sub(r"<[^>]+>", "", s)))
+
+    for i in range(0, len(pairs) - 1, 2):
+        a1, n1 = pairs[i]
+        a2, n2 = pairs[i + 1]
+        if a1 == "巨" or a2 == "巨":
+            if a1 == "巨":
+                g, o, o_abbr = n1, n2, a2
+            else:
+                g, o, o_abbr = n2, n1, a1
+            return {"giants": _clean(g), "opp": _clean(o), "opp_abbr": o_abbr}
+    return {}
+
+
+# NPB略号 → /data/schedule の opp 短縮名 (予告先発 cross-check 用、 459/C)
+_NPB_ABBR_TEAM = {
+    "ヤ": "ヤクルト", "神": "阪神", "デ": "DeNA", "広": "広島", "中": "中日",
+    "オ": "オリックス", "ソ": "ソフトバンク", "日": "日本ハム", "楽": "楽天",
+    "西": "西武", "ロ": "ロッテ",
+}
+
+
+def fetch_giants_starters() -> dict:
+    """本日の巨人戦 予告先発を NPB公式から scrape (459/C)。"""
+    try:
+        year = date.today().year
+    except Exception:  # noqa: BLE001
+        return {}
+    try:
+        r = requests.get(f"https://npb.jp/games/{year}/", timeout=10)
+        r.raise_for_status()
+        r.encoding = "utf-8"
+        return parse_giants_starters(r.text)
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("fetch_giants_starters err: %r", exc)
+        return {}
+
+
 def fetch_giants_upcoming(limit: int = 6) -> list[dict]:
     """巨人の今後の試合を NPB公式月間日程から scrape (459/C)。 当月の未消化試合。"""
     try:
@@ -2137,10 +2186,17 @@ def fetch_giants_upcoming(limit: int = 6) -> list[dict]:
         r = requests.get(url, timeout=10)
         r.raise_for_status()
         r.encoding = "utf-8"
-        return parse_giants_upcoming(r.text, today.year, today, limit=limit)
+        games = parse_giants_upcoming(r.text, today.year, today, limit=limit)
     except Exception as exc:  # noqa: BLE001
         LOG.warning("fetch_giants_upcoming err: %r", exc)
         return []
+    # 本日の試合に予告先発を付与。 相手略号が日程の相手と一致する時のみ(誤ペアリング防止)。
+    if games and games[0].get("date") == today.isoformat():
+        st = fetch_giants_starters()
+        if st and _NPB_ABBR_TEAM.get(st.get("opp_abbr", "")) == games[0].get("opp"):
+            games[0]["starter_g"] = st.get("giants")
+            games[0]["starter_o"] = st.get("opp")
+    return games
 
 
 def fetch_giants_team_record() -> dict:

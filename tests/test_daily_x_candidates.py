@@ -187,6 +187,31 @@ class PostCompositionTests(unittest.TestCase):
         self.assertIn("発言の主は記事で確認", html)         # 発言主の注意書き
 
 
+class LlmPolishGuardTests(unittest.TestCase):
+    def test_post_text_prefers_polished(self) -> None:
+        c = dxc.Candidate("直近変化型", "岸田", "岸田 直近 打率.412", "db",
+                          reaction="頼む。", polished="岸田行倫、直近.412\n来てるわ")
+        self.assertEqual(c.post_text(), "岸田行倫、直近.412\n来てるわ")
+
+    def test_post_text_falls_back_to_facts(self) -> None:
+        c = dxc.Candidate("直近変化型", "岸田", "岸田 直近 打率.412", "db", reaction="頼む。")
+        self.assertIn(".412", c.post_text())   # polished 無し → fact 版
+        self.assertIn("頼む", c.post_text())
+
+    def test_allowed_rate_tokens(self) -> None:
+        c = dxc.Candidate("直近変化型", "岸田", "岸田 直近10試合 打率.412(39打席)", "db",
+                          context="今季通算は打率.270")
+        allowed = dxc._allowed_rate_tokens(c)
+        self.assertIn(".412", allowed)   # 先頭0なし野球表記も捕捉
+        self.assertIn(".270", allowed)
+        # 事実に無い rate(.999)は許可集合に入らない=出力に出たら却下される
+        self.assertNotIn(".999", allowed)
+
+    def test_rate_regex_catches_baseball_style(self) -> None:
+        self.assertIn(".412", dxc._RATE_RE.findall("直近.412は見事"))   # 先頭0なし
+        self.assertIn("1.65", dxc._RATE_RE.findall("防御率1.65で昇格"))
+
+
 class ExtractQuoteTests(unittest.TestCase):
     def test_keeps_speech_drops_noise(self) -> None:
         html = ('<p>見出し</p>'

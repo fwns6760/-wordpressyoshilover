@@ -83,9 +83,10 @@ class Candidate:
     quote: str = ""      # 記事の実発言(主は記事で要確認)
     article_url: str = ""
     note: str = ""
+    polished: str = ""   # Flash Lite で引きつけた本文(数字検証通過時のみ。空=fact版)
 
-    def post_text(self) -> str:
-        """そのまま X に貼れる本文。全行 検証事実 or 願望(誤りようがない)。"""
+    def fact_text(self) -> str:
+        """検証事実のみで組んだ本文(LLMなし fallback)。全行 検証 or 願望。"""
         lines = [self.number]
         if self.context:
             lines.append(self.context)
@@ -96,6 +97,10 @@ class Candidate:
             lines.append("")
             lines.append(self.reaction)
         return "\n".join(lines)
+
+    def post_text(self) -> str:
+        """X に貼れる本文。LLM polish 通過分はそれを、無ければ fact 版。"""
+        return self.polished or self.fact_text()
 
     def render(self) -> str:
         lines = [
@@ -139,6 +144,88 @@ def _has_hook(c: "Candidate") -> bool:
     if any(k in n for k in (".", "防御率", "連続", "本", "号", "昇格", "登録", "勝利", "猛打賞")):
         return True
     return bool(c.quote)  # 数字 hook が弱くても実発言があれば可
+
+
+# ── Flash Lite polish(安価LLM。数字はコードロック、rate数字の捏造は却下)──
+_GEMINI_MODEL = os.environ.get("DAILY_X_CANDIDATES_GEMINI_MODEL", "gemini-3.1-flash-lite")
+# rate 数字: 「.412」(先頭0なし野球表記)も「1.65」「0.412」も捕捉
+_RATE_RE = re.compile(r"\d*\.\d+")
+
+
+def _llm_enabled() -> bool:
+    if str(os.environ.get("DAILY_X_CANDIDATES_USE_LLM", "")).strip().lower() in {"0", "false", "no", "off"}:
+        return False
+    return bool(os.environ.get("GEMINI_API_KEY", "").strip())
+
+
+def _allowed_rate_tokens(c: "Candidate") -> set[str]:
+    """事実(number/context/quote)に含まれる rate 数字。出力はこれ以外の rate を持てない。"""
+    src = " ".join([c.number, c.context, c.quote])
+    return set(_RATE_RE.findall(src))
+
+
+def _llm_polish(c: "Candidate", *, now_hint: str = "") -> str:
+    """Flash Lite で「データ+文字で引きつける」本文に。数字検証 NG / 失敗時は ""。
+
+    数字はプロンプトで固定 + 出力 rate 数字が事実外なら却下(数字ハルシネーション不可)。
+    """
+    api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+    if not api_key:
+        return ""
+    facts = [c.number]
+    if c.context:
+        facts.append(c.context)
+    if c.quote:
+        facts.append(f"発言(主は本人とは限らない):「{c.quote}」")
+    prompt = "\n".join([
+        "あなたは巨人ファン向け速報メディア「ヨシラバー」の中の人。",
+        "下の検証済みデータだけを使い、巨人ファンが思わず読みたくなる短いX投稿を書く。",
+        "",
+        "# 使える事実(これ以外の数字・順位・成績・固有名を足さない)",
+        *facts,
+        "",
+        "# ルール",
+        "- 上の数字はそのまま使い、新しい数字/順位/割合を絶対に作らない",
+        "- 選手はフルネーム・敬称なし、短い行を改行で並べる",
+        "- データ → ファンの実感 の流れ。120-160字で熱く、でも断定しすぎない",
+        "- 煽り・誇張・未確定の予言はしない。事実は事実、気持ちは気持ち",
+        "- 出力は投稿本文のみ(説明や前置きなし)",
+    ])
+    try:
+        from google import genai
+        client = genai.Client(api_key=api_key)
+        resp = client.models.generate_content(
+            model=_GEMINI_MODEL, contents=prompt, config={"temperature": 0.75},
+        )
+        text = (getattr(resp, "text", None) or "").strip()
+    except Exception as exc:  # noqa: BLE001 - 失敗は fact 版に fallback
+        LOG.warning("llm_polish skip player=%s err=%r", c.player, exc)
+        return ""
+    if not text or len(text) < 30:
+        return ""
+    # ① 数字ハルシネーション guard: 出力の rate 数字は事実内のものだけ
+    allowed = _allowed_rate_tokens(c)
+    if any(tok not in allowed for tok in _RATE_RE.findall(text)):
+        LOG.warning("llm_polish rejected (rate hallucination) player=%s", c.player)
+        return ""
+    # ② データ保持 guard: 元の数字/記録を落としたふわふわ文は却下(データで引きつけ強制)
+    if not _keeps_data(c, text):
+        LOG.warning("llm_polish rejected (data dropped) player=%s", c.player)
+        return ""
+    # ③ 最小 inflammatory guard
+    if any(w in text for w in ("死ね", "クビ", "戦犯", "最低", "引退しろ")):
+        LOG.warning("llm_polish rejected (inflammatory) player=%s", c.player)
+        return ""
+    return text
+
+
+def _keeps_data(c: "Candidate", text: str) -> bool:
+    """polish 出力が元データ(数字/記録)を保持しているか。ふわふわ文を弾く。"""
+    rates = _allowed_rate_tokens(c)
+    if rates:
+        return any(r in text for r in rates)
+    keys = re.findall(r"\d+|連続|防御率|安打|昇格|本塁打|猛打賞|勝利", c.number)
+    return any(k in text for k in keys) if keys else True
 
 
 _QUOTE_BAN = ("vs", "ニュース20", "カレンダー", "万年", "第2章", "門下生", "ファイターズ",
@@ -514,6 +601,17 @@ def generate(limit_ichigun: int = 6) -> dict:
                     break
     else:
         LOG.warning("insight.db 不在(INSIGHT_DB_PATH 未設定)→ DB 連動 skip")
+
+    # Flash Lite polish(安価・任意)。数字はロック済、検証通過分だけ採用。失敗は fact 版。
+    if _llm_enabled():
+        polished_n = 0
+        for c in news + hidden_hot:
+            p = _llm_polish(c)
+            if p:
+                c.polished = p
+                polished_n += 1
+        LOG.info("llm_polish applied=%d/%d (model=%s)", polished_n, len(news) + len(hidden_hot), _GEMINI_MODEL)
+
     return {"news": news, "hidden_hot": hidden_hot}
 
 

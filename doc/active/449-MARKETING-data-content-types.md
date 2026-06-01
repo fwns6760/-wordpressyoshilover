@@ -149,14 +149,18 @@ DB を全スキャンするのではなく、**RSS が拾った旬の話題を�
 
 ### 準自動化(B)── 2026-06-01 LIVE_DEPLOYED(user GO)
 
-毎朝 候補リストをメール送信する read-only Job として稼働開始。**投稿はしない**(手動選別用の通知のみ)。
+毎朝 **ニュース連動の候補を1件ずつメール送信**する read-only Job として稼働。**投稿はしない**(手動選別用の通知のみ)。
 
-- ツール: `src/tools/daily_x_candidates.py`(候補生成、ロスター∩最終出場∩日付ベース数字)+ `run_daily_x_candidates_mail.py`(GCS pull → 生成 → SMTP 送信)
-- infra: Cloud Run Job `daily-x-candidates-mail`(image `daily-xcand-aa185b2`)+ Scheduler `daily-x-candidates-mail-trigger`(**毎朝 7:30 JST**)。SMTP は kobayashi mail lane と同経路。
-- 宛先: `fwns6760@gmail.com`。候補0件の日は送信しない。
+- **ニュース起点(RSS話題ゲート)**: 直近WP記事の巨人選手にデータを紐付ける。RSS=鮮度ゲート内蔵で離脱選手は構造的に入らない。
+  - 一軍打者 → `insight.db` last_7d 打率 / 投手 → 防御率(投球回基準、sample>=3) / 二軍・微小サンプル → 記事タイトルの数字(出典=記事)
+  - 自前【巨人データ】post 除外、同一選手は重複排除
+  - 補完: ニュースに出ていない「隠れ好調」を DB signal から少数追加(ロスター∩最終出場ゲート)
+- **1候補=1メール**(他 mail lane と同形式、user 要望。`--max-mails` 既定10)。
+- ツール: `src/tools/daily_x_candidates.py` + `run_daily_x_candidates_mail.py`
+- infra: Cloud Run Job `daily-x-candidates-mail`(image `daily-xcand-856115b`)+ Scheduler `daily-x-candidates-mail-trigger`(**毎朝 7:30 JST**)。SMTP は kobayashi mail lane と同経路、宛先 `fwns6760@gmail.com`。
 - **新規 Gemini なし / 新規 source なし / X API なし / WP は read-only GET / 投稿なし**。コスト: 既存無料枠内(1日1 fire)。
-- 初回実機: 2026-06-01 execution `daily-x-candidates-mail-xr87v` → `status=sent`(一軍6 + 昇格3 件)。
-- 運用: 毎朝メールから 448 §3 の型で手動選別 → X 手動投稿。1週間で効いた型を見る。
+- 実機: 2026-06-01 execution `daily-x-candidates-mail-njdvf` → **sent=10/10**(news9 + hidden4 = 13、上限10送信)。
+- 運用: 毎朝 届く1件ずつのメールから 448 §3 の型で選び、一言を足して X 手動投稿。1週間で効いた型を見る。
 
 ## 6. 今週やらないこと(再掲・HOLD)
 

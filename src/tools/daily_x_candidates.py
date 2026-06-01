@@ -22,11 +22,13 @@
 from __future__ import annotations
 
 import json
+import html as _htmllib
 import logging
 import os
 import re
 import sqlite3
 import sys
+import urllib.parse
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Optional
@@ -74,6 +76,8 @@ class Candidate:
     source: str          # 出典(DB last_7d / 記事URL)
     note: str = ""       # 補足(鮮度・要確認 等)
     comment: str = ""    # 一言ドラフト(テンプレ自動生成、LLM不使用、編集前提)
+    quote: str = ""      # 記事から拾った発言/引用(参考材料、主は記事で要確認)
+    article_url: str = ""  # 引用元/関連記事 URL(CTA「記事を読む」用)
 
     def render(self) -> str:
         comment = self.comment or "(ファン向けの一言をここに / 448 テンプレ)"
@@ -82,8 +86,10 @@ class Candidate:
             f"数字：{self.number}",
             f"意味：{self.meaning}",
             f"一言(下書き・調整可)：{comment}",
-            f"出典：{self.source}",
         ]
+        if self.quote:
+            lines.append(f"記事中の発言(参考・主は記事で確認):「{self.quote}」")
+        lines.append(f"出典：{self.source}")
         if self.note:
             lines.append(f"※ {self.note}")
         return "\n".join(lines)
@@ -134,6 +140,99 @@ def _auto_comment(bucket: str, player: str, number: str) -> str:
             f"{name}、この内容なら見ておいて損はない。",
         ]
     return variants[pick]
+
+
+_QUOTE_BAN = ("vs", "ニュース20", "カレンダー", "万年", "第2章", "門下生", "ファイターズ",
+              "読売ジャイアンツ", "プロ野球ニュース", "中継情報", "テレビ", "ラジオ")
+_SPEECH_END = ("た", "たい", "ない", "思う", "いく", "ます", "です", "だ", "！", "。",
+               "ね", "よ", "しい", "れる", "った", "たな", "ある")
+
+
+def _quote_keys(player: str) -> set[str]:
+    """選手名の照合 key(フル / 空白なし / 姓)。近接マッチ用。"""
+    n = _short_name(player)
+    keys = {n}
+    if " " in player:
+        keys.add(player.split(" ")[0])
+    if len(n) >= 2:
+        keys.add(n[:2])  # 姓近似
+    return {k for k in keys if len(k) >= 2}
+
+
+def _extract_quote(content_html: str, player: str = "") -> str:
+    """記事本文 HTML から「発言らしい」引用を1つ拾う(LLM不使用)。
+
+    番組名/対戦カード/カレンダー等のノイズは除外。player 指定時は **その選手名の近く
+    (±150字)にある引用だけ**を採る(誤帰属防止)。近くに無ければ空(引用なし)。
+    player 無指定時は最長の speech-like を返す。
+    """
+    if not content_html:
+        return ""
+    txt = _htmllib.unescape(re.sub(r"<[^>]+>", " ", content_html))
+    valid: list[tuple[int, str]] = []
+    for m in re.finditer(r"[「『]([^」』]{8,80})[」』]", txt):
+        q = m.group(1).strip()
+        if not (8 <= len(q) <= 70):
+            continue
+        if any(b in q for b in _QUOTE_BAN):
+            continue
+        if not q.endswith(_SPEECH_END):
+            continue
+        valid.append((m.start(), q))
+    if not valid:
+        return ""
+    if player:
+        # 選手名の出現位置に最も近い引用(±150字以内)だけ採用
+        positions: list[int] = []
+        for k in _quote_keys(player):
+            i = txt.find(k)
+            while i != -1:
+                positions.append(i)
+                i = txt.find(k, i + 1)
+        if not positions:
+            return ""
+        best, best_d = "", 10 ** 9
+        for pos, q in valid:
+            d = min(abs(pos - p) for p in positions)
+            if d < best_d:
+                best, best_d = q, d
+        return best if best_d <= 150 else ""
+    return max((q for _, q in valid), key=len, default="")
+
+
+def _x_intent_url(text: str) -> str:
+    """X(Twitter)の投稿 intent URL。クリックで本文 prefill された compose が開く。"""
+    return "https://x.com/intent/post?text=" + urllib.parse.quote(text)
+
+
+def _search_player_quote(player: str) -> tuple[str, str]:
+    """WP を選手名で read-only 検索し、直近記事から引用1つ + 記事URLを返す。
+
+    creds 無し / hit 無しなら ("", "")。hidden_hot(ニュース外の選手)の材料補完用。
+    """
+    base = os.environ.get("WP_URL", "").strip().rstrip("/")
+    user = os.environ.get("WP_USER", "").strip()
+    pw = os.environ.get("WP_APP_PASSWORD", "").strip()
+    if not (base and user and pw):
+        return "", ""
+    name = _short_name(player)
+    try:
+        r = requests.get(
+            base + "/wp-json/wp/v2/posts",
+            params={"search": name, "per_page": 3, "_fields": "link,content",
+                    "orderby": "date", "order": "desc"},
+            auth=HTTPBasicAuth(user, pw),
+            timeout=20,
+        )
+        if not r.ok:
+            return "", ""
+        for p in (r.json() or []):
+            q = _extract_quote((p.get("content", {}) or {}).get("rendered", ""), name)
+            if q:
+                return q, p.get("link", "")
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("_search_player_quote err %s: %r", player, exc)
+    return "", ""
 
 
 def _db_path() -> Optional[str]:
@@ -309,9 +408,10 @@ def _fetch_recent_posts(limit_posts: int = 30) -> list[dict]:
     try:
         r = requests.get(
             base + "/wp-json/wp/v2/posts",
-            params={"per_page": limit_posts, "_fields": "title,link,date", "orderby": "date", "order": "desc"},
+            params={"per_page": limit_posts, "_fields": "title,link,date,content",
+                    "orderby": "date", "order": "desc"},
             auth=HTTPBasicAuth(user, pw),
-            timeout=20,
+            timeout=25,
         )
         if not r.ok:
             LOG.warning("WP posts fetch fail status=%d", r.status_code)
@@ -380,6 +480,7 @@ def collect_news_anchored(cur: sqlite3.Cursor, posts: list[dict]) -> list[Candid
     for p in posts:
         title = (p.get("title", {}) or {}).get("rendered", "") or ""
         link = p.get("link", "")
+        content_html = (p.get("content", {}) or {}).get("rendered", "")
         if title.startswith("【巨人データ】"):
             continue  # 自前データ post には付けない
         matched: list[str] = []
@@ -392,6 +493,7 @@ def collect_news_anchored(cur: sqlite3.Cursor, posts: list[dict]) -> list[Candid
             if player in emitted:
                 continue
             emitted.add(player)
+            article_quote = _extract_quote(content_html, player)  # 選手近接の引用のみ
             num = _fresh_number(cur, player, snap)  # 一軍打者(日付ベース)
             if num:
                 number, source, note = num[0], num[1], ""
@@ -414,6 +516,8 @@ def collect_news_anchored(cur: sqlite3.Cursor, posts: list[dict]) -> list[Candid
                 source=link if source.startswith("http") or not link else f"{source} / {link}",
                 note=note,
                 comment=_auto_comment("ニュース連動", player, number),
+                quote=article_quote,
+                article_url=link,
             ))
     return out
 
@@ -431,6 +535,9 @@ def generate(limit_ichigun: int = 6) -> dict:
             # ニュースに出ていない「隠れ好調」だけを DB signal から補完
             for c in collect_ichigun_candidates(cur):
                 if c.player not in news_players:
+                    # 記事から発言/引用を拾って材料化(ニュース外でも検索で補完)
+                    q, url = _search_player_quote(c.player)
+                    c.quote, c.article_url = q, url
                     hidden_hot.append(c)
                 if len(hidden_hot) >= limit_ichigun:
                     break
@@ -455,9 +562,11 @@ def build_single_mail(c: Candidate, *, date_label: str, idx: int, total: int) ->
     subject = f"【巨人Xデータ】{seq} {head} {date_label}".strip()
 
     comment = c.comment or "（ファン向けの一言をここに）"
-    # そのまま X に貼れる下書き(数字 + 一言)。コピペ用に1ブロックで用意。
+    # そのまま X に貼れる下書き(数字 + 一言)。引用があれば材料として併記。
     x_draft = f"{c.number}\n\n{comment}"
-    text_body = "\n".join([
+    intent = _x_intent_url(x_draft)
+
+    text_lines = [
         f"今日のX投稿候補 {seq}（手動選別用 / 投稿はされません）",
         "",
         c.render(),
@@ -465,26 +574,46 @@ def build_single_mail(c: Candidate, *, date_label: str, idx: int, total: int) ->
         "─ Xコピペ用(下書き、調整可) ─",
         x_draft,
         "",
+        f"▶ ワンタップ投稿(本文prefill): {intent}",
         "─ そのまま貼って一言だけ直せばOK。使わないなら無視でOK。",
-    ])
+    ]
+    text_body = "\n".join(text_lines)
 
     src = (f'<a href="{_esc(c.source)}">記事/出典を開く</a>'
            if c.source.startswith("http") else _esc(c.source))
     note = f'<div style="color:#999;font-size:12px;margin-top:6px;">※ {_esc(c.note)}</div>' if c.note else ""
+    quote_html = (
+        f'<div style="margin:6px 0;padding:8px 10px;background:#fff8e1;border-left:3px solid #f5a623;'
+        f'font-size:13px;">記事中の発言(参考・主は記事で確認)<br>「{_esc(c.quote)}」</div>'
+        if c.quote else ""
+    )
+    btn = (
+        f'<a href="{_esc(intent)}" '
+        'style="display:inline-block;background:#000;color:#fff;text-decoration:none;'
+        'padding:11px 20px;border-radius:9999px;font-weight:600;font-size:14px;margin:4px 8px 4px 0;">'
+        '𝕏 にポストする</a>'
+    )
+    read_btn = (
+        f'<a href="{_esc(c.article_url)}" '
+        'style="display:inline-block;background:#eee;color:#333;text-decoration:none;'
+        'padding:11px 18px;border-radius:9999px;font-size:14px;margin:4px 0;">記事を読む</a>'
+        if c.article_url.startswith("http") else ""
+    )
     html_body = (
         '<div style="font-family:sans-serif;max-width:560px;">'
-        f'<div style="font-size:12px;color:#888;">今日のX投稿候補 {_esc(seq)} / 手動選別用・投稿はされません</div>'
+        f'<div style="font-size:12px;color:#888;">今日のX投稿候補 {_esc(seq)} / 手動選別用</div>'
         '<div style="border:1px solid #eee;border-radius:8px;padding:14px;margin:8px 0;">'
         f'<div style="font-weight:600;color:#5d4037;margin-bottom:6px;">【{_esc(c.bucket)}】{_esc(c.player)}</div>'
         f'<div style="margin:2px 0;">数字：{_esc(c.number)}</div>'
         f'<div style="margin:2px 0;">意味：{_esc(c.meaning)}</div>'
         f'<div style="margin:2px 0;color:#1976d2;">一言(下書き・調整可)：{_esc(comment)}</div>'
-        f'<div style="margin-top:6px;color:#888;font-size:12px;">出典：{src}</div>'
-        f'{note}</div>'
-        '<div style="background:#fafafa;border-radius:8px;padding:12px;margin:8px 0;">'
+        f'{quote_html}'
+        '<div style="background:#fafafa;border-radius:8px;padding:10px;margin:10px 0;">'
         '<div style="font-size:12px;color:#888;margin-bottom:4px;">Xコピペ用(下書き)</div>'
-        f'<div style="white-space:pre-wrap;font-size:13px;">{_esc(x_draft)}</div>'
-        '</div></div>'
+        f'<div style="white-space:pre-wrap;font-size:13px;">{_esc(x_draft)}</div></div>'
+        f'<div style="margin-top:8px;">{btn}{read_btn}</div>'
+        f'<div style="margin-top:6px;color:#888;font-size:12px;">出典：{src}</div>'
+        f'{note}</div></div>'
     )
     return subject, text_body, html_body
 

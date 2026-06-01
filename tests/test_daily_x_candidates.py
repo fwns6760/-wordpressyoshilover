@@ -162,6 +162,50 @@ class SingleMailTests(unittest.TestCase):
         self.assertIn("今ちょうど来てる。", text)
         self.assertIn("今ちょうど来てる。", html)
 
+    def test_cta_button_links_to_x_intent(self) -> None:
+        c = dxc.Candidate("ニュース連動", "岸田 行倫", "直近7日 打率.444", "旬", "https://x/1",
+                          comment="今ちょうど来てる。", article_url="https://y/9")
+        _, text, html = dxc.build_single_mail(c, date_label="2026-06-01", idx=1, total=3)
+        self.assertIn("x.com/intent/post?text=", html)   # CTA ボタン
+        self.assertIn("ポストする", html)
+        self.assertIn("記事を読む", html)                  # 記事URLあれば読むボタン
+        self.assertIn("x.com/intent/post?text=", text)   # text 版にも intent URL
+
+    def test_quote_shown_with_caution(self) -> None:
+        c = dxc.Candidate("ニュース連動", "浦田俊輔", "直近7日 .273", "旬", "https://x/1",
+                          quote="何とか打って恩返しをできたらと…やりました！")
+        _, _, html = dxc.build_single_mail(c, date_label="2026-06-01", idx=1, total=1)
+        self.assertIn("やりました", html)
+        self.assertIn("主は記事で確認", html)              # 発言主の注意書き
+
+
+class ExtractQuoteTests(unittest.TestCase):
+    def test_keeps_speech_drops_noise(self) -> None:
+        html = ('<p>見出し</p>'
+                '<p>「野村克也門下生対決」</p>'           # ノイズ(対決名)
+                '<p>本人は「何とか打って恩返しをできたらと…やりました！」と振り返った。</p>'  # 発言
+                '<p>「北海道日本ハムファイターズvs.読売ジャイアンツ」</p>')  # ノイズ(カード)
+        q = dxc._extract_quote(html)
+        self.assertIn("やりました", q)
+        self.assertNotIn("門下生", q)
+        self.assertNotIn("ファイターズ", q)
+
+    def test_empty_when_no_quote(self) -> None:
+        self.assertEqual(dxc._extract_quote("<p>引用なしの本文</p>"), "")
+        self.assertEqual(dxc._extract_quote(""), "")
+
+    def test_proximity_picks_quote_near_player(self) -> None:
+        html = ("<p>岸田行倫は「最後まで集中して振り切れました」と笑顔。</p>"
+                + "<p>" + "余白" * 200 + "</p>"
+                + "<p>別の選手は「もっと頑張りたいです」と話した。</p>")
+        self.assertIn("振り切れました", dxc._extract_quote(html, "岸田 行倫"))
+
+    def test_no_quote_when_player_far(self) -> None:
+        html = ("<p>無関係の前置き。</p>" + "<p>" + "余白" * 200 + "</p>"
+                + "<p>誰かが「やってやりました」と話した。</p>")
+        # 選手名が本文に出てこない → 引用は付けない(誤帰属防止)
+        self.assertEqual(dxc._extract_quote(html, "存在しない 選手"), "")
+
     def test_flatten_order(self) -> None:
         res = {"news": [dxc.Candidate("ニュース連動", "A", "n", "m", "")],
                "hidden_hot": [dxc.Candidate("直近変化型", "B", "n", "m", "")]}

@@ -13,6 +13,7 @@ None を返し、 template 側で「データ集計中」 placeholder。
 from __future__ import annotations
 
 import json as _json
+import html as _html
 import logging
 import os
 import re
@@ -2018,6 +2019,57 @@ def fetch_recent_hot(top_n: int = 3) -> dict:
         LOG.warning("fetch_recent_hot err: %r", exc)
         return {"batter": [], "pitcher": []}
     return out
+
+
+_CL_TEAM_SHORT = {
+    "読売ジャイアンツ": "巨人", "東京ヤクルトスワローズ": "ヤクルト",
+    "阪神タイガース": "阪神", "横浜DeNAベイスターズ": "DeNA",
+    "広島東洋カープ": "広島", "中日ドラゴンズ": "中日",
+}
+
+
+def parse_npb_cl_standings(html_text: str) -> list[dict]:
+    """NPB公式 std_c.html からセ・リーグ順位表を抽出 (459/C)。
+
+    返り値: [{"rank","team","g","w","l","t","pct","gb","is_giants"}, ...] 順位順。
+    最初の順位表 table の6球団行のみ (2つ目=交流戦表は seen+break で除外)。
+    """
+    out: list[dict] = []
+    seen: set[str] = set()
+    for tr in re.findall(r"<tr[^>]*>(.*?)</tr>", html_text, re.S):
+        cells = [
+            _html.unescape(re.sub(r"<[^>]+>", "", c)).replace("\xa0", " ").strip()
+            for c in re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", tr, re.S)
+        ]
+        cells = [c for c in cells if c != ""]
+        if not cells:
+            continue
+        team = cells[0]
+        if team in _CL_TEAM_SHORT and team not in seen and len(cells) >= 7:
+            seen.add(team)
+            out.append({
+                "rank": len(out) + 1,
+                "team": _CL_TEAM_SHORT[team],
+                "g": cells[1], "w": cells[2], "l": cells[3], "t": cells[4],
+                "pct": cells[5], "gb": cells[6],
+                "is_giants": team == "読売ジャイアンツ",
+            })
+        if len(out) >= 6:
+            break
+    return out
+
+
+def fetch_npb_cl_standings(year: int = 2026) -> list[dict]:
+    """NPB公式からセ・リーグ順位表を scrape (459/C、 standings_snapshots 空の代替)。"""
+    url = f"https://npb.jp/bis/{year}/stats/std_c.html"
+    try:
+        r = requests.get(url, timeout=10)
+        r.raise_for_status()
+        r.encoding = "utf-8"
+        return parse_npb_cl_standings(r.text)
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("fetch_npb_cl_standings err: %r", exc)
+        return []
 
 
 def fetch_giants_team_record() -> dict:

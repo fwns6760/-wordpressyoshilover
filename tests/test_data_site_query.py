@@ -465,3 +465,36 @@ class TeamRecordTests(unittest.TestCase):
         self.assertEqual(r["home"], (2, 0))
         self.assertEqual(r["away"], (0, 2))
         # 巨人不在 game (t-x-01) は除外されている (win 3 にならない)
+
+
+class StandingsParseTests(unittest.TestCase):
+    """459/C parse_npb_cl_standings (NPB公式 HTML パース、 純粋関数)。"""
+
+    FIXTURE = (
+        "<table>"
+        "<tr><th>チーム</th><th>試合</th><th>勝利</th><th>敗北</th><th>引分</th>"
+        "<th>勝率</th><th>差</th><th>ホーム</th></tr>"
+        "<tr><td>東京ヤクルトスワローズ</td><td>52</td><td>31</td><td>20</td><td>1</td>"
+        "<td>.608</td><td>--</td><td>13-9</td></tr>"
+        "<tr><td>阪神タイガース</td><td>52</td><td>30</td><td>21</td><td>1</td>"
+        "<td>.588</td><td>1.0</td><td>14-12</td></tr>"
+        "<tr><td>読売ジャイアンツ</td><td>52</td><td>27</td><td>25</td><td>0</td>"
+        "<td>.519</td><td>4.5</td><td>14-14</td></tr>"
+        "</table>"
+        # 2つ目(交流戦)表 — seen+break で除外されるべき
+        "<table><tr><td>読売ジャイアンツ</td><td>6</td><td>3</td><td>3</td><td>0</td>"
+        "<td>.500</td><td>--</td><td>1-2</td></tr></table>"
+    )
+
+    def test_parse(self) -> None:
+        from data_site_query import parse_npb_cl_standings
+        rows = parse_npb_cl_standings(self.FIXTURE)
+        self.assertEqual(len(rows), 3)
+        self.assertEqual(rows[0]["team"], "ヤクルト")
+        self.assertEqual(rows[0]["rank"], 1)
+        g = rows[2]
+        self.assertEqual((g["rank"], g["team"], g["w"], g["l"], g["pct"], g["gb"]),
+                         (3, "巨人", "27", "25", ".519", "4.5"))
+        self.assertTrue(g["is_giants"])
+        # 交流戦表の巨人(.500) は混入しない (seen で重複排除)
+        self.assertEqual(sum(1 for r in rows if r["team"] == "巨人"), 1)

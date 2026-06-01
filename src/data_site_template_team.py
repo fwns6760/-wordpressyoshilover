@@ -81,7 +81,41 @@ def _build_team_record_card(rec: dict) -> str:
     )
 
 
-def render_team_html(rankings: dict, team_record: dict = None) -> str:
+def _build_standings_card(standings: list) -> str:
+    """セ・リーグ順位表カード (459/C、 NPB公式 scrape)。 巨人行ハイライト。"""
+    if not standings:
+        return ""
+    rows = ""
+    for s in standings:
+        hl = "background:#fff3e0;font-weight:700;" if s.get("is_giants") else ""
+        rows += (
+            f'<tr style="text-align:center;border-bottom:1px solid #f0f0f0;{hl}">'
+            f'<td style="padding:6px;">{_esc(s.get("rank"))}</td>'
+            f'<td style="padding:6px;text-align:left;">{_esc(s.get("team"))}</td>'
+            f'<td style="padding:6px;">{_esc(s.get("g"))}</td>'
+            f'<td style="padding:6px;">{_esc(s.get("w"))}</td>'
+            f'<td style="padding:6px;">{_esc(s.get("l"))}</td>'
+            f'<td style="padding:6px;">{_esc(s.get("t"))}</td>'
+            f'<td style="padding:6px;font-weight:600;">{_esc(s.get("pct"))}</td>'
+            f'<td style="padding:6px;">{_esc(s.get("gb"))}</td>'
+            '</tr>'
+        )
+    return (
+        '<section class="ys-card" style="margin:0 0 16px;">'
+        '<h2 style="font-size:16px;margin:0 0 8px;">セ・リーグ順位表 '
+        '<span style="font-size:11px;color:#e25400;">毎日更新</span></h2>'
+        '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
+        '<thead><tr style="background:#fafafa;text-align:center;">'
+        '<th style="padding:6px;">順位</th><th style="padding:6px;">チーム</th><th style="padding:6px;">試合</th>'
+        '<th style="padding:6px;">勝</th><th style="padding:6px;">敗</th><th style="padding:6px;">分</th>'
+        '<th style="padding:6px;">勝率</th><th style="padding:6px;">差</th></tr></thead>'
+        f'<tbody>{rows}</tbody></table>'
+        '<p style="font-size:11px;color:#999;margin:6px 0 0;">出典: NPB公式</p>'
+        '</section>'
+    )
+
+
+def render_team_html(rankings: dict, team_record: dict = None, standings: list = None) -> str:
     nav = (
         '<nav class="ys-breadcrumb" style="font-size:12px;color:#666;margin:0 0 12px;">'
         f'<a href="{SITE_BASE}/" style="color:#666;">Home</a> › '
@@ -89,11 +123,13 @@ def render_team_html(rankings: dict, team_record: dict = None) -> str:
     )
     blocks = "".join(_rank_block(m, rankings.get(m) or []) for m in _METRIC_ORDER)
     record_card = _build_team_record_card(team_record or {})
+    standings_card = _build_standings_card(standings or [])
     return (
         '<div style="font-family:sans-serif;max-width:640px;">'
         f'{nav}'
         '<h1 style="font-size:20px;margin:0 0 4px;">巨人 球団成績・セ・リーグ順位 2026</h1>'
-        '<p style="font-size:13px;color:#666;margin:0 0 14px;">巨人のチーム成績と、セ・リーグ6球団の打率・本塁打・防御率ランキング。</p>'
+        '<p style="font-size:13px;color:#666;margin:0 0 14px;">セ・リーグ順位表、巨人のチーム成績、6球団の打率・本塁打・防御率ランキング。</p>'
+        f'{standings_card}'
         f'{record_card}'
         f'{blocks or "<p>データ準備中</p>"}'
         f'<p style="margin-top:16px;"><a href="{CLUSTER_URL}">← 選手データ一覧へ</a></p>'

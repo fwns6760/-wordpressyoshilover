@@ -67,5 +67,27 @@ class RankingTemplateTests(unittest.TestCase):
         self.assertIn("データ準備中", render_ranking_html({}))
 
 
+class StandingsCardTests(unittest.TestCase):
+    """459/C セ・リーグ順位表カード。"""
+
+    def _st(self):
+        return [
+            {"rank": 1, "team": "ヤクルト", "g": "52", "w": "31", "l": "20", "t": "1", "pct": ".608", "gb": "--", "is_giants": False},
+            {"rank": 3, "team": "巨人", "g": "52", "w": "27", "l": "25", "t": "0", "pct": ".519", "gb": "4.5", "is_giants": True},
+        ]
+
+    def test_render_standings(self) -> None:
+        html = render_team_html(TeamTemplateTests()._rk(), standings=self._st())
+        self.assertIn("セ・リーグ順位表", html)
+        self.assertIn("巨人", html)
+        self.assertIn(".519", html)
+        self.assertIn("4.5", html)
+        self.assertIn("NPB公式", html)
+
+    def test_empty_safe(self) -> None:
+        # standings 無しでも従来通り
+        self.assertIn("球団成績", render_team_html(TeamTemplateTests()._rk(), standings=[]))
+
+
 if __name__ == "__main__":
     unittest.main()

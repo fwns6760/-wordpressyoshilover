@@ -45,6 +45,7 @@ from src.data_site_query import (
     fetch_team_leaders,
     fetch_team_rankings,
     fetch_giants_team_record,
+    fetch_npb_cl_standings,
     fetch_recent_hot,
     fetch_team_leaders,
     fetch_player_npb_ranks,
@@ -498,10 +499,11 @@ def publish_phase1() -> dict[str, object]:
     # team ページ upsert (球団成績・セ内順位、Phase B 452) — parent=cluster → /data/team/
     team_rankings = fetch_team_rankings()
     team_record = fetch_giants_team_record()
+    cl_standings = fetch_npb_cl_standings()
     team_result = _upsert_page(
         slug="team",
         title=render_team_title(),
-        content_html=render_team_html(team_rankings, team_record=team_record),
+        content_html=render_team_html(team_rankings, team_record=team_record, standings=cl_standings),
         parent=cluster_page_id,
         excerpt=render_team_excerpt(team_rankings),
     )

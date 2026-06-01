@@ -43,6 +43,7 @@ from src.data_site_query import (
     fetch_interleague_split_stats,
     fetch_giants_schedule,
     fetch_team_leaders,
+    fetch_team_rankings,
     fetch_player_npb_ranks,
     fetch_pitching_stats_season,
     fetch_recent_games,
@@ -82,6 +83,11 @@ from src.data_site_template_legends import (
     render_legends_html,
     render_legends_title,
     render_legends_excerpt,
+)
+from src.data_site_template_team import (
+    render_team_html,
+    render_team_title,
+    render_team_excerpt,
 )
 from src.data_site_template_pillar import (
     PillarPlayerInfo,
@@ -462,6 +468,18 @@ def publish_phase1() -> dict[str, object]:
     )
     LOG.info("legends upsert slug=legends page_id=%s action=%s ob=%d",
              legends_result.page_id, legends_result.action, len(ob_list))
+
+    # team ページ upsert (球団成績・セ内順位、Phase B 452) — parent=cluster → /data/team/
+    team_rankings = fetch_team_rankings()
+    team_result = _upsert_page(
+        slug="team",
+        title=render_team_title(),
+        content_html=render_team_html(team_rankings),
+        parent=cluster_page_id,
+        excerpt=render_team_excerpt(team_rankings),
+    )
+    LOG.info("team upsert slug=team page_id=%s action=%s metrics=%d",
+             team_result.page_id, team_result.action, len(team_rankings))
 
     summary = {
         "status": "ok",

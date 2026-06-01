@@ -985,6 +985,49 @@ def fetch_interleague_split_stats(player_canonical: str) -> list[SplitStat]:
     return _bucket_splits(rows, key, ["リーグ戦", "交流戦"])
 
 
+_CENTRAL_TEAM_JP = {"g": "巨人", "t": "阪神", "db": "DeNA", "c": "広島", "s": "ヤクルト", "d": "中日"}
+
+
+def fetch_team_rankings(scope: str = "season") -> dict[str, list[tuple]]:
+    """セ・リーグ6球団の 打率/防御率/本塁打 ランキング (Phase B 452)。
+
+    既存の検証済み `team_ranking_publisher` の aggregator を reuse(独自集計でなく)。
+    戻り値: {metric_label: [(team_jp, value_display, rank, is_giants), ...]}。
+    """
+    path = _ensure_insight_db_local()
+    if not path:
+        return {}
+    try:
+        from src.analysis import team_ranking_publisher as tr
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("team_ranking_publisher import fail: %r", exc)
+        return {}
+    specs = [
+        ("打率", tr.aggregate_team_avg, True, lambda v: f"{v:.3f}".lstrip("0")),
+        ("防御率", tr.aggregate_team_era, False, lambda v: f"{v:.2f}"),
+        ("本塁打", tr.aggregate_team_hr, True, lambda v: f"{int(v)}本"),
+    ]
+    out: dict[str, list[tuple]] = {}
+    try:
+        with sqlite3.connect(path) as conn:
+            for label, fn, desc, disp in specs:
+                try:
+                    rows = fn(conn, scope=scope) or []
+                except Exception as exc:  # noqa: BLE001
+                    LOG.warning("team agg %s err: %r", label, exc)
+                    continue
+                rows = [r for r in rows if r.get("team") in _CENTRAL_TEAM_JP]
+                rows.sort(key=lambda r: r["value"], reverse=desc)
+                out[label] = [
+                    (_CENTRAL_TEAM_JP[r["team"]], disp(r["value"]), i, r["team"] == "g")
+                    for i, r in enumerate(rows, 1)
+                ]
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("fetch_team_rankings err: %r", exc)
+        return {}
+    return out
+
+
 @dataclass
 class LeaderEntry:
     """リーダーボード 1 行 (選手 + 数値)。"""
@@ -1568,6 +1611,7 @@ __all__ = [
     "fetch_giants_schedule",
     "LeaderEntry",
     "fetch_team_leaders",
+    "fetch_team_rankings",
     "fetch_hit_streak",
     "fetch_contribution_streak",
     "fetch_pitching_stats_season",

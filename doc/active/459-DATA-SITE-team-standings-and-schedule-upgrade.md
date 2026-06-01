@@ -5,8 +5,8 @@
 - **status**: PARTIAL_LIVE_VERIFIED (2026-06-01) — チーム成績カードは LIVE、 順位表/未来試合は data-block
 - **実績(feasible部)**: commit `bb78d24`、image `data-site-publisher:team-record-bb78d24`、execute SUCCESS。/data/team に「巨人 チーム成績」カード(勝敗分/勝率/得点失点/得失点差/連勝連敗/本拠地ビジター別)。verify = page 76294 に 26-24-2 / .520 / 得失点差-17 / 1連敗 / 本拠地13-14・ビジター13-10 反映確認。data-site test 99 passed。
 - **data-block(未対応・要 source)**:
-  - **セ6球団 順位表**: `standings_snapshots` が prod **空(populate 無)** → 別途 standings ETL/source が必要(元 454 の主眼)。
-  - **未来試合 / 予告先発**: `games` は max=当日まで・予告先発カラム無し → 別 source 必要。
+  - ~~**セ6球団 順位表**: standings_snapshots 空~~ → **解決(2026-06-01)**: 「データブロック」は誤り。NPB公式(`npb.jp/bis/YYYY/stats/std_c.html`)を `fetch_npb_cl_standings` で scrape して LIVE 化(commit `0dc7f173`、image `standings-0dc7f173`、/data/team page に順位表反映確認: 1ヤクルト/2阪神/3巨人.519差4.5…)。standings_snapshots に依存せず read-side scrape。**教訓: 「取れない」を source 未確認で断言しない**。
+  - **未来試合 / 予告先発**: `games` は max=当日まで・予告先発カラム無し → NPB日程ページ scrape で取得可能(順位表と同パターン、follow-up)。これも「取れない」でなく「未実装」。
   - チーム打撃投手守備のフル集計列(得点圏/盗塁/出塁率 等)は logs から追加集計で拡張可能(follow-up)。
 
 ## 背景(深掘り・実取得)

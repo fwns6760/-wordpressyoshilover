@@ -2,7 +2,8 @@
 
 - **種別**: 実装 / **priority**: P2 / **effort**: M
 - **親**: 443 / 設計: `455...md` §13-3 / **454(standings-etl)を包含/再編** / GH: #123
-- **status**: LIVE_VERIFIED (2026-06-02) — チーム成績 + セ順位表 + 今後の試合 全 LIVE(予告先発のみ残)
+- **status**: LIVE_VERIFIED_COMPLETE (2026-06-02) — チーム成績 + セ順位表 + 今後の試合 + **予告先発** 全 LIVE
+- **予告先発も解決**: 原因は TZ バグ(Job=UTC `date.today()`=6/1 ≠ 試合=JST 6/2 で `date==today` attach 条件がマッチせず)。日付一致を撤廃し相手略号 cross-check のみで判定(image `startertz-8a419ae3`)→ verify: ページに `予告先発: 則本 vs 九里`、診断ログ `st={則本,九里,オ} mapped=オリックス game0_opp=オリックス` で付与確認。
 - **実績(feasible部)**: commit `bb78d24`、image `data-site-publisher:team-record-bb78d24`、execute SUCCESS。/data/team に「巨人 チーム成績」カード(勝敗分/勝率/得点失点/得失点差/連勝連敗/本拠地ビジター別)。verify = page 76294 に 26-24-2 / .520 / 得失点差-17 / 1連敗 / 本拠地13-14・ビジター13-10 反映確認。data-site test 99 passed。
 - **data-block(未対応・要 source)**:
   - ~~**セ6球団 順位表**: standings_snapshots 空~~ → **解決(2026-06-01)**: 「データブロック」は誤り。NPB公式(`npb.jp/bis/YYYY/stats/std_c.html`)を `fetch_npb_cl_standings` で scrape して LIVE 化(commit `0dc7f173`、image `standings-0dc7f173`、/data/team page に順位表反映確認: 1ヤクルト/2阪神/3巨人.519差4.5…)。standings_snapshots に依存せず read-side scrape。**教訓: 「取れない」を source 未確認で断言しない**。

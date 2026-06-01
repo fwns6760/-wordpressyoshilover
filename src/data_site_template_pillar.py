@@ -49,6 +49,8 @@ class PillarPlayerInfo:
     season_runs: int = 0
     season_sb: int = 0
     season_avg: Optional[float] = None
+    # 453: NPB 全 12 球団内 順位バッジ [(label, value_str, rank, total), ...]
+    metric_ranks: list[tuple] = field(default_factory=list)
     recent_games: list[tuple[str, str, int, int, int]] = field(default_factory=list)
     # recent_games = [(game_date, opponent, ab, hits, rbi), ...]
     has_stats: bool = False  # False なら 「データ集計中」 placeholder
@@ -61,6 +63,10 @@ class PillarPlayerInfo:
     # venue_split_stats = [(venue, G, AB, H, RBI, AVG), ...] (本拠地 / ビジター)
     inning_split_stats: list[tuple[str, int, int, Optional[float]]] = field(default_factory=list)
     # inning_split_stats = [(phase, AB, H, AVG), ...] (序盤 1-3回 / 中盤 4-6回 / 終盤 7-9回)
+    # Phase B (452): 曜日別 / 月別 / 交流戦別 = [(label, G, AB, H, AVG), ...]
+    weekday_split_stats: list[tuple[str, int, int, int, Optional[float]]] = field(default_factory=list)
+    month_split_stats: list[tuple[str, int, int, int, Optional[float]]] = field(default_factory=list)
+    interleague_split_stats: list[tuple[str, int, int, int, Optional[float]]] = field(default_factory=list)
     # Phase 1.0b1 streak (現在 active + 自己最長 season)
     hit_streak_active: int = 0
     hit_streak_season_max: int = 0
@@ -94,6 +100,60 @@ def _esc(text: str) -> str:
     return _html.escape(str(text or ""), quote=True)
 
 
+def _build_style_block() -> str:
+    """巨人=オレンジ強めの scoped デザインシステム CSS。 ページ先頭に 1 度だけ注入。
+
+    全 data ページの視覚的 identity (ブランド)。 .ys-data 配下のみに効くよう scope。
+    inline style 廃止と併せて、 カード型・オレンジ基調・モバイル最優先・split バー可視化。
+    """
+    return (
+        "<style>\n"
+        ".ys-data{--o:#ff6a00;--od:#e25400;--ol:#fff3ea;--ink:#1a1a1a;--mut:#6f6f6f;"
+        "max-width:760px;margin:0 auto;color:var(--ink);"
+        "font-family:-apple-system,BlinkMacSystemFont,'Hiragino Sans','Yu Gothic',sans-serif;line-height:1.6;}\n"
+        ".ys-data *{box-sizing:border-box;}\n"
+        ".ys-data .ys-bc{font-size:12px;color:var(--mut);margin:0 0 10px;}\n"
+        ".ys-data .ys-bc a{color:var(--mut);text-decoration:none;}\n"
+        ".ys-data .ys-lead{font-size:14px;line-height:1.75;color:#333;margin:0 0 14px;"
+        "padding:10px 14px;background:var(--ol);border-radius:8px;border-left:4px solid var(--o);}\n"
+        ".ys-data .ys-feat{text-align:center;margin:0 0 18px;}\n"
+        ".ys-data .ys-feat img{max-width:480px;width:100%;height:auto;border-radius:12px;"
+        "box-shadow:0 4px 14px rgba(226,84,0,.18);border:3px solid #fff;outline:1px solid #ffd9bf;}\n"
+        ".ys-data .ys-card{background:#fff;border:1px solid #ffe0cc;border-radius:12px;"
+        "padding:16px;margin:0 0 16px;box-shadow:0 2px 8px rgba(0,0,0,.04);}\n"
+        ".ys-data .ys-card h2{font-size:17px;font-weight:800;margin:0 0 4px;color:var(--ink);"
+        "padding-left:12px;border-left:5px solid var(--o);display:flex;align-items:center;gap:8px;}\n"
+        ".ys-data .ys-tag{font-size:10px;font-weight:700;color:#fff;background:var(--o);"
+        "padding:2px 8px;border-radius:999px;letter-spacing:.02em;}\n"
+        ".ys-data .ys-note{font-size:12px;color:var(--mut);margin:6px 0 12px;line-height:1.6;}\n"
+        ".ys-data .ys-foot{font-size:11px;color:#aaa;margin:10px 0 0;}\n"
+        ".ys-data table{width:100%;border-collapse:collapse;font-size:13px;}\n"
+        ".ys-data thead th{background:var(--od);color:#fff;padding:9px 6px;font-weight:700;text-align:center;}\n"
+        ".ys-data thead th:first-child{border-top-left-radius:8px;}\n"
+        ".ys-data thead th:last-child{border-top-right-radius:8px;}\n"
+        ".ys-data tbody td{padding:9px 6px;text-align:center;border-bottom:1px solid #f2e6dd;}\n"
+        ".ys-data tbody tr:nth-child(even){background:var(--ol);}\n"
+        ".ys-data .ys-k{font-weight:700;color:var(--od);}\n"
+        ".ys-data .ys-avg{font-weight:800;color:var(--o);font-variant-numeric:tabular-nums;}\n"
+        ".ys-data .ys-hero{display:flex;flex-wrap:wrap;gap:10px;margin:4px 0 0;}\n"
+        ".ys-data .ys-hero .b{flex:1;min-width:74px;text-align:center;background:var(--ol);"
+        "border-radius:10px;padding:10px 6px;}\n"
+        ".ys-data .ys-hero .b .v{font-size:22px;font-weight:800;color:var(--od);line-height:1.1;font-variant-numeric:tabular-nums;}\n"
+        ".ys-data .ys-hero .b.main .v{color:var(--o);font-size:26px;}\n"
+        ".ys-data .ys-hero .b .l{font-size:11px;color:var(--mut);margin-top:3px;}\n"
+        ".ys-data .ys-bars{margin:4px 0 0;}\n"
+        ".ys-data .ys-bar{display:flex;align-items:center;gap:10px;margin:0 0 8px;}\n"
+        ".ys-data .ys-bar .nm{width:84px;font-size:13px;font-weight:700;color:var(--ink);flex:none;}\n"
+        ".ys-data .ys-bar .tr{flex:1;background:#f1e7df;border-radius:999px;height:22px;position:relative;overflow:hidden;}\n"
+        ".ys-data .ys-bar .fl{height:100%;background:linear-gradient(90deg,var(--o),var(--od));border-radius:999px;min-width:2px;}\n"
+        ".ys-data .ys-bar .vl{width:74px;font-size:13px;font-weight:800;color:var(--od);text-align:right;flex:none;font-variant-numeric:tabular-nums;}\n"
+        ".ys-data .ys-bar .sub{font-size:10px;color:var(--mut);font-weight:500;}\n"
+        "@media(max-width:520px){.ys-data table{font-size:12px;}.ys-data thead th,.ys-data tbody td{padding:7px 3px;}"
+        ".ys-data .ys-bar .nm{width:62px;font-size:12px;}.ys-data .ys-bar .vl{width:60px;}}\n"
+        "</style>"
+    )
+
+
 def _build_lead_html(player: "PillarPlayerInfo") -> str:
     """ページ冒頭の lead 文 (SNS 共有 og:description / SEO meta description 用)。
 
@@ -104,20 +164,15 @@ def _build_lead_html(player: "PillarPlayerInfo") -> str:
     lead = render_pillar_excerpt(player)
     if not lead:
         return ""
-    return (
-        '<p class="ys-pillar-lead" '
-        'style="font-size:14px;line-height:1.7;color:#333;margin:0 0 12px;">'
-        f'{_esc(lead)}</p>'
-    )
+    return f'<p class="ys-lead">{_esc(lead)}</p>'
 
 
 def _build_breadcrumb_html(name: str) -> str:
     """Pillar 上部の breadcrumb (Home → 選手データ → {player})。"""
     return (
-        '<nav class="ys-breadcrumb" aria-label="breadcrumb" '
-        'style="font-size:12px;color:#666;margin:0 0 12px;">'
-        '<a href="https://yoshilover.com/" style="color:#666;">Home</a> › '
-        f'<a href="{CLUSTER_URL}" style="color:#666;">巨人選手データ</a> › '
+        '<nav class="ys-bc" aria-label="breadcrumb">'
+        '<a href="https://yoshilover.com/">Home</a> › '
+        f'<a href="{CLUSTER_URL}">巨人選手データ</a> › '
         f'<span>{_esc(name)}</span>'
         '</nav>'
     )
@@ -127,11 +182,8 @@ def _build_featured_image_html(player: PillarPlayerInfo) -> str:
     if not player.featured_image_url:
         return ""
     return (
-        '<div class="ys-pillar-featured" style="text-align:center;margin:0 0 16px;">'
-        f'<img src="{_esc(player.featured_image_url)}" '
-        f'alt="{_esc(player.name)}選手" '
-        'style="max-width:480px;width:100%;height:auto;border-radius:8px;'
-        'box-shadow:0 2px 6px rgba(0,0,0,0.1);" />'
+        '<div class="ys-feat">'
+        f'<img src="{_esc(player.featured_image_url)}" alt="{_esc(player.name)}選手" />'
         '</div>'
     )
 
@@ -159,42 +211,39 @@ def _build_season_stats_html(player: PillarPlayerInfo) -> str:
     """season 集計 stats を 表で表示。 data 無ければ placeholder (具体化)。"""
     if not player.has_stats or player.season_games == 0:
         return (
-            '<section class="ys-pillar-stats-season" '
-            'style="background:#fff;border:1px solid #eee;padding:14px;margin:0 0 16px;border-radius:4px;">'
-            '<h2 style="font-size:16px;margin:0 0 10px;">今シーズン 通算 (打撃)</h2>'
-            '<p style="font-size:13px;color:#888;margin:0;">'
+            '<div class="ys-card">'
+            '<h2>今シーズン 通算 (打撃)</h2>'
+            '<p class="ys-note">'
             f'{_esc(player.name)}選手の今シーズン 一軍出場記録は、 現時点で集計対象となる box score 上に確認できていません。'
             ' 出場が記録され次第、 毎朝 6:00 + 試合後 17:30 / 23:00 JST に自動反映されます。'
-            '</p>'
-            '</section>'
+            '</p></div>'
         )
     avg = _fmt_avg(player.season_avg)
+    boxes = [
+        ("打率", avg, True), ("安打", str(player.season_hits), False),
+        ("打点", str(player.season_rbi), False), ("得点", str(player.season_runs), False),
+        ("盗塁", str(player.season_sb), False), ("試合", str(player.season_games), False),
+        ("打数", str(player.season_ab), False),
+    ]
+    hero = '<div class="ys-hero">' + "".join(
+        f'<div class="b{" main" if main else ""}"><div class="v">{_esc(v)}</div><div class="l">{_esc(l)}</div></div>'
+        for (l, v, main) in boxes
+    ) + '</div>'
+    badges = "".join(
+        f'<span class="ys-tag">{_esc(label)} {rank}位/{total}人中</span>'
+        for (label, _v, rank, total) in (player.metric_ranks or [])
+    )
+    badges_html = (
+        f'<div style="margin:10px 0 0;display:flex;flex-wrap:wrap;gap:6px;">{badges}</div>'
+        if badges else ""
+    )
     return (
-        '<section class="ys-pillar-stats-season" '
-        'style="background:#fff;border:1px solid #eee;padding:14px;margin:0 0 16px;border-radius:4px;">'
-        '<h2 style="font-size:16px;margin:0 0 10px;">今シーズン 通算 (打撃)</h2>'
-        '<table style="width:100%;border-collapse:collapse;font-size:14px;">'
-        '<thead><tr style="background:#fafafa;text-align:center;">'
-        '<th style="padding:8px 6px;">試合</th>'
-        '<th style="padding:8px 6px;">打数</th>'
-        '<th style="padding:8px 6px;">安打</th>'
-        '<th style="padding:8px 6px;">打率</th>'
-        '<th style="padding:8px 6px;">打点</th>'
-        '<th style="padding:8px 6px;">得点</th>'
-        '<th style="padding:8px 6px;">盗塁</th>'
-        '</tr></thead>'
-        '<tbody><tr style="text-align:center;">'
-        f'<td style="padding:8px 6px;">{player.season_games}</td>'
-        f'<td style="padding:8px 6px;">{player.season_ab}</td>'
-        f'<td style="padding:8px 6px;">{player.season_hits}</td>'
-        f'<td style="padding:8px 6px;font-weight:600;color:#1976d2;">{avg}</td>'
-        f'<td style="padding:8px 6px;">{player.season_rbi}</td>'
-        f'<td style="padding:8px 6px;">{player.season_runs}</td>'
-        f'<td style="padding:8px 6px;">{player.season_sb}</td>'
-        '</tr></tbody></table>'
-        '<p style="font-size:11px;color:#999;margin:8px 0 0;">'
-        '※ insight.db 集計 (NPB official box score 由来)、 毎朝 6:00 JST 更新'
-        '</p></section>'
+        '<div class="ys-card">'
+        '<h2>今シーズン 通算 (打撃) <span class="ys-tag">NPB順位</span></h2>'
+        + hero + badges_html +
+        '<p class="ys-foot">※ NPB 全12球団 box score 集計 / 毎朝 6:00 JST 更新。 '
+        '順位は NPB 内 (打率は規定到達者中)。</p>'
+        '</div>'
     )
 
 
@@ -203,29 +252,20 @@ def _build_recent_games_html(player: PillarPlayerInfo) -> str:
     if not player.recent_games:
         return ""
     rows_html = "\n".join(
-        '<tr style="text-align:center;border-bottom:1px solid #eee;">'
-        f'<td style="padding:6px;">{_esc(date)}</td>'
-        f'<td style="padding:6px;">{_esc(opp)}</td>'
-        f'<td style="padding:6px;">{ab}</td>'
-        f'<td style="padding:6px;font-weight:600;">{h}</td>'
-        f'<td style="padding:6px;">{rbi}</td>'
+        '<tr>'
+        f'<td>{_esc(date)}</td><td>{_esc(opp)}</td><td>{ab}</td>'
+        f'<td class="ys-k">{h}</td><td>{rbi}</td>'
         '</tr>'
         for (date, opp, ab, h, rbi) in player.recent_games
     )
     return (
-        '<section class="ys-pillar-recent" '
-        'style="background:#fff;border:1px solid #eee;padding:14px;margin:0 0 16px;border-radius:4px;">'
-        f'<h2 style="font-size:16px;margin:0 0 10px;">直近 {len(player.recent_games)} 試合</h2>'
-        '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
-        '<thead><tr style="background:#fafafa;text-align:center;">'
-        '<th style="padding:8px 6px;">日付</th>'
-        '<th style="padding:8px 6px;">相手</th>'
-        '<th style="padding:8px 6px;">打数</th>'
-        '<th style="padding:8px 6px;">安打</th>'
-        '<th style="padding:8px 6px;">打点</th>'
+        '<div class="ys-card">'
+        f'<h2>直近 {len(player.recent_games)} 試合</h2>'
+        '<table><thead><tr>'
+        '<th>日付</th><th>相手</th><th>打数</th><th>安打</th><th>打点</th>'
         '</tr></thead>'
         f'<tbody>{rows_html}</tbody></table>'
-        '</section>'
+        '</div>'
     )
 
 
@@ -234,34 +274,21 @@ def _build_lineup_slot_html(player: PillarPlayerInfo) -> str:
     if not player.lineup_slot_stats:
         return ""
     rows_html = "\n".join(
-        '<tr style="text-align:center;border-bottom:1px solid #eee;">'
-        f'<td style="padding:6px;font-weight:600;color:#5d4037;">{slot} 番</td>'
-        f'<td style="padding:6px;">{g}</td>'
-        f'<td style="padding:6px;">{ab}</td>'
-        f'<td style="padding:6px;font-weight:600;">{h}</td>'
-        f'<td style="padding:6px;color:#1976d2;font-weight:600;">{_fmt_avg(avg)}</td>'
-        f'<td style="padding:6px;">{rbi}</td>'
+        '<tr>'
+        f'<td class="ys-k">{slot} 番</td><td>{g}</td><td>{ab}</td>'
+        f'<td>{h}</td><td class="ys-avg">{_fmt_avg(avg)}</td><td>{rbi}</td>'
         '</tr>'
         for (slot, g, ab, h, rbi, avg) in player.lineup_slot_stats
     )
     return (
-        '<section class="ys-pillar-lineup-split" '
-        'style="background:#fff;border:1px solid #eee;padding:14px;margin:0 0 16px;border-radius:4px;">'
-        '<h2 style="font-size:16px;margin:0 0 6px;">打順別 成績 <span style="font-size:11px;color:#888;font-weight:normal;">(大手未掲載)</span></h2>'
-        '<p style="font-size:12px;color:#666;margin:0 0 10px;">'
-        'どの打順で起用された時に結果を残せているか、 一目で分かる split data。'
-        '</p>'
-        '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
-        '<thead><tr style="background:#fafafa;text-align:center;">'
-        '<th style="padding:8px 6px;">打順</th>'
-        '<th style="padding:8px 6px;">試合</th>'
-        '<th style="padding:8px 6px;">打数</th>'
-        '<th style="padding:8px 6px;">安打</th>'
-        '<th style="padding:8px 6px;">打率</th>'
-        '<th style="padding:8px 6px;">打点</th>'
+        '<div class="ys-card">'
+        '<h2>打順別 成績 <span class="ys-tag">大手未掲載</span></h2>'
+        '<p class="ys-note">どの打順で起用された時に結果を残せているか、 一目で分かる split data。</p>'
+        '<table><thead><tr>'
+        '<th>打順</th><th>試合</th><th>打数</th><th>安打</th><th>打率</th><th>打点</th>'
         '</tr></thead>'
         f'<tbody>{rows_html}</tbody></table>'
-        '</section>'
+        '</div>'
     )
 
 
@@ -270,34 +297,21 @@ def _build_opponent_split_html(player: PillarPlayerInfo) -> str:
     if not player.opponent_split_stats:
         return ""
     rows_html = "\n".join(
-        '<tr style="text-align:center;border-bottom:1px solid #eee;">'
-        f'<td style="padding:6px;font-weight:600;color:#5d4037;">{_esc(opp)}</td>'
-        f'<td style="padding:6px;">{g}</td>'
-        f'<td style="padding:6px;">{ab}</td>'
-        f'<td style="padding:6px;font-weight:600;">{h}</td>'
-        f'<td style="padding:6px;color:#1976d2;font-weight:600;">{_fmt_avg(avg)}</td>'
-        f'<td style="padding:6px;">{rbi}</td>'
+        '<tr>'
+        f'<td class="ys-k">{_esc(opp)}</td><td>{g}</td><td>{ab}</td>'
+        f'<td>{h}</td><td class="ys-avg">{_fmt_avg(avg)}</td><td>{rbi}</td>'
         '</tr>'
         for (opp, g, ab, h, rbi, avg) in player.opponent_split_stats
     )
     return (
-        '<section class="ys-pillar-opp-split" '
-        'style="background:#fff;border:1px solid #eee;padding:14px;margin:0 0 16px;border-radius:4px;">'
-        '<h2 style="font-size:16px;margin:0 0 6px;">vs 各球団 成績 <span style="font-size:11px;color:#888;font-weight:normal;">(大手未掲載)</span></h2>'
-        '<p style="font-size:12px;color:#666;margin:0 0 10px;">'
-        '対戦相手別の相性。 得意 / 苦手な球団が浮き出る。'
-        '</p>'
-        '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
-        '<thead><tr style="background:#fafafa;text-align:center;">'
-        '<th style="padding:8px 6px;">相手</th>'
-        '<th style="padding:8px 6px;">試合</th>'
-        '<th style="padding:8px 6px;">打数</th>'
-        '<th style="padding:8px 6px;">安打</th>'
-        '<th style="padding:8px 6px;">打率</th>'
-        '<th style="padding:8px 6px;">打点</th>'
+        '<div class="ys-card">'
+        '<h2>vs 各球団 成績 <span class="ys-tag">大手未掲載</span></h2>'
+        '<p class="ys-note">対戦相手別の相性。 得意 / 苦手な球団が浮き出る。</p>'
+        '<table><thead><tr>'
+        '<th>相手</th><th>試合</th><th>打数</th><th>安打</th><th>打率</th><th>打点</th>'
         '</tr></thead>'
         f'<tbody>{rows_html}</tbody></table>'
-        '</section>'
+        '</div>'
     )
 
 
@@ -305,35 +319,16 @@ def _build_venue_split_html(player: PillarPlayerInfo) -> str:
     """本拠地 / ビジター 別 打率 (大手未掲載 metric pack #venue)。"""
     if not player.venue_split_stats:
         return ""
-    rows_html = "\n".join(
-        '<tr style="text-align:center;border-bottom:1px solid #eee;">'
-        f'<td style="padding:6px;font-weight:600;color:#5d4037;">{_esc(venue)}</td>'
-        f'<td style="padding:6px;">{g}</td>'
-        f'<td style="padding:6px;">{ab}</td>'
-        f'<td style="padding:6px;font-weight:600;">{h}</td>'
-        f'<td style="padding:6px;color:#1976d2;font-weight:600;">{_fmt_avg(avg)}</td>'
-        f'<td style="padding:6px;">{rbi}</td>'
-        '</tr>'
+    bars = "".join(
+        _split_bar(venue, avg, f"{h}/{ab}・{g}試合")
         for (venue, g, ab, h, rbi, avg) in player.venue_split_stats
     )
     return (
-        '<section class="ys-pillar-venue-split" '
-        'style="background:#fff;border:1px solid #eee;padding:14px;margin:0 0 16px;border-radius:4px;">'
-        '<h2 style="font-size:16px;margin:0 0 6px;">本拠地 / ビジター 別 成績 <span style="font-size:11px;color:#888;font-weight:normal;">(大手未掲載)</span></h2>'
-        '<p style="font-size:12px;color:#666;margin:0 0 10px;">'
-        '東京ドーム (本拠地) と 敵地 (ビジター) でどう違うか。 home / away の相性が見える split data。'
-        '</p>'
-        '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
-        '<thead><tr style="background:#fafafa;text-align:center;">'
-        '<th style="padding:8px 6px;">球場</th>'
-        '<th style="padding:8px 6px;">試合</th>'
-        '<th style="padding:8px 6px;">打数</th>'
-        '<th style="padding:8px 6px;">安打</th>'
-        '<th style="padding:8px 6px;">打率</th>'
-        '<th style="padding:8px 6px;">打点</th>'
-        '</tr></thead>'
-        f'<tbody>{rows_html}</tbody></table>'
-        '</section>'
+        '<div class="ys-card">'
+        '<h2>本拠地 / ビジター 別 打率 <span class="ys-tag">大手未掲載</span></h2>'
+        '<p class="ys-note">東京ドーム (本拠地) と 敵地 (ビジター) でどう違うか。 home / away の相性が見える。</p>'
+        f'<div class="ys-bars">{bars}</div>'
+        '</div>'
     )
 
 
@@ -341,36 +336,74 @@ def _build_inning_split_html(player: PillarPlayerInfo) -> str:
     """序盤 / 中盤 / 終盤 別 打率 (大手未掲載 metric pack #5 inning)。"""
     if not player.inning_split_stats:
         return ""
-    rows_html = "\n".join(
-        '<tr style="text-align:center;border-bottom:1px solid #eee;">'
-        f'<td style="padding:6px;font-weight:600;color:#5d4037;">{_esc(phase)}</td>'
-        f'<td style="padding:6px;">{ab}</td>'
-        f'<td style="padding:6px;font-weight:600;">{h}</td>'
-        f'<td style="padding:6px;color:#1976d2;font-weight:600;">{_fmt_avg(avg)}</td>'
-        '</tr>'
-        for (phase, ab, h, avg) in player.inning_split_stats
-    )
+    bars = "".join(_split_bar(phase, avg, f"{h}/{ab}") for (phase, ab, h, avg) in player.inning_split_stats)
     return (
-        '<section class="ys-pillar-inning-split" '
-        'style="background:#fff;border:1px solid #eee;padding:14px;margin:0 0 16px;border-radius:4px;">'
-        '<h2 style="font-size:16px;margin:0 0 6px;">序盤 / 中盤 / 終盤 別 打率 <span style="font-size:11px;color:#888;font-weight:normal;">(大手未掲載)</span></h2>'
-        '<p style="font-size:12px;color:#666;margin:0 0 10px;">'
-        '序盤 (1〜3回) / 中盤 (4〜6回) / 終盤 (7〜9回) でどう変わるか。 '
-        '立ち上がりに強いか、 終盤の勝負どころで打てるかが見える split data。'
-        '</p>'
-        '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
-        '<thead><tr style="background:#fafafa;text-align:center;">'
-        '<th style="padding:8px 6px;">時間帯</th>'
-        '<th style="padding:8px 6px;">打数</th>'
-        '<th style="padding:8px 6px;">安打</th>'
-        '<th style="padding:8px 6px;">打率</th>'
-        '</tr></thead>'
-        f'<tbody>{rows_html}</tbody></table>'
-        '<p style="font-size:11px;color:#999;margin:8px 0 0;">'
-        '※ イニング別打席記録から集計。 同一回に2打席ある場合は1打席に圧縮されるため、 '
-        '総打数は実数を僅かに下回ることがあります。'
-        '</p>'
-        '</section>'
+        '<div class="ys-card">'
+        '<h2>序盤 / 中盤 / 終盤 別 打率 <span class="ys-tag">大手未掲載</span></h2>'
+        '<p class="ys-note">序盤 (1〜3回) / 中盤 (4〜6回) / 終盤 (7〜9回) でどう変わるか。 '
+        '立ち上がりに強いか、 終盤の勝負どころで打てるかが見える。</p>'
+        f'<div class="ys-bars">{bars}</div>'
+        '<p class="ys-foot">※ イニング別打席記録から集計。 同一回に2打席ある場合は1打席に圧縮されるため、 '
+        '総打数は実数を僅かに下回ることがあります。</p>'
+        '</div>'
+    )
+
+
+def _build_weekday_split_html(player: PillarPlayerInfo) -> str:
+    """曜日別 打率 (Phase B 452、大手未掲載)。"""
+    if not player.weekday_split_stats:
+        return ""
+    bars = "".join(_split_bar(f"{lbl}曜", avg, f"{h}/{ab}・{g}試合")
+                   for (lbl, g, ab, h, avg) in player.weekday_split_stats)
+    return (
+        '<div class="ys-card">'
+        '<h2>曜日別 打率 <span class="ys-tag">大手未掲載</span></h2>'
+        '<p class="ys-note">デーゲーム多めの土日 / ナイターの平日 でどう違うか。</p>'
+        f'<div class="ys-bars">{bars}</div>'
+        '</div>'
+    )
+
+
+def _build_month_split_html(player: PillarPlayerInfo) -> str:
+    """月別 打率 (Phase B 452)。"""
+    if not player.month_split_stats:
+        return ""
+    bars = "".join(_split_bar(lbl, avg, f"{h}/{ab}・{g}試合")
+                   for (lbl, g, ab, h, avg) in player.month_split_stats)
+    return (
+        '<div class="ys-card">'
+        '<h2>月別 打率 <span class="ys-tag">大手未掲載</span></h2>'
+        '<p class="ys-note">シーズンを通した調子の波。 今が上り調子か下降か。</p>'
+        f'<div class="ys-bars">{bars}</div>'
+        '</div>'
+    )
+
+
+def _build_interleague_split_html(player: PillarPlayerInfo) -> str:
+    """交流戦 / リーグ戦 別 打率 (Phase B 452)。"""
+    if not player.interleague_split_stats:
+        return ""
+    bars = "".join(_split_bar(lbl, avg, f"{h}/{ab}・{g}試合")
+                   for (lbl, g, ab, h, avg) in player.interleague_split_stats)
+    return (
+        '<div class="ys-card">'
+        '<h2>交流戦 / リーグ戦 別 打率 <span class="ys-tag">大手未掲載</span></h2>'
+        '<p class="ys-note">パ相手の交流戦と、 セ内のリーグ戦での違い。</p>'
+        f'<div class="ys-bars">{bars}</div>'
+        '</div>'
+    )
+
+
+def _split_bar(name: str, avg: Optional[float], sub: str) -> str:
+    """split 1 行を横棒バーで描く。 幅は打率 (.400 で満杯) に比例。"""
+    a = avg or 0.0
+    w = max(2.0, min(100.0, a / 0.400 * 100.0))
+    return (
+        '<div class="ys-bar">'
+        f'<div class="nm">{_esc(name)}</div>'
+        f'<div class="tr"><div class="fl" style="width:{w:.0f}%"></div></div>'
+        f'<div class="vl">{_fmt_avg(avg)}<div class="sub">{_esc(sub)}</div></div>'
+        '</div>'
     )
 
 
@@ -819,6 +852,9 @@ def render_pillar_html(player: PillarPlayerInfo) -> str:
             _build_opponent_split_html(player),
             _build_venue_split_html(player),
             _build_inning_split_html(player),
+            _build_weekday_split_html(player),
+            _build_month_split_html(player),
+            _build_interleague_split_html(player),
         ]
     sections = [
         _build_lead_html(player),
@@ -831,7 +867,9 @@ def render_pillar_html(player: PillarPlayerInfo) -> str:
         _build_back_link_html(),
         _build_jsonld(player),
     ]
-    return "\n".join(s for s in sections if s)
+    body = "\n".join(s for s in sections if s)
+    # 巨人=オレンジの scoped デザインシステムでページ全体を包む (453/452 デザイン刷新)。
+    return _build_style_block() + '\n<div class="ys-data">\n' + body + "\n</div>"
 
 
 # SEO long-tail 用シーズン表記。 毎シーズンこの 1 行を置換するだけ

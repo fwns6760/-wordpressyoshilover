@@ -17,6 +17,7 @@ import logging
 import os
 import sqlite3
 from dataclasses import dataclass, field
+from datetime import date
 from pathlib import Path
 from typing import Optional
 
@@ -856,6 +857,122 @@ def fetch_opponent_split_stats(player_canonical: str) -> list[OpponentSplitStat]
     ]
 
 
+@dataclass
+class SplitStat:
+    """汎用スプリット集計 (曜日別 / 月別 / 交流戦別、Phase B 452)。"""
+    label: str
+    games: int
+    ab: int
+    hits: int
+
+    @property
+    def avg(self) -> Optional[float]:
+        return (self.hits / self.ab) if self.ab > 0 else None
+
+
+_PA_TEAM_CODES = {"h", "f", "m", "l", "e", "b"}  # NPB.jp パ6球団コード(交流戦判定)
+_WEEKDAY_JP = ["月", "火", "水", "木", "金", "土", "日"]
+
+
+def _fetch_player_game_rows(player_canonical: str) -> list[tuple]:
+    """選手の (game_id, game_date, AB, H) を返す(曜日/月/交流戦 split 共通の素)。"""
+    path = _ensure_insight_db_local()
+    if not path:
+        return []
+    try:
+        with sqlite3.connect(path) as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT b.game_id, g.game_date, COALESCE(b.AB,0), COALESCE(b.H,0)
+                FROM batting_logs b JOIN games g ON b.game_id = g.game_id
+                WHERE b.player_canonical = ? AND g.game_date IS NOT NULL
+                """,
+                (player_canonical,),
+            )
+            return cur.fetchall()
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("_fetch_player_game_rows err player=%s: %r", player_canonical, exc)
+        return []
+
+
+def _bucket_splits(rows: list[tuple], key_fn, order: list[str]) -> list[SplitStat]:
+    """rows を key_fn でバケットし、order 順で SplitStat 化(打数0は省く)。"""
+    agg: dict[str, list[int]] = {}
+    for game_id, game_date, ab, h in rows:
+        k = key_fn(game_id, game_date)
+        if k is None:
+            continue
+        b = agg.setdefault(k, [set(), 0, 0])
+        b[0].add(game_id)
+        b[1] += int(ab or 0)
+        b[2] += int(h or 0)
+    out: list[SplitStat] = []
+    keys = order if order else sorted(agg.keys())
+    for k in keys:
+        if k not in agg:
+            continue
+        games, ab, h = len(agg[k][0]), agg[k][1], agg[k][2]
+        if ab == 0:
+            continue
+        out.append(SplitStat(label=k, games=games, ab=ab, hits=h))
+    return out
+
+
+def _opp_code(game_id: str) -> Optional[str]:
+    """game_id から巨人の対戦相手コードを返す。"""
+    if not game_id or ":" not in game_id:
+        return None
+    parts = game_id.partition(":")[2].split("-")
+    if len(parts) < 2:
+        return None
+    home, away = parts[0], parts[1]
+    if home == "g":
+        return away
+    if away == "g":
+        return home
+    return None
+
+
+def fetch_weekday_split_stats(player_canonical: str) -> list[SplitStat]:
+    """曜日別 打撃集計 (Phase B 452、大手未掲載・追加source無し)。"""
+    rows = _fetch_player_game_rows(player_canonical)
+
+    def key(_gid, gdate):
+        try:
+            return _WEEKDAY_JP[date.fromisoformat(str(gdate)[:10]).weekday()]
+        except ValueError:
+            return None
+
+    return _bucket_splits(rows, key, _WEEKDAY_JP)
+
+
+def fetch_month_split_stats(player_canonical: str) -> list[SplitStat]:
+    """月別 打撃集計 (Phase B 452)。"""
+    rows = _fetch_player_game_rows(player_canonical)
+
+    def key(_gid, gdate):
+        try:
+            return f"{int(str(gdate)[5:7])}月"
+        except (ValueError, IndexError):
+            return None
+
+    return _bucket_splits(rows, key, [f"{m}月" for m in range(3, 12)])
+
+
+def fetch_interleague_split_stats(player_canonical: str) -> list[SplitStat]:
+    """交流戦 / リーグ戦 別 打撃集計 (Phase B 452、対戦相手コードから判定)。"""
+    rows = _fetch_player_game_rows(player_canonical)
+
+    def key(gid, _gdate):
+        opp = _opp_code(gid)
+        if opp is None:
+            return None
+        return "交流戦" if opp in _PA_TEAM_CODES else "リーグ戦"
+
+    return _bucket_splits(rows, key, ["リーグ戦", "交流戦"])
+
+
 def giants_venue_from_game_id(game_id: str) -> Optional[str]:
     """game_id から 巨人視点の home/away を返す ('home' / 'away' / None)。
 
@@ -957,6 +1074,61 @@ def _classify_atbat(cell: str) -> tuple[bool, bool]:
         return (False, False)
     is_hit = t.endswith("安") or ("本" in t) or t.endswith("２") or t.endswith("３")
     return (True, is_hit)
+
+
+def fetch_player_npb_ranks(player_canonical: str, *, min_ab_for_avg: int = 30) -> list[tuple]:
+    """453: 選手の NPB 全 12 球団内 順位を返す (打点 / 打率 / 安打)。
+
+    advanced_metric_snapshots の season scope は規定到達者のみ (巨人 2 名) で疎なため、
+    batting_logs (全 12 球団) から read-side で NPB-wide rank を自前計算する。
+    Returns ``[(label, value_str, rank, total), ...]``。 該当しない指標は省く。
+    打率は AB>=min_ab_for_avg を母集団とする (規定打席の簡易代替)。
+    """
+    path = _ensure_insight_db_local()
+    if not path:
+        return []
+    try:
+        with sqlite3.connect(path) as conn:
+            cur = conn.cursor()
+            rows = cur.execute(
+                "SELECT player_canonical, COALESCE(SUM(AB),0), COALESCE(SUM(H),0), COALESCE(SUM(RBI),0) "
+                "FROM batting_logs WHERE player_canonical IS NOT NULL GROUP BY player_canonical"
+            ).fetchall()
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("fetch_player_npb_ranks err player=%s: %r", player_canonical, exc)
+        return []
+    agg = [(p, int(ab), int(h), int(rbi)) for (p, ab, h, rbi) in rows if int(ab or 0) > 0]
+    if not agg:
+        return []
+
+    def _rank(sorted_players: list[tuple], name: str) -> Optional[tuple[int, int]]:
+        for i, t in enumerate(sorted_players, 1):
+            if t[0] == name:
+                return i, len(sorted_players)
+        return None
+
+    out: list[tuple] = []
+    # 打点 (全 AB>0)
+    by_rbi = sorted(agg, key=lambda x: -x[3])
+    r = _rank(by_rbi, player_canonical)
+    if r and r[0] <= r[1]:
+        rbi = next((x[3] for x in agg if x[0] == player_canonical), 0)
+        out.append(("打点", str(rbi), r[0], r[1]))
+    # 安打 (全 AB>0)
+    by_h = sorted(agg, key=lambda x: -x[2])
+    r = _rank(by_h, player_canonical)
+    if r:
+        h = next((x[2] for x in agg if x[0] == player_canonical), 0)
+        out.append(("安打", str(h), r[0], r[1]))
+    # 打率 (AB>=min_ab_for_avg)
+    qual = [(p, ab, h, h / ab) for (p, ab, h, rbi) in agg if ab >= min_ab_for_avg]
+    by_avg = sorted(qual, key=lambda x: -x[3])
+    r = _rank(by_avg, player_canonical)
+    if r:
+        avg = next((x[3] for x in qual if x[0] == player_canonical), 0.0)
+        avg_s = f"{avg:.3f}".lstrip("0") if avg < 1 else f"{avg:.3f}"
+        out.append(("打率", avg_s, r[0], r[1]))
+    return out
 
 
 def fetch_inning_split_stats(player_canonical: str) -> list[InningSplitStat]:
@@ -1246,6 +1418,10 @@ __all__ = [
     "fetch_venue_split_stats",
     "giants_venue_from_game_id",
     "fetch_inning_split_stats",
+    "SplitStat",
+    "fetch_weekday_split_stats",
+    "fetch_month_split_stats",
+    "fetch_interleague_split_stats",
     "fetch_hit_streak",
     "fetch_contribution_streak",
     "fetch_pitching_stats_season",

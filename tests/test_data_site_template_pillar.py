@@ -96,8 +96,9 @@ class RenderPillarHtmlTests(unittest.TestCase):
         # SSP の auto description が breadcrumb ではなく lead 文で始まるよう、
         # lead <p> が breadcrumb より前に出ること
         html = render_pillar_html(self.player)
-        self.assertIn('class="ys-pillar-lead"', html)
-        self.assertLess(html.index("ys-pillar-lead"), html.index("ys-breadcrumb"))
+        self.assertIn('class="ys-lead"', html)
+        # 要素の出現順 (style block の CSS セレクタでなく実マークアップ) で比較
+        self.assertLess(html.index('class="ys-lead"'), html.index('class="ys-bc"'))
 
     def test_featured_image_included(self) -> None:
         html = render_pillar_html(self.player)
@@ -160,7 +161,7 @@ class RenderPillarHtmlTests(unittest.TestCase):
             ("ビジター", 7, 27, 9, 3, 9 / 27),
         ]
         html = render_pillar_html(p)
-        self.assertIn("ys-pillar-venue-split", html)
+        self.assertIn("ys-bar", html)  # 横棒バー可視化
         self.assertIn("本拠地", html)
         self.assertIn("ビジター", html)
         self.assertIn("大手未掲載", html)
@@ -179,7 +180,7 @@ class RenderPillarHtmlTests(unittest.TestCase):
             ("終盤", 28, 8, 8 / 28),
         ]
         html = render_pillar_html(p)
-        self.assertIn("ys-pillar-inning-split", html)
+        self.assertIn("ys-bar", html)  # 横棒バー可視化
         self.assertIn("序盤", html)
         self.assertIn("中盤", html)
         self.assertIn("終盤", html)

@@ -38,6 +38,10 @@ from src.data_site_query import (
     fetch_opponent_split_stats,
     fetch_venue_split_stats,
     fetch_inning_split_stats,
+    fetch_weekday_split_stats,
+    fetch_month_split_stats,
+    fetch_interleague_split_stats,
+    fetch_player_npb_ranks,
     fetch_pitching_stats_season,
     fetch_recent_games,
     fetch_recent_pitching_games,
@@ -265,6 +269,18 @@ def _build_pillar_info(player_name: str) -> PillarPlayerInfo | None:
         (i.phase, i.ab, i.hits, i.avg)
         for i in fetch_inning_split_stats(player_name)
     ]
+    # Phase B (452): 曜日別 / 月別 / 交流戦別
+    info.weekday_split_stats = [
+        (s.label, s.games, s.ab, s.hits, s.avg) for s in fetch_weekday_split_stats(player_name)
+    ]
+    info.month_split_stats = [
+        (s.label, s.games, s.ab, s.hits, s.avg) for s in fetch_month_split_stats(player_name)
+    ]
+    info.interleague_split_stats = [
+        (s.label, s.games, s.ab, s.hits, s.avg) for s in fetch_interleague_split_stats(player_name)
+    ]
+    # 453: NPB 全12球団内 順位バッジ (打点/安打/打率)
+    info.metric_ranks = fetch_player_npb_ranks(player_name)
     # Phase 1.0b1 streak
     hit_streak = fetch_hit_streak(player_name)
     info.hit_streak_active = hit_streak.active

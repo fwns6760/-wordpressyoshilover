@@ -432,13 +432,16 @@ Cloud Scheduler `rival-account-analysis-monthly` (毎月 1 日 09:00 JST)。 X A
 - RPD 超過時は ② だけ graceful skip、 ① は必ず出る
 - 量は ① (安全・量産)、 刺すのは ② (エンゲージ)
 
-### 実装計画 (土台は既存、 小規模)
+### 実装済み (2026-06-01 LIVE、 commit `48effb8` / image `2pattern-48effb8`)
 
-- **新設**: `build_player_comment_candidate` (① コメント速報。 `fetch_og_image` の `html_text` +
-  `extract_long_quote` + `_resolve_speaker_aliases` を流用、 LLM 不使用)
-- **変更**: data-split を chikupn2896 式 たんぱく に (フーガ lead=comment_fn を外し `【名前】数字+客観文脈`)
-- **配線**: news 記事は ① (quote→コメント / 速報語→速報) と ② (フーガ意見) を併産
+- ✅ **新設**: `build_player_comment_candidate` (`x_post_mail_lane.py`、 metric `PLAYER_COMMENT`)。
+  記事 HTML から本人発言を `extract_long_quote` (min_chars=40) + `_resolve_speaker_aliases` (監督コーチ込み) で
+  literal 抽出、 **LLM 不使用**。 コメント主役: 80字以上は `【名前】「発言」` だけ、 短ければ状況 1 行前置き
+- ✅ **変更**: data-split を chikupn2896 式 たんぱく に (`【名前】split数字 + 客観文脈`、 フーガ lead=comment_fn 撤去)
+- ✅ **配線**: news fallback で記事 HTML を fetch し、 ①コメント速報 と ②(news_opinion) を**併産**
+  (user「値段一緒なら両方」、 ① は ¥0/LLM 不使用、 全 graceful skip)
 - **不可触 (完成済)**: 画像 (438/437) / 動画 (video radar) / 記録・成績取得 / voice (フーガ缶詰)
+- 検証: test 154 + コメントbuilder 3 pass。 竹丸和幸コメントで `【竹丸和幸】「…思ったよりいけるなと…」` 生成確認
 
 ## :material-folder-file: 関連 file
 

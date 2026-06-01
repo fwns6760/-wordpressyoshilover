@@ -2,7 +2,9 @@
 
 - **種別**: 実装 / **priority**: P1 / **effort**: S〜M
 - **親**: 443 / 設計: `455...md` §13-2 / **447 を re-scope**(過大見積を是正)/ GH: #121
-- **status**: READY
+- **status**: LIVE_DEPLOYED_VERIFIED (2026-06-01)
+- **実績**: commit `75c90ec`(457 batter)+ `c3f14c9`(hit regex fix → `insight-nightly:hit-fix-c3f14c9` deploy)。image `data-site-publisher:vslr-risp-75c90ec`、Job 更新 + execute SUCCESS。data-site test 95 passed(regression 0)。verify = WP REST page 73527(吉川)に「得点圏 打率」「対左 / 対右投手 別 打率」反映確認(modified 2026-06-01 21:28 JST)。read-side(姓prefix一致+代打除去)で **batter_canonical backfill 不要** で解決。447 の「backfill必須でBLOCKED」見立てを覆して CLOSE。
+- **既知の限界(記録)**: vs左右 は current_pitcher 充足分のみ(prod ~42%)。同姓選手は at_bat_details 上区別不能(batter_canonical backfill が恒久解、別途)。
 
 ## 背景(深掘りで 447 の見立てを訂正)
 

@@ -2,11 +2,12 @@
 
 - **種別**: 実装 / **priority**: P2 / **effort**: M
 - **親**: 443 / 設計: `455...md` §13-3 / **454(standings-etl)を包含/再編** / GH: #123
-- **status**: PARTIAL_LIVE_VERIFIED (2026-06-01) — チーム成績カードは LIVE、 順位表/未来試合は data-block
+- **status**: LIVE_VERIFIED (2026-06-02) — チーム成績 + セ順位表 + 今後の試合 全 LIVE(予告先発のみ残)
 - **実績(feasible部)**: commit `bb78d24`、image `data-site-publisher:team-record-bb78d24`、execute SUCCESS。/data/team に「巨人 チーム成績」カード(勝敗分/勝率/得点失点/得失点差/連勝連敗/本拠地ビジター別)。verify = page 76294 に 26-24-2 / .520 / 得失点差-17 / 1連敗 / 本拠地13-14・ビジター13-10 反映確認。data-site test 99 passed。
 - **data-block(未対応・要 source)**:
   - ~~**セ6球団 順位表**: standings_snapshots 空~~ → **解決(2026-06-01)**: 「データブロック」は誤り。NPB公式(`npb.jp/bis/YYYY/stats/std_c.html`)を `fetch_npb_cl_standings` で scrape して LIVE 化(commit `0dc7f173`、image `standings-0dc7f173`、/data/team page に順位表反映確認: 1ヤクルト/2阪神/3巨人.519差4.5…)。standings_snapshots に依存せず read-side scrape。**教訓: 「取れない」を source 未確認で断言しない**。
-  - **未来試合 / 予告先発**: `games` は max=当日まで・予告先発カラム無し → NPB日程ページ scrape で取得可能(順位表と同パターン、follow-up)。これも「取れない」でなく「未実装」。
+  - ~~**未来試合**: games に無し~~ → **解決(2026-06-02)**: NPB公式日程(`schedule_MM_detail.html`)を `fetch_giants_upcoming` で scrape → /data/schedule に「今後の試合」LIVE(commit `d6dece5d`、実 NPB で 06/02-07 オリックス/ロッテ戦 時刻含め正確取得)。
+  - **予告先発(のみ残)**: 月間日程ページの pit セルは空(当日設定 or 別ページ)→ 専用 source 要(唯一の真の follow-up、これも「取れない」でなく source 未特定)。
   - チーム打撃投手守備のフル集計列(得点圏/盗塁/出塁率 等)は logs から追加集計で拡張可能(follow-up)。
 
 ## 背景(深掘り・実取得)

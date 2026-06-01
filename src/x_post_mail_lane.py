@@ -1547,6 +1547,52 @@ def build_data_split_candidates(
 _VIDEO_RADAR_METRIC = "x_buzz_post"
 
 
+def _x_buzz_event_comment(text: str, player: str) -> str:
+    """451: 引用元 X 投稿の「出来事」に反応する引用RTコメントを返す (LLM 不使用)。
+
+    元投稿に事実 (完投 / 特大HR / 奪三振数 等) が書いてあるので、 それを拾って
+    ヨシラバー voice (ファン目線・フルネーム・敬称なし・hashtag 無し) で反応する。
+    シーズン平均など出来事と無関係な数字は貼らない (矛盾を避ける)。
+    """
+    t = text or ""
+    who = (player or "巨人").strip()
+
+    def _grab(pat: str) -> str:
+        m = _re.search(pat, t)
+        return m.group(0) if m else ""
+
+    if "完封" in t:
+        head = "プロ初完封" if ("初完封" in t) else "完封"
+        return f"{who}、{head}…！ねじ伏せたな。"
+    if "完投" in t:
+        if "初完投" in t or "プロ初" in t:
+            return f"{who}、プロ初完投おめでとう…！最後まで投げ切る姿、しびれた。"
+        return f"{who}、完投…！スタミナも気持ちも見せてくれた。"
+    if "サヨナラ" in t:
+        return f"{who}、サヨナラ…！これだから野球はやめられない。"
+    if any(k in t for k in ("ホームラン", "本塁打", "アーチ", "一発", "弾")):
+        adj = "特大の" if ("特大" in t or "場外" in t or "弾丸" in t) else ""
+        farm = "二軍で" if any(f in t for f in ("二軍", "ファーム", "イースタン")) else ""
+        return f"{who}、{farm}{adj}一発…！この打球は効くわ。"
+    k = _grab(r"\d+奪三振")
+    inn = _grab(r"\d+回")
+    if k or any(p in t for p in ("好投", "無失点", "粘投", "力投", "三者凡退")):
+        detail = "・".join(x for x in (inn, k) if x)
+        lead = f"{detail}の好投" if detail else "好投"
+        return f"{who}、{lead}…！痺れた。"
+    if any(p in t for p in ("猛打賞", "マルチ", "固め打ち", "3安打", "４安打", "4安打")):
+        return f"{who}、止まらない打撃…！この調子で頼む。"
+    if any(p in t for p in ("タイムリー", "適時", "決勝打", "勝ち越し", "値千金")):
+        return f"{who}、効いた一打…！これは大きい。"
+    if any(p in t for p in ("ファインプレー", "好守", "好返球", "美技", "好捕")):
+        return f"{who}、この守備が効くんだよな…！"
+    if any(p in t for p in ("初登板", "初先発", "初勝利", "初安打", "初打点", "初本塁打", "初", "復帰", "昇格", "1軍", "一軍")):
+        return f"{who}、ここから乗っていってほしい…！"
+    if any(p in t for p in ("勝利", "連勝", "勝ち越", "快勝", "勝った")):
+        return f"{who}、ナイスゲーム…！この勢いで。"
+    return f"{who}、これは見ておきたい一件。"
+
+
 def _x_buzz_player_fact(db_path: Optional[str], canonical: str) -> str:
     """451: 引用RT コメントを濃くするため、 insight.db から選手の今季実数字を 1 行で返す。
 
@@ -1591,6 +1637,7 @@ def build_video_radar_candidates(
     dedup_set: Optional[set[str]] = None,
     fetch_fn=None,
     min_score: int = 2,
+    comment_fn=None,
 ) -> list[Candidate]:
     """451: 巨人系 X account の投稿 (RSSHub 経由) から「懐かしい・ファンが面白い・いま話題」の
     投稿を拾い、 **引用RT / リプライ** 用の X 投稿候補 (メール) を作る。
@@ -1652,22 +1699,19 @@ def build_video_radar_candidates(
         tag = p["type_tag"]
         src_text = _truncate_text(str(p.get("text") or "").replace("\n", " ").strip(), 140)
         handle = p.get("handle", "")
-        # 引用RT コメント案 — ヨシラバー voice (ファン目線・フルネーム・敬称なし・媒体ぶらず
-        # hashtag 無し)。 内容を濃くするため insight.db の今季実数字を 1 行差し込む
-        # (LLM 不使用、 Gemini 増やさない)。 native (本文に外部リンク無し、 引用元は quote)。
-        who = player or "巨人"
+        # 引用RT コメント案 — まず LLM (comment_fn、 Gemini 3.1 Flash Lite) で元投稿に反応した
+        # ヨシラバー voice を生成。 失敗 / 未設定なら LLM なしの出来事 template に fallback
+        # (graceful)。 どちらも 出来事と無関係なシーズン平均は本文に貼らない (矛盾回避)。
+        post_text = ""
+        if comment_fn:
+            try:
+                post_text = (comment_fn(p.get("text", ""), player) or "").strip()
+            except Exception as exc:  # noqa: BLE001
+                LOG.info("x_buzz comment_fn failed: %r", exc)
+                post_text = ""
+        if not post_text:
+            post_text = _x_buzz_event_comment(p.get("text", ""), player)
         fact = _x_buzz_player_fact(db_path, player) if player else ""
-        fact_clause = f"{fact}。" if fact else ""
-        if tag == "Xで話題" and player:
-            post_text = f"いま X で話題の{player}。{fact_clause}この勢い、見逃せない。"
-        elif tag == "懐かし・名場面":
-            post_text = f"これは懐かしい…！{who}のこの場面、{fact_clause}何度見てもいいなあ。"
-        elif tag == "好プレー・反応" and player:
-            post_text = f"{player}、ナイスプレー…！{fact_clause}こういうの効くんだよな。"
-        elif player:
-            post_text = f"{player}、{fact_clause}ここから乗っていってほしい。"
-        else:
-            post_text = "巨人、今日も見逃せない動きがあるね。"
         draft = "\n".join([
             f"【引用RT候補: {tag}】",
             f"検出選手: {player or '(なし)'}",
@@ -1677,6 +1721,7 @@ def build_video_radar_candidates(
             "【引用RTコメント案 (native・外部リンク無し=リーチ維持)】",
             post_text,
             "",
+            f"参考 (今季): {fact}" if fact else "",
             "※ X 内で完結 (元投稿を引用RT または リプライ)。 本文に YouTube 等の外部リンクを貼らない",
             "  (外部リンクは X でリーチが落ちるため)。 動画ファイルの転載はしない。",
         ])

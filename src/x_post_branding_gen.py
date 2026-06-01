@@ -1083,6 +1083,59 @@ def build_team_roundup_candidate(
     )
 
 
+def build_quote_rt_comment(
+    post_text: str,
+    player: str,
+    *,
+    gemini_api_key: str,
+    model_id: str = _GEMMA_BRANDING_MODEL,
+    temperature: float = 0.9,
+) -> str:
+    """451: X バズ投稿への引用RTコメントを Gemini 3.1 Flash Lite で生成 (ヨシラバー voice)。
+
+    元投稿の出来事に反応する短文。 失敗 / safety NG / 捏造数字 / api_key 無し → 空文字
+    (caller は LLM なしの出来事 template に fallback する)。 投稿に無い数字は hallucination
+    として破棄 (verified_text = 元投稿 + 選手名)。
+    """
+    src = (post_text or "").strip()
+    who = (player or "").strip()
+    if not src or not gemini_api_key:
+        return ""
+    prompt = "\n".join([
+        "あなたは巨人を応援する一人のファン。次の X 投稿を見て、引用RT する時の短いコメントを書く。",
+        "ルール:",
+        "- 投稿の出来事に素直に一喜一憂する。実況や編集者ぶった俯瞰・煽りはしない。",
+        f"- 選手はフルネーム（例: {who}）。「さん」「君」などの敬称はつけない。",
+        "- ハッシュタグ・メディア名・URL は書かない。",
+        "- 投稿に書いていない数字・事実を足さない（捏造禁止）。",
+        "- 40〜90字程度。コメント本文のみ出力（前置き・説明・引用符なし）。",
+        "",
+        f"対象選手: {who or '(不明)'}",
+        f"X 投稿: 「{src}」",
+        "",
+        "引用RTコメント:",
+    ])
+    try:
+        from google import genai
+        client = genai.Client(api_key=gemini_api_key)
+        response = client.models.generate_content(
+            model=model_id, contents=prompt, config={"temperature": temperature},
+        )
+        text = (getattr(response, "text", None) or "").strip()
+    except Exception as exc:  # noqa: BLE001 - silent skip, caller falls back to template
+        log.warning("quote_rt_comment_skip reason=gemini_error err=%r", exc)
+        return ""
+    text = _finalize_post_text(text)
+    if not text or not _gemma_branding_safety_check(text):
+        log.warning("quote_rt_comment_skip reason=safety_or_empty preview=%r", text[:60])
+        return ""
+    if _extract_unverified_numbers(text, f"{src} {who}"):
+        log.warning("quote_rt_comment_skip reason=unverified_number text=%r", text[:60])
+        return ""
+    log.info("quote_rt_comment_built player=%s text_len=%d", who, len(text))
+    return text
+
+
 def today_str(now_jst) -> str:
     """Helper for signature hashing (separate function to keep build_team_roundup_candidate readable)."""
     return now_jst.strftime("%Y-%m-%d")

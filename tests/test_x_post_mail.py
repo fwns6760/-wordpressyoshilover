@@ -3261,6 +3261,27 @@ class BuildVideoRadarCandidatesTests(unittest.TestCase):
         self.assertIn("url=", url)  # 引用元ツイートが quote として開く
         self.assertIn("status%2F9", url)  # url= は percent-encoded
 
+    def test_comment_fn_llm_used_when_nonempty(self):
+        from src import x_post_mail_lane as lane
+        with self._detect_patch():
+            cands = lane.build_video_radar_candidates(
+                db_path=None, max_count=3, fetch_fn=lambda url: self._FEED,
+                comment_fn=lambda pt, pl: f"{pl}、最高だ！",
+            )
+        self.assertEqual(len(cands), 1)
+        self.assertEqual(cands[0].post_text, "坂本勇人、最高だ！")  # LLM 出力を採用
+
+    def test_comment_fn_empty_falls_back_to_template(self):
+        from src import x_post_mail_lane as lane
+        with self._detect_patch():
+            cands = lane.build_video_radar_candidates(
+                db_path=None, max_count=3, fetch_fn=lambda url: self._FEED,
+                comment_fn=lambda pt, pl: "",  # LLM 失敗 → template fallback
+            )
+        self.assertEqual(len(cands), 1)
+        self.assertIn("坂本勇人", cands[0].post_text)  # 出来事 template が効く
+        self.assertNotIn("http", cands[0].post_text)
+
     def test_dedup_set_skips(self):
         from src import x_post_mail_lane as lane
         with self._detect_patch():

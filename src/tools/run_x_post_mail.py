@@ -187,6 +187,16 @@ def _video_radar_max_per_run() -> int:
     return _resolve_int_env("X_POST_VIDEO_RADAR_MAX", 3, min_value=0)
 
 
+def _video_radar_llm_enabled() -> bool:
+    """451: 引用RTコメントを Gemini 3.1 Flash Lite で生成するか (default OFF)。
+
+    OFF なら LLM なしの出来事 template (¥0)。 ON で品質優先 (既存 branding と同 model、
+    従量課金。 2026-05-22 ルールに従い deploy 後 billing 実測)。
+    """
+    raw = (os.environ.get("ENABLE_X_POST_VIDEO_RADAR_LLM") or "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
 def _gemma_branding_enabled() -> bool:
     """392: env flag for Gemma 4 + Tavily REST branding candidate.
 
@@ -1544,12 +1554,27 @@ def main(argv: Sequence[str] | None = None) -> int:
     if _video_radar_enabled():
         vr_max = _video_radar_max_per_run()
         if vr_max > 0:
+            # 451: 品質優先で引用RTコメントを Gemini 3.1 Flash Lite で生成 (flag ON 時)。
+            # 失敗時は build_video_radar_candidates 内で LLM なし出来事 template に fallback。
+            vr_comment_fn = None
+            if _video_radar_llm_enabled():
+                _vr_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GEMMA_BRANDING_GEMINI_API_KEY") or ""
+                if _vr_key:
+                    try:
+                        from src import x_post_branding_gen as _vr_xbg
+
+                        def vr_comment_fn(post_text, player, _k=_vr_key, _g=_vr_xbg):  # noqa: E731
+                            return _g.build_quote_rt_comment(post_text, player, gemini_api_key=_k)
+                    except Exception as _vr_imp_exc:  # noqa: BLE001
+                        LOG.warning("video_radar LLM comment unavailable: %r", _vr_imp_exc)
+                        vr_comment_fn = None
             try:
                 vr_candidates = lane.build_video_radar_candidates(
                     db_path,
                     now=now_jst,
                     max_count=vr_max,
                     dedup_set=dedup_set,
+                    comment_fn=vr_comment_fn,
                 )
             except Exception as _vr_exc:  # noqa: BLE001
                 LOG.warning("video_radar build failed: %r", _vr_exc)

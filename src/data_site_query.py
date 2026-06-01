@@ -974,6 +974,56 @@ def fetch_interleague_split_stats(player_canonical: str) -> list[SplitStat]:
     return _bucket_splits(rows, key, ["リーグ戦", "交流戦"])
 
 
+@dataclass
+class GiantsScheduleRow:
+    """巨人 1 試合の日程・結果 (data/schedule ページ用、Phase B 452)。"""
+    game_date: str       # YYYY-MM-DD
+    opponent: str
+    home_away: str       # '本拠地' / 'ビジター'
+    giants_score: Optional[int]
+    opp_score: Optional[int]
+    result: str          # '勝' / '負' / '分' / ''(未確定)
+    summary: str         # one_line_summary(あれば)
+
+
+def fetch_giants_schedule(limit: Optional[int] = None) -> list[GiantsScheduleRow]:
+    """巨人の日程・結果を新しい順で返す (games から、巨人戦のみ)。"""
+    path = _ensure_insight_db_local()
+    if not path:
+        return []
+    try:
+        with sqlite3.connect(path) as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT game_id, game_date, opponent, giants_score, opp_score,
+                       result, COALESCE(one_line_summary, '')
+                FROM games WHERE game_date IS NOT NULL
+                ORDER BY game_date DESC
+                """,
+            )
+            rows = cur.fetchall()
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("fetch_giants_schedule err: %r", exc)
+        return []
+    out: list[GiantsScheduleRow] = []
+    for gid, gdate, opp, gs, os_, res, summ in rows:
+        venue = giants_venue_from_game_id(str(gid or ""))
+        if venue is None:
+            continue  # 巨人戦でない (リーグ全体 ingest 分) は除外
+        res_jp = {"win": "勝", "loss": "負", "draw": "分", "tie": "分"}.get(str(res or "").lower(), "")
+        out.append(GiantsScheduleRow(
+            game_date=str(gdate)[:10],
+            opponent=str(opp or ""),
+            home_away="本拠地" if venue == "home" else "ビジター",
+            giants_score=int(gs) if gs is not None else None,
+            opp_score=int(os_) if os_ is not None else None,
+            result=res_jp,
+            summary=str(summ or ""),
+        ))
+    return out[:limit] if limit else out
+
+
 def giants_venue_from_game_id(game_id: str) -> Optional[str]:
     """game_id から 巨人視点の home/away を返す ('home' / 'away' / None)。
 
@@ -1423,6 +1473,8 @@ __all__ = [
     "fetch_weekday_split_stats",
     "fetch_month_split_stats",
     "fetch_interleague_split_stats",
+    "GiantsScheduleRow",
+    "fetch_giants_schedule",
     "fetch_hit_streak",
     "fetch_contribution_streak",
     "fetch_pitching_stats_season",

@@ -41,6 +41,7 @@ from src.data_site_query import (
     fetch_weekday_split_stats,
     fetch_month_split_stats,
     fetch_interleague_split_stats,
+    fetch_giants_schedule,
     fetch_player_npb_ranks,
     fetch_pitching_stats_season,
     fetch_recent_games,
@@ -64,6 +65,11 @@ from src.data_site_template_cluster import (
     ClusterPlayerEntry,
     render_cluster_html,
     render_cluster_title,
+)
+from src.data_site_template_schedule import (
+    render_schedule_html,
+    render_schedule_title,
+    render_schedule_excerpt,
 )
 from src.data_site_template_pillar import (
     PillarPlayerInfo,
@@ -408,6 +414,18 @@ def publish_phase1() -> dict[str, object]:
             len(info.related_topic_links), "yes" if info.featured_image_url else "no",
         )
         pillar_results.append(result)
+
+    # schedule ページ upsert (日程・結果カレンダー、Phase B 452) — parent=cluster → /data/schedule/
+    sched_rows = fetch_giants_schedule()
+    sched_result = _upsert_page(
+        slug="schedule",
+        title=render_schedule_title(),
+        content_html=render_schedule_html(sched_rows),
+        parent=cluster_page_id,
+        excerpt=render_schedule_excerpt(sched_rows),
+    )
+    LOG.info("schedule upsert slug=schedule page_id=%s action=%s games=%d",
+             sched_result.page_id, sched_result.action, len(sched_rows))
 
     summary = {
         "status": "ok",

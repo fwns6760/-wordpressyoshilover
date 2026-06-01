@@ -2,7 +2,12 @@
 
 - **種別**: 実装 / **priority**: P2 / **effort**: S〜M
 - **親**: 443 / 設計: `455...md` §12-0 / §13-4 / GH: #124
-- **status**: READY
+- **status**: PARTIAL_LIVE_VERIFIED (2026-06-01) — 今日の注目 LIVE、 検索/zero-row は defer
+- **実績**: commit `a572aa50`、image `data-site-publisher:hot-a572aa50`、execute SUCCESS。/data/ first view に「📈直近5試合の注目選手」カード(last_5_games OPS/ERA 上位、sample gate、pillar回遊)。verify = cluster page 73526 に 岸田OPS1.036/大城1.032/平山1.008/堀田防御率0.00/マルティネス1.80 反映確認。data-site test 105 passed。
+- **defer(別途)**:
+  - 選手検索box: WP が post content の `<script>` を除去する可能性があり、動作 verify が先 → 別途。
+  - zero-row(`–`)抑制: 実選手を table から消すリスク + ロスター可視性とのトレードオフ → user 方針確認後。
+- **team_role 確認(read-only)**: cluster fill / fetch_team_leaders は team_role 非依存(`team_code='g'`/name match)で**安全**。`data_site_query.py:1023/1027` の game-detail(lineups table)2箇所が `team_role='giants'` 依存 → lineups table の team_role 信頼性は別途検証要(batting_logs の誤ラベルとは別 table、未確認)。
 
 ## 背景(深掘り・実取得)
 

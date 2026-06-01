@@ -255,6 +255,7 @@ def gather_radar_videos(
                 "video_id": video_id,
                 "video_url": getattr(e, "video_url", "") or f"https://www.youtube.com/watch?v={video_id}",
                 "title": title,
+                "description": (getattr(e, "description", "") or "").strip(),
                 "published_at": getattr(e, "published_at", "") or "",
                 "channel": ch.get("name", ""),
                 "role": ch.get("role", ""),

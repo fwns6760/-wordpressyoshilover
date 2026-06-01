@@ -1635,16 +1635,23 @@ def build_video_radar_candidates(
 
     out: list[Candidate] = []
     used_channels: set[str] = set()
+    used_players: set[str] = set()
     for v in videos:
         if len(out) >= max_count:
             break
         signature = f"video_radar|{v['video_id']}"
         if dedup_set is not None and signature in dedup_set:
             continue
-        # まず別チャンネルを優先して多様性を出す (同一 channel 連続を避ける)
-        if v.get("channel") in used_channels and len(out) < max_count:
+        vplayer = (v.get("player") or "").strip()
+        # 一記事一本: 同じ選手の動画は 1 本だけ。 選手 unknown なら channel で多様性。
+        if vplayer:
+            if vplayer in used_players:
+                continue
+        elif v.get("channel") in used_channels:
             continue
         used_channels.add(v.get("channel", ""))
+        if vplayer:
+            used_players.add(vplayer)
         title = str(v["title"]).replace("\n", " ").strip()
         short = _truncate_text(title, 36)
         tag = v["type_tag"]
@@ -1669,13 +1676,18 @@ def build_video_radar_candidates(
             )
         else:
             post_text = f"【{tag}】「{short}」（{channel}）▶ {url} #巨人 #ジャイアンツ"
+        desc = str(v.get("description") or "").replace("\n", " ").strip()
+        desc_excerpt = _truncate_text(desc, 160) if desc else "(説明なし)"
         draft = "\n".join([
             f"【動画候補: {tag}】",
             f"タイトル: {title}",
             f"チャンネル: {channel}",
             f"公開日: {v.get('published_at','')}",
-            f"動画URL: {url}",
             f"検出選手: {player or '(なし)'}",
+            f"動画URL: {url}",
+            "",
+            "【内容(動画説明)】",
+            desc_excerpt,
             "",
             "【X 投稿案 (user が手で投稿)】",
             post_text,
@@ -2436,7 +2448,13 @@ def apply_x_impression_policy(
             reason = "dedup_post_text_hash"
         elif image_hash and image_hash in seen_image_hashes:
             reason = "dedup_image_payload_hash"
-        elif player_key and player_key in seen_players:
+        elif (
+            player_key
+            and player_key in seen_players
+            and candidate.metric != _VIDEO_RADAR_METRIC
+        ):
+            # 動画候補 (451) は別 content type。 同選手のデータ候補が居ても落とさず
+            # 確実にメールへ届ける (一記事一本は build_video_radar_candidates 側で担保)。
             reason = "dedup_player_in_mail"
 
         if reason:
@@ -2453,7 +2471,7 @@ def apply_x_impression_policy(
             seen_text_hashes.add(text_hash)
         if image_hash:
             seen_image_hashes.add(image_hash)
-        if player_key:
+        if player_key and candidate.metric != _VIDEO_RADAR_METRIC:
             seen_players.add(player_key)
     return kept, dropped
 

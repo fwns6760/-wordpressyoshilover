@@ -3258,6 +3258,59 @@ class BuildVideoRadarCandidatesTests(unittest.TestCase):
             )
         self.assertEqual(cands, [])
 
+    _FEED_TWO_SAME_PLAYER = (
+        "<feed xmlns:yt='http://www.youtube.com/xml/schemas/2015' "
+        "xmlns:media='http://search.yahoo.com/mrss/'>"
+        "<title>巨人公式</title>"
+        "<entry><yt:videoId>VID1</yt:videoId>"
+        "<title>【名場面】坂本勇人 2013年 伝説のサヨナラ</title>"
+        "<media:description>2013年の劇的な一打を振り返る</media:description>"
+        "<published>2026-05-30T10:00:00+00:00</published></entry>"
+        "<entry><yt:videoId>VID2</yt:videoId>"
+        "<title>【名場面】坂本勇人 2016年 満塁ホームラン</title>"
+        "<published>2026-05-29T10:00:00+00:00</published></entry>"
+        "</feed>"
+    )
+
+    def test_one_video_per_player_and_description_in_draft(self):
+        from unittest import mock
+        from src import x_post_mail_lane as lane
+        with mock.patch(
+            "src.video_radar.load_radar_channels",
+            return_value=[{"channel_id": "UCx", "name": "巨人公式", "role": "official", "status": "confirmed"}],
+        ):
+            cands = lane.build_video_radar_candidates(
+                db_path=None, max_count=3, fetch_fn=lambda url: self._FEED_TWO_SAME_PLAYER,
+            )
+        # 一記事一本: 同じ坂本勇人の動画は 1 本だけ
+        self.assertEqual(len(cands), 1)
+        # 内容(動画説明)がメール draft に入る
+        self.assertIn("【内容(動画説明)】", cands[0].draft_text)
+        self.assertIn("劇的な一打", cands[0].draft_text)
+
+
+class VideoRadarImpressionPolicyTests(unittest.TestCase):
+    """451: 動画候補は同選手のデータ候補が居ても落とさず確実に届ける。"""
+
+    def test_video_survives_player_dedup_against_data_candidate(self):
+        from src.x_post_mail_lane import Candidate, apply_x_impression_policy, _VIDEO_RADAR_METRIC
+        data_c = Candidate(
+            title="坂本勇人 OPS", metric="OPS", period_label="今シーズン",
+            draft_text="x", char_count=10, signature="ops|sakamoto",
+            post_text="坂本勇人 OPS .900", focus_player="坂本勇人",
+        )
+        video_c = Candidate(
+            title="(動画) 名場面回顧｜巨人公式｜坂本", metric=_VIDEO_RADAR_METRIC,
+            period_label="動画候補", draft_text="y", char_count=10,
+            signature="video_radar|VID1", post_text="坂本勇人 名場面 ▶ url",
+            focus_player="坂本勇人",
+        )
+        kept, dropped = apply_x_impression_policy([data_c, video_c])
+        kept_sigs = {c.signature for c in kept}
+        self.assertIn("ops|sakamoto", kept_sigs)
+        self.assertIn("video_radar|VID1", kept_sigs)  # 同選手でも動画は残る
+        self.assertEqual(dropped, [])
+
 
 if __name__ == "__main__":
     unittest.main()

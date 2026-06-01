@@ -135,7 +135,8 @@ user 要望 (本日 PM、 対話で段階確定) を反映。 全便 image rebui
 ### 9.4 鮮度フィルタ (フェーズ別) を全ポストに統一
 - user「48hは長い。 試合中は即、 試合前はその日」「全ポストでそうして」。
 - フェーズ別 max_age (`x_post_mail_lane.phase_freshness_max_age_hours`、 判定は既存 `x_impression_timing_label`):
-  - 試合中 (19:00-21:45) = **3h** / 試合後 (21:45-23:30) = **6h** / 試合前・スタメン (16:00-19:00) = **12h** / 朝・昼・午後・通常 = **24h**
+  - 試合中 (19:00-21:45) = **30分** (15分おき発火に合わせライブの今だけ、 commit `70edeb1`) / 試合後 (21:45-23:30) = **6h** / 試合前・スタメン (16:00-19:00) = **12h** / 朝・昼・午後・通常 = **24h**
+  - **RSSHub 二度叩き解消** (commit `70edeb1`): fetch_buzzing_players + gather_buzz_posts が同 8 feed を二度取得 → memo cache で 1 fire 16→8 fetch に半減 (試合帯 15 分発火のレート対策)。
 - 適用経路:
   - 動画 (x_buzz): `gather_buzz_posts(now, max_age_hours)`、 pubDate ベース。 commit `f595d5d` → `d9abc75`。
   - news_opinion RSS fallback: `_entry_published_dt` で公開日抽出 + フェーズ gate 新設。 **日付不明は strict skip**

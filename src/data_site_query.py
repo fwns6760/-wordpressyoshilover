@@ -2166,10 +2166,17 @@ def fetch_giants_starters() -> dict:
     except Exception:  # noqa: BLE001
         return {}
     try:
-        r = requests.get(f"https://npb.jp/games/{year}/", timeout=10)
+        r = requests.get(
+            f"https://npb.jp/games/{year}/", timeout=10,
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"},
+        )
         r.raise_for_status()
         r.encoding = "utf-8"
-        return parse_giants_starters(r.text)
+        starters = parse_giants_starters(r.text)
+        if not starters:
+            LOG.info("fetch_giants_starters: no (巨) pair found (html len=%d)", len(r.text))
+        return starters
     except Exception as exc:  # noqa: BLE001
         LOG.warning("fetch_giants_starters err: %r", exc)
         return {}

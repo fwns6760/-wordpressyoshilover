@@ -2,7 +2,9 @@
 
 - **種別**: 実装 / **priority**: P3 / **effort**: S(表示)〜M
 - **親**: 443 / 設計: `455...md` §12-1(B に深さで負け)/ §13-5 / GH: #125
-- **status**: READY(whitelist 確認先行)
+- **status**: LIVE_DEPLOYED_VERIFIED (2026-06-01)
+- **scope 変更**: whitelist は「ポスト」専用で **data-site には非適用**(user「だからサイトだから…ポストはいらない」)。よって whitelist × の SABR(FIP/wOBA/ISO/WHIP/BB%/K% 等)も **site では全表示**(ライバル超え目的)。whitelist 正本に適用範囲明記済。
+- **実績**: commit `6edc5a3`、image `data-site-publisher:sabr-6edc5a3`、Job 更新 + execute SUCCESS。data-site test 98 passed(regression 0)。verify = WP REST で 吉川(73527)に OPS/ISO/wOBA/BABIP/BB%/K%/出塁率/長打率、戸郷(73585)に 防御率/FIP/xFIP/WHIP/奪三振率/与四球率/被本塁打率/K-BB の「セイバーメトリクス」カード(リーグ内順位つき)反映確認。
 
 ## 背景(深掘り 1次source)
 

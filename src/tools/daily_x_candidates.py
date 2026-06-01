@@ -69,27 +69,44 @@ NUM_PATTERNS = [
 
 @dataclass
 class Candidate:
+    """投稿候補。post は「検証事実(数字/文脈/引用)+ 願望(主張しない)」だけで組む。
+
+    LLM 不使用 = ハルシネーションゼロ。生成系の意味/一言(埋め草)は廃止し、
+    number/context/quote は全て DB照合 or 記事literal、reaction は願望のみ。
+    """
     bucket: str          # 順位・記録型 / 直近変化型 / 起用・昇格理由型
     player: str
-    number: str          # 数字: 行
-    meaning: str         # 意味: 行(データ由来の事実テンプレ)
-    source: str          # 出典(DB last_7d / 記事URL)
-    note: str = ""       # 補足(鮮度・要確認 等)
-    comment: str = ""    # 一言ドラフト(テンプレ自動生成、LLM不使用、編集前提)
-    quote: str = ""      # 記事から拾った発言/引用(参考材料、主は記事で要確認)
-    article_url: str = ""  # 引用元/関連記事 URL(CTA「記事を読む」用)
+    number: str          # 核となる検証数字(hook、必須)
+    source: str          # 出典(DB scope / 記事URL)
+    context: str = ""    # 追加の検証事実(今季比 等、任意・空可)
+    reaction: str = ""   # 締めの願望(事実主張を含まない)
+    quote: str = ""      # 記事の実発言(主は記事で要確認)
+    article_url: str = ""
+    note: str = ""
+
+    def post_text(self) -> str:
+        """そのまま X に貼れる本文。全行 検証事実 or 願望(誤りようがない)。"""
+        lines = [self.number]
+        if self.context:
+            lines.append(self.context)
+        if self.quote:
+            lines.append("")
+            lines.append(f"「{self.quote}」")
+        if self.reaction:
+            lines.append("")
+            lines.append(self.reaction)
+        return "\n".join(lines)
 
     def render(self) -> str:
-        comment = self.comment or "(ファン向けの一言をここに / 448 テンプレ)"
         lines = [
-            f"【{self.bucket}】{self.player}",
-            f"数字：{self.number}",
-            f"意味：{self.meaning}",
-            f"一言(下書き・調整可)：{comment}",
+            f"【{self.bucket}】{_short_name(self.player)}",
+            "",
+            self.post_text(),
+            "",
+            f"出典：{self.source}",
         ]
         if self.quote:
-            lines.append(f"記事中の発言(参考・主は記事で確認):「{self.quote}」")
-        lines.append(f"出典：{self.source}")
+            lines.append("※ 発言の主は記事で確認(他者の発言の可能性)")
         if self.note:
             lines.append(f"※ {self.note}")
         return "\n".join(lines)
@@ -100,46 +117,28 @@ def _short_name(player: str) -> str:
     return player.split("(")[0].replace(" ", "").strip()
 
 
-def _auto_comment(bucket: str, player: str, number: str) -> str:
-    """一言ドラフトをテンプレで自動生成(LLM不使用・コスト¥0・編集前提)。
+def _reaction(number: str) -> str:
+    """締めの願望を返す(事実主張を含まない=ハルシネーション不可)。
 
-    number 内のキーワードで型を判定し、選手名/数字を織り込む。同一文の連発を避けるため
-    選手名+数字長で deterministic に variant を選ぶ(乱数なし=テスト安定)。
+    number の型でトーンだけ寄せ、選手名+数字長で deterministic に variant 選択。
     """
-    name = _short_name(player)
-    pick = (len(player) + len(number)) % 3
+    if any(k in number for k in ("防御率", "勝利", "昇格", "登録")):
+        pool = ["1軍でどう使われるか楽しみ。", "次の登板に期待。", "結果を出してほしい。"]
+    elif any(k in number for k in ("連続", "本", "号", "猛打賞")):
+        pool = ["このまま止まらず続けてほしい。", "どこまで伸びるか楽しみ。"]
+    elif "番" in number:  # 起用・打順
+        pool = ["今日のスタメン、楽しみ。", "チャンスで回ってきてほしい。"]
+    else:  # rate / hot
+        pool = ["ここから乗っていってほしい。", "この調子で頼む。", "今日も期待したい。"]
+    return pool[len(number) % len(pool)]
 
-    if "防御率" in number:
-        variants = [
-            f"{name}の状態の良さ、数字でも裏が取れてる。",
-            f"この内容なら{name}は期待していい。次の登板が楽しみ。",
-            f"{name}、結果も中身も来てる。覚えておきたい投手。",
-        ]
-    elif "打率" in number or "OPS" in number or "出塁率" in number:
-        variants = [
-            f"{name}、今ちょうど来てる時期。試合前に押さえておきたい数字。",
-            f"この数字を見ると{name}が話題なのも納得。",
-            f"地味に{name}が効いてる。打線が回る理由はここ。",
-        ]
-    elif "番" in number:  # 打順・起用
-        variants = [
-            f"{name}のこの起用、データで見ると意図が読める。",
-            f"なぜ{name}がここ?を数字で補足するとこう見える。",
-            f"{name}の打順、ちゃんと理由がありそう。",
-        ]
-    elif ("連続" in number) or ("本" in number) or ("号" in number) or ("初勝利" in number):
-        variants = [
-            f"{name}、地味だけどこれが続くと大きい。",
-            f"止まらないうちに{name}のこの記録は見ておきたい。",
-            f"{name}のこの数字、もっと注目されていい。",
-        ]
-    else:  # 二軍・昇格・記事数字 ほか
-        variants = [
-            f"なぜ今{name}が話題か、この数字を見ると腑に落ちる。",
-            f"{name}の上がり方、数字が説明してくれてる。",
-            f"{name}、この内容なら見ておいて損はない。",
-        ]
-    return variants[pick]
+
+def _has_hook(c: "Candidate") -> bool:
+    """投稿に値する具体 hook があるか(薄い候補=打順だけ等を除外)。"""
+    n = c.number
+    if any(k in n for k in (".", "防御率", "連続", "本", "号", "昇格", "登録", "勝利", "猛打賞")):
+        return True
+    return bool(c.quote)  # 数字 hook が弱くても実発言があれば可
 
 
 _QUOTE_BAN = ("vs", "ニュース20", "カレンダー", "万年", "第2章", "門下生", "ファイターズ",
@@ -303,8 +302,23 @@ def _fresh_number(cur: sqlite3.Cursor, player: str, snapshot_date: str) -> Optio
     label = {"AVG": "打率", "OPS": "OPS", "OBP": "出塁率"}.get(name, name)
     val_s = f"{val:.3f}".lstrip("0") if (name != "OPS" and val < 1) else f"{val:.3f}"
     rank_s = f"・セ{rank}位" if rank and rank <= 10 else ""
-    number = f"{player} 直近7日 {label}{val_s}({n}打席){rank_s}"
+    number = f"{_short_name(player)} 直近7日 {label}{val_s}({n}打席){rank_s}"
     return number, "insight.db last_7d(日付ベース)"
+
+
+def _season_recent_context(cur: sqlite3.Cursor, player: str, snap: str) -> str:
+    """今季通算 AVG を文脈として返す(検証事実、sample>=40 のみ)。空可。
+
+    例「今季通算は打率.270」。直近数字との対比はファンが読み取るので断定しない。
+    """
+    r = cur.execute(
+        """SELECT metric_value, sample_size FROM advanced_metric_snapshots
+           WHERE team_code='g' AND player_canonical=? AND snapshot_date=? AND scope='season' AND metric_name='AVG'""",
+        (player, snap),
+    ).fetchone()
+    if r and r[0] is not None and (r[1] or 0) >= 40:
+        return f"今季通算は打率{f'{r[0]:.3f}'.lstrip('0')}({r[1]}打席)"
+    return ""
 
 
 def collect_ichigun_candidates(cur: sqlite3.Cursor) -> list[Candidate]:
@@ -333,67 +347,20 @@ def collect_ichigun_candidates(cur: sqlite3.Cursor) -> list[Candidate]:
             continue  # ゲート②: 離脱・古いを除外(平山型をここで落とす)
         seen.add(player)
         fresh = _fresh_number(cur, player, snap)
+        context = ""
         if fresh:
             number, source = fresh
             note = ""
+            context = _season_recent_context(cur, player, snap)
         else:
             # 日付ベースが無い時はシグナル文 + 最終出場日を併記(鮮度明示)
-            number = f"{player} {cur_val}"
+            number = f"{_short_name(player)} {cur_val}"
             source = f"signal:{sig}"
-            note = f"日付ベース stat 無し。最終出場 {last_app} を確認の上で使用"
+            note = f"最終出場 {last_app} を確認の上で使用"
         is_streak = sig in ("batter_hit_streak", "batter_multi_hit", "anomaly_milestone_crossed")
         bucket = "順位・記録型" if is_streak else "直近変化型"
-        meaning = (
-            "出塁/安打が途切れず続いている＝打線が繋がりやすい" if is_streak
-            else "直近で数字が上がっている＝今が旬の選手"
-        )
-        out.append(Candidate(bucket, player, number, meaning, source, note,
-                             comment=_auto_comment(bucket, player, number)))
-    return out
-
-
-def collect_roster_move_candidates(limit_posts: int = 40) -> list[Candidate]:
-    """二軍/昇格・抹消: 直近 WP 記事タイトルから動き + 数字を拾う(出典=記事)。"""
-    base = os.environ.get("WP_URL", "").strip().rstrip("/")
-    user = os.environ.get("WP_USER", "").strip()
-    pw = os.environ.get("WP_APP_PASSWORD", "").strip()
-    if not (base and user and pw):
-        LOG.info("WP creds 無し → 昇格/抹消候補は skip(一軍のみ出力)")
-        return []
-    try:
-        r = requests.get(
-            base + "/wp-json/wp/v2/posts",
-            params={"per_page": limit_posts, "_fields": "title,link,date", "orderby": "date", "order": "desc"},
-            auth=HTTPBasicAuth(user, pw),
-            timeout=20,
-        )
-        if not r.ok:
-            LOG.warning("WP posts fetch fail status=%d", r.status_code)
-            return []
-        posts = r.json() or []
-    except Exception as exc:  # noqa: BLE001
-        LOG.warning("WP posts fetch err: %r", exc)
-        return []
-    out: list[Candidate] = []
-    for p in posts:
-        title = (p.get("title", {}) or {}).get("rendered", "") or ""
-        if not any(kw in title for kw in ROSTER_MOVE_KEYWORDS):
-            continue
-        nums: list[str] = []
-        for pat in NUM_PATTERNS:
-            nums.extend(pat.findall(title))
-        if not nums:
-            continue  # 数字が記事に無ければ「なぜ」を裏づけられない → skip
-        dedup = list(dict.fromkeys(nums))
-        number = f"{title.strip()[:60]} … {' / '.join(dedup[:3])}"
-        out.append(Candidate(
-            bucket="起用・昇格理由型",
-            player="(記事参照)",
-            number=number,
-            meaning="結果を出した/整理された選手の動き＝起用の裏づけ",
-            source=p.get("link", ""),
-            note="数字は記事タイトル由来。本文で正確に確認の上で使用(捏造しない)",
-        ))
+        out.append(Candidate(bucket, player, number, source, context=context,
+                             reaction=_reaction(number), note=note))
     return out
 
 
@@ -453,7 +420,7 @@ def _pitching_number(cur: sqlite3.Cursor, player: str, snap: str) -> Optional[tu
         if r and r[0] is not None and (r[1] or 0) >= 3:
             rank_s = f"・セ{r[2]}位" if r[2] and r[2] <= 10 and (r[1] or 0) >= 10 else ""
             label = "直近7日" if scope == "last_7d" else "今季"
-            return f"{player} {label} 防御率{r[0]:.2f}(投球回基準{r[1]}){rank_s}", f"insight.db {scope}"
+            return f"{_short_name(player)} {label} 防御率{r[0]:.2f}(投球回基準{r[1]}){rank_s}", f"insight.db {scope}"
     return None
 
 
@@ -464,7 +431,8 @@ def _article_number(title: str) -> Optional[str]:
         nums.extend(pat.findall(title))
     if not nums:
         return None
-    return " / ".join(dict.fromkeys(nums))[:60]
+    cleaned = [n.replace("『", "").replace("」", "").replace("「", "").strip() for n in nums]
+    return " / ".join(dict.fromkeys(cleaned))[:60]
 
 
 def collect_news_anchored(cur: sqlite3.Cursor, posts: list[dict]) -> list[Candidate]:
@@ -503,21 +471,22 @@ def collect_news_anchored(cur: sqlite3.Cursor, posts: list[dict]) -> list[Candid
                     number, source, note = pit[0], pit[1], ""
                 else:
                     art = _article_number(title)
-                    if not art:
-                        continue  # DB も記事数字も無ければ skip(捏造しない)
-                    number = f"{player} … {art}"
+                    if not art and not article_quote:
+                        continue  # DB も記事数字も発言も無ければ skip(捏造しない)
+                    number = f"{_short_name(player)} {art}" if art else _short_name(player)
                     source = link
-                    note = "数字は記事タイトル由来。本文で正確に確認の上で使用"
+                    note = "数字は記事タイトル由来。本文で正確に確認の上で使用" if art else ""
+            context = _season_recent_context(cur, player, snap) if num else ""
             out.append(Candidate(
                 bucket="ニュース連動",
                 player=f"{player}(記事: {title.strip()[:34]}…)",
                 number=number,
-                meaning="今日のニュースの選手 ＝ 反応が来やすい旬の話題にデータを添える",
                 source=link if source.startswith("http") or not link else f"{source} / {link}",
-                note=note,
-                comment=_auto_comment("ニュース連動", player, number),
+                context=context,
+                reaction=_reaction(number),
                 quote=article_quote,
                 article_url=link,
+                note=note,
             ))
     return out
 
@@ -530,7 +499,7 @@ def generate(limit_ichigun: int = 6) -> dict:
     if path:
         with sqlite3.connect(path) as conn:
             cur = conn.cursor()
-            news = collect_news_anchored(cur, posts)
+            news = [c for c in collect_news_anchored(cur, posts) if _has_hook(c)]
             news_players = {c.player.split("(")[0] for c in news}
             # ニュースに出ていない「隠れ好調」だけを DB signal から補完
             for c in collect_ichigun_candidates(cur):
@@ -538,6 +507,8 @@ def generate(limit_ichigun: int = 6) -> dict:
                     # 記事から発言/引用を拾って材料化(ニュース外でも検索で補完)
                     q, url = _search_player_quote(c.player)
                     c.quote, c.article_url = q, url
+                    if not _has_hook(c):
+                        continue  # 数字 hook も発言も無い薄い候補は出さない
                     hidden_hot.append(c)
                 if len(hidden_hot) >= limit_ichigun:
                     break
@@ -561,9 +532,8 @@ def build_single_mail(c: Candidate, *, date_label: str, idx: int, total: int) ->
     head = c.player.split("(")[0]
     subject = f"【巨人Xデータ】{seq} {head} {date_label}".strip()
 
-    comment = c.comment or "（ファン向けの一言をここに）"
-    # そのまま X に貼れる下書き(数字 + 一言)。引用があれば材料として併記。
-    x_draft = f"{c.number}\n\n{comment}"
+    # そのまま X に貼れる本文 = post_text(全行 検証事実 or 願望)。
+    x_draft = c.post_text()
     intent = _x_intent_url(x_draft)
 
     text_lines = [
@@ -571,22 +541,16 @@ def build_single_mail(c: Candidate, *, date_label: str, idx: int, total: int) ->
         "",
         c.render(),
         "",
-        "─ Xコピペ用(下書き、調整可) ─",
-        x_draft,
-        "",
         f"▶ ワンタップ投稿(本文prefill): {intent}",
-        "─ そのまま貼って一言だけ直せばOK。使わないなら無視でOK。",
+        "─ そのまま貼ってOK。手直ししたければ最後の一言だけ。",
     ]
     text_body = "\n".join(text_lines)
 
     src = (f'<a href="{_esc(c.source)}">記事/出典を開く</a>'
            if c.source.startswith("http") else _esc(c.source))
     note = f'<div style="color:#999;font-size:12px;margin-top:6px;">※ {_esc(c.note)}</div>' if c.note else ""
-    quote_html = (
-        f'<div style="margin:6px 0;padding:8px 10px;background:#fff8e1;border-left:3px solid #f5a623;'
-        f'font-size:13px;">記事中の発言(参考・主は記事で確認)<br>「{_esc(c.quote)}」</div>'
-        if c.quote else ""
-    )
+    quote_caution = ('<div style="color:#999;font-size:11px;">※ 発言の主は記事で確認</div>'
+                     if c.quote else "")
     btn = (
         f'<a href="{_esc(intent)}" '
         'style="display:inline-block;background:#000;color:#fff;text-decoration:none;'
@@ -603,14 +567,11 @@ def build_single_mail(c: Candidate, *, date_label: str, idx: int, total: int) ->
         '<div style="font-family:sans-serif;max-width:560px;">'
         f'<div style="font-size:12px;color:#888;">今日のX投稿候補 {_esc(seq)} / 手動選別用</div>'
         '<div style="border:1px solid #eee;border-radius:8px;padding:14px;margin:8px 0;">'
-        f'<div style="font-weight:600;color:#5d4037;margin-bottom:6px;">【{_esc(c.bucket)}】{_esc(c.player)}</div>'
-        f'<div style="margin:2px 0;">数字：{_esc(c.number)}</div>'
-        f'<div style="margin:2px 0;">意味：{_esc(c.meaning)}</div>'
-        f'<div style="margin:2px 0;color:#1976d2;">一言(下書き・調整可)：{_esc(comment)}</div>'
-        f'{quote_html}'
-        '<div style="background:#fafafa;border-radius:8px;padding:10px;margin:10px 0;">'
-        '<div style="font-size:12px;color:#888;margin-bottom:4px;">Xコピペ用(下書き)</div>'
-        f'<div style="white-space:pre-wrap;font-size:13px;">{_esc(x_draft)}</div></div>'
+        f'<div style="font-weight:600;color:#5d4037;margin-bottom:6px;">【{_esc(c.bucket)}】{_esc(head)}</div>'
+        '<div style="background:#fafafa;border-radius:8px;padding:12px;margin:6px 0;">'
+        '<div style="font-size:12px;color:#888;margin-bottom:4px;">そのまま貼れる本文</div>'
+        f'<div style="white-space:pre-wrap;font-size:14px;line-height:1.6;">{_esc(x_draft)}</div></div>'
+        f'{quote_caution}'
         f'<div style="margin-top:8px;">{btn}{read_btn}</div>'
         f'<div style="margin-top:6px;color:#888;font-size:12px;">出典：{src}</div>'
         f'{note}</div></div>'

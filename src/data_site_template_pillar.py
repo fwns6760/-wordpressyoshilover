@@ -954,6 +954,18 @@ def _job_title_for(player: PillarPlayerInfo) -> str:
     return f"プロ野球選手 ({player.position})" if player.position else "プロ野球選手"
 
 
+def _build_datasite_nav_html() -> str:
+    """データサイト内ナビ (トピクラ: pillar=中心 → hub/ranking/team spoke 回遊、 458 データ側)。"""
+    return (
+        '<div class="ys-card" style="text-align:center;font-size:13px;">'
+        '<span style="color:#888;">データサイト内: </span>'
+        '<a href="/data/" style="color:#e25400;font-weight:600;text-decoration:none;">全選手一覧</a>　/　'
+        '<a href="/data/ranking/" style="color:#e25400;font-weight:600;text-decoration:none;">選手ランキング</a>　/　'
+        '<a href="/data/team/" style="color:#e25400;font-weight:600;text-decoration:none;">チーム成績</a>'
+        '</div>'
+    )
+
+
 def render_pillar_html(player: PillarPlayerInfo) -> str:
     """Pillar page の WP post.content として入る HTML を返す.
 
@@ -1007,6 +1019,7 @@ def render_pillar_html(player: PillarPlayerInfo) -> str:
         *stats_sections,
         _build_related_topic_html(player),
         _build_related_players_html(player),
+        _build_datasite_nav_html(),
         _build_back_link_html(),
         _build_jsonld(player),
     ]

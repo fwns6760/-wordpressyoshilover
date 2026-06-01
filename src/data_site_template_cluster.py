@@ -60,6 +60,11 @@ def _build_intro_html() -> str:
         '<p style="font-size:13px;line-height:1.7;margin:0;color:#444;">'
         '読売ジャイアンツの 1 軍・2 軍 active 選手の永続データページ集です。 '
         '各選手の打率・防御率・直近 5 試合・関連記事を、 毎朝 6 時に最新化しています。'
+        '</p>'
+        '<p style="font-size:13px;margin:10px 0 0;">'
+        '<a href="/data/ranking/" style="color:#e25400;font-weight:600;text-decoration:none;">🏆 選手ランキング</a>'
+        '　/　'
+        '<a href="/data/team/" style="color:#e25400;font-weight:600;text-decoration:none;">📊 チーム成績・順位</a>'
         '</p></section>'
     )
 

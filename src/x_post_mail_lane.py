@@ -1335,6 +1335,76 @@ def build_news_opinion_candidate(
     )
 
 
+_PLAYER_COMMENT_METRIC = "PLAYER_COMMENT"
+
+
+def build_player_comment_candidate(
+    *,
+    member_name: str,
+    source_title: str,
+    source_url: str,
+    html_text: str,
+    source_name: str = "",
+    now: Optional[datetime] = None,  # noqa: ARG001 - caller symmetry
+) -> Optional[Candidate]:
+    """パターン①「選手コメント速報」(2026-06-01): 記事本文 html_text から member の本人発言を
+    literal 抽出し、 たんぱく事実型で出す (mainportalhuge 式)。 LLM 不使用 = 捏造/ポエムゼロ。
+
+    形式: コメントが自立 (長い) なら `【名前】「発言」` だけ、 短ければ `【名前】状況 +「発言」`。
+    quote が取れない / member 未 verify → None (caller は別候補へ)。
+    """
+    member = str(member_name or "").strip()
+    url = str(source_url or "").strip()
+    if not member or not url or not html_text:
+        return None
+    if not (_is_verified_full_giants_member_name(member) or _is_verified_full_giants_player_name(member)):
+        return None
+    try:
+        from src.long_quote_extractor import extract_long_quote
+        from src.x_post_branding_gen import _resolve_speaker_aliases
+    except Exception as exc:  # noqa: BLE001
+        LOG.info("player_comment import skip: %r", exc)
+        return None
+    try:
+        aliases = _resolve_speaker_aliases(member)
+        # テキストコメントは画像overlay(min100)より短くてよい(user「良いものはそれだけ書く」)。
+        quote = extract_long_quote(html_text, speaker_aliases=aliases, min_chars=40)
+    except Exception as exc:  # noqa: BLE001
+        LOG.info("player_comment extract skip member=%s: %r", member, exc)
+        quote = ""
+    quote = (quote or "").strip()
+    if not quote:
+        return None
+    # コメント主役・自立優先: 長い quote はそれだけ、 短ければ状況 1 行を前置き。
+    if len(quote) >= 80:
+        post_text = f"【{member}】「{quote}」"
+    else:
+        situation = _truncate_text(str(source_title or "").strip(), 40)
+        post_text = f"【{member}】{situation}\n「{quote}」" if situation else f"【{member}】「{quote}」"
+    signature_hash = _hashlib.sha1(f"player_comment|{url}|{member}".encode("utf-8")).hexdigest()[:16]
+    src = _truncate_text(source_name, 28)
+    return Candidate(
+        title=f"(コメント速報) {member}｜{_truncate_text(source_title, 40)}",
+        metric=_PLAYER_COMMENT_METRIC,
+        period_label="本人コメント",
+        draft_text="\n".join([
+            "【根拠: 記事本文の本人発言 (literal)】",
+            f"発言者: {member}",
+            f"元媒体: {src or 'unknown'}",
+            f"元記事: {_truncate_text(source_title, 60)}",
+            f"元記事URL: {url}",
+            "",
+            "【X 投稿案 (たんぱく・LLM不使用・literal)】",
+            post_text,
+        ]),
+        char_count=len(post_text),
+        signature=f"player_comment|{signature_hash}|False|None",
+        post_text=post_text,
+        focus_player=member,
+        source_material_type="player_comment",
+    )
+
+
 def build_fan_voice_candidate(
     entry: dict,
     *,
@@ -1491,9 +1561,11 @@ def build_data_split_candidates(
             lo = min(avgs, key=avgs.get)
             gap = avgs[hi] - avgs[lo]
             if gap >= min_gap:
+                # たんぱく事実型 (chikupn2896 式): 【名前】front-load + split数字 + 客観の文脈。 主観感想なし。
                 post = (
-                    f"{canon}、今季は{hi}に強い。{hi}の打率は{_fmt_avg3(avgs[hi])}で、"
-                    f"{lo}の{_fmt_avg3(avgs[lo])}を大きく上回る。時間帯で見える勝負強さ。#巨人 #ジャイアンツ"
+                    f"【{canon}】{hi}に強い\n"
+                    f"序盤{_fmt_avg3(avgs['序盤'])} / 中盤{_fmt_avg3(avgs['中盤'])} / 終盤{_fmt_avg3(avgs['終盤'])}\n"
+                    f"{inn[hi][0]}打数規模で時間帯差が大きい #巨人 #ジャイアンツ"
                 )
                 fact = (
                     f"{hi}打率 {_fmt_avg3(avgs[hi])} ({inn[hi][1]}安打/{inn[hi][0]}打数) "
@@ -1511,9 +1583,11 @@ def build_data_split_candidates(
                 hi_label, hi_avg = ("本拠地", havg) if havg >= aavg else ("ビジター", aavg)
                 lo_label, lo_avg = ("ビジター", aavg) if hi_label == "本拠地" else ("本拠地", havg)
                 hi_ab, hi_h = venue[hi_label]
+                # たんぱく事実型 (chikupn2896 式)。
                 post = (
-                    f"{canon}、{hi_label}での打率{_fmt_avg3(hi_avg)}が{lo_label}({_fmt_avg3(lo_avg)})を大きく上回る。"
-                    f"{'home' if hi_label=='本拠地' else 'ロード'}向きの今季。#巨人 #ジャイアンツ"
+                    f"【{canon}】{hi_label}に強い\n"
+                    f"本拠地{_fmt_avg3(havg)} / ビジター{_fmt_avg3(aavg)}\n"
+                    f"{hi_ab}打数規模 大手未掲載の球場別split #巨人 #ジャイアンツ"
                 )
                 fact = (
                     f"{hi_label}打率 {_fmt_avg3(hi_avg)} ({hi_h}安打/{hi_ab}打数) "
@@ -1529,18 +1603,8 @@ def build_data_split_candidates(
         if dedup_set is not None and signature in dedup_set:
             LOG.info("data_split dedup skip %s", signature)
             continue
-        # voice化 (B、 2026-06-01): comment_fn (フーガ+缶詰 LLM) があれば、 データへの
-        # フーガ風の一言の読みを頭に足す (数字は表側に残す)。 rate 数字を渡さない neutral 文を
-        # source にして echo を防ぐ。 失敗/空なら lead 無しで従来の表のみ (graceful)。
-        if comment_fn:
-            neutral = title.split(" (")[0]  # 「岡本和真 序盤に強い」 (rate 抜き)
-            try:
-                lead = (comment_fn(neutral, canon) or "").strip()
-            except Exception as exc:  # noqa: BLE001
-                LOG.info("data_split comment_fn skip: %r", exc)
-                lead = ""
-            if lead:
-                post_text = f"{lead}\n\n{post_text}"
+        # 2026-06-01: データはたんぱく事実型 (パターン①、 chikupn2896 式)。 主観フーガ lead は付けない
+        # (comment_fn は後方互換で受けるが未使用)。 主観の読みは パターン② フーガ系で別途出す。
         draft = "\n".join([
             "【根拠: 巨人選手データ (大手未掲載 split)】",
             db_fact_line,

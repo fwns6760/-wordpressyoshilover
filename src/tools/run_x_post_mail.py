@@ -566,6 +566,25 @@ def _fetch_news_opinion_fallback_candidates(
                 player,
                 link,
             )
+            # 併産 (user 2026-06-01「値段一緒なら両方ほしい」): 記事本文から本人コメントが
+            # literal で取れれば、 たんぱく①「コメント速報」も追加 (LLM不使用・¥0)。 全 graceful。
+            try:
+                creq = urlrequest.Request(link, headers={"User-Agent": "yoshilover-x-post-mail/1.0"})
+                with urlrequest.urlopen(creq, timeout=timeout_seconds) as cresp:  # noqa: S310
+                    html_text = cresp.read().decode("utf-8", errors="replace")
+                ccand = lane.build_player_comment_candidate(
+                    member_name=player,
+                    source_title=title,
+                    source_url=link,
+                    html_text=html_text,
+                    source_name=str(source.get("name") or ""),
+                    now=now,
+                )
+                if ccand is not None:
+                    out.append(ccand)
+                    LOG.info("player_comment_candidate_added player=%s url=%s", player, link)
+            except Exception as _cexc:  # noqa: BLE001
+                LOG.info("player_comment_skip url=%s: %r", link, _cexc)
     LOG.info(
         "news_opinion_fallback freshness max_age_h=%.1f added=%d skipped_stale=%d skipped_no_date=%d",
         max_age_hours,
@@ -1622,7 +1641,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                     now=now_jst,
                     max_count=ds_max,
                     dedup_set=dedup_set,
-                    comment_fn=_make_voiced_comment_fn(now_jst, "このデータ"),  # B: フーガ風の一言
                 )
             except Exception as _ds_exc:  # noqa: BLE001
                 LOG.warning("data_split build failed: %r", _ds_exc)

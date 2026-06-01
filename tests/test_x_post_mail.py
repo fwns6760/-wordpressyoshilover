@@ -3401,3 +3401,42 @@ class VideoRadarImpressionPolicyTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BuildPlayerCommentCandidateTests(unittest.TestCase):
+    """パターン①: 選手コメント速報 (literal、 LLM不使用、 たんぱく)。"""
+
+    _HTML = (
+        "<html><body>竹丸和幸投手は試合後、"
+        "「8イニングはアマ時代含めて結構久々だったんですけど、思ったよりいけるなと。"
+        "そういう感じです。きょうぐらいテンポよくいければ、それなりにイニングが食えるのかなとは思います」"
+        "と振り返った。</body></html>"
+    )
+
+    def test_self_standing_long_quote(self):
+        from src import x_post_mail_lane as lane
+        c = lane.build_player_comment_candidate(
+            member_name="竹丸和幸", source_title="竹丸8回好投も黒星",
+            source_url="https://x.test/1", html_text=self._HTML,
+        )
+        self.assertIsNotNone(c)
+        self.assertEqual(c.metric, "PLAYER_COMMENT")
+        self.assertTrue(c.post_text.startswith("【竹丸和幸】「"))   # コメント主役
+        self.assertIn("思ったよりいけるなと", c.post_text)          # literal
+        self.assertNotIn("http", c.post_text)
+
+    def test_no_quote_returns_none(self):
+        from src import x_post_mail_lane as lane
+        c = lane.build_player_comment_candidate(
+            member_name="坂本勇人", source_title="x",
+            source_url="https://x.test/2", html_text="<html><body>本文に発言なし</body></html>",
+        )
+        self.assertIsNone(c)
+
+    def test_non_member_returns_none(self):
+        from src import x_post_mail_lane as lane
+        c = lane.build_player_comment_candidate(
+            member_name="架空太郎", source_title="x",
+            source_url="https://x.test/3", html_text=self._HTML,
+        )
+        self.assertIsNone(c)

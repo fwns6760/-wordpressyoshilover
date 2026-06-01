@@ -1541,41 +1541,7 @@ def build_data_split_candidates(
     return out
 
 
-_VIDEO_RADAR_METRIC = "video_radar"
-
-
-def _video_radar_today_context(db_path: Optional[str]) -> tuple[set[str], str]:
-    """insight.db から直近試合の巨人スタメン player_canonical 集合 + 対戦相手を返す。
-
-    今日の文脈ボーナス用。 取得失敗 / db_path 不在は ``(set(), "")`` (context なし)。
-    """
-    if not db_path:
-        return set(), ""
-    try:
-        with _sqlite3.connect(db_path) as conn:
-            cur = conn.cursor()
-            row = cur.execute("SELECT MAX(game_date) FROM games").fetchone()
-            latest = row[0] if row else None
-            if not latest:
-                return set(), ""
-            gid_row = cur.execute(
-                "SELECT game_id, opponent FROM games WHERE game_date=? LIMIT 1", (latest,)
-            ).fetchone()
-            if not gid_row:
-                return set(), ""
-            game_id, opponent = gid_row[0], str(gid_row[1] or "")
-            players = {
-                str(r[0]).strip()
-                for r in cur.execute(
-                    "SELECT player_canonical FROM lineups WHERE game_id=? AND team_name='巨人'",
-                    (game_id,),
-                ).fetchall()
-                if r and r[0]
-            }
-            return players, opponent
-    except Exception as exc:  # noqa: BLE001
-        LOG.info("video_radar today-context skip: %r", exc)
-        return set(), ""
+_VIDEO_RADAR_METRIC = "x_buzz_post"
 
 
 def build_video_radar_candidates(
@@ -1587,11 +1553,12 @@ def build_video_radar_candidates(
     fetch_fn=None,
     min_score: int = 2,
 ) -> list[Candidate]:
-    """451: 公式 / OB / メディアの YouTube RSS から「懐かしい・ファンが面白い」動画を拾い、
-    X 投稿候補 (メール) を作る。
+    """451: 巨人系 X account の投稿 (RSSHub 経由) から「懐かしい・ファンが面白い・いま話題」の
+    投稿を拾い、 **引用RT / リプライ** 用の X 投稿候補 (メール) を作る。
 
-    チャンネルは全部対象 (status=excluded のみ除外、 user 2026-06-01)。 出力は URL 紹介のみで
-    **転載しない**。 公開 X 自動投稿はしない (候補=メールまで)。 Gemini / X API 不使用。
+    user 方針 (2026-06-01): **YouTube は使わない**。 外部リンクは X でリーチが落ちるため、
+    X 内で完結する引用RT/リプライ候補にする (本文に外部リンクを貼らない)。 一記事一本 (選手ごと 1 本)。
+    公開 X 自動投稿はしない (候補=メールまで)。 Gemini / X API 不使用。
     """
     if now is None:
         now = datetime.now(JST)
@@ -1600,113 +1567,87 @@ def build_video_radar_candidates(
     except Exception as exc:  # noqa: BLE001
         LOG.warning("video_radar import failed: %r", exc)
         return []
-    channels = _vr.load_radar_channels()
-    if not channels:
-        return []
-    today_players, today_opponent = _video_radar_today_context(db_path)
     alias_map = _load_giants_player_aliases()
 
-    def _detect(title: str) -> str:
-        return detect_giants_player_name(title, alias_map=alias_map)
+    def _detect(text: str) -> str:
+        return detect_giants_player_name(text, alias_map=alias_map)
 
     # X バズ signal (RSSHub 経由、 X API 不使用)。 取得失敗は空で続行 (graceful)。
     try:
         buzz_counts = _vr.fetch_buzzing_players(detect_player_fn=_detect, fetch_fn=fetch_fn)
     except Exception as exc:  # noqa: BLE001
-        LOG.info("video_radar buzz skip: %r", exc)
+        LOG.info("x_buzz buzz skip: %r", exc)
         buzz_counts = {}
     buzz_players = set(buzz_counts)
     if buzz_players:
-        LOG.info("video_radar buzz players: %s", sorted(buzz_counts.items(), key=lambda kv: kv[1], reverse=True))
+        LOG.info("x_buzz buzz players: %s", sorted(buzz_counts.items(), key=lambda kv: kv[1], reverse=True))
 
     try:
-        videos = _vr.gather_radar_videos(
-            channels=channels,
+        posts = _vr.gather_buzz_posts(
             detect_player_fn=_detect,
             fetch_fn=fetch_fn,
-            today_players=today_players,
-            today_opponent=today_opponent,
             buzz_players=buzz_players,
             min_score=min_score,
         )
     except Exception as exc:  # noqa: BLE001
-        LOG.warning("video_radar gather failed: %r", exc)
+        LOG.warning("x_buzz gather failed: %r", exc)
         return []
 
     out: list[Candidate] = []
-    used_channels: set[str] = set()
     used_players: set[str] = set()
-    for v in videos:
+    for p in posts:
         if len(out) >= max_count:
             break
-        signature = f"video_radar|{v['video_id']}"
+        url = (p.get("url") or "").strip()
+        if not url:
+            continue
+        signature = "xbuzz|" + _hashlib.sha1(url.encode("utf-8")).hexdigest()[:16]
         if dedup_set is not None and signature in dedup_set:
             continue
-        vplayer = (v.get("player") or "").strip()
-        # 一記事一本: 同じ選手の動画は 1 本だけ。 選手 unknown なら channel で多様性。
-        if vplayer:
-            if vplayer in used_players:
-                continue
-        elif v.get("channel") in used_channels:
+        player = (p.get("player") or "").strip()
+        # 一記事一本: 同じ選手は 1 本だけ
+        if player and player in used_players:
             continue
-        used_channels.add(v.get("channel", ""))
-        if vplayer:
-            used_players.add(vplayer)
-        title = str(v["title"]).replace("\n", " ").strip()
-        short = _truncate_text(title, 36)
-        tag = v["type_tag"]
-        url = v["video_url"]
-        channel = v.get("channel", "")
-        player = v.get("player", "")
+        if player:
+            used_players.add(player)
+        tag = p["type_tag"]
+        src_text = _truncate_text(str(p.get("text") or "").replace("\n", " ").strip(), 140)
+        handle = p.get("handle", "")
+        # 引用RT コメント案 (native、 本文に外部リンクを貼らない)
         if tag == "Xで話題" and player:
-            post_text = (
-                f"いま X で話題の{player}。こんな一本も ▶ {short}（{channel}）{url} "
-                f"#巨人 #ジャイアンツ"
-            )
-        elif player and player in today_players:
-            post_text = (
-                f"{player}、今日の試合とつながる一本。{tag}「{short}」▶ {url} "
-                f"見どころと一緒にどうぞ。#巨人 #ジャイアンツ"
-            )
-        elif tag in ("OB・懐かし", "名場面回顧", "過去ハイライト"):
-            who = f"{player}の" if player else ""
-            post_text = (
-                f"【{tag}】{who}「{short}」（{channel}）▶ {url} "
-                f"懐かしさに浸れる一本。#巨人 #ジャイアンツ"
-            )
+            post_text = f"いま X で話題の{player}。ファンの反応がアツい。#巨人 #ジャイアンツ"
+        elif tag == "懐かし・名場面":
+            who = player or "巨人"
+            post_text = f"【懐かし】{who}のこの話題、刺さる人いるはず。#巨人 #ジャイアンツ"
+        elif player:
+            post_text = f"{player}、注目の一件。#巨人 #ジャイアンツ"
         else:
-            post_text = f"【{tag}】「{short}」（{channel}）▶ {url} #巨人 #ジャイアンツ"
-        desc = str(v.get("description") or "").replace("\n", " ").strip()
-        desc_excerpt = _truncate_text(desc, 160) if desc else "(説明なし)"
+            post_text = "巨人の注目の話題。#巨人 #ジャイアンツ"
         draft = "\n".join([
-            f"【動画候補: {tag}】",
-            f"タイトル: {title}",
-            f"チャンネル: {channel}",
-            f"公開日: {v.get('published_at','')}",
+            f"【引用RT候補: {tag}】",
             f"検出選手: {player or '(なし)'}",
-            f"動画URL: {url}",
+            f"引用RT/リプライ先 (元投稿): {url}",
+            f"元投稿本文: {src_text}",
             "",
-            "【内容(動画説明)】",
-            desc_excerpt,
-            "",
-            "【X 投稿案 (user が手で投稿)】",
+            "【引用RTコメント案 (native・外部リンク無し=リーチ維持)】",
             post_text,
             "",
-            "※ 権利: 公式/チャンネル動画への紹介リンクのみ。 動画ファイルの転載・切り抜き再アップはしない。",
+            "※ X 内で完結 (元投稿を引用RT または リプライ)。 本文に YouTube 等の外部リンクを貼らない",
+            "  (外部リンクは X でリーチが落ちるため)。 動画ファイルの転載はしない。",
         ])
         out.append(Candidate(
-            title=f"(動画) {tag}｜{channel}｜{short}",
+            title=f"(引用RT) {tag}｜@{handle}｜{player or '巨人'}",
             metric=_VIDEO_RADAR_METRIC,
-            period_label="動画候補",
+            period_label="引用RT候補",
             draft_text=draft,
             char_count=len(post_text),
             signature=signature,
             post_text=post_text,
             focus_player=player,
-            why_now="動画レーダー (懐かし/ファン反応)",
-            source_material_type="video_radar",
+            why_now="X バズ投稿 (引用RT、 native)",
+            source_material_type="x_buzz_post",
         ))
-    LOG.info("video_radar: built %d candidates (scanned %d channels)", len(out), len(channels))
+    LOG.info("x_buzz: built %d candidates (from X posts via RSSHub)", len(out))
     return out
 
 

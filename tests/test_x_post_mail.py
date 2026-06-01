@@ -3215,78 +3215,56 @@ class BuildDataSplitCandidatesTests(unittest.TestCase):
 
 
 class BuildVideoRadarCandidatesTests(unittest.TestCase):
-    """451: 動画レーダー候補 (公式/OB YouTube、 転載なし URL 紹介)。"""
+    """451: X バズ投稿の引用RT候補 (YouTube 不使用、 外部リンク無し、 X 内完結)。"""
 
+    # RSSHub twitter feed 風 RSS。 坂本の投稿 1 件。
     _FEED = (
-        "<feed xmlns:yt='http://www.youtube.com/xml/schemas/2015'>"
-        "<title>巨人公式</title>"
-        "<entry><yt:videoId>VIDA</yt:videoId>"
-        "<title>【名場面】坂本勇人 2013年 伝説のサヨナラ</title>"
-        "<published>2026-05-30T10:00:00+00:00</published></entry>"
-        "</feed>"
+        "<rss><channel>"
+        "<item><title>坂本勇人 サヨナラ満塁ホームラン</title>"
+        "<link>https://x.com/yomiuri_giants/status/111</link></item>"
+        "</channel></rss>"
     )
 
-    def test_builds_candidate_with_url_and_no_repost_note(self):
+    def _detect_patch(self):
         from unittest import mock
+        # 「坂本」を含む投稿は坂本勇人を返す簡易 detector
+        return mock.patch(
+            "src.x_post_mail_lane.detect_giants_player_name",
+            side_effect=lambda t, alias_map=None: "坂本勇人" if "坂本" in str(t) else "",
+        )
+
+    def test_builds_quote_rt_candidate_native_no_external_link(self):
         from src import x_post_mail_lane as lane
-        with mock.patch(
-            "src.video_radar.load_radar_channels",
-            return_value=[{"channel_id": "UCx", "name": "巨人公式", "role": "official", "status": "confirmed"}],
-        ):
+        with self._detect_patch():
             cands = lane.build_video_radar_candidates(
                 db_path=None, max_count=3, fetch_fn=lambda url: self._FEED,
             )
+        # 一記事一本: 坂本は 1 本だけ
         self.assertEqual(len(cands), 1)
         c = cands[0]
-        self.assertEqual(c.metric, "video_radar")
-        self.assertIn("watch?v=VIDA", c.post_text)         # URL 紹介
+        self.assertEqual(c.metric, "x_buzz_post")
+        self.assertEqual(c.focus_player, "坂本勇人")
+        # 本文は native (外部リンクを貼らない)
+        self.assertNotIn("http", c.post_text)
         self.assertIn("#巨人", c.post_text)
-        self.assertEqual(c.signature, "video_radar|VIDA")
-        self.assertNotIn("さん", c.post_text)               # 敬称なし
-        self.assertIn("転載", c.draft_text)                 # 権利注記 (転載しない)
+        self.assertTrue(c.signature.startswith("xbuzz|"))
+        # 元投稿 URL は draft (引用RT/リプライ先) に入る
+        self.assertIn("引用RT/リプライ先", c.draft_text)
+        self.assertIn("https://x.com/yomiuri_giants/status/", c.draft_text)
+        self.assertNotIn("さん", c.post_text)
 
     def test_dedup_set_skips(self):
-        from unittest import mock
         from src import x_post_mail_lane as lane
-        with mock.patch(
-            "src.video_radar.load_radar_channels",
-            return_value=[{"channel_id": "UCx", "name": "巨人公式", "role": "official", "status": "confirmed"}],
-        ):
-            cands = lane.build_video_radar_candidates(
+        with self._detect_patch():
+            first = lane.build_video_radar_candidates(
                 db_path=None, max_count=3, fetch_fn=lambda url: self._FEED,
-                dedup_set={"video_radar|VIDA"},
             )
-        self.assertEqual(cands, [])
-
-    _FEED_TWO_SAME_PLAYER = (
-        "<feed xmlns:yt='http://www.youtube.com/xml/schemas/2015' "
-        "xmlns:media='http://search.yahoo.com/mrss/'>"
-        "<title>巨人公式</title>"
-        "<entry><yt:videoId>VID1</yt:videoId>"
-        "<title>【名場面】坂本勇人 2013年 伝説のサヨナラ</title>"
-        "<media:description>2013年の劇的な一打を振り返る</media:description>"
-        "<published>2026-05-30T10:00:00+00:00</published></entry>"
-        "<entry><yt:videoId>VID2</yt:videoId>"
-        "<title>【名場面】坂本勇人 2016年 満塁ホームラン</title>"
-        "<published>2026-05-29T10:00:00+00:00</published></entry>"
-        "</feed>"
-    )
-
-    def test_one_video_per_player_and_description_in_draft(self):
-        from unittest import mock
-        from src import x_post_mail_lane as lane
-        with mock.patch(
-            "src.video_radar.load_radar_channels",
-            return_value=[{"channel_id": "UCx", "name": "巨人公式", "role": "official", "status": "confirmed"}],
-        ):
-            cands = lane.build_video_radar_candidates(
-                db_path=None, max_count=3, fetch_fn=lambda url: self._FEED_TWO_SAME_PLAYER,
+            sigs = {c.signature for c in first}
+            again = lane.build_video_radar_candidates(
+                db_path=None, max_count=3, fetch_fn=lambda url: self._FEED,
+                dedup_set=sigs,
             )
-        # 一記事一本: 同じ坂本勇人の動画は 1 本だけ
-        self.assertEqual(len(cands), 1)
-        # 内容(動画説明)がメール draft に入る
-        self.assertIn("【内容(動画説明)】", cands[0].draft_text)
-        self.assertIn("劇的な一打", cands[0].draft_text)
+        self.assertEqual(again, [])
 
 
 class VideoRadarImpressionPolicyTests(unittest.TestCase):

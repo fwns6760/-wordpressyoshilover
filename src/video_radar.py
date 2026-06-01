@@ -1,29 +1,20 @@
-"""451: video-nostalgia-radar — 公式 / OB / メディアの YouTube RSS を read-only 巡回し、
-「懐かしい・ファンが面白い」動画を X 投稿候補の素材として **拾う**。
+"""451: X-buzz-post radar — 自前 RSSHub (X→RSS、 X API 不使用) で巨人系 X account を
+read-only 巡回し、「懐かしい・ファンが面白い・いま話題」の **X 投稿** を拾って、
+ユーザーが **引用RT / リプライ** で native に乗れる候補にする。
 
-重要な境界:
-- 動画ファイルの転載・切り抜き再アップは **しない**。 出力は URL / 埋め込み紹介のみ。
-- 「拾う(候補化)」と「転載」は別レイヤー。 チャンネルは全部スキャンしてよいが (user 2026-06-01)、
-  status=excluded のものだけ除外する。
-- Gemini / X API は使わない。 YouTube は公開 RSS (`feeds/videos.xml?channel_id=...`) を HTTP GET。
-
-このモジュールは pure / network 注入可能で、 Candidate 生成は x_post_mail_lane 側が行う。
+方針 (user 2026-06-01):
+- **YouTube は使わない**。 外部リンク (YouTube 等) は X でリーチが落ちるため、
+  X 内で完結する「引用RT/リプライ」候補にする (外部リンクを本文に貼らない)。
+- 動画ファイルの転載はしない (そもそも投稿の引用 = native 参照のみ)。
+- Gemini / X API は使わない。 RSSHub の twitter/user route は 445 で稼働実証済み。
 """
 from __future__ import annotations
 
-import json as _json
 import re as _re
-from pathlib import Path as _Path
 from typing import Callable, Optional
 from urllib.request import Request as _Request, urlopen as _urlopen
 
-from src.source_youtube_extractor import parse_youtube_atom
-
-_CONFIG_DIR = _Path(__file__).resolve().parents[1] / "config"
-_FEED_URL = "https://www.youtube.com/feeds/videos.xml?channel_id={cid}"
-
-# 445 と同じ自前 RSSHub (X→RSS bridge) を再利用して「X でバズってる選手」signal を取る。
-# X API は使わない。 RSSHub の twitter/user route は 445 で稼働実証済み。
+# 445 と同じ自前 RSSHub (X→RSS bridge)。
 _RSSHUB_BASE = "https://rsshub-487178857517.asia-northeast1.run.app"
 _BUZZ_HANDLES = ["yomiuri_giants", "TokyoGiants", "hochi_giants", "Sanspo_Giants"]
 
@@ -39,73 +30,24 @@ _FUN_MARKERS = (
     "サヨナラ", "満塁", "逆転", "完全試合", "ノーヒットノーラン", "好プレー", "ファインプレー",
     "デビュー", "初", "号", "引退", "復活", "復帰",
 )
-# 二軍 marker
-_FARM_MARKERS = ("二軍", "ファーム", "イースタン", "三軍")
 
 
-def load_radar_channels(
+def classify_post(
+    text: str,
     *,
-    ob_path: Optional[_Path] = None,
-    video_path: Optional[_Path] = None,
-) -> list[dict]:
-    """棚卸し済みチャンネルを全部返す (status=excluded / role=excluded のみ除外)。
-
-    youtube_ob_sources.json (OB / メディア / 公式) + youtube_video_sources.json
-    (公式 / 放送) をマージ。 channel_id 重複は ob 側を優先。
-    """
-    ob_path = ob_path or (_CONFIG_DIR / "youtube_ob_sources.json")
-    video_path = video_path or (_CONFIG_DIR / "youtube_video_sources.json")
-    out: dict[str, dict] = {}
-
-    def _add(cid: str, name: str, role: str, status: str) -> None:
-        cid = (cid or "").strip()
-        if not cid:
-            return
-        if (status or "").strip().lower() == "excluded" or (role or "").strip().lower() == "excluded":
-            return
-        if cid not in out:
-            out[cid] = {"channel_id": cid, "name": name or cid, "role": role or "", "status": status or ""}
-
-    try:
-        ob = _json.loads(ob_path.read_text(encoding="utf-8"))
-        for s in ob.get("sources", []):
-            _add(s.get("channel_id", ""), s.get("display_name", ""), s.get("role", ""), s.get("status", ""))
-    except Exception:  # noqa: BLE001
-        pass
-    try:
-        vid = _json.loads(video_path.read_text(encoding="utf-8"))
-        rows = vid if isinstance(vid, list) else vid.get("sources", vid.get("channels", []))
-        for s in (rows or []):
-            url = str(s.get("url") or "")
-            m = _re.search(r"channel_id=([A-Za-z0-9_-]+)", url)
-            cid = m.group(1) if m else str(s.get("channel_id") or "")
-            _add(cid, s.get("name", ""), s.get("role", "official_video_source"), s.get("status", "confirmed"))
-    except Exception:  # noqa: BLE001
-        pass
-    return list(out.values())
-
-
-def classify_video(
-    title: str,
-    *,
-    role: str = "",
     player: str = "",
-    today_players: Optional[set[str]] = None,
-    today_opponent: str = "",
     buzz_players: Optional[set[str]] = None,
 ) -> tuple[int, str]:
-    """動画 title からスコアと型タグを返す。 pure / 決定的 (LLM 不使用)。
+    """X 投稿テキストからスコアと型タグを返す。 pure / 決定的 (LLM 不使用)。
 
-    ``buzz_players`` = いま X でバズってる選手集合 (RSSHub 由来)。 該当すると最優先で加点。
+    ``buzz_players`` = いま X でバズってる選手集合 (RSSHub 言及数由来)。 該当を最優先で加点。
     Returns ``(score, type_tag)``。 score>=2 を候補閾値の目安にする。
     """
-    t = title or ""
+    t = text or ""
     score = 0
     nostalgia = any(m in t for m in _NOSTALGIA_MARKERS)
     fun = any(m in t for m in _FUN_MARKERS)
     has_year = bool(_re.search(r"(19|20)\d{2}", t))
-    is_farm = any(m in t for m in _FARM_MARKERS)
-    is_ob_channel = (role or "") in ("giants_ob", "ob")
     is_buzz = bool(player and buzz_players and player in buzz_players)
 
     if nostalgia:
@@ -116,55 +58,49 @@ def classify_video(
         score += 1
     if player:
         score += 2
-    if is_ob_channel:
-        score += 1  # OB 本人チャンネル = 懐かしネタ寄り
-    # 今日の文脈ボーナス
-    if player and today_players and player in today_players:
-        score += 2
-    if today_opponent and today_opponent in t:
-        score += 1
-    # X バズ ボーナス (最優先シグナル)
     if is_buzz:
-        score += 3
+        score += 3  # X バズ選手 = 最優先
 
-    # 型タグ (優先順)
     if is_buzz:
         tag = "Xで話題"
-    elif player and today_players and player in today_players:
-        tag = "今日とつながる"
-    elif is_ob_channel or (nostalgia and not is_farm):
-        tag = "OB・懐かし" if is_ob_channel else "名場面回顧"
-    elif is_farm:
-        tag = "二軍ハイライト"
-    elif has_year and player:
-        tag = "過去ハイライト"
+    elif nostalgia:
+        tag = "懐かし・名場面"
     elif fun:
-        tag = "好プレー・一瞬"
+        tag = "好プレー・反応"
+    elif player:
+        tag = "選手の話題"
     else:
-        tag = "動画紹介"
+        tag = "巨人の話題"
     return score, tag
 
 
 def _default_fetch(url: str, *, timeout: int = 12) -> str:
-    req = _Request(url, headers={"User-Agent": "yoshilover-video-radar/1.0"})
-    with _urlopen(req, timeout=timeout) as resp:  # noqa: S310 (公開 RSS のみ)
+    req = _Request(url, headers={"User-Agent": "yoshilover-x-buzz-radar/1.0"})
+    with _urlopen(req, timeout=timeout) as resp:  # noqa: S310 (自前 RSSHub のみ)
         return resp.read().decode("utf-8", errors="replace")
 
 
-def _extract_rss_item_texts(xml: str) -> list[str]:
-    """RSSHub の twitter feed (RSS 2.0) から各 item の本文テキストを抽出 (tag strip)。"""
-    out: list[str] = []
+def _strip_html(s: str) -> str:
+    s = _re.sub(r"<!\[CDATA\[(.*?)\]\]>", r"\1", s or "", flags=_re.S)
+    s = _re.sub(r"<[^>]+>", " ", s)
+    s = _re.sub(r"&[#0-9A-Za-z]+;", " ", s)
+    return _re.sub(r"\s+", " ", s).strip()
+
+
+def _extract_rss_items(xml: str) -> list[dict]:
+    """RSSHub の twitter feed (RSS 2.0) から各 item の {text, url} を抽出。"""
+    out: list[dict] = []
     for item in _re.findall(r"<item\b.*?</item>", xml or "", _re.S | _re.I):
         parts = []
         for tag in ("title", "description"):
             m = _re.search(rf"<{tag}\b[^>]*>(.*?)</{tag}>", item, _re.S | _re.I)
             if m:
                 parts.append(m.group(1))
-        text = " ".join(parts)
-        text = _re.sub(r"<!\[CDATA\[(.*?)\]\]>", r"\1", text, flags=_re.S)
-        text = _re.sub(r"<[^>]+>", " ", text)
-        text = _re.sub(r"&[#0-9A-Za-z]+;", " ", text)
-        out.append(text.strip())
+        text = _strip_html(" ".join(parts))
+        link_m = _re.search(r"<link\b[^>]*>(.*?)</link>", item, _re.S | _re.I)
+        url = _strip_html(link_m.group(1)) if link_m else ""
+        if text:
+            out.append({"text": text, "url": url})
     return out
 
 
@@ -177,10 +113,10 @@ def fetch_buzzing_players(
     top_n: int = 8,
     min_mentions: int = 2,
 ) -> dict[str, int]:
-    """RSSHub 経由で巨人系 X 4 account を読み、 言及の多い選手を {name: count} で返す。
+    """RSSHub 経由で巨人系 X account を読み、 言及の多い選手を {name: count} で返す。
 
     X API は使わない (445 と同じ self-host RSSHub の twitter/user route)。 取得失敗は
-    silent skip (空 dict)。 ``min_mentions`` 未満は落とし、 上位 ``top_n`` を返す。
+    silent skip。 ``min_mentions`` 未満は落とし、 上位 ``top_n`` を返す。
     """
     fetch = fetch_fn or _default_fetch
     handles = handles or _BUZZ_HANDLES
@@ -190,11 +126,9 @@ def fetch_buzzing_players(
             xml = fetch(f"{_RSSHUB_BASE}/twitter/user/{h}?limit={limit}")
         except Exception:  # noqa: BLE001
             continue
-        for text in _extract_rss_item_texts(xml):
-            if not text:
-                continue
+        for item in _extract_rss_items(xml):
             try:
-                p = detect_player_fn(text) or ""
+                p = detect_player_fn(item["text"]) or ""
             except Exception:  # noqa: BLE001
                 p = ""
             if p:
@@ -203,62 +137,46 @@ def fetch_buzzing_players(
     return dict(sorted(filtered.items(), key=lambda kv: kv[1], reverse=True)[:top_n])
 
 
-def gather_radar_videos(
+def gather_buzz_posts(
     *,
-    channels: list[dict],
     detect_player_fn: Callable[[str], str],
     fetch_fn: Optional[Callable[[str], str]] = None,
-    today_players: Optional[set[str]] = None,
-    today_opponent: str = "",
+    handles: Optional[list[str]] = None,
     buzz_players: Optional[set[str]] = None,
+    limit: int = 30,
     min_score: int = 2,
-    per_channel_limit: int = 8,
 ) -> list[dict]:
-    """各チャンネルの RSS を巡回し、 候補動画 dict を score 降順で返す。
+    """巨人系 X account の投稿を巡回し、 引用RT 候補に値する投稿を score 降順で返す。
 
-    各 dict: ``video_id / video_url / title / published_at / channel / role /
-    player / score / type_tag``。 network 失敗チャンネルは silent skip。
+    各 dict: ``text / url / handle / player / score / type_tag``。 X 内で完結する
+    引用RT/リプライ用なので、 YouTube 等の外部リンクは扱わない。
     """
     fetch = fetch_fn or _default_fetch
+    handles = handles or _BUZZ_HANDLES
     out: list[dict] = []
-    for ch in channels:
-        cid = ch.get("channel_id", "")
-        if not cid:
-            continue
+    seen_urls: set[str] = set()
+    for h in handles:
         try:
-            xml = fetch(_FEED_URL.format(cid=cid))
-            parsed = parse_youtube_atom(xml)
+            xml = fetch(f"{_RSSHUB_BASE}/twitter/user/{h}?limit={limit}")
         except Exception:  # noqa: BLE001
             continue
-        entries = getattr(parsed, "entries", None) or []
-        for e in entries[:per_channel_limit]:
-            title = getattr(e, "title", "") or ""
-            video_id = getattr(e, "video_id", "") or ""
-            if not title or not video_id:
+        for item in _extract_rss_items(xml):
+            text = item.get("text", "")
+            url = item.get("url", "")
+            if not text or not url or url in seen_urls:
                 continue
-            player = ""
             try:
-                player = detect_player_fn(title) or ""
+                player = detect_player_fn(text) or ""
             except Exception:  # noqa: BLE001
                 player = ""
-            score, tag = classify_video(
-                title,
-                role=ch.get("role", ""),
-                player=player,
-                today_players=today_players,
-                today_opponent=today_opponent,
-                buzz_players=buzz_players,
-            )
+            score, tag = classify_post(text, player=player, buzz_players=buzz_players)
             if score < min_score:
                 continue
+            seen_urls.add(url)
             out.append({
-                "video_id": video_id,
-                "video_url": getattr(e, "video_url", "") or f"https://www.youtube.com/watch?v={video_id}",
-                "title": title,
-                "description": (getattr(e, "description", "") or "").strip(),
-                "published_at": getattr(e, "published_at", "") or "",
-                "channel": ch.get("name", ""),
-                "role": ch.get("role", ""),
+                "text": text,
+                "url": url,
+                "handle": h,
                 "player": player,
                 "score": score,
                 "type_tag": tag,

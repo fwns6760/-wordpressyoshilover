@@ -975,6 +975,85 @@ def fetch_interleague_split_stats(player_canonical: str) -> list[SplitStat]:
 
 
 @dataclass
+class LeaderEntry:
+    """リーダーボード 1 行 (選手 + 数値)。"""
+    player: str
+    value: float
+    display: str  # 表示用("12本" / ".318" 等)
+
+
+def fetch_team_leaders(top_n: int = 8) -> dict[str, list[LeaderEntry]]:
+    """巨人選手内の各種記録ランキング (Phase B 452、追加source無し)。
+
+    本塁打は atbats_json の「本」cell 数、他は batting_logs / pitching_logs を集計。
+    Giants 選手は advanced_metric_snapshots team_code='g' の集合で判定。
+    戻り値: {stat_key: [LeaderEntry, ...top_n]}。
+    """
+    path = _ensure_insight_db_local()
+    if not path:
+        return {}
+    try:
+        with sqlite3.connect(path) as conn:
+            cur = conn.cursor()
+            giants = {r[0] for r in cur.execute(
+                "SELECT DISTINCT player_canonical FROM advanced_metric_snapshots WHERE team_code='g'")}
+            bat = cur.execute(
+                "SELECT player_canonical, COALESCE(AB,0), COALESCE(H,0), COALESCE(RBI,0), "
+                "COALESCE(SB,0), COALESCE(R,0), atbats_json FROM batting_logs").fetchall()
+            pit = cur.execute(
+                "SELECT player_canonical, COALESCE(K,0), COALESCE(IP,0.0), COALESCE(ER,0), "
+                "COALESCE(result_mark,'') FROM pitching_logs").fetchall()
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("fetch_team_leaders err: %r", exc)
+        return {}
+
+    b: dict[str, dict] = {}
+    for name, ab, h, rbi, sb, r, aj in bat:
+        if name not in giants:
+            continue
+        d = b.setdefault(name, {"AB": 0, "H": 0, "RBI": 0, "SB": 0, "R": 0, "HR": 0})
+        d["AB"] += int(ab); d["H"] += int(h); d["RBI"] += int(rbi)
+        d["SB"] += int(sb); d["R"] += int(r)
+        if aj:
+            try:
+                d["HR"] += sum(1 for c in _json.loads(aj) if "本" in str(c))
+            except Exception:  # noqa: BLE001
+                pass
+    p: dict[str, dict] = {}
+    for name, k, ip, er, mark in pit:
+        if name not in giants:
+            continue
+        d = p.setdefault(name, {"K": 0, "IP": 0.0, "ER": 0, "W": 0})
+        d["K"] += int(k); d["IP"] += float(ip or 0); d["ER"] += int(er)
+        if str(mark) == "○":
+            d["W"] += 1
+
+    def _avg(name, dd):
+        return (dd["H"] / dd["AB"]) if dd["AB"] >= 30 else None  # 規定近似: 30打数以上
+
+    def _era(name, dd):
+        return (dd["ER"] * 9.0 / dd["IP"]) if dd["IP"] >= 10 else None  # 10回以上
+
+    def top(items, keyf, dispf, desc=True, top_n=top_n):
+        scored = [(n, keyf(n, d), dispf(n, d)) for n, d in items]
+        scored = [(n, v, disp) for n, v, disp in scored if v is not None]
+        scored.sort(key=lambda x: x[1], reverse=desc)
+        return [LeaderEntry(n, float(v), disp) for n, v, disp in scored[:top_n]]
+
+    out: dict[str, list[LeaderEntry]] = {
+        "本塁打": top(b.items(), lambda n, d: d["HR"], lambda n, d: f'{d["HR"]}本'),
+        "打点": top(b.items(), lambda n, d: d["RBI"], lambda n, d: f'{d["RBI"]}'),
+        "安打": top(b.items(), lambda n, d: d["H"], lambda n, d: f'{d["H"]}'),
+        "盗塁": top(b.items(), lambda n, d: d["SB"], lambda n, d: f'{d["SB"]}'),
+        "打率": top(b.items(), _avg, lambda n, d: f'{d["H"]/d["AB"]:.3f}'.lstrip("0") if d["AB"] >= 30 else ""),
+        "奪三振": top(p.items(), lambda n, d: d["K"], lambda n, d: f'{d["K"]}'),
+        "勝利": top(p.items(), lambda n, d: d["W"], lambda n, d: f'{d["W"]}'),
+        "防御率": top(p.items(), _era, lambda n, d: f'{d["ER"]*9.0/d["IP"]:.2f}' if d["IP"] >= 10 else "", desc=False),
+    }
+    return {k: v for k, v in out.items() if v}
+
+
+@dataclass
 class GiantsScheduleRow:
     """巨人 1 試合の日程・結果 (data/schedule ページ用、Phase B 452)。"""
     game_date: str       # YYYY-MM-DD
@@ -1475,6 +1554,8 @@ __all__ = [
     "fetch_interleague_split_stats",
     "GiantsScheduleRow",
     "fetch_giants_schedule",
+    "LeaderEntry",
+    "fetch_team_leaders",
     "fetch_hit_streak",
     "fetch_contribution_streak",
     "fetch_pitching_stats_season",

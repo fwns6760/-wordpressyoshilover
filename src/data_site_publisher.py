@@ -42,6 +42,7 @@ from src.data_site_query import (
     fetch_month_split_stats,
     fetch_interleague_split_stats,
     fetch_giants_schedule,
+    fetch_team_leaders,
     fetch_player_npb_ranks,
     fetch_pitching_stats_season,
     fetch_recent_games,
@@ -70,6 +71,11 @@ from src.data_site_template_schedule import (
     render_schedule_html,
     render_schedule_title,
     render_schedule_excerpt,
+)
+from src.data_site_template_leaders import (
+    render_leaders_html,
+    render_leaders_title,
+    render_leaders_excerpt,
 )
 from src.data_site_template_pillar import (
     PillarPlayerInfo,
@@ -426,6 +432,18 @@ def publish_phase1() -> dict[str, object]:
     )
     LOG.info("schedule upsert slug=schedule page_id=%s action=%s games=%d",
              sched_result.page_id, sched_result.action, len(sched_rows))
+
+    # leaders ページ upsert (選手別ランキング、Phase B 452) — parent=cluster → /data/leaders/
+    leaders = fetch_team_leaders()
+    leaders_result = _upsert_page(
+        slug="leaders",
+        title=render_leaders_title(),
+        content_html=render_leaders_html(leaders),
+        parent=cluster_page_id,
+        excerpt=render_leaders_excerpt(leaders),
+    )
+    LOG.info("leaders upsert slug=leaders page_id=%s action=%s stats=%d",
+             leaders_result.page_id, leaders_result.action, len(leaders))
 
     summary = {
         "status": "ok",

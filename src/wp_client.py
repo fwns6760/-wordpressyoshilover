@@ -1213,6 +1213,19 @@ class WPClient:
         )
         return resp.json()
 
+    def get_media(self, media_id: int) -> dict:
+        """media (attachment) ID で metadata を取得して dict を返す。
+
+        attachment は ``/posts/{id}`` ではなく ``/media/{id}`` に居る。 get_post で
+        引くと 404 になる (437 share-x-image-proxy 502 の原因だった)。
+        """
+        resp = self._request_with_retry(
+            requests.get,
+            f"{self.api}/media/{media_id}",
+            action=f"メディア取得 media_id={media_id}",
+        )
+        return resp.json()
+
     def list_recent_featured_media_ids(
         self,
         *,

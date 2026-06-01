@@ -922,6 +922,18 @@ class TestWPClientRetryHandling(unittest.TestCase):
         mock_sleep.assert_called_once_with(7.0)
 
     @patch("src.wp_client.requests.get")
+    def test_get_media_hits_media_endpoint(self, mock_get):
+        # 437 fix: attachment は /media/{id} に居る。 /posts/{id} だと 404 → share 画像 502。
+        mock_get.return_value = _mock_response(
+            200, json_data={"id": 75831, "source_url": "https://example.com/x.jpg"}
+        )
+        media = self.wp.get_media(75831)
+        self.assertEqual(media.get("source_url"), "https://example.com/x.jpg")
+        called_url = mock_get.call_args[0][0]
+        self.assertIn("/media/75831", called_url)
+        self.assertNotIn("/posts/75831", called_url)
+
+    @patch("src.wp_client.requests.get")
     def test_get_post_retries_5xx_with_backoff_then_fails(self, mock_get):
         mock_get.return_value = _mock_response(503, text="service unavailable")
 

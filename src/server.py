@@ -618,7 +618,9 @@ def _run_share_x_image_proxy(
         失敗時 / 5MB 超 / source_url 不在 → None。
         """
         try:
-            media = wp.get_post(int(media_id))
+            # attachment は /media/{id} に居る。 get_post (/posts/{id}) だと 404 になり
+            # 全 share 画像が 502 になっていた (437 bug fix 2026-06-01)。
+            media = wp.get_media(int(media_id))
         except Exception as exc:  # noqa: BLE001
             log.warning("share_x_image_proxy_media_get_failed media_id=%s err=%s", media_id, exc)
             return None

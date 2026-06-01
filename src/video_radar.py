@@ -16,9 +16,21 @@ from urllib.request import Request as _Request, urlopen as _urlopen
 
 # 445 と同じ自前 RSSHub (X→RSS bridge)。
 _RSSHUB_BASE = "https://rsshub-487178857517.asia-northeast1.run.app"
-# 巨人公式は @TokyoGiants (82万 follower、 実feed検証済 2026-06-01)。 旧 yomiuri_giants は
-# RSSHub で「@趣味」の1月の古いRTしか返さない死にハンドルだったため除外。
-_BUZZ_HANDLES = ["TokyoGiants", "hochi_giants", "Sanspo_Giants"]
+# 動画 source の巨人系 X account (user 2026-06-01 指定 + 既存良source)。 全ハンドル実feed
+# 検証済 (実在 / 鮮度 / 動画サムネ): TokyoGiants=読売ジャイアンツ公式, hochi_giants=報知,
+# Sanspo_Giants=サンスポ(動画多), tospo_giants=東スポ巨人, SponichiGiants=スポニチ巨人,
+# koba_nikkan=小早川宗一郎(日刊・練習動画), ntv_baseball=DRAMATIC BASEBALL 2026(日テレ巨人中継・動画最多),
+# DAZNJPNBaseball=DAZNベースボール。 旧 yomiuri_giants は死にハンドル (1月の「@趣味」RTのみ) で除外。
+_BUZZ_HANDLES = [
+    "TokyoGiants",
+    "hochi_giants",
+    "Sanspo_Giants",
+    "tospo_giants",
+    "SponichiGiants",
+    "koba_nikkan",
+    "ntv_baseball",
+    "DAZNJPNBaseball",
+]
 
 # 「懐かしい / 名場面」系シグナル
 _NOSTALGIA_MARKERS = (

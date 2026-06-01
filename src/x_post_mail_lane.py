@@ -1609,6 +1609,16 @@ def build_video_radar_candidates(
     def _detect(title: str) -> str:
         return detect_giants_player_name(title, alias_map=alias_map)
 
+    # X バズ signal (RSSHub 経由、 X API 不使用)。 取得失敗は空で続行 (graceful)。
+    try:
+        buzz_counts = _vr.fetch_buzzing_players(detect_player_fn=_detect, fetch_fn=fetch_fn)
+    except Exception as exc:  # noqa: BLE001
+        LOG.info("video_radar buzz skip: %r", exc)
+        buzz_counts = {}
+    buzz_players = set(buzz_counts)
+    if buzz_players:
+        LOG.info("video_radar buzz players: %s", sorted(buzz_counts.items(), key=lambda kv: kv[1], reverse=True))
+
     try:
         videos = _vr.gather_radar_videos(
             channels=channels,
@@ -1616,6 +1626,7 @@ def build_video_radar_candidates(
             fetch_fn=fetch_fn,
             today_players=today_players,
             today_opponent=today_opponent,
+            buzz_players=buzz_players,
             min_score=min_score,
         )
     except Exception as exc:  # noqa: BLE001
@@ -1640,7 +1651,12 @@ def build_video_radar_candidates(
         url = v["video_url"]
         channel = v.get("channel", "")
         player = v.get("player", "")
-        if player and player in today_players:
+        if tag == "Xで話題" and player:
+            post_text = (
+                f"いま X で話題の{player}。こんな一本も ▶ {short}（{channel}）{url} "
+                f"#巨人 #ジャイアンツ"
+            )
+        elif player and player in today_players:
             post_text = (
                 f"{player}、今日の試合とつながる一本。{tag}「{short}」▶ {url} "
                 f"見どころと一緒にどうぞ。#巨人 #ジャイアンツ"

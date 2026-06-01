@@ -22,6 +22,11 @@ from src.source_youtube_extractor import parse_youtube_atom
 _CONFIG_DIR = _Path(__file__).resolve().parents[1] / "config"
 _FEED_URL = "https://www.youtube.com/feeds/videos.xml?channel_id={cid}"
 
+# 445 と同じ自前 RSSHub (X→RSS bridge) を再利用して「X でバズってる選手」signal を取る。
+# X API は使わない。 RSSHub の twitter/user route は 445 で稼働実証済み。
+_RSSHUB_BASE = "https://rsshub-487178857517.asia-northeast1.run.app"
+_BUZZ_HANDLES = ["yomiuri_giants", "TokyoGiants", "hochi_giants", "Sanspo_Giants"]
+
 # 「懐かしい / 名場面」系シグナル
 _NOSTALGIA_MARKERS = (
     "名場面", "名シーン", "名勝負", "名プレー", "名守備", "名言", "伝説", "レジェンド",
@@ -87,9 +92,11 @@ def classify_video(
     player: str = "",
     today_players: Optional[set[str]] = None,
     today_opponent: str = "",
+    buzz_players: Optional[set[str]] = None,
 ) -> tuple[int, str]:
     """動画 title からスコアと型タグを返す。 pure / 決定的 (LLM 不使用)。
 
+    ``buzz_players`` = いま X でバズってる選手集合 (RSSHub 由来)。 該当すると最優先で加点。
     Returns ``(score, type_tag)``。 score>=2 を候補閾値の目安にする。
     """
     t = title or ""
@@ -99,6 +106,7 @@ def classify_video(
     has_year = bool(_re.search(r"(19|20)\d{2}", t))
     is_farm = any(m in t for m in _FARM_MARKERS)
     is_ob_channel = (role or "") in ("giants_ob", "ob")
+    is_buzz = bool(player and buzz_players and player in buzz_players)
 
     if nostalgia:
         score += 2
@@ -115,9 +123,14 @@ def classify_video(
         score += 2
     if today_opponent and today_opponent in t:
         score += 1
+    # X バズ ボーナス (最優先シグナル)
+    if is_buzz:
+        score += 3
 
     # 型タグ (優先順)
-    if player and today_players and player in today_players:
+    if is_buzz:
+        tag = "Xで話題"
+    elif player and today_players and player in today_players:
         tag = "今日とつながる"
     elif is_ob_channel or (nostalgia and not is_farm):
         tag = "OB・懐かし" if is_ob_channel else "名場面回顧"
@@ -138,6 +151,58 @@ def _default_fetch(url: str, *, timeout: int = 12) -> str:
         return resp.read().decode("utf-8", errors="replace")
 
 
+def _extract_rss_item_texts(xml: str) -> list[str]:
+    """RSSHub の twitter feed (RSS 2.0) から各 item の本文テキストを抽出 (tag strip)。"""
+    out: list[str] = []
+    for item in _re.findall(r"<item\b.*?</item>", xml or "", _re.S | _re.I):
+        parts = []
+        for tag in ("title", "description"):
+            m = _re.search(rf"<{tag}\b[^>]*>(.*?)</{tag}>", item, _re.S | _re.I)
+            if m:
+                parts.append(m.group(1))
+        text = " ".join(parts)
+        text = _re.sub(r"<!\[CDATA\[(.*?)\]\]>", r"\1", text, flags=_re.S)
+        text = _re.sub(r"<[^>]+>", " ", text)
+        text = _re.sub(r"&[#0-9A-Za-z]+;", " ", text)
+        out.append(text.strip())
+    return out
+
+
+def fetch_buzzing_players(
+    *,
+    detect_player_fn: Callable[[str], str],
+    fetch_fn: Optional[Callable[[str], str]] = None,
+    handles: Optional[list[str]] = None,
+    limit: int = 30,
+    top_n: int = 8,
+    min_mentions: int = 2,
+) -> dict[str, int]:
+    """RSSHub 経由で巨人系 X 4 account を読み、 言及の多い選手を {name: count} で返す。
+
+    X API は使わない (445 と同じ self-host RSSHub の twitter/user route)。 取得失敗は
+    silent skip (空 dict)。 ``min_mentions`` 未満は落とし、 上位 ``top_n`` を返す。
+    """
+    fetch = fetch_fn or _default_fetch
+    handles = handles or _BUZZ_HANDLES
+    counts: dict[str, int] = {}
+    for h in handles:
+        try:
+            xml = fetch(f"{_RSSHUB_BASE}/twitter/user/{h}?limit={limit}")
+        except Exception:  # noqa: BLE001
+            continue
+        for text in _extract_rss_item_texts(xml):
+            if not text:
+                continue
+            try:
+                p = detect_player_fn(text) or ""
+            except Exception:  # noqa: BLE001
+                p = ""
+            if p:
+                counts[p] = counts.get(p, 0) + 1
+    filtered = {k: v for k, v in counts.items() if v >= min_mentions}
+    return dict(sorted(filtered.items(), key=lambda kv: kv[1], reverse=True)[:top_n])
+
+
 def gather_radar_videos(
     *,
     channels: list[dict],
@@ -145,6 +210,7 @@ def gather_radar_videos(
     fetch_fn: Optional[Callable[[str], str]] = None,
     today_players: Optional[set[str]] = None,
     today_opponent: str = "",
+    buzz_players: Optional[set[str]] = None,
     min_score: int = 2,
     per_channel_limit: int = 8,
 ) -> list[dict]:
@@ -181,6 +247,7 @@ def gather_radar_videos(
                 player=player,
                 today_players=today_players,
                 today_opponent=today_opponent,
+                buzz_players=buzz_players,
             )
             if score < min_score:
                 continue

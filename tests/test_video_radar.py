@@ -51,6 +51,41 @@ class ClassifyVideoTests(unittest.TestCase):
         self.assertLess(score, 2)
 
 
+class BuzzTests(unittest.TestCase):
+    _BUZZ_FEED = (
+        "<rss><channel>"
+        "<item><title>坂本勇人 サヨナラ！</title><description>すごい</description></item>"
+        "<item><title>坂本勇人 また打った</title><description>神</description></item>"
+        "<item><title>戸郷翔征 完投</title><description>x</description></item>"
+        "</channel></rss>"
+    )
+
+    def test_classify_buzz_tag_and_top_score(self):
+        score, tag = vr.classify_video(
+            "坂本勇人 過去の好プレー", role="official", player="坂本勇人",
+            buzz_players={"坂本勇人"},
+        )
+        self.assertEqual(tag, "Xで話題")
+        self.assertGreaterEqual(score, 5)
+
+    def test_fetch_buzzing_players_counts_and_threshold(self):
+        def detect(text):
+            for n in ("坂本勇人", "戸郷翔征"):
+                if n[:3] in text:
+                    return n
+            return ""
+        buzz = vr.fetch_buzzing_players(
+            detect_player_fn=detect,
+            fetch_fn=lambda url: self._BUZZ_FEED,
+            handles=["yomiuri_giants"],
+            min_mentions=2,
+        )
+        # 坂本=2 (>=2 残る)、 戸郷=1 (落ちる)
+        self.assertIn("坂本勇人", buzz)
+        self.assertEqual(buzz["坂本勇人"], 2)
+        self.assertNotIn("戸郷翔征", buzz)
+
+
 class GatherRadarVideosTests(unittest.TestCase):
     def test_filters_low_score_and_sorts(self):
         def detect(title):

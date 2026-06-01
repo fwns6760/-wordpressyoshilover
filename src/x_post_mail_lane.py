@@ -1288,7 +1288,8 @@ def build_news_opinion_candidate(
     url = str(source_url or "").strip()
     if not title or not url or not player:
         return None
-    if not _is_verified_full_giants_player_name(player):
+    # 2026-06-01 user「コーチ監督も全員名前を入れて」: player 限定 → 全員 (member=監督コーチ含む OR player=育成含む) に拡張。
+    if not (_is_verified_full_giants_member_name(player) or _is_verified_full_giants_player_name(player)):
         return None
     source = _truncate_text(source_name, 28)
     excerpt = _truncate_text(source_excerpt, 120)
@@ -1688,7 +1689,8 @@ def build_video_radar_candidates(
     except Exception as exc:  # noqa: BLE001
         LOG.warning("video_radar import failed: %r", exc)
         return []
-    alias_map = _load_giants_player_aliases()
+    # 2026-06-01 user「コーチ監督も全員名前を入れて」: 選手のみ → 全員 (player ∪ member=選手+監督+コーチ+育成) で検出。
+    alias_map = {**_load_giants_player_aliases(), **_load_giants_member_aliases()}
 
     def _detect(text: str) -> str:
         return detect_giants_player_name(text, alias_map=alias_map)

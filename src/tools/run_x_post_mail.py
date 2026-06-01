@@ -528,7 +528,11 @@ def _fetch_news_opinion_fallback_candidates(
             if (now - pub_dt).total_seconds() / 3600.0 > max_age_hours:
                 skipped_stale += 1
                 continue
-            player = lane.detect_giants_player_name(f"{title} {summary}")
+            # 2026-06-01 user「コーチ監督も全員名前を入れて」: 選手のみ → 全員 (player ∪ member) で検出。
+            player = lane.detect_giants_player_name(
+                f"{title} {summary}",
+                alias_map={**lane._load_giants_player_aliases(), **lane._load_giants_member_aliases()},
+            )
             player_key = lane._normalize_player_name(player)
             if not player_key or player_key in existing_player_keys:
                 continue

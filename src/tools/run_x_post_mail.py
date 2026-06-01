@@ -363,7 +363,7 @@ def _fetch_feed_entries(source: dict, *, timeout_seconds: int) -> list[dict]:
         return tag_page_scraper.fetch_tag_page_entries(
             scraper=str(source.get("scraper") or ""),
             url=str(source.get("url") or ""),
-            max_age_days=int(source.get("max_age_days") or 7),
+            max_age_days=int(source.get("max_age_days") or 1),
             article_limit=article_limit,
             logger=LOG,
         )
@@ -405,6 +405,36 @@ def _entry_text(entry: dict) -> tuple[str, str, str]:
         or ""
     ).strip()
     return title, link, summary
+
+
+def _entry_published_dt(entry: dict):
+    """feed entry の公開日時を tz-aware datetime に。 取れなければ None。
+
+    feedparser は ``published_parsed`` (UTC struct_time) を最優先。 無ければ
+    ``published`` / ``updated`` / ``pubDate`` 文字列を RFC1123 / ISO で parse。
+    """
+    from datetime import datetime as _dt, timezone as _tz
+    import time as _time
+    from email.utils import parsedate_to_datetime as _p
+    st = entry.get("published_parsed") or entry.get("updated_parsed")
+    if st is not None:
+        try:
+            return _dt.fromtimestamp(_time.mktime(st) - _time.timezone, tz=_tz.utc)
+        except (TypeError, ValueError, OverflowError):
+            pass
+    for k in ("published", "updated", "pubDate", "date"):
+        raw = str(entry.get(k) or "").strip()
+        if not raw:
+            continue
+        try:
+            return _p(raw)
+        except (TypeError, ValueError, IndexError):
+            pass
+        try:
+            return _dt.fromisoformat(raw.replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            pass
+    return None
 
 
 def _fetch_news_opinion_fallback_candidates(
@@ -453,6 +483,11 @@ def _fetch_news_opinion_fallback_candidates(
         if lane._normalize_player_name(name) and int(count or 0) > 0
     }
     history_player_keys = set(history_player_counts)
+    # フェーズ別鮮度窓 (試合中3h / 後6h / 前12h / 日中24h) を記事系にも統一適用。
+    # 公開日時が取れない記事は「古くないと確認できない」ため strict に skip (user「古い記事はダメ」)。
+    max_age_hours = lane.phase_freshness_max_age_hours(now)
+    skipped_stale = 0
+    skipped_no_date = 0
     seen_urls: set[str] = set()
     out: list[lane.Candidate] = []
     for source in _load_news_fallback_sources()[:source_limit]:
@@ -463,6 +498,13 @@ def _fetch_news_opinion_fallback_candidates(
                 break
             title, link, summary = _entry_text(entry)
             if not title or not link or link in seen_urls:
+                continue
+            pub_dt = _entry_published_dt(entry)
+            if pub_dt is None:
+                skipped_no_date += 1
+                continue
+            if (now - pub_dt).total_seconds() / 3600.0 > max_age_hours:
+                skipped_stale += 1
                 continue
             player = lane.detect_giants_player_name(f"{title} {summary}")
             player_key = lane._normalize_player_name(player)
@@ -497,6 +539,13 @@ def _fetch_news_opinion_fallback_candidates(
                 player,
                 link,
             )
+    LOG.info(
+        "news_opinion_fallback freshness max_age_h=%.1f added=%d skipped_stale=%d skipped_no_date=%d",
+        max_age_hours,
+        len(out),
+        skipped_stale,
+        skipped_no_date,
+    )
     return out
 
 
@@ -1767,6 +1816,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     now=now_jst,
                     max_count=fan_voice_count,
                     recent_player_counts=recent_player_counts,
+                    lookback_hours=max(1, int(lane.phase_freshness_max_age_hours(now_jst))),
                 )
                 if fan_voice_candidates:
                     before = len(candidates)

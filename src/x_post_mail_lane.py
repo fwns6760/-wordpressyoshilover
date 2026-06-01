@@ -1678,7 +1678,7 @@ def build_video_radar_candidates(
             buzz_players=buzz_players,
             min_score=min_score,
             now=now,
-            max_age_hours=video_radar_max_age_hours(now),
+            max_age_hours=phase_freshness_max_age_hours(now),
         )
     except Exception as exc:  # noqa: BLE001
         LOG.warning("x_buzz gather failed: %r", exc)
@@ -2393,9 +2393,11 @@ def x_impression_timing_label(now: datetime) -> str:
     return _X_IMPRESSION_TIMING_LABELS["standard"]
 
 
-def video_radar_max_age_hours(now: datetime) -> float:
-    """451 (user 2026-06-01「48hは長い。試合中は即、試合前はその日」): 動画候補の鮮度窓を
-    試合フェーズで切り替える。 試合中はライブ即時性、 試合前後はその日に寄せる。"""
+def phase_freshness_max_age_hours(now: datetime) -> float:
+    """451 (user 2026-06-01「48hは長い。試合中は即、試合前はその日」「全ポストでそうして」):
+    動画 + 野球記事系 (news_opinion / fan_voice / tag_scrape) 全ポストの鮮度窓を試合フェーズで
+    統一する。 試合中はライブ即時性、 試合前後はその日に寄せる。 データ系 (DB stats) は当日値
+    なので対象外。"""
     label = x_impression_timing_label(now)
     L = _X_IMPRESSION_TIMING_LABELS
     if label == L["in_game_strong"]:

@@ -1,0 +1,31 @@
+# 449 §5 準自動B: Cloud Run Job image for the 今日のXデータ候補 mail lane.
+# GCS read-only(insight.db)+ WP REST read-only GET + Gmail SMTP via mail_delivery_bridge.
+# LLM/Gemini 不要、 X API 不要、 投稿なし。
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app
+
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt ./requirements.txt
+RUN python3 -m pip install --no-cache-dir --upgrade pip \
+    && python3 -m pip install --no-cache-dir -r requirements.txt
+
+COPY src/ ./src/
+COPY config/ ./config/
+COPY vendor/ ./vendor/
+
+RUN useradd --create-home --home-dir /home/appuser --shell /usr/sbin/nologin appuser \
+    && mkdir -p /app/logs /app/data /tmp/insight_cache \
+    && chown -R appuser:appuser /app /home/appuser /tmp/insight_cache
+
+USER appuser
+
+ENTRYPOINT ["python3", "-m", "src.tools.run_daily_x_candidates_mail"]
+CMD []

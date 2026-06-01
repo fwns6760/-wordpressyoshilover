@@ -260,6 +260,61 @@ def generate(limit_ichigun: int = 6) -> dict:
     return {"ichigun": ichigun, "roster_moves": moves}
 
 
+def build_mail_bodies(result: dict, *, date_label: str = "") -> tuple[str, str, str]:
+    """候補 dict → (subject, text_body, html_body)。投稿はしない、選別用の通知のみ。"""
+    ichigun = result["ichigun"]
+    moves = result["roster_moves"]
+    total = len(ichigun) + len(moves)
+    subject = f"【巨人】今日のXデータ候補 {date_label}({total}件)".strip()
+
+    text_lines = [
+        "今日のX投稿候補(手動選別用 / 投稿はされません)",
+        "各候補は 数字/意味/一言 テンプレ。一言はあなたが埋めてください。",
+        "",
+        f"■ 一軍・調子(ロスター∩鮮度ゲート通過) {len(ichigun)}件",
+    ]
+    for c in ichigun:
+        text_lines.append("")
+        text_lines.append(c.render())
+    text_lines.append("")
+    text_lines.append(f"■ 二軍/昇格・抹消(記事タイトル由来) {len(moves)}件")
+    for c in moves:
+        text_lines.append("")
+        text_lines.append(c.render())
+    if total == 0:
+        text_lines.append("\n(候補なし)")
+    text_body = "\n".join(text_lines)
+
+    def esc(s: str) -> str:
+        return (s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+    def card(c: "Candidate") -> str:
+        src = f'<a href="{esc(c.source)}">{esc(c.source)}</a>' if c.source.startswith("http") else esc(c.source)
+        note = f'<div style="color:#999;font-size:12px;">※ {esc(c.note)}</div>' if c.note else ""
+        return (
+            '<div style="border:1px solid #eee;border-radius:6px;padding:10px 12px;margin:0 0 10px;">'
+            f'<div style="font-weight:600;color:#5d4037;">【{esc(c.bucket)}】{esc(c.player)}</div>'
+            f'<div>数字：{esc(c.number)}</div>'
+            f'<div>意味：{esc(c.meaning)}</div>'
+            '<div style="color:#1976d2;">一言：(ファン向けの一言をここに)</div>'
+            f'<div style="color:#888;font-size:12px;">出典：{src}</div>'
+            f'{note}</div>'
+        )
+
+    html_body = (
+        '<div style="font-family:sans-serif;max-width:640px;">'
+        f'<h2 style="font-size:17px;">今日のX投稿候補 {esc(date_label)}</h2>'
+        '<p style="font-size:12px;color:#666;">手動選別用 / 投稿はされません。一言はあなたが埋めてください。</p>'
+        f'<h3 style="font-size:14px;">■ 一軍・調子 {len(ichigun)}件</h3>'
+        + "".join(card(c) for c in ichigun)
+        + f'<h3 style="font-size:14px;">■ 二軍/昇格・抹消 {len(moves)}件</h3>'
+        + "".join(card(c) for c in moves)
+        + ('<p>(候補なし)</p>' if total == 0 else '')
+        + '</div>'
+    )
+    return subject, text_body, html_body
+
+
 def _print_report(result: dict) -> None:
     ichigun = result["ichigun"]
     moves = result["roster_moves"]

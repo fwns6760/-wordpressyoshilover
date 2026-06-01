@@ -1,5 +1,19 @@
 # 452 data-site 状況別データ深化 + データ堀の投資判断
 
+## Phase B 新規ページ 全 LIVE(2026-06-01、自律構築)
+
+設計図の Phase B ページを全て構築・deploy・live verify(全 http200):
+- `/data/schedule` 日程・結果(月別・勝負色分け、games由来)
+- `/data/leaders` 選手別ランキング(本塁打/打点/安打/打率/盗塁/奪三振/勝利/防御率、本塁打は atbats_json集計)
+- `/data/legends` OB・レジェンド hub(既存21名、永久欠番バッジ、個別ページリンク=老ファン向け)
+- `/data/team` 球団成績・セ内順位(打率/本塁打/防御率、検証済み team_ranking_publisher reuse、巨人 打率5位/防御率4位/本塁打3位)
+- 選手ページ: 曜日別/月別/交流戦別 split 追加 + 全 fetch の空白ずれ名前bug 修正(全選手で section 復活)。
+- image `data-site-publisher:team-0910bc1` 系で順次。各ページ tests 追加(計 60+ pass)。
+
+### 残フォロー(報告)
+- 新4ページは breadcrumb で /data/ へ上るが、**cluster(/data/)から下へのリンクが未**(orphan気味=SEO/回遊で損)。
+  cluster template は並行アクター(UI/453)編集中のため、リンク追加は要コーディネート(次の小タスク)。
+
 ## /data/schedule(日程・結果)LIVE(2026-06-01)
 
 - 新規ページ `/data/schedule`(`data_site_template_schedule.py` + `fetch_giants_schedule` + publisher 配線)。

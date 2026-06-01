@@ -2,7 +2,9 @@
 
 - **種別**: verify + 実装 / **priority**: P1(新鮮さ=唯一の明確勝ち筋) / **effort**: S(verify)〜M
 - **親**: 443 / 設計: `455...md` §16 / §17 Phase2D / GH: #130
-- **status**: READY(read-only verify 先行)
+- **status**: VERIFIED_CLOSE (2026-06-01) — エンジン稼働 read-only 確認済
+- **実績**: `insight-nightly` Job は今日 5回 fire(01/03/06/08/11時)、WP に `【巨人データ】` post が当日 publish 継続(75846 セ球団打率 / 75849 キャベッジ打点 / 75851 大城 対右投手 等、08:35-08:46)を WP REST で確認。= **エンジンは ON、新鮮さ(唯一の勝ち筋)は実働中**。
+- **留保**: `ENABLE_DATA_INSIGHT_AUTO_DRAFT` の env 設定場所は describe で未表示だったが、**出力(当日publish)が ON を実証**。CLOSE。
 
 ## 背景(深掘り 1次source・要 production verify)
 

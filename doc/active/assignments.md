@@ -16,6 +16,35 @@ ETL/backfill 不要・¥0。 classifier は production 全 5,652 行で AB/H 照
 447 で read-side only に解ける metric は #2 venue + #5 inning の 2 個で打ち止め。
 残り #1 RISP / #3 vs左右 / #4 カウントは at_bat_details.batter_canonical backfill
 (Phase A) 必須で BLOCKED 継続。 詳細 = parent `docs/handoff/session_logs/2026-06-01_data_site_447_inning_split.md`。
+> ⚠️ 2026-06-01 PM 深掘りで訂正: 上記「backfill 必須で BLOCKED」は過大。チーム横断の vs左右/RISP は既に nightly LIVE、Pillar も read-side fuzzy match で backfill 不要(457 参照)。
+
+### data-site 再設計 + 深掘り gap 分析 + 実装チケット6本(設計フェーズ完了)
+
+user 「サイトマップとワイヤーフレームで UIUX」「トピクラ導線」「何が負けているか深く分析」。
+- モデル2サイト(my-favorite-giants / baseballdata.jp)を11班で実クロール網羅 → `doc/reference/model-site-page-inventory.md`
+- 設計正本(サイトマップ/トピクラ三方向導線/ワイヤーPC・スマホ/UIUX/コンポーネント/SEO/gap分析§12/根本原因+effort§13) → `doc/active/455-DATA-SITE-redesign-sitemap-wireframe-uiux.md`(GH #119)、spec `mkdocs_docs/spec/data-site.md` rev7
+- 実装チケット(全て READY、設計のみ・未着手):
+  - **456** 投手split横展開 (S, GH#120) — 最大の見た目改善・最安、ETL不要
+  - **457** Pillar vs左右/RISP (S〜M, GH#121) — 447 re-scope、read-side で backfill不要
+  - **458** 専用layout+トピクラ三方向導線 (M, GH#122)
+  - **459** /data/team順位表+schedule未来試合 (M, GH#123) — 454包含
+  - **460** cluster UX(検索/今日の注目/zero-row)+team_role bug (S〜M, GH#124)
+  - **461** 既存snapshot SABR表示 (S部分, GH#125)
+- 主要訂正3点: 投手split=未実装(ETL非該当・横展開S) / 447 BLOCKED=半分誤り(チーム横断既LIVE、Pillarはread-side) / fill率70%(捕手50%)=バグでなく出場機会。
+- 留保: fill率実数値・投手イニング生データ・team/schedule内容深部は production verify 必要。
+
+### データ記事 深掘り(生成エンジン実態)+ parity→差別化 実装順 + チケット462-466 追加
+
+深掘りで判明: /data ページと別に **`【巨人データ】`記事の量産エンジンが実装済**(`insight_nightly.py`+publisher3本+detector+dedup349+gate356)。LIVE角度は広い(z-score/守備/連続記録/順位変動/各ランキング/counting/本拠ビジター/vs球団/vs左右/イニング/RISP/カウント/チーム系)が、**阻害4点**: ①角度の約半分が空固定で未生成 ②title機械f-stringで発見表現不可 ③`ENABLE_DATA_INSIGHT_AUTO_DRAFT`(default0)依存=prod ON要verify ④サヨナラ/逆転/殊勲打は派生可能だが検知コード0。
+
+user 方針: **まず parity(ライバルにあるもの)→ それに差別化4点**。追加チケット(全READY・未着手):
+- **462** ランキング面新設(parity, GH#126)
+- **463** 状況系新角度detector サヨナラ/逆転/殊勲打/得点差別(parity+差別化, GH#127)
+- **464** 眠り角度の再活性化(差別化A, GH#128)
+- **465** title発見ドリブン化(差別化C, GH#129)
+- **466** エンジンON verify+新鮮さ(P1/verify先行, GH#130)
+parity不可(土俵を降りる): pitch-level・選球眼・歴史網羅・通算・年度別・プロフィール。
+設計正本 455 §16(エンジン実態)/§17(parity→差別化順)、mkdocs `spec/data-site-redesign` 同期済。
 
 ## 2026-05-29 session update
 

@@ -230,6 +230,8 @@ Cloud Run Job 新設、 既存 scheduler に追加せず別 job。 Phase 1.0 は
 - 2026-05-28 PM2: rev3 topical cluster 構造 + 大手差別化 4 理由 + 内部 link 流量設計 を明文化 (user 「今あるデータベースから色々な記事をつくる。 球団の選手全体をクラスターページ。 選手をピラーページ。 日々の記事を速報ページでとぴくらをつくりたい」 + 「コンセプトは大手メディアではわからない」)。 Phase 1.0 player を 吉川尚輝 / 坂本勇人 / 丸佳浩 に変更 (user 指定)、 scope に Cluster page 追加 (4 page)
 - 2026-05-28 PM3: rev4 「大手にない data」 metric pack を §15 で明文化、 Phase 1.0a/b/c 段階追加 (user 「大手に乗らないデータとかない? データとして弱い」)
 - 2026-05-28 PM4: rev5 進捗 section §16 追加 (user 「仕様書と GH issues に進捗書いて」)、 全 phase 完了状況 + 残 ticket 445/446 へ link
+- 2026-06-01: rev6 redesign (user 「しっかりサイトマップとワイヤーフレームで UIUX まで考えて。今はひどい」「トピクラ導線もね」)。モデルサイト 2 本 (my-favorite-giants / baseballdata.jp) を 11 班で実クロール網羅 → `doc/reference/model-site-page-inventory.md`。現状診断 (pillar が box score 未確認で空 / 記事テンプレ流用で関連記事がデータを食う逆転構造) を踏まえ、サイトマップ + トピクラ導線 (記事→pillar / pillar→記事 / pillar⇄pillar の三方向自動内部リンク) + ワイヤーフレーム (PC/スマホ) + UI-UX + コンポーネント仕様 + SEO + 受け入れ条件 を `doc/active/455-DATA-SITE-redesign-sitemap-wireframe-uiux.md` に確定。実装順 P0 (データ供給復旧) → P1 (専用 layout + トピクラ導線) → P2 (鮮度 first view) → P3 (split拡張 447) → P4 (チーム面 454) → P5 (読み物) → P6 (基本情報)。pitch-level / 歴史網羅は非スコープ。
+- 2026-06-01: rev7 深掘り(実コード/DB 1次source)を `455...md` §12(競合gap)/ §13(根本原因+effort)に確定し、実装チケット6本を起票。**主要訂正**: (1)投手split欠落はETLでなく単なる未実装で横展開=effort S、(2)447「vs左右/RISP BLOCKED」は半分誤りでチーム横断は既LIVE・Pillarのみread-side fuzzy matchでbackfill不要、(3)fill率70%(捕手50%)はバグでなく出場機会。チケット: **456**(投手split横展開 S, GH#120) / **457**(Pillar vs左右RISP, 447 re-scope, GH#121) / **458**(専用layout+トピクラ三方向導線 M, GH#122) / **459**(team順位表+schedule未来試合, 454包含, GH#123) / **460**(cluster UX+team_role bug, GH#124) / **461**(既存snapshot SABR表示, GH#125)。非スコープ: プロフィール/年度別履歴/pitch-level/投手イニング。
 
 ## 16. 進捗 (2026-05-28 PM4 時点)
 

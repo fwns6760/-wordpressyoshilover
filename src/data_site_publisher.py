@@ -53,6 +53,8 @@ from src.data_site_query import (
     fetch_pitcher_interleague_split_stats,
     fetch_recent_games,
     fetch_recent_pitching_games,
+    fetch_risp_split_stats,
+    fetch_vs_lr_split_stats,
     fetch_related_topic_links,
     find_player_featured_image_url,
     find_player_featured_media_id,
@@ -320,6 +322,9 @@ def _build_pillar_info(player_name: str) -> PillarPlayerInfo | None:
     # Phase 1.5+α 投手 stats (position=投手 のみ実際表示されるが、 全 player で
     # query して dataclass に詰めておく — 投手じゃない player は値 0 で template
     # 側で section omit される)
+    # 457: 得点圏 (RISP) / 対左右投手 split (打者向け、 投手 pillar では非表示)
+    info.risp_split_stats = fetch_risp_split_stats(player_name)
+    info.vs_lr_split_stats = fetch_vs_lr_split_stats(player_name)
     pitching = fetch_pitching_stats_season(player_name)
     if pitching:
         info.has_pitching_stats = True

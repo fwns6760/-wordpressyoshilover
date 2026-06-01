@@ -258,3 +258,114 @@ class PitcherOpponentSplitTests(unittest.TestCase):
         rows = self.fn_weekday("戸郷 翔征")
         self.assertTrue(rows)
         self.assertEqual(sum(r[1] for r in rows), 4)  # 全登板が曜日バケットに帰属
+
+
+class RispSplitTests(unittest.TestCase):
+    """得点圏 (RISP) split + is_official_at_bat (457、 at_bat_details read-side)。"""
+
+    def setUp(self) -> None:
+        from data_site_query import fetch_risp_split_stats, is_official_at_bat  # noqa: F401
+        self.fn = fetch_risp_split_stats
+        self.is_ab = is_official_at_bat
+        self.tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        self.tmp.close()
+        conn = sqlite3.connect(self.tmp.name)
+        conn.executescript(
+            "CREATE TABLE at_bat_details(batter TEXT, runner_state TEXT, result_text TEXT, team TEXT);"
+        )
+        # 吉川尚輝 (姓=吉川): 得点圏 AB=3 H=2 (1塁=非得点圏skip, フォアボール=非AB除外)
+        rows = [
+            ("吉川", "2塁", "センター前ヒット", "巨人"),          # RISP, AB, H
+            ("吉川", "1塁", "ショートゴロ", "巨人"),              # 非得点圏 → skip
+            ("吉川", "満塁", "空振り三振", "巨人"),               # RISP, AB, 非H
+            ("吉川", "3塁", "フォアボール", "巨人"),              # RISP だが非AB → 除外
+            ("代打・ 吉川", "2・3塁", "レフト前タイムリーヒット（打点2）", "巨人"),  # 代打prefix, RISP, AB, H
+            ("坂本", "満塁", "センター前ヒット", "巨人"),         # 別姓 → skip
+        ]
+        for b, rs, rt, tm in rows:
+            conn.execute("INSERT INTO at_bat_details VALUES(?,?,?,?)", (b, rs, rt, tm))
+        conn.commit(); conn.close()
+        self._prev = os.environ.get("INSIGHT_DB_PATH")
+        os.environ["INSIGHT_DB_PATH"] = self.tmp.name
+
+    def tearDown(self) -> None:
+        if self._prev is None:
+            os.environ.pop("INSIGHT_DB_PATH", None)
+        else:
+            os.environ["INSIGHT_DB_PATH"] = self._prev
+        os.unlink(self.tmp.name)
+
+    def test_risp_count_and_avg(self) -> None:
+        d = {row[0]: row for row in self.fn("吉川尚輝")}
+        risp = d["得点圏"]  # (label, AB, H, AVG)
+        self.assertEqual((risp[1], risp[2]), (3, 2))
+        self.assertAlmostEqual(risp[3], 2 / 3, places=2)
+
+    def test_other_surname_excluded(self) -> None:
+        # 坂本 の満塁ヒットは 吉川 に混入しない (姓 prefix 一致)
+        d = {row[0]: row for row in self.fn("吉川尚輝")}
+        self.assertEqual(d["得点圏"][1], 3)  # 坂本分が混ざれば 4 になる
+
+    def test_unknown_player_empty(self) -> None:
+        self.assertEqual(self.fn("存在しない 選手"), [])
+
+    def test_is_official_at_bat(self) -> None:
+        for hit in ("センター前ヒット", "空振り三振", "レフト線ツーベース", "ショートゴロ併殺打"):
+            self.assertTrue(self.is_ab(hit), hit)
+        for non in ("フォアボール", "敬遠フォアボール", "デッドボール",
+                    "サード犠牲バント", "レフト犠牲フライ", "打撃妨害", ""):
+            self.assertFalse(self.is_ab(non), non)
+
+
+class VsLrSplitTests(unittest.TestCase):
+    """対左/右投手 split (457、 at_bat_details + throws map)。"""
+
+    def setUp(self) -> None:
+        from data_site_query import fetch_vs_lr_split_stats  # noqa: F401
+        self.fn = fetch_vs_lr_split_stats
+        self.tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        self.tmp.close()
+        conn = sqlite3.connect(self.tmp.name)
+        conn.executescript(
+            "CREATE TABLE at_bat_details(batter TEXT, current_pitcher TEXT, result_text TEXT, team TEXT);"
+        )
+        rows = [
+            ("吉川", "左腕太郎", "センター前ヒット", "巨人"),   # L AB H
+            ("吉川", "左腕太郎", "空振り三振", "巨人"),         # L AB 非H
+            ("吉川", "右腕次郎", "ライト前ヒット", "巨人"),     # R AB H
+            ("吉川", "右腕次郎", "フォアボール", "巨人"),       # R 非AB除外
+            ("吉川", "無名投手", "センター前ヒット", "巨人"),   # throws不明 → skip
+            ("代打・ 吉川", "左腕太郎", "レフト線ツーベース", "巨人"),  # 代打prefix, L AB H
+            ("坂本", "左腕太郎", "センター前ヒット", "巨人"),   # 別姓 → skip
+        ]
+        for b, p, rt, tm in rows:
+            conn.execute("INSERT INTO at_bat_details VALUES(?,?,?,?)", (b, p, rt, tm))
+        conn.commit(); conn.close()
+        self.throws = tempfile.NamedTemporaryFile(suffix=".json", delete=False, mode="w", encoding="utf-8")
+        json.dump({"左腕太郎": {"team": "t", "throws": "L"},
+                   "右腕次郎": {"team": "t", "throws": "R"}}, self.throws, ensure_ascii=False)
+        self.throws.close()
+        self._prev_db = os.environ.get("INSIGHT_DB_PATH")
+        self._prev_throws = os.environ.get("NPB_THROWS_PATH")
+        os.environ["INSIGHT_DB_PATH"] = self.tmp.name
+        os.environ["NPB_THROWS_PATH"] = self.throws.name
+
+    def tearDown(self) -> None:
+        for key, prev in (("INSIGHT_DB_PATH", self._prev_db), ("NPB_THROWS_PATH", self._prev_throws)):
+            if prev is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = prev
+        os.unlink(self.tmp.name)
+        os.unlink(self.throws.name)
+
+    def test_vs_lr_count_and_avg(self) -> None:
+        d = {row[0]: row for row in self.fn("吉川尚輝")}
+        # 対左: ヒット+三振+ツーベース = AB3 H2
+        self.assertEqual((d["対左投手"][1], d["対左投手"][2]), (3, 2))
+        self.assertAlmostEqual(d["対左投手"][3], 2 / 3, places=2)
+        # 対右: ヒット(フォアボール除外) = AB1 H1
+        self.assertEqual((d["対右投手"][1], d["対右投手"][2]), (1, 1))
+
+    def test_unknown_player_empty(self) -> None:
+        self.assertEqual(self.fn("存在しない 選手"), [])

@@ -63,6 +63,10 @@ class PillarPlayerInfo:
     # venue_split_stats = [(venue, G, AB, H, RBI, AVG), ...] (本拠地 / ビジター)
     inning_split_stats: list[tuple[str, int, int, Optional[float]]] = field(default_factory=list)
     # inning_split_stats = [(phase, AB, H, AVG), ...] (序盤 1-3回 / 中盤 4-6回 / 終盤 7-9回)
+    # 457: 得点圏 (RISP) [(label, AB, H, AVG), ...]
+    risp_split_stats: list[tuple[str, int, int, Optional[float]]] = field(default_factory=list)
+    # 457: 対左/右投手 [(label, AB, H, AVG), ...]
+    vs_lr_split_stats: list[tuple[str, int, int, Optional[float]]] = field(default_factory=list)
     # Phase B (452): 曜日別 / 月別 / 交流戦別 = [(label, G, AB, H, AVG), ...]
     weekday_split_stats: list[tuple[str, int, int, int, Optional[float]]] = field(default_factory=list)
     month_split_stats: list[tuple[str, int, int, int, Optional[float]]] = field(default_factory=list)
@@ -396,6 +400,36 @@ def _build_interleague_split_html(player: PillarPlayerInfo) -> str:
         '<h2>交流戦 / リーグ戦 別 打率 <span class="ys-tag">大手未掲載</span></h2>'
         '<p class="ys-note">パ相手の交流戦と、 セ内のリーグ戦での違い。</p>'
         f'<div class="ys-bars">{bars}</div>'
+        '</div>'
+    )
+
+
+def _build_vs_lr_split_html(player: PillarPlayerInfo) -> str:
+    """対左 / 対右投手 別 打率 (大手未掲載、 457)。"""
+    if not player.vs_lr_split_stats:
+        return ""
+    bars = "".join(_split_bar(lbl, avg, f"{h}/{ab}") for (lbl, ab, h, avg) in player.vs_lr_split_stats)
+    return (
+        '<div class="ys-card">'
+        '<h2>対左 / 対右投手 別 打率 <span class="ys-tag">大手未掲載</span></h2>'
+        '<p class="ys-note">左投手 / 右投手 でどれだけ打ち分けるか。 左右の苦手が見える。</p>'
+        f'<div class="ys-bars">{bars}</div>'
+        '<p class="ys-foot">※ 対戦投手の左右と打席結果から集計。 投手の判明した打席のみ対象。</p>'
+        '</div>'
+    )
+
+
+def _build_risp_split_html(player: PillarPlayerInfo) -> str:
+    """得点圏 (RISP) 打率 (大手未掲載、 457)。"""
+    if not player.risp_split_stats:
+        return ""
+    bars = "".join(_split_bar(lbl, avg, f"{h}/{ab}") for (lbl, ab, h, avg) in player.risp_split_stats)
+    return (
+        '<div class="ys-card">'
+        '<h2>得点圏 打率 <span class="ys-tag">大手未掲載</span></h2>'
+        '<p class="ys-note">走者が二塁・三塁にいる「得点圏」での打率。 チャンスでの勝負強さが見える。</p>'
+        f'<div class="ys-bars">{bars}</div>'
+        '<p class="ys-foot">※ 打席ごとの走者状況から集計。 四死球・犠打・犠飛・打撃妨害は打数から除外。</p>'
         '</div>'
     )
 
@@ -937,6 +971,8 @@ def render_pillar_html(player: PillarPlayerInfo) -> str:
             _build_weekday_split_html(player),
             _build_month_split_html(player),
             _build_interleague_split_html(player),
+            _build_risp_split_html(player),
+            _build_vs_lr_split_html(player),
         ]
     sections = [
         _build_lead_html(player),

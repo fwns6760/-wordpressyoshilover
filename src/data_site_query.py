@@ -15,6 +15,7 @@ from __future__ import annotations
 import json as _json
 import logging
 import os
+import re
 import sqlite3
 from dataclasses import dataclass, field
 from datetime import date
@@ -1763,6 +1764,151 @@ def fetch_pitcher_interleague_split_stats(player_canonical: str) -> list[tuple]:
         return "交流戦" if opp in _PA_TEAM_CODES else "リーグ戦"
 
     return _bucket_pitcher_splits(rows, key, ["リーグ戦", "交流戦"])
+
+
+# --- 457: 得点圏 (RISP) split (at_bat_details から read-side 派生) ---
+# 注: at_bat_details.batter は姓のみ表記 (「浦田」/「代打・ 浦田」)。 batter_canonical は
+# ETL で None 固定のため、 選手 canonical との照合は「姓 prefix 一致 + 代打/代走 prefix 除去」
+# で行う。 同姓 2 名は at_bat_details 上区別不能 (データ制約、 batter_canonical backfill が
+# 恒久解だが本 ticket は read-side で先行)。 runner_state はアラビア数字表記 (1塁/2塁/満塁)。
+_RISP_RE = re.compile(r"[23]塁|満塁")  # 得点圏 = 走者 2塁/3塁/満塁
+_NON_AB_TOKENS = ("フォアボール", "四球", "敬遠", "デッドボール", "死球",
+                  "犠牲バント", "犠打", "犠牲フライ", "犠飛", "打撃妨害")
+_ATBAT_HIT_RE = re.compile(r"安打|本塁打|ホームラン|塁打|適時|タイムリー|ヒット|ツーベース|スリーベース")
+
+
+def _norm_atbat_batter(batter: str) -> str:
+    """at_bat_details.batter を正規化 (代打・/代走・ prefix と空白を除去)。"""
+    s = str(batter or "")
+    for pre in ("代打・", "代走・", "代打", "代走"):
+        if s.startswith(pre):
+            s = s[len(pre):]
+            break
+    return s.replace(" ", "").replace("　", "")
+
+
+def _result_base(result_text: str) -> str:
+    """result_text から （打点N）等の括弧注釈を除去。"""
+    return re.sub(r"（.*?）", "", str(result_text or ""))
+
+
+def is_official_at_bat(result_text: str) -> bool:
+    """official 打数か (四球/敬遠/死球/犠打/犠飛/打撃妨害 は打数に含めない)。
+
+    prod insight.db 735 PA で検証 (AB=673 / nonAB=62 / 誤分類0、 457)。 空文字は False。
+    """
+    base = _result_base(result_text)
+    if not base.strip():
+        return False
+    return not any(t in base for t in _NON_AB_TOKENS)
+
+
+def _is_atbat_hit(result_text: str) -> bool:
+    """result_text が安打か (カタカナ NPB 語彙対応、 457)。"""
+    return bool(_ATBAT_HIT_RE.search(_result_base(result_text)))
+
+
+def fetch_risp_split_stats(player_canonical: str) -> list[tuple]:
+    """得点圏 (走者2塁/3塁/満塁) 打撃集計を返す。 at_bat_details から read-side 派生。
+
+    返り値: [("得点圏", AB, H, AVG)] (打数 0 なら [])。 大手未掲載 metric。
+    """
+    path = _ensure_insight_db_local()
+    if not path:
+        return []
+    try:
+        with sqlite3.connect(path) as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT batter, runner_state, result_text FROM at_bat_details "
+                "WHERE team LIKE '%巨人%' AND batter IS NOT NULL AND batter <> ''"
+            )
+            rows = cur.fetchall()
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("fetch_risp_split_stats err player=%s: %r", player_canonical, exc)
+        return []
+    pc = str(player_canonical or "").replace(" ", "").replace("　", "")
+    if not pc:
+        return []
+    ab = h = 0
+    for batter, rstate, rtext in rows:
+        nb = _norm_atbat_batter(batter)
+        if not nb or not pc.startswith(nb):  # 姓 prefix 一致
+            continue
+        if not _RISP_RE.search(str(rstate or "")):
+            continue
+        if is_official_at_bat(rtext):
+            ab += 1
+            if _is_atbat_hit(rtext):
+                h += 1
+    if ab == 0:
+        return []
+    return [("得点圏", ab, h, (h / ab) if ab > 0 else None)]
+
+
+def _load_pitcher_throws() -> dict:
+    """config/npb_pitcher_throws.json を読む ({name: {team, throws: L/R}})。
+
+    NPB_THROWS_PATH env で override 可 (test 用)。 失敗時は {}。
+    """
+    path = os.environ.get("NPB_THROWS_PATH", "").strip() or os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "..", "config", "npb_pitcher_throws.json"
+    )
+    try:
+        with open(path, encoding="utf-8") as f:
+            return _json.load(f)
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("_load_pitcher_throws err: %r", exc)
+        return {}
+
+
+def fetch_vs_lr_split_stats(player_canonical: str) -> list[tuple]:
+    """対左 / 対右投手 別 打撃集計 (457、 at_bat_details + throws map、 read-side)。
+
+    返り値: [("対左投手", AB, H, AVG), ("対右投手", AB, H, AVG)] (AB>0 のみ)。
+    current_pitcher が populate された PA のみ対象 (coverage 限定、 prod 実測 ~42%)。
+    姓 prefix 一致 + 代打/代走 prefix 除去で選手を照合 (同姓は区別不能=データ制約)。
+    """
+    path = _ensure_insight_db_local()
+    if not path:
+        return []
+    throws = _load_pitcher_throws()
+    if not throws:
+        return []
+    try:
+        with sqlite3.connect(path) as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT batter, current_pitcher, result_text FROM at_bat_details "
+                "WHERE team LIKE '%巨人%' AND batter IS NOT NULL AND batter <> '' "
+                "AND current_pitcher IS NOT NULL AND current_pitcher <> ''"
+            )
+            rows = cur.fetchall()
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("fetch_vs_lr_split_stats err player=%s: %r", player_canonical, exc)
+        return []
+    pc = str(player_canonical or "").replace(" ", "").replace("　", "")
+    if not pc:
+        return []
+    agg = {"L": [0, 0], "R": [0, 0]}  # hand -> [AB, H]
+    for batter, pitcher, rtext in rows:
+        nb = _norm_atbat_batter(batter)
+        if not nb or not pc.startswith(nb):
+            continue
+        hand = (throws.get(pitcher or "") or {}).get("throws")
+        if hand not in ("L", "R"):
+            continue
+        if is_official_at_bat(rtext):
+            agg[hand][0] += 1
+            if _is_atbat_hit(rtext):
+                agg[hand][1] += 1
+    label = {"L": "対左投手", "R": "対右投手"}
+    out: list[tuple] = []
+    for hand in ("L", "R"):
+        ab, h = agg[hand]
+        if ab > 0:
+            out.append((label[hand], ab, h, h / ab))
+    return out
 
 
 __all__ = [

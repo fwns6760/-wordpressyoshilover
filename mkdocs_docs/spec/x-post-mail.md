@@ -399,6 +399,11 @@ read-only 巡回し、 **動画つき投稿**を「引用RT / X公式『動画�
 - 結果は本節の比較表を更新し、 必要なら `_SYSTEM_PROMPT_YOSHILOVER` の few-shot / ルールを調整
 - ※ いいね/RT の実数は RSSHub では取れない (他人 timeline read 不可)。 取るなら `kobayashi_meigen_mail_lane` の手法調査が前提
 
+**自動化済み (2026-06-01)**: `src/tools/run_rival_account_analysis.py` が上記分析を実行し、 **比較 markdown を添付**してメール送信
+(本文 = 要約 / 添付 = full md)。 Cloud Run Job `rival-account-analysis` (x-post-mail image 再利用、 command 上書き) +
+Cloud Scheduler `rival-account-analysis-monthly` (毎月 1 日 09:00 JST)。 X API / Gemini 不使用。 添付対応は
+`mail_delivery_bridge.Attachment`。 手動実行: `gcloud run jobs execute rival-account-analysis`。
+
 ## :material-folder-file: 関連 file
 
 - メイン (候補組み立て + メール組み立て): `src/x_post_mail_lane.py`

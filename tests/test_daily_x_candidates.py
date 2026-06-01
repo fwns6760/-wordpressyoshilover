@@ -209,6 +209,26 @@ class LlmPolishGuardTests(unittest.TestCase):
         self.assertIn("1.65", dxc._RATE_RE.findall("防御率1.65で昇格"))
 
 
+class PositionAndPositiveGateTests(unittest.TestCase):
+    def test_quote_fits_position(self) -> None:
+        pitch_q = "どんどん攻めて自分の投球ができた"
+        # 投手発言を野手(is_pitcher=False)に付けない
+        self.assertFalse(dxc._quote_fits_position(pitch_q, False))
+        self.assertTrue(dxc._quote_fits_position(pitch_q, True))   # 投手ならOK
+        self.assertTrue(dxc._quote_fits_position("最後まで集中して振り切れた", False))  # 打撃発言は野手OK
+        self.assertTrue(dxc._quote_fits_position("", False))       # 引用なしはOK
+
+    def test_positive_hook_batter(self) -> None:
+        self.assertFalse(dxc._is_positive_hook("ティマ 直近7日 打率.000(7打席)", is_pitcher=False))  # 不調除外
+        self.assertTrue(dxc._is_positive_hook("岸田 直近 打率.412(39打席)", is_pitcher=False))
+        self.assertTrue(dxc._is_positive_hook("◯◯ 打率.210・セ2位", is_pitcher=False))  # 順位あればOK
+        self.assertTrue(dxc._is_positive_hook("◯◯ 7試合連続安打", is_pitcher=False))  # 記録はOK
+
+    def test_positive_hook_pitcher(self) -> None:
+        self.assertTrue(dxc._is_positive_hook("戸郷 防御率1.29(投球回基準7)", is_pitcher=True))
+        self.assertFalse(dxc._is_positive_hook("◯◯ 防御率5.40(投球回基準10)", is_pitcher=True))  # 悪い側除外
+
+
 class ExtractQuoteTests(unittest.TestCase):
     def test_keeps_speech_drops_noise(self) -> None:
         html = ('<p>見出し</p>'

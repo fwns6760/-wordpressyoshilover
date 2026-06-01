@@ -433,14 +433,15 @@ def collect_ichigun_candidates(cur: sqlite3.Cursor) -> list[Candidate]:
         if not _is_fresh(last_app, latest_game):
             continue  # ゲート②: 離脱・古いを除外(平山型をここで落とす)
         seen.add(player)
-        fresh = _fresh_number(cur, player, snap)
+        is_pitcher = _is_pitcher(cur, player)
+        num = _player_number(cur, player, snap)  # 投手→防御率 / 野手→打率(型出し分け)
         context = ""
-        if fresh:
-            number, source = fresh
+        if num and _is_positive_hook(num[0], is_pitcher=is_pitcher):
+            number, source = num
             note = ""
-            context = _season_recent_context(cur, player, snap)
+            context = "" if is_pitcher else _season_recent_context(cur, player, snap)
         else:
-            # 日付ベースが無い時はシグナル文 + 最終出場日を併記(鮮度明示)
+            # rate が凡庸/不調 or 無し → 正のシグナル文(連続安打等)を hook にする
             number = f"{_short_name(player)} {cur_val}"
             source = f"signal:{sig}"
             note = f"最終出場 {last_app} を確認の上で使用"
@@ -511,6 +512,55 @@ def _pitching_number(cur: sqlite3.Cursor, player: str, snap: str) -> Optional[tu
     return None
 
 
+def _is_pitcher(cur: sqlite3.Cursor, player: str) -> bool:
+    """投手か(pitching_logs に登板記録があれば投手)。"""
+    r = cur.execute(
+        "SELECT COUNT(*) FROM pitching_logs WHERE player_canonical=?", (player,)
+    ).fetchone()
+    return bool(r and r[0])
+
+
+def _player_number(cur: sqlite3.Cursor, player: str, snap: str) -> Optional[tuple[str, str]]:
+    """ポジションに応じた数字を返す。投手→防御率 / 野手→打率。型違いは出さない。"""
+    if _is_pitcher(cur, player):
+        return _pitching_number(cur, player, snap)
+    return _fresh_number(cur, player, snap)
+
+
+_PITCH_WORDS = ("投球", "マウンド", "完投", "完封", "奪三振", "三振", "抑え",
+                "リリーフ", "先発", "防御率", "制球", "球威", "ストレート", "変化球", "投げ")
+
+
+def _quote_fits_position(quote: str, is_pitcher: bool) -> bool:
+    """引用が選手のポジションと矛盾しないか(投手発言を野手に付けない)。"""
+    if not quote:
+        return True
+    has_pitch_talk = any(w in quote for w in _PITCH_WORDS)
+    if has_pitch_talk and not is_pitcher:
+        return False  # 野手に投手発言=誤帰属の使い回し → 捨てる
+    return True
+
+
+def _is_positive_hook(number: str, *, is_pitcher: bool) -> bool:
+    """投稿に値する「良い/注目」数字か。不調(.000 等)・凡庸は除外。
+
+    セ/順位が付いていれば無条件 OK(記録系・連続・本塁打・昇格も OK)。
+    率のみの時: 野手は打率 >= .270、投手は防御率 <= 3.00 を目安に。
+    """
+    if any(k in number for k in ("セ", "位", "連続", "本塁打", "猛打賞", "昇格", "登録", "勝利", "号")):
+        return True
+    rates = _RATE_RE.findall(number)
+    if not rates:
+        return True  # 数字が rate でない(記事数字等)はここで弾かない
+    try:
+        val = float(rates[0] if rates[0].startswith("0") or "." != rates[0][0] else "0" + rates[0])
+    except ValueError:
+        return True
+    if is_pitcher:
+        return val <= 3.00          # 防御率は低いほど良い
+    return val >= 0.270             # 打率 .270 未満は出さない(不調除外)
+
+
 def _article_number(title: str) -> Optional[str]:
     """記事タイトルから数字を抽出(二軍/昇格の fallback、出典=記事)。"""
     nums: list[str] = []
@@ -548,22 +598,25 @@ def collect_news_anchored(cur: sqlite3.Cursor, posts: list[dict]) -> list[Candid
             if player in emitted:
                 continue
             emitted.add(player)
+            is_pitcher = _is_pitcher(cur, player)
             article_quote = _extract_quote(content_html, player)  # 選手近接の引用のみ
-            num = _fresh_number(cur, player, snap)  # 一軍打者(日付ベース)
-            if num:
-                number, source, note = num[0], num[1], ""
+            if not _quote_fits_position(article_quote, is_pitcher):
+                article_quote = ""  # 投手発言を野手に付けない(誤帰属の使い回し排除)
+            num = _player_number(cur, player, snap)  # 投手→防御率 / 野手→打率
+            context = note = ""
+            if num and _is_positive_hook(num[0], is_pitcher=is_pitcher):
+                number, source = num
+                context = "" if is_pitcher else _season_recent_context(cur, player, snap)
             else:
-                pit = _pitching_number(cur, player, snap)
-                if pit:
-                    number, source, note = pit[0], pit[1], ""
+                # rate が不調/凡庸/無し → 記事数字(昇格等) or 発言を hook に。両方無ければ skip
+                art = _article_number(title)
+                if art:
+                    number, source = f"{_short_name(player)} {art}", link
+                    note = "数字は記事タイトル由来。本文で正確に確認の上で使用"
+                elif article_quote:
+                    number, source = _short_name(player), link  # 発言が主のポスト
                 else:
-                    art = _article_number(title)
-                    if not art and not article_quote:
-                        continue  # DB も記事数字も発言も無ければ skip(捏造しない)
-                    number = f"{_short_name(player)} {art}" if art else _short_name(player)
-                    source = link
-                    note = "数字は記事タイトル由来。本文で正確に確認の上で使用" if art else ""
-            context = _season_recent_context(cur, player, snap) if num else ""
+                    continue  # 良い数字も記事数字も整合する発言も無い → 出さない
             out.append(Candidate(
                 bucket="ニュース連動",
                 player=f"{player}(記事: {title.strip()[:34]}…)",
@@ -593,7 +646,10 @@ def generate(limit_ichigun: int = 6) -> dict:
                 if c.player not in news_players:
                     # 記事から発言/引用を拾って材料化(ニュース外でも検索で補完)
                     q, url = _search_player_quote(c.player)
-                    c.quote, c.article_url = q, url
+                    if _quote_fits_position(q, _is_pitcher(cur, c.player)):
+                        c.quote, c.article_url = q, url
+                    else:
+                        c.article_url = url  # 引用は捨てるが記事リンクは残す
                     if not _has_hook(c):
                         continue  # 数字 hook も発言も無い薄い候補は出さない
                     hidden_hot.append(c)
@@ -601,6 +657,16 @@ def generate(limit_ichigun: int = 6) -> dict:
                     break
     else:
         LOG.warning("insight.db 不在(INSIGHT_DB_PATH 未設定)→ DB 連動 skip")
+
+    # 誤帰属対策: 同一引用が 2 人以上に付いたら使い回し=誤帰属とみなし全員から外す。
+    from collections import Counter
+    qcount = Counter(c.quote for c in news + hidden_hot if c.quote)
+    for c in news + hidden_hot:
+        if c.quote and qcount[c.quote] > 1:
+            c.quote = ""
+    # 引用を外した結果 hook(数字/発言)が無くなった候補は落とす
+    news = [c for c in news if _has_hook(c)]
+    hidden_hot = [c for c in hidden_hot if _has_hook(c)]
 
     # Flash Lite polish(安価・任意)。数字はロック済、検証通過分だけ採用。失敗は fact 版。
     if _llm_enabled():

@@ -404,6 +404,42 @@ read-only 巡回し、 **動画つき投稿**を「引用RT / X公式『動画�
 Cloud Scheduler `rival-account-analysis-monthly` (毎月 1 日 09:00 JST)。 X API / Gemini 不使用。 添付対応は
 `mail_delivery_bridge.Attachment`。 手動実行: `gcloud run jobs execute rival-account-analysis`。
 
+## :material-vector-difference: 2パターン投稿設計 (2026-06-01 確定、 実装計画)
+
+参考アカウント深掘り (mainportalhuge / chikupn2896 / フーガ / 缶詰) から、 投稿を **2 パターン**に整理。
+
+### パターン① たんぱく事実型 (量・安全・¥0、 LLM 不使用)
+
+事実 (数字 / 発言 / 確定情報) を **【主語(選手・監督・コーチ名 / カテゴリ)】front-load + 淡々と**。
+解釈・感想・ポエムなし。 mainportalhuge / chikupn2896 がモデル。
+
+| サブ型 | 出どころ | 形式 | 例 |
+| --- | --- | --- | --- |
+| データ | insight.db (split/ranking) | `【名前】数字 + 客観の文脈 (規模/記録/比較)` | `【大城卓三】序盤に強い 序盤.320/終盤.180 100打席規模で珍しい #巨人` |
+| コメント速報 | 記事本文 (`long_quote_extractor`) | `【名前】「literal発言」` **コメント主役・自立優先**、 状況は要る時だけ | `【竹丸和幸】「8イニングは…思ったよりいけるなと」` |
+| 速報 | news/RSS | `【名前/タグ】事実淡々と` | `【チーム情報】明日先発は戸郷翔征` |
+
+- LLM 不使用 = **ポエム/捏造リスクゼロ・¥0**。 数字/literal をそのまま。 絵文字は節目だけ。
+
+### パターン② フーガ意見型 (質・エンゲージ、 free tier LLM)
+
+試合・話題への **意見・分析・辛口・読み**。 フーガ + 缶詰 voice (上記 voice 節)。 動画引用RT / 論点。
+
+### 切り分け・併産 (user 2026-06-01「値段一緒なら両方ほしい」)
+
+**片方に振らず、同一ソースから ① と ② を両方生成**してメールに並べ、 user が用途で選ぶ。
+- ① = ¥0 (LLM 不使用) / ② = gemini-3.1-flash-lite **無料枠** → **両方とも実質 ¥0**、 コスト増なし
+- RPD 超過時は ② だけ graceful skip、 ① は必ず出る
+- 量は ① (安全・量産)、 刺すのは ② (エンゲージ)
+
+### 実装計画 (土台は既存、 小規模)
+
+- **新設**: `build_player_comment_candidate` (① コメント速報。 `fetch_og_image` の `html_text` +
+  `extract_long_quote` + `_resolve_speaker_aliases` を流用、 LLM 不使用)
+- **変更**: data-split を chikupn2896 式 たんぱく に (フーガ lead=comment_fn を外し `【名前】数字+客観文脈`)
+- **配線**: news 記事は ① (quote→コメント / 速報語→速報) と ② (フーガ意見) を併産
+- **不可触 (完成済)**: 画像 (438/437) / 動画 (video radar) / 記録・成績取得 / voice (フーガ缶詰)
+
 ## :material-folder-file: 関連 file
 
 - メイン (候補組み立て + メール組み立て): `src/x_post_mail_lane.py`

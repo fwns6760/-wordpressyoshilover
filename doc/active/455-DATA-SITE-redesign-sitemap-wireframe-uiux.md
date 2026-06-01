@@ -190,7 +190,7 @@ pillar(選手ページ)= topic hub。通常記事(postgame/lineup/data-insight)=
 | 直近5試合 | 既存 | ✅ ready(同上) |
 | 打順別 / vs球団 / イニング別 | 既存(447 一部 done) | 🟡 一部 ready |
 | vs左右 / 球場別 / RISP / 守備 | at_bat_details ETL | ⛔ 447 Phase A BLOCKED |
-| 年度別履歴 | 当季のみ | ❌ backfill 必要 |
+| 年度別履歴 | 当季のみ | 🔨 **取得可**: NPB career page `bis/players/{id}.html` を scrape(467、「backfill無」は誤り) |
 | プロフィール(生年月日/身長体重/経歴) | DB に無い | ❌ source 未確保 |
 | チーム順位・成績 | games | 🟡 454 ETL |
 | サヨナラHR / 節目記録 | 試合データ派生 | 🟢 新規実装可 |
@@ -280,7 +280,7 @@ pillar(選手ページ)= topic hub。通常記事(postgame/lineup/data-insight)=
 | pitch-level(配球/球種別/ゾーン/球速) | × | × | ◯(日次dashboard) | **B に負け** | source無(射程外) |
 | 選球眼/得点差別/殊勲打 | × | × | ◯ | **B に負け** | 未実装 |
 | プロフィール(生年月日/身長体重/出身/経歴) | ×(MLB離脱者の散文のみ) | ◯(全選手) | △ | **A に負け** | source無 |
-| 年度別・通算の履歴(過去年) | ×(当季のみ) | ◯(1936-) | ◯(2011-) | **負け** | 履歴backfill無 |
+| 年度別・通算の履歴(過去年) | ×(当季のみ) | ◯(1936-) | ◯(2011-) | **負け→取得可** | NPB career page で取得可(467、source確定済) |
 | 球団内/リーグ ランキング面 | ×(/ranking 404) | ◯ | ◯ | **負け** | 面未実装 |
 | チーム順位・成績・日程 | △(team/schedule は200・内容未verify) | ◯ | ◯ | 要verify | 454 |
 | 歴史網羅(歴代在籍/ドラフト/タイトル/記録) | × | ◯(圧倒的) | △ | **A に負け** | 非スコープ(追わない) |

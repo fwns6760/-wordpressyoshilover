@@ -1,5 +1,16 @@
 # 452 data-site 状況別データ深化 + データ堀の投資判断
 
+## 実装状況(2026-06-01、Phase B 一次)
+
+- **コード完成・検証済(未commit、HOLD)**: 曜日別 / 月別 / 交流戦別 split を実装。
+  - `data_site_query.py`: `SplitStat` + `fetch_weekday_split_stats` / `fetch_month_split_stats` / `fetch_interleague_split_stats`(+ `_fetch_player_game_rows` / `_bucket_splits` / `_opp_code`、`_PA_TEAM_CODES`)。
+  - `data_site_template_pillar.py`: `_build_weekday_split_html` / `_build_month_split_html` / `_build_interleague_split_html` + フィールド3 + assembly 配線。
+  - `data_site_publisher.py`: 3 split の info 配線 + import。
+  - `tests/test_data_site_query.py`: `DateBasedSplitTests`(曜日/月/交流戦)。
+  - 検証: **48 tests pass**、prod データで岸田ページに3 section render OK(月別.167→.255→.407、交流戦.444 等)。
+- **HOLD 理由(user 判断「2」)**: `data_site_template_pillar.py` 等を **並行アクターが UI CSS刷新(ys-card 化)+453順位バッジで未commit大改修中**。衝突回避のため、**並行アクターの template 刷新が commit された後に**私の builder を上に乗せて commit + deploy する。
+- **再開条件**: 並行アクターの template refactor が commit される / user 指示。再開時に builder を再確認(grep)→ commit → image rebuild → execute → live verify。
+
 ## 0. ゴール(正本、2026-06-01 user 確定)
 
 > **巨人“専門”の決定版データサイトで、Google 検索(SEO)に勝つ。**

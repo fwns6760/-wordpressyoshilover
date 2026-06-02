@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Yoshilover 063 Frontend (topic hub / SNS reactions / Phase 1 noindex)
  * Description: 062 contract §2 §3 §5 の front impl。topic hub / SNS block / noindex を基盤に、トップ速報帯・記事下回遊束・右カラム rail・上部密集ナビ・人気記事導線まで含めて SWELL front を高密度化する。既存 SWELL コメント欄は触らない。
- * Version: 0.18.0
+ * Version: 0.18.1
  * Author: yoshilover
  */
 
@@ -75,17 +75,17 @@ function yoshilover_063_render_home_data_hub() {
             . '</a>';
     }
     $style = '<style>'
-        . '.yoshi-home-data{margin:0 0 18px;padding:16px 16px 18px;background:#fff;border:1px solid #ffe0cc;border-radius:14px;box-shadow:0 2px 10px rgba(226,84,0,.06);}'
-        . '.yoshi-home-data__head{display:flex;align-items:center;justify-content:space-between;margin:0 0 12px;}'
-        . '.yoshi-home-data__head h2{font-size:18px;font-weight:800;margin:0;color:#e25400;}'
-        . '.yoshi-home-data__more{font-size:13px;font-weight:700;color:#e25400;text-decoration:none;white-space:nowrap;}'
-        . '.yoshi-home-data__grid{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;}'
-        . '.yoshi-home-data__card{display:flex;flex-direction:column;align-items:center;text-align:center;gap:3px;padding:14px 6px;background:#fff8f3;border:1px solid #ffe0cc;border-radius:12px;text-decoration:none;transition:background .15s,transform .15s;}'
-        . '.yoshi-home-data__card:hover{background:#fff1e6;transform:translateY(-2px);}'
-        . '.yoshi-home-data__ic{font-size:24px;line-height:1;}'
-        . '.yoshi-home-data__t{font-size:14px;font-weight:800;color:#1a1a1a;}'
-        . '.yoshi-home-data__s{font-size:11px;color:#888;}'
-        . '@media(max-width:600px){.yoshi-home-data__grid{grid-template-columns:repeat(2,1fr);}.yoshi-home-data__head h2{font-size:16px;}}'
+        . '.yoshi-home-data{margin:0 0 22px;padding:0 0 18px;background:#fff;border:2px solid #ffcba8;border-radius:16px;box-shadow:0 4px 16px rgba(226,84,0,.12);overflow:hidden;}'
+        . '.yoshi-home-data__head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 16px;padding:14px 18px;background:linear-gradient(135deg,#ff6a00,#e25400);}'
+        . '.yoshi-home-data__head h2{font-size:24px;font-weight:900;margin:0;color:#fff;letter-spacing:.02em;text-shadow:0 1px 2px rgba(0,0,0,.15);}'
+        . '.yoshi-home-data__more{font-size:14px;font-weight:800;color:#fff;text-decoration:none;white-space:nowrap;background:rgba(255,255,255,.22);padding:6px 12px;border-radius:999px;}'
+        . '.yoshi-home-data__grid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;padding:0 16px;}'
+        . '.yoshi-home-data__card{display:flex;flex-direction:column;align-items:center;text-align:center;gap:5px;padding:20px 8px;background:#fff8f3;border:1.5px solid #ffd9bf;border-radius:14px;text-decoration:none;transition:background .15s,transform .15s,box-shadow .15s;}'
+        . '.yoshi-home-data__card:hover{background:#fff1e6;transform:translateY(-3px);box-shadow:0 6px 14px rgba(226,84,0,.18);}'
+        . '.yoshi-home-data__ic{font-size:34px;line-height:1;}'
+        . '.yoshi-home-data__t{font-size:16px;font-weight:900;color:#1a1a1a;}'
+        . '.yoshi-home-data__s{font-size:12px;color:#777;}'
+        . '@media(max-width:600px){.yoshi-home-data__grid{grid-template-columns:repeat(2,1fr);gap:10px;padding:0 12px;}.yoshi-home-data__head{padding:12px 14px;}.yoshi-home-data__head h2{font-size:20px;}.yoshi-home-data__ic{font-size:30px;}.yoshi-home-data__t{font-size:15px;}}'
         . '</style>';
     $html  = $style;
     $html .= '<section class="yoshi-home-data" aria-label="巨人データ">';

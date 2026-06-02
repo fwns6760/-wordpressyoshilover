@@ -31,6 +31,12 @@ LOG = logging.getLogger(__name__)
 
 _ROSTER_PATH = Path(__file__).resolve().parents[1] / "config" / "giants_roster.json"
 _PHASE1_PLAYERS_PATH = Path(__file__).resolve().parents[1] / "config" / "data_site_phase1_players.json"
+# 選手 pillar の顔写真 = 正本マッピング config/player_eyecatch_map.json ({正規化name: {id, title}})。
+# 旧実装は「最新タグ記事の eyecatch 流用」で対戦相手のチームマーク等が混入していたため、
+# この curated map を最優先にする。map に無い player は巨人マークに fallback (対戦相手は出さない)。
+_EYECATCH_MAP_PATH = Path(__file__).resolve().parents[1] / "config" / "player_eyecatch_map.json"
+_GIANTS_MARK_MEDIA_ID = 63578  # yoshilover / 巨人 brand mark (player 写真が無い時の安全 fallback)
+_EYECATCH_MAP_CACHE: Optional[dict] = None
 
 
 @dataclass
@@ -423,101 +429,85 @@ def fetch_related_topic_links(player_name: str, limit: int = 20) -> list[tuple[s
         return []
 
 
-def find_player_featured_image_url(player_name: str) -> str:
-    """player tag を持つ 直近 publish 記事の featured_media URL を返す (Pillar 上部 写真用).
+def _load_eyecatch_map() -> dict:
+    """config/player_eyecatch_map.json を load (cache)。 {正規化name: {id, title}}。"""
+    global _EYECATCH_MAP_CACHE
+    if _EYECATCH_MAP_CACHE is not None:
+        return _EYECATCH_MAP_CACHE
+    data: dict = {}
+    try:
+        raw = _json.loads(_EYECATCH_MAP_PATH.read_text(encoding="utf-8"))
+        if isinstance(raw, dict):
+            # key を空白除去で正規化し直して引きやすくする (元 key は表記名)。
+            for name, entry in raw.items():
+                key = str(name).replace(" ", "").replace("　", "")
+                if key:
+                    data[key] = entry
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("eyecatch map load error: %r", exc)
+    _EYECATCH_MAP_CACHE = data
+    return data
 
-    無ければ空文字 (template 側で team mark fallback)。
+
+def mapped_player_media_id(player_name: str) -> Optional[int]:
+    """curated eyecatch map から player の featured_media id を返す。 無ければ None。"""
+    key = str(player_name or "").replace(" ", "").replace("　", "")
+    entry = _load_eyecatch_map().get(key)
+    if isinstance(entry, dict) and entry.get("id"):
+        try:
+            return int(entry["id"])
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def _media_source_url(media_id: int, base: str, auth: HTTPBasicAuth) -> str:
+    """media id の source_url を返す。 失敗時 空文字。"""
+    try:
+        mr = requests.get(
+            base + f"/wp-json/wp/v2/media/{int(media_id)}",
+            params={"_fields": "source_url"},
+            auth=auth,
+            timeout=15,
+        )
+        if mr.ok:
+            return str((mr.json() or {}).get("source_url", "")).strip()
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("_media_source_url err media=%s: %r", media_id, exc)
+    return ""
+
+
+def find_player_featured_image_url(player_name: str) -> str:
+    """選手 pillar 上部の顔写真 URL を返す。
+
+    ① curated eyecatch map (config/player_eyecatch_map.json) の選手写真を最優先。
+    ② map に無ければ 巨人マーク (_GIANTS_MARK_MEDIA_ID) に fallback。
+    旧実装の「最新タグ記事 eyecatch 流用」は対戦相手のチームマーク等が混入するため廃止。
     """
     creds = _wp_creds()
     if not creds:
         return ""
     base, auth = creds
-    tag_id = find_player_tag_id(player_name)
-    if tag_id is None:
-        return ""
-    try:
-        r = requests.get(
-            base + "/wp-json/wp/v2/posts",
-            params={
-                "tags": tag_id,
-                "status": "publish",
-                "per_page": 5,
-                "orderby": "date",
-                "order": "desc",
-                "_fields": "id,featured_media",
-            },
-            auth=auth,
-            timeout=30,
-        )
-        if not r.ok:
-            return ""
-        for post in (r.json() or []):
-            fm = post.get("featured_media")
-            if not fm:
-                continue
-            mr = requests.get(
-                base + f"/wp-json/wp/v2/media/{int(fm)}",
-                params={"_fields": "source_url"},
-                auth=auth,
-                timeout=15,
-            )
-            if mr.ok:
-                url = str((mr.json() or {}).get("source_url", "")).strip()
-                if url:
-                    return url
-        return ""
-    except Exception as exc:  # noqa: BLE001
-        LOG.warning("find_player_featured_image_url err player=%s: %r", player_name, exc)
-        return ""
+    mid = mapped_player_media_id(player_name)
+    if mid:
+        url = _media_source_url(mid, base, auth)
+        if url:
+            return url
+    # fallback: 巨人マーク (対戦相手マーク / 無関係画像は出さない)
+    return _media_source_url(_GIANTS_MARK_MEDIA_ID, base, auth)
 
 
 def find_player_featured_media_id(player_name: str) -> Optional[int]:
-    """player tag を持つ 直近 publish 記事の featured_media attachment id を返す。
+    """data ページ自身の WP featured_media (= og:image) に set する attachment id。
 
-    用途: data ページ自身の WP featured_media に set し、 SNS 共有時の og:image を
-    汎用既定画像ではなく選手写真にする (SEO SIMPLE PACK は featured image を og:image
-    に使う)。 find_player_featured_image_url と同じ「最初に source_url が取れる post」を
-    選ぶので、 ページ本文の写真と og:image が一致する。 無ければ None。
+    ① curated eyecatch map の選手写真 id を最優先 (ページ本文の写真と一致)。
+    ② map に無ければ 巨人マーク id に fallback。 SEO SIMPLE PACK が featured image を
+    og:image に使うため、 SNS 共有でも対戦相手マークでなく選手写真/巨人マークになる。
     """
-    creds = _wp_creds()
-    if not creds:
-        return None
-    base, auth = creds
-    tag_id = find_player_tag_id(player_name)
-    if tag_id is None:
-        return None
-    try:
-        r = requests.get(
-            base + "/wp-json/wp/v2/posts",
-            params={
-                "tags": tag_id,
-                "status": "publish",
-                "per_page": 5,
-                "orderby": "date",
-                "order": "desc",
-                "_fields": "id,featured_media",
-            },
-            auth=auth,
-            timeout=30,
-        )
-        if not r.ok:
-            return None
-        for post in (r.json() or []):
-            fm = post.get("featured_media")
-            if not fm:
-                continue
-            mr = requests.get(
-                base + f"/wp-json/wp/v2/media/{int(fm)}",
-                params={"_fields": "source_url"},
-                auth=auth,
-                timeout=15,
-            )
-            if mr.ok and str((mr.json() or {}).get("source_url", "")).strip():
-                return int(fm)
-        return None
-    except Exception as exc:  # noqa: BLE001
-        LOG.warning("find_player_featured_media_id err player=%s: %r", player_name, exc)
-        return None
+    mid = mapped_player_media_id(player_name)
+    if mid:
+        return mid
+    return _GIANTS_MARK_MEDIA_ID
 
 
 @dataclass

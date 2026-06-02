@@ -546,3 +546,29 @@ class StartersParseTests(unittest.TestCase):
         html = ('<tr><td>先発</td><td>(ヤ) <a href="x">A</a></td></tr>'
                 '<tr><td>先発</td><td>(ロ) <a href="y">B</a></td></tr>')
         self.assertEqual(parse_giants_starters(html), {})
+
+
+class PlayerEyecatchMapTests(unittest.TestCase):
+    """選手 pillar 顔写真は curated eyecatch map 最優先 + 巨人マーク fallback。
+
+    旧実装の「最新タグ記事 eyecatch 流用」で対戦相手のチームマーク (戸郷=中日マーク)
+    が出ていた事故の回帰防止。
+    """
+
+    def test_mapped_player_returns_curated_id(self) -> None:
+        from data_site_query import mapped_player_media_id, find_player_featured_media_id
+        # 戸郷翔征 は map に curated 写真 66521 がある (中日マークではない)
+        self.assertEqual(mapped_player_media_id("戸郷翔征"), 66521)
+        self.assertEqual(find_player_featured_media_id("戸郷翔征"), 66521)
+        # 全角/半角空白を含む表記でも引ける
+        self.assertEqual(mapped_player_media_id("戸郷　翔征"), 66521)
+
+    def test_unmapped_player_falls_back_to_giants_mark(self) -> None:
+        from data_site_query import (
+            mapped_player_media_id,
+            find_player_featured_media_id,
+            _GIANTS_MARK_MEDIA_ID,
+        )
+        self.assertIsNone(mapped_player_media_id("存在しない架空選手ZZZ"))
+        # 対戦相手マーク等ではなく巨人マークに落ちる
+        self.assertEqual(find_player_featured_media_id("存在しない架空選手ZZZ"), _GIANTS_MARK_MEDIA_ID)

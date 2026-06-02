@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Yoshilover 063 Frontend (topic hub / SNS reactions / Phase 1 noindex)
  * Description: 062 contract §2 §3 §5 の front impl。topic hub / SNS block / noindex を基盤に、トップ速報帯・記事下回遊束・右カラム rail・上部密集ナビ・人気記事導線まで含めて SWELL front を高密度化する。既存 SWELL コメント欄は触らない。
- * Version: 0.20.0
+ * Version: 0.20.1
  * Author: yoshilover
  */
 
@@ -335,14 +335,23 @@ function yoshilover_063_auto_topic_hub_items( $items ) {
         return ! empty( $cached ) ? $cached : $items;
     }
 
-    $out  = array();
-    $seen = array();
+    $out         = array();
+    $seen        = array();
+    $seen_titles = array();
+
+    // 同一タイトル (別 ID の重複投稿: 速報/通知ペア等) を弾く正規化キー。
+    $title_key = function ( $raw ) {
+        $t = is_string( $raw ) ? $raw : '';
+        $t = preg_replace( '/[\s\x{3000}…\.\[\]【】]+/u', '', $t );
+        $t = (string) $t;
+        return function_exists( 'mb_substr' ) ? mb_substr( $t, 0, 36 ) : substr( $t, 0, 96 );
+    };
 
     // 1) 直近 14 日 コメント数 desc (話題の記事)。
     $hot = new WP_Query( array(
         'post_type'              => 'post',
         'post_status'            => 'publish',
-        'posts_per_page'         => 5,
+        'posts_per_page'         => 10,
         'orderby'                => array( 'comment_count' => 'DESC', 'date' => 'DESC' ),
         'date_query'             => array( array( 'after' => '14 days ago' ) ),
         'ignore_sticky_posts'    => true,
@@ -358,7 +367,15 @@ function yoshilover_063_auto_topic_hub_items( $items ) {
         if ( $cc < 1 ) {
             continue; // コメント 0 はここでは採らない (新着 fallback に回す)
         }
+        if ( count( $out ) >= 5 ) {
+            break;
+        }
+        $tk = $title_key( get_the_title( $p ) );
+        if ( $tk !== '' && isset( $seen_titles[ $tk ] ) ) {
+            continue; // 同一タイトルの重複投稿を弾く
+        }
         $seen[ $p->ID ] = true;
+        $seen_titles[ $tk ] = true;
         $out[] = array(
             'title' => get_the_title( $p ),
             'url'   => get_permalink( $p ),
@@ -372,7 +389,7 @@ function yoshilover_063_auto_topic_hub_items( $items ) {
         $recent = new WP_Query( array(
             'post_type'              => 'post',
             'post_status'            => 'publish',
-            'posts_per_page'         => 8,
+            'posts_per_page'         => 14,
             'orderby'                => 'date',
             'order'                  => 'DESC',
             'ignore_sticky_posts'    => true,
@@ -387,7 +404,12 @@ function yoshilover_063_auto_topic_hub_items( $items ) {
             if ( isset( $seen[ $p->ID ] ) ) {
                 continue;
             }
+            $tk = $title_key( get_the_title( $p ) );
+            if ( $tk !== '' && isset( $seen_titles[ $tk ] ) ) {
+                continue; // 同一タイトルの重複投稿を弾く
+            }
             $seen[ $p->ID ] = true;
+            $seen_titles[ $tk ] = true;
             $out[] = array(
                 'title' => get_the_title( $p ),
                 'url'   => get_permalink( $p ),

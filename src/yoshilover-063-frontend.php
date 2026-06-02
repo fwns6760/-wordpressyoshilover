@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Yoshilover 063 Frontend (topic hub / SNS reactions / Phase 1 noindex)
  * Description: 062 contract §2 §3 §5 の front impl。topic hub / SNS block / noindex を基盤に、トップ速報帯・記事下回遊束・右カラム rail・上部密集ナビ・人気記事導線まで含めて SWELL front を高密度化する。既存 SWELL コメント欄は触らない。
- * Version: 0.19.0
+ * Version: 0.20.0
  * Author: yoshilover
  */
 
@@ -316,6 +316,91 @@ function yoshilover_063_get_topic_hub_items() {
     }
     return array_slice( $items, 0, 5 );
 }
+
+/**
+ * 2026-06-02: 「今週の話題」 (topic hub) の自動更新。
+ *
+ * 旧: items は WP option `yoshilover_topic_hub_items` の手動固定値で、 自動更新が無く
+ * 古い記事 (例: 数ヶ月前のヤクルト戦) が凍結表示され続けていた。
+ * 新: 直近 14 日で「コメントが多い = 実際に話題になっている」 記事を自動抽出して上書き。
+ * コメントが付いた記事が無ければ直近の新着で埋める。 1 時間 transient cache。
+ * 取得 0 件のときだけ従来の手動 option ($items) に fallback (安全側)。
+ */
+function yoshilover_063_auto_topic_hub_items( $items ) {
+    if ( ! class_exists( 'WP_Query' ) ) {
+        return $items;
+    }
+    $cached = get_transient( 'yoshi_topic_hub_auto_v1' );
+    if ( is_array( $cached ) ) {
+        return ! empty( $cached ) ? $cached : $items;
+    }
+
+    $out  = array();
+    $seen = array();
+
+    // 1) 直近 14 日 コメント数 desc (話題の記事)。
+    $hot = new WP_Query( array(
+        'post_type'              => 'post',
+        'post_status'            => 'publish',
+        'posts_per_page'         => 5,
+        'orderby'                => array( 'comment_count' => 'DESC', 'date' => 'DESC' ),
+        'date_query'             => array( array( 'after' => '14 days ago' ) ),
+        'ignore_sticky_posts'    => true,
+        'no_found_rows'          => true,
+        'update_post_meta_cache' => false,
+        'update_post_term_cache' => false,
+    ) );
+    foreach ( (array) $hot->posts as $p ) {
+        if ( isset( $seen[ $p->ID ] ) ) {
+            continue;
+        }
+        $cc = (int) $p->comment_count;
+        if ( $cc < 1 ) {
+            continue; // コメント 0 はここでは採らない (新着 fallback に回す)
+        }
+        $seen[ $p->ID ] = true;
+        $out[] = array(
+            'title' => get_the_title( $p ),
+            'url'   => get_permalink( $p ),
+            'lead'  => '',
+            'badge' => 'コメント' . $cc,
+        );
+    }
+
+    // 2) 5 件に満たなければ直近の新着で埋める。
+    if ( count( $out ) < 5 ) {
+        $recent = new WP_Query( array(
+            'post_type'              => 'post',
+            'post_status'            => 'publish',
+            'posts_per_page'         => 8,
+            'orderby'                => 'date',
+            'order'                  => 'DESC',
+            'ignore_sticky_posts'    => true,
+            'no_found_rows'          => true,
+            'update_post_meta_cache' => false,
+            'update_post_term_cache' => false,
+        ) );
+        foreach ( (array) $recent->posts as $p ) {
+            if ( count( $out ) >= 5 ) {
+                break;
+            }
+            if ( isset( $seen[ $p->ID ] ) ) {
+                continue;
+            }
+            $seen[ $p->ID ] = true;
+            $out[] = array(
+                'title' => get_the_title( $p ),
+                'url'   => get_permalink( $p ),
+                'lead'  => '',
+                'badge' => '新着',
+            );
+        }
+    }
+
+    set_transient( 'yoshi_topic_hub_auto_v1', $out, HOUR_IN_SECONDS );
+    return ! empty( $out ) ? $out : $items;
+}
+add_filter( 'yoshilover_topic_hub_items', 'yoshilover_063_auto_topic_hub_items', 20 );
 
 function yoshilover_063_sanitize_topic_hub_items( $items ) {
     if ( ! is_array( $items ) ) {

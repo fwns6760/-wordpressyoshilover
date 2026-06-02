@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Yoshilover 063 Frontend (topic hub / SNS reactions / Phase 1 noindex)
  * Description: 062 contract §2 §3 §5 の front impl。topic hub / SNS block / noindex を基盤に、トップ速報帯・記事下回遊束・右カラム rail・上部密集ナビ・人気記事導線まで含めて SWELL front を高密度化する。既存 SWELL コメント欄は触らない。
- * Version: 0.20.1
+ * Version: 0.20.2
  * Author: yoshilover
  */
 
@@ -330,7 +330,7 @@ function yoshilover_063_auto_topic_hub_items( $items ) {
     if ( ! class_exists( 'WP_Query' ) ) {
         return $items;
     }
-    $cached = get_transient( 'yoshi_topic_hub_auto_v1' );
+    $cached = get_transient( 'yoshi_topic_hub_auto_v2' );
     if ( is_array( $cached ) ) {
         return ! empty( $cached ) ? $cached : $items;
     }
@@ -419,7 +419,7 @@ function yoshilover_063_auto_topic_hub_items( $items ) {
         }
     }
 
-    set_transient( 'yoshi_topic_hub_auto_v1', $out, HOUR_IN_SECONDS );
+    set_transient( 'yoshi_topic_hub_auto_v2', $out, HOUR_IN_SECONDS );
     return ! empty( $out ) ? $out : $items;
 }
 add_filter( 'yoshilover_topic_hub_items', 'yoshilover_063_auto_topic_hub_items', 20 );

@@ -183,5 +183,39 @@ class RenderClusterTitleTests(unittest.TestCase):
         self.assertIn("ヨシラバー", title)
 
 
+class ClusterSearchBoxTests(unittest.TestCase):
+    """460: 選手名インクリメンタル検索 box (client-side、 progressive enhancement)。"""
+
+    def setUp(self) -> None:
+        self.players = [
+            ClusterPlayerEntry(name="戸郷翔征", slug="togo-shosei", position="投手", jersey_number="20"),
+            ClusterPlayerEntry(name="坂本勇人", slug="sakamoto-hayato", position="内野手", jersey_number="6"),
+        ]
+
+    def test_search_box_present(self) -> None:
+        html = render_cluster_html(self.players)
+        self.assertIn('id="ys-player-search"', html)
+        self.assertIn('type="search"', html)
+        self.assertIn("選手名で検索", html)
+
+    def test_search_script_scoped_to_player_tables(self) -> None:
+        html = render_cluster_html(self.players)
+        # JS が table section 内の /data/ リンクのみ対象にする (intro ナビ除外)
+        self.assertIn('section[class*="ys-cluster"][class*="-table"] a[href^="/data/"]', html)
+        self.assertIn("closest(\"tr\")", html)
+        self.assertIn('id="ys-search-empty"', html)
+
+    def test_search_box_before_tables(self) -> None:
+        html = render_cluster_html(self.players)
+        # 検索 box は選手テーブルより前 (画面上部) に出る
+        self.assertLess(html.index("ys-player-search"), html.index("/data/togo-shosei/"))
+
+    def test_full_list_intact_without_js(self) -> None:
+        # progressive enhancement: 検索を入れても全選手リンクはそのまま残る
+        html = render_cluster_html(self.players)
+        for p in self.players:
+            self.assertIn(f"/data/{p.slug}/", html)
+
+
 if __name__ == "__main__":
     unittest.main()

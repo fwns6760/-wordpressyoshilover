@@ -51,6 +51,44 @@ def _esc(text: str) -> str:
     return _html.escape(str(text or ""), quote=True)
 
 
+def _build_search_html() -> str:
+    """460: 選手名インクリメンタル検索 box (client-side、 progressive enhancement)。
+
+    全テーブル (打者/投手/監督コーチ/育成/OB) の選手リンク行を選手名で絞り込む。
+    JS が無効/未対応でも全リストはそのまま表示される (劣化しない)。
+    検索対象は ``section[class*="ys-cluster"][class*="-table"]`` 内の ``/data/`` リンク
+    のみ (intro のナビ link は対象外)。
+    """
+    return (
+        '<section class="ys-cluster-search" '
+        'style="margin:0 0 18px;">'
+        '<input type="search" id="ys-player-search" autocomplete="off" '
+        'placeholder="🔍 選手名で検索（例: 戸郷 / 坂本 / 岡本）" '
+        'style="width:100%;box-sizing:border-box;padding:12px 14px;font-size:15px;'
+        'border:2px solid #ffd9bf;border-radius:10px;outline:none;color:#1a1a1a;" '
+        'aria-label="選手名で検索">'
+        '<p id="ys-search-empty" hidden '
+        'style="font-size:13px;color:#888;margin:8px 2px 0;">該当する選手が見つかりません。</p>'
+        '</section>'
+        '<script>(function(){'
+        'var box=document.getElementById("ys-player-search");if(!box)return;'
+        'var empty=document.getElementById("ys-search-empty");'
+        'var links=[].slice.call(document.querySelectorAll('
+        '\'section[class*="ys-cluster"][class*="-table"] a[href^="/data/"]\'));'
+        'var items=links.map(function(a){'
+        'var row=a.closest("tr")||a;'
+        'return{el:row,nm:(row.textContent||"").replace(/\\s+/g,"")};});'
+        'function norm(s){return(s||"").replace(/\\s+/g,"");}'
+        'box.addEventListener("input",function(){'
+        'var q=norm(this.value);var vis=0;'
+        'items.forEach(function(it){'
+        'var hit=!q||it.nm.indexOf(q)>=0;'
+        'it.el.style.display=hit?"":"none";if(hit)vis++;});'
+        'if(empty)empty.hidden=!(q&&vis===0);});'
+        '})();</script>'
+    )
+
+
 def _build_intro_html() -> str:
     return (
         '<section class="ys-cluster-intro" '
@@ -436,6 +474,7 @@ def render_cluster_html(
     """
     sections = [
         _build_intro_html(),
+        _build_search_html(),
         _build_hot_html(hot),
         _build_player_table_html(players, ikusei_entries, ob_entries),
         _build_footnote_html(len(players)),

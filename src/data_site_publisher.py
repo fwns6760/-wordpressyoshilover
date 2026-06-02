@@ -43,6 +43,7 @@ from src.data_site_query import (
     fetch_interleague_split_stats,
     fetch_giants_schedule,
     fetch_team_leaders,
+    build_career_leaders,
     fetch_team_rankings,
     fetch_giants_team_record,
     fetch_giants_upcoming,
@@ -528,16 +529,23 @@ def publish_phase1() -> dict[str, object]:
              team_result.page_id, team_result.action, len(team_rankings))
 
     # ranking ページ upsert (選手別 球団内ランキング HUB、 462) — parent=cluster → /data/ranking/
+    # 468-1: 現役選手の NPB 通算成績ランキングを career cache から集計して併載。
     leaders = fetch_team_leaders()
+    try:
+        career_leaders = build_career_leaders(_CAREER_CACHE)
+        LOG.info("career leaders cats=%d", len(career_leaders))
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("build_career_leaders failed (continue without): %r", exc)
+        career_leaders = {}
     ranking_result = _upsert_page(
         slug="ranking",
         title=render_ranking_title(),
-        content_html=render_ranking_html(leaders),
+        content_html=render_ranking_html(leaders, career_leaders),
         parent=cluster_page_id,
         excerpt=render_ranking_excerpt(leaders),
     )
-    LOG.info("ranking upsert slug=ranking page_id=%s action=%s cats=%d",
-             ranking_result.page_id, ranking_result.action, len(leaders))
+    LOG.info("ranking upsert slug=ranking page_id=%s action=%s cats=%d career=%d",
+             ranking_result.page_id, ranking_result.action, len(leaders), len(career_leaders))
 
     summary = {
         "status": "ok",

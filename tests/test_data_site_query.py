@@ -572,3 +572,47 @@ class PlayerEyecatchMapTests(unittest.TestCase):
         self.assertIsNone(mapped_player_media_id("存在しない架空選手ZZZ"))
         # 対戦相手マーク等ではなく巨人マークに落ちる
         self.assertEqual(find_player_featured_media_id("存在しない架空選手ZZZ"), _GIANTS_MARK_MEDIA_ID)
+
+
+class CareerLeadersTests(unittest.TestCase):
+    """468-1 build_career_leaders: career cache から通算ランキングを集計。"""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        import os
+        from src.npb_career_scraper import parse_player_career
+        fix = os.path.join(os.path.dirname(__file__), "fixtures")
+        with open(os.path.join(fix, "npb_career_batter_sakamoto_51955114.html"), encoding="utf-8", errors="replace") as fh:
+            bat = parse_player_career(fh.read())
+        with open(os.path.join(fix, "npb_career_pitcher_togo_41045138.html"), encoding="utf-8", errors="replace") as fh:
+            pit = parse_player_career(fh.read())
+        cls.cache = {
+            "ids": {"坂本勇人": "1", "戸郷翔征": "2"},
+            "players": {"1": bat, "2": pit},
+        }
+
+    def test_batting_leaders(self) -> None:
+        from data_site_query import build_career_leaders
+        lead = build_career_leaders(self.cache, top_n=10)
+        self.assertIn("通算安打", lead)
+        top = lead["通算安打"][0]
+        self.assertEqual(top.player, "坂本勇人")
+        self.assertEqual(top.display, "2457")
+        self.assertEqual(lead["通算本塁打"][0].display, "300本")
+
+    def test_pitching_leaders_only_pitchers(self) -> None:
+        from data_site_query import build_career_leaders
+        lead = build_career_leaders(self.cache, top_n=10)
+        # 投手成績は is_pitcher の戸郷のみ (坂本は混ざらない)
+        self.assertIn("通算勝利", lead)
+        win = lead["通算勝利"]
+        self.assertEqual(len(win), 1)
+        self.assertEqual(win[0].player, "戸郷翔征")
+        self.assertEqual(win[0].display, "65勝")
+        # 防御率は登板50以上の戸郷 (147登板) が入る
+        self.assertEqual(lead["通算防御率"][0].player, "戸郷翔征")
+
+    def test_empty_cache_safe(self) -> None:
+        from data_site_query import build_career_leaders
+        self.assertEqual(build_career_leaders({}), {})
+        self.assertEqual(build_career_leaders(None), {})

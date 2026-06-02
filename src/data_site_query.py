@@ -1157,6 +1157,109 @@ def fetch_team_leaders(top_n: int = 8) -> dict[str, list[LeaderEntry]]:
     return {k: v for k, v in out.items() if v}
 
 
+def _career_int(s) -> Optional[int]:
+    try:
+        v = re.sub(r"[^0-9\-]", "", str(s))
+        return int(v) if v not in ("", "-") else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _career_ip(s) -> Optional[float]:
+    """NPB 投球回 '924.2' (= 924 と 2/3) を ranking 用 float に。"""
+    try:
+        whole, _, frac = str(s).strip().partition(".")
+        w = int(whole) if whole else 0
+        f = int(frac) if frac else 0
+        return float(w) + (f / 3.0)
+    except (TypeError, ValueError):
+        return None
+
+
+def build_career_leaders(career_cache: dict, top_n: int = 10) -> dict[str, list[LeaderEntry]]:
+    """468-1: 現役巨人選手の NPB 通算成績ランキング (467 career cache 由来、追加 fetch 無し)。
+
+    career cache = npb_career_ingest の {ids:{name:id}, players:{id:payload}}。
+    各選手の通算 (total) 行を集計して、打撃 5 種 + 投手 5 種のランキングを返す。
+    率系 (打率/防御率) は規定数 (打数/投球回) 未満を除外し小標本上位を防ぐ。
+    戻り値: {category: [LeaderEntry, ... top_n]}。
+    """
+    players = (career_cache or {}).get("players") or {}
+    ids = (career_cache or {}).get("ids") or {}
+    id2name = {str(v): k for k, v in ids.items()}
+
+    bat: list[tuple[str, dict]] = []
+    pit: list[tuple[str, dict]] = []
+    for npb_id, payload in players.items():
+        if not isinstance(payload, dict):
+            continue
+        name = id2name.get(str(npb_id))
+        if not name:
+            continue
+        b = (payload.get("batting") or {}).get("total")
+        if isinstance(b, dict) and b:
+            bat.append((name, b))
+        p = (payload.get("pitching") or {}).get("total")
+        if isinstance(p, dict) and p and payload.get("is_pitcher"):
+            pit.append((name, p))
+
+    def _board(rows, col, *, reverse=True, fmt=None, min_col=None, min_val=0):
+        out = []
+        for name, tot in rows:
+            v = _career_int(tot.get(col))
+            if v is None:
+                continue
+            if min_col is not None:
+                m = _career_int(tot.get(min_col))
+                if m is None or m < min_val:
+                    continue
+            out.append((name, v, tot))
+        out.sort(key=lambda x: x[1], reverse=reverse)
+        return [
+            LeaderEntry(player=n, value=float(v), display=(fmt(v, tot) if fmt else str(v)))
+            for n, v, tot in out[:top_n]
+        ]
+
+    def _rate_board(rows, col, *, reverse, min_col, min_val):
+        out = []
+        for name, tot in rows:
+            raw = str(tot.get(col, "")).strip()
+            try:
+                rv = float(raw)
+            except (TypeError, ValueError):
+                continue
+            m = _career_int(tot.get(min_col))
+            if m is None or m < min_val:
+                continue
+            out.append((name, rv, raw))
+        out.sort(key=lambda x: x[1], reverse=reverse)
+        return [LeaderEntry(player=n, value=rv, display=raw) for n, rv, raw in out[:top_n]]
+
+    def _ip_board(rows):
+        out = []
+        for name, tot in rows:
+            ipv = _career_ip(tot.get("投球回"))
+            if ipv is None:
+                continue
+            out.append((name, ipv, str(tot.get("投球回", "")).strip()))
+        out.sort(key=lambda x: x[1], reverse=True)
+        return [LeaderEntry(player=n, value=v, display=f"{disp}回") for n, v, disp in out[:top_n]]
+
+    leaders: dict[str, list[LeaderEntry]] = {
+        "通算安打": _board(bat, "安打", fmt=lambda v, t: f"{v}"),
+        "通算本塁打": _board(bat, "本塁打", fmt=lambda v, t: f"{v}本"),
+        "通算打点": _board(bat, "打点", fmt=lambda v, t: f"{v}"),
+        "通算盗塁": _board(bat, "盗塁", fmt=lambda v, t: f"{v}"),
+        "通算打率": _rate_board(bat, "打率", reverse=True, min_col="打数", min_val=1000),
+        "通算勝利": _board(pit, "勝利", fmt=lambda v, t: f"{v}勝"),
+        "通算セーブ": _board(pit, "セーブ", fmt=lambda v, t: f"{v}S"),
+        "通算奪三振": _board(pit, "三振", fmt=lambda v, t: f"{v}"),
+        "通算投球回": _ip_board(pit),
+        "通算防御率": _rate_board(pit, "防御率", reverse=False, min_col="登板", min_val=50),
+    }
+    return {k: v for k, v in leaders.items() if v}
+
+
 @dataclass
 class GiantsScheduleRow:
     """巨人 1 試合の日程・結果 (data/schedule ページ用、Phase B 452)。"""

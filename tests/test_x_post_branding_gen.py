@@ -860,5 +860,31 @@ class XImpressionPhase5OfficialHandleTests(unittest.TestCase):
         self.assertEqual(out, long_body)
 
 
+class VoiceQualityGateTests(unittest.TestCase):
+    """門番 _voice_quality_ok: 優等生締め / ポエム / スカスカ を弾く (ライブは緩和)."""
+
+    def test_rejects_yutousei_ending(self):
+        t = ("石塚裕惺のスイングは段違いだよな。今は二軍だけど練習量なら数字はついてくるはず。"
+             "守備の兼ね合いもあるが、まずは二軍で圧倒的な結果を残してほしいね。")
+        self.assertFalse(xbg._voice_quality_ok(t))
+
+    def test_rejects_thin_filler(self):
+        self.assertFalse(xbg._voice_quality_ok("矢野謙次、これは見ておきたい一件。"))
+
+    def test_rejects_poem(self):
+        self.assertFalse(xbg._voice_quality_ok("あの打球の軌跡に、僕らは明日への希望を見た。胸が熱くなった。"))
+
+    def test_accepts_yoshilover_empathy(self):
+        t = ("竹丸和幸8回4安打で初完投、内容は文句なし。なのに打線が0点て正直これが今年の巨人なんよな。"
+             "投手は頑張ってる。次は打線、頼むわ。")
+        self.assertTrue(xbg._voice_quality_ok(t))
+
+    def test_live_mode_allows_short_exclamation(self):
+        # 試合中の缶詰ライブは短文 + 連呼絶叫が正 → live=True で通す
+        self.assertTrue(xbg._voice_quality_ok("泉口友汰！！！最後に美味しいとこ持ってったなあ。これはデカい！", live=True))
+        # 同じ文でも考察モード (live=False) は感嘆乱用で弾く
+        self.assertFalse(xbg._voice_quality_ok("泉口友汰！！！最後に美味しいとこ持ってったなあ。これはデカい！", live=False))
+
+
 if __name__ == "__main__":
     unittest.main()

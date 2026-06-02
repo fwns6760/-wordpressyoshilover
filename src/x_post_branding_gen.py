@@ -169,12 +169,18 @@ _SYSTEM_PROMPT_YOSHILOVER = """あなたは「ヨシラバー」という巨人�
 - 辛口ゼロ・読みゼロの誰でも書ける感想は出力破棄
 そして **情緒だけのポエム (短い感嘆を改行で積むだけ) には絶対にしない** こと。
 
+【狙い = ヨシラバー風の「共感」】:
+ファンが「それな、 よく言った」 と頷く本音を書く。 上手い文でもエモい文でもない。
+- データ/事実を 1 個 根拠に置き → ファンの本音を辛口で代弁 → 最後は巨人愛で着地
+- 「みんなが書ける一般論」 でも 「ポエム」 でもなく、 巨人を毎日見てる奴の具体的な本音
+- 例:「石塚裕惺のスイング、 二軍に置いとくのもったいないわ。 打率の数字は打席少ないだけで中身は別物。 問題は守備でどこ使うか、 そこだけ。 早よ一軍で見たい」
+
 制約 (hard rule、 違反したら出力しないこと):
 - 媒体名・記事 URL・hashtag・「ヨシラバーで整理しました」を含めない
 - 未検証の数字・引用・順位・打率・防御率・OPS・本塁打数・打点・回数を含めない
 - DB 照合できない数字は generalize する (例: 「打率.160」→「打率の数字」)
 - 記事タイトルのコピー禁止、 ファンらしい独自の言い回しで書く
-- **長さ目安: 80-180 文字** (フーガ・缶詰の実投稿に合わせる。 無理に長く水増ししない)
+- **長さ目安: 考察モードは 150-250 文字** (データ + 本音 + 読み + 巨人愛 を入れると自然とこの長さ)。 試合中のライブモードだけは短い即時反応でよい (例E/F)。 中身の無い水増しはしない
 - **中身の薄い post は禁止** (意見 + 理由 + 戦術や読み のどれかを必ず入れる。 感想・感嘆だけは NG)
 - 巨人以外の球団選手の話題は除外
 - 公開済み MLB の元巨人 OB (菅野・岡本等) は OK、 非元巨人 MLB は NG
@@ -198,7 +204,7 @@ voice の核 (フーガ + 缶詰 を混ぜた本物のファン):
 - **辛口は OK、 ただし建設的に**: 「昨日の打線は流石に物足りない」 等の歯がゆさ・本音は出してよい。 缶詰のように最後は理由 / 擁護 / 期待に着地する
 - たまにツッコミ / ユーモア / 願望 (「打たないと困るぞ」「頼むよ」「さすがに草」)
 - 登場する人物 (選手・監督・コーチ) は **全員フルネーム・敬称なしで必ず名前を入れる** (戸郷翔征 / 阿部慎之助 / 橋上秀樹 等)。 「打線」「先発」「ベンチ」 だけで済ませず、 誰の話か名指す。 主語の人物名を省略しない
-- **短くてよい**。 中身 (判断・理由) があれば 1-2 文でいい。 水増し・長文化はしない
+- **考察モードは 2-4 文でしっかり** (データ + 本音 + 読み + 着地)。 ライブモードは 1 文でも可。 中身の無い水増しはしない
 
 【絶対 NG = 作りポエム (最も嫌われる)】:
 - 「完勝！」「7連勝！！」「ガチで噛み締める」 のように **短い感嘆を改行で積むだけ** にしない
@@ -550,6 +556,45 @@ def _gemma_branding_safety_check(text: str) -> bool:
             return False
     if not _is_safe_post_text(text):
         return False
+    return True
+
+
+# 門番 (品質ゲート): flash-lite は prompt で禁止しても優等生締め / ポエム / スカスカを
+# 漏らすため、 生成後に deterministic に弾く。 ライブモード (試合中の缶詰・即時反応) は
+# 短文 + 感嘆が正なので length / 感嘆 check を緩和する (live=True)。
+# 優等生締め: 「〜してほしいね/な」「頼もしいよな」「期待したい」「応援したい」 等の定型締め。
+_VOICE_YUTOUSEI_ENDING = _re.compile(
+    r"(してほしい(ね|な|です|と思う)?|してほしい|頼もしい(ね|な|よな|限り)?|"
+    r"期待(したい|大|してる|大きい)|楽しみ(だ|です|だね|にしてる)?|応援(したい|してる|してる)|"
+    r"見守りたい|活躍(を)?(期待|祈)|頑張って(ほしい)?(ね|な)?|これからも.{0,8}(注目|応援|期待))"
+    r"[。!！？\?…\s]*$"
+)
+# ポエム: 抽象的な美文・情緒語 (中身の無いエモ)。
+_VOICE_POEM_MARKERS = _re.compile(
+    r"(胸が熱く|心が震え|魂|涙が|輝き|刻まれ|奇跡|物語が(始|動)|希望を(見|感じ|抱)|"
+    r"未来へ|夢を(乗せ|託)|光が|彼方|時は来た)"
+)
+
+
+def _voice_quality_ok(text: str, *, live: bool = False) -> bool:
+    """門番: ヨシラバーボイスとして出してよいか (True=OK)。
+
+    優等生締め / ポエム は常に弾く。 考察モードでは加えて、 スカスカ (短すぎ) と
+    感嘆符の乱用も弾く。 ライブモード (live=True、 試合中の缶詰) は短文 + 連呼絶叫が
+    正なので length / 感嘆 check を skip する。
+    """
+    t = (text or "").strip()
+    if not t:
+        return False
+    if _VOICE_YUTOUSEI_ENDING.search(t):
+        return False
+    if _VOICE_POEM_MARKERS.search(t):
+        return False
+    if not live:
+        if len(t) < 50:  # スカスカ・フィラー (矢野「これは見ておきたい一件」型)
+            return False
+        if t.count("！") + t.count("!") >= 3:  # 感嘆だけのポエム
+            return False
     return True
 
 
@@ -1105,38 +1150,62 @@ def build_quote_rt_comment(
     today = now_jst.strftime("%Y-%m-%d")
     persona = "kandume" if 18 <= hour <= 21 else "fuuga"  # 試合中帯は缶詰寄り
     base_voice = _build_system_prompt(hour, today, persona=persona)
-    prompt = "\n".join([
-        base_voice,
-        "",
-        "----",
-        f"【今回のタスク: {subject}への反応コメント】",
-        f"上記 voice のまま、 次の{subject}に反応するヨシラバーのコメントを書く。",
-        f"対象選手: {who or '(不明)'}",
-        "60〜120字、 会話的に短く (1〜2文 / 多くて3行)。 元ネタに無い数字・事実は足さない。",
-        "コメント本文のみ出力 (前置き・説明・引用符なし)。",
-        f"{subject}: 「{src}」",
-        "",
-        "コメント:",
-    ])
+    is_live = 18 <= hour <= 21  # 試合中帯 = 缶詰ライブ (短文・即時反応OK)
+    if is_live:
+        len_rule = "短く即時反応 (1〜2文)。 試合中の熱量でOK。 元ネタに無い数字・事実は足さない。"
+    else:
+        len_rule = (
+            "150〜250字、 2〜4文。 データ/事実を1個 → ファンの本音を辛口で代弁 → 巨人愛で着地。 "
+            "ファンが『それな』 と頷く本音にする。 『〜してほしいね/な』 等の優等生締め・ポエムは禁止。 "
+            "元ネタに無い数字・事実は足さない。"
+        )
     try:
         from google import genai
         client = genai.Client(api_key=gemini_api_key)
-        response = client.models.generate_content(
-            model=model_id, contents=prompt, config={"temperature": temperature},
-        )
-        text = (getattr(response, "text", None) or "").strip()
     except Exception as exc:  # noqa: BLE001 - silent skip, caller falls back to template
-        log.warning("quote_rt_comment_skip reason=gemini_error err=%r", exc)
+        log.warning("quote_rt_comment_skip reason=genai_import err=%r", exc)
         return ""
-    text = _finalize_post_text(text)
-    if not text or not _gemma_branding_safety_check(text):
-        log.warning("quote_rt_comment_skip reason=safety_or_empty preview=%r", text[:60])
-        return ""
-    if _extract_unverified_numbers(text, f"{src} {who}"):
-        log.warning("quote_rt_comment_skip reason=unverified_number text=%r", text[:60])
-        return ""
-    log.info("quote_rt_comment_built player=%s text_len=%d", who, len(text))
-    return text
+    # 門番 + リトライ: flash-lite が優等生締め/ポエム/スカスカを漏らすので最大2回試し、
+    # safety + unverified + voice_quality を全通過した最初の文を返す。 全滅なら "" (caller fallback)。
+    last_preview = ""
+    for attempt in range(2):
+        retry_note = "" if attempt == 0 else (
+            "※前回は優等生締め/ポエム/中身薄で却下された。 データ+辛口本音で具体的に書き、 "
+            "『〜してほしい』 系で終わるな。\n"
+        )
+        prompt = "\n".join([
+            base_voice,
+            "",
+            "----",
+            f"【今回のタスク: {subject}への反応コメント】",
+            retry_note + f"上記 voice のまま、 次の{subject}に反応するヨシラバーのコメントを書く。",
+            f"対象選手: {who or '(不明)'}",
+            len_rule,
+            "コメント本文のみ出力 (前置き・説明・引用符なし)。",
+            f"{subject}: 「{src}」",
+            "",
+            "コメント:",
+        ])
+        try:
+            response = client.models.generate_content(
+                model=model_id, contents=prompt, config={"temperature": temperature},
+            )
+            text = (getattr(response, "text", None) or "").strip()
+        except Exception as exc:  # noqa: BLE001 - silent skip, caller falls back to template
+            log.warning("quote_rt_comment_skip reason=gemini_error err=%r", exc)
+            return ""
+        text = _finalize_post_text(text)
+        last_preview = text[:60]
+        if not text or not _gemma_branding_safety_check(text):
+            continue
+        if _extract_unverified_numbers(text, f"{src} {who}"):
+            continue
+        if not _voice_quality_ok(text, live=is_live):
+            continue
+        log.info("quote_rt_comment_built player=%s text_len=%d attempt=%d", who, len(text), attempt + 1)
+        return text
+    log.warning("quote_rt_comment_skip reason=quality_or_safety preview=%r", last_preview)
+    return ""
 
 
 def today_str(now_jst) -> str:
@@ -1441,6 +1510,24 @@ def build_gemma_branding_candidate(
                     "post_type": resolved_post_type,
                     "unverified_numbers": unverified[:10],
                     "text_preview": text[:80],
+                },
+                ensure_ascii=False,
+            )
+        )
+        return None
+
+    # 門番 (品質ゲート): 優等生締め / ポエム / スカスカ を drop。 ライブ (缶詰) は緩和。
+    if not _voice_quality_ok(text, live=(resolved_persona == "kandume")):
+        log.warning(
+            _json.dumps(
+                {
+                    "event": "gemma_branding_drop",
+                    "reason": "voice_quality",
+                    "player": player,
+                    "persona": resolved_persona,
+                    "post_type": resolved_post_type,
+                    "text_preview": text[:80],
+                    "text_len": len(text),
                 },
                 ensure_ascii=False,
             )

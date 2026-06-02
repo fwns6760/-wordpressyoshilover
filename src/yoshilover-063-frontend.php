@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Yoshilover 063 Frontend (topic hub / SNS reactions / Phase 1 noindex)
  * Description: 062 contract §2 §3 §5 の front impl。topic hub / SNS block / noindex を基盤に、トップ速報帯・記事下回遊束・右カラム rail・上部密集ナビ・人気記事導線まで含めて SWELL front を高密度化する。既存 SWELL コメント欄は触らない。
- * Version: 0.17.3
+ * Version: 0.18.0
  * Author: yoshilover
  */
 
@@ -52,6 +52,50 @@ add_action( 'dynamic_sidebar_before', 'yoshilover_063_auto_inject_sidebar_rail',
  * regex 失敗 (構造変化等) の場合は buffer をそのまま返すので無害。 `c-headLogo` は
  * 通常 header と fix_header の 2 箇所に出るため、 各 1 回ずつ挿入する。
  */
+/**
+ * 2026-06-02: トップpage 最上部に出す「巨人データ」トピクラ入口ブロック。
+ * /data/ (pillar hub) と spoke (ランキング / 順位 / レジェンド / 検索) への導線。
+ * is_front_page でのみ <main> 直後に注入 (速報フィードの上)。self-contained CSS。
+ * 速報フィード本体は一切いじらない (データを上に足すだけ)。
+ */
+function yoshilover_063_render_home_data_hub() {
+    $cards = array(
+        array( 'href' => '/data/ranking/',          'ic' => '🏆', 't' => 'ランキング',       's' => '打撃・投手の上位' ),
+        array( 'href' => '/data/team/',             'ic' => '📊', 't' => 'チーム成績・順位', 's' => 'セ順位表・日程' ),
+        array( 'href' => '/data/',                  'ic' => '📈', 't' => '今日の注目選手',   's' => '直近5試合HOT' ),
+        array( 'href' => '/data/#ys-player-search', 'ic' => '👤', 't' => '選手を探す',       's' => '打者・投手・検索' ),
+        array( 'href' => '/data/legends/',          'ic' => '🎖', 't' => 'レジェンド',       's' => 'OB・名球会' ),
+    );
+    $cards_html = '';
+    foreach ( $cards as $c ) {
+        $cards_html .= '<a class="yoshi-home-data__card" href="' . esc_url( home_url( $c['href'] ) ) . '">'
+            . '<span class="yoshi-home-data__ic" aria-hidden="true">' . $c['ic'] . '</span>'
+            . '<span class="yoshi-home-data__t">' . esc_html( $c['t'] ) . '</span>'
+            . '<span class="yoshi-home-data__s">' . esc_html( $c['s'] ) . '</span>'
+            . '</a>';
+    }
+    $style = '<style>'
+        . '.yoshi-home-data{margin:0 0 18px;padding:16px 16px 18px;background:#fff;border:1px solid #ffe0cc;border-radius:14px;box-shadow:0 2px 10px rgba(226,84,0,.06);}'
+        . '.yoshi-home-data__head{display:flex;align-items:center;justify-content:space-between;margin:0 0 12px;}'
+        . '.yoshi-home-data__head h2{font-size:18px;font-weight:800;margin:0;color:#e25400;}'
+        . '.yoshi-home-data__more{font-size:13px;font-weight:700;color:#e25400;text-decoration:none;white-space:nowrap;}'
+        . '.yoshi-home-data__grid{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;}'
+        . '.yoshi-home-data__card{display:flex;flex-direction:column;align-items:center;text-align:center;gap:3px;padding:14px 6px;background:#fff8f3;border:1px solid #ffe0cc;border-radius:12px;text-decoration:none;transition:background .15s,transform .15s;}'
+        . '.yoshi-home-data__card:hover{background:#fff1e6;transform:translateY(-2px);}'
+        . '.yoshi-home-data__ic{font-size:24px;line-height:1;}'
+        . '.yoshi-home-data__t{font-size:14px;font-weight:800;color:#1a1a1a;}'
+        . '.yoshi-home-data__s{font-size:11px;color:#888;}'
+        . '@media(max-width:600px){.yoshi-home-data__grid{grid-template-columns:repeat(2,1fr);}.yoshi-home-data__head h2{font-size:16px;}}'
+        . '</style>';
+    $html  = $style;
+    $html .= '<section class="yoshi-home-data" aria-label="巨人データ">';
+    $html .= '<div class="yoshi-home-data__head"><h2>📊 巨人データ</h2>'
+        . '<a class="yoshi-home-data__more" href="' . esc_url( home_url( '/data/' ) ) . '">すべて見る ＞</a></div>';
+    $html .= '<div class="yoshi-home-data__grid">' . $cards_html . '</div>';
+    $html .= '</section>';
+    return $html;
+}
+
 function yoshilover_063_buffer_inject_header_titles( $buffer ) {
     if ( ! is_string( $buffer ) || $buffer === '' ) {
         return $buffer;
@@ -176,6 +220,17 @@ function yoshilover_063_buffer_inject_header_titles( $buffer ) {
             $buffer,
             1
         );
+    }
+
+    // 2026-06-02: home 最上部 (<main> 直後) に「巨人データ」トピクラ入口を注入。
+    // データサイト (/data/) を速報フィードの上に出し、速報⇄データの2本柱導線にする。
+    // is_front_page のみ。dedup は section class で判定。速報フィード自体は不変。
+    // <main> が見つからなければ無注入 (buffer そのまま) で無害。
+    if ( is_front_page() && strpos( $buffer, 'yoshi-home-data' ) === false ) {
+        if ( preg_match( '/<main\b[^>]*>/', $buffer, $m, PREG_OFFSET_CAPTURE ) ) {
+            $insert_pos = $m[0][1] + strlen( $m[0][0] );
+            $buffer = substr_replace( $buffer, yoshilover_063_render_home_data_hub(), $insert_pos, 0 );
+        }
     }
 
     return $buffer;

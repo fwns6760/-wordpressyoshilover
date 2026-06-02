@@ -2,7 +2,8 @@
 
 - **種別**: 実装 / **priority**: P2 / **effort**: S〜M
 - **親**: 443 / 設計: `455...md` §12-0 / §13-4 / GH: #124
-- **status**: PARTIAL_LIVE_VERIFIED (2026-06-01) — 今日の注目 LIVE、 検索/zero-row は defer
+- **status**: PARTIAL_LIVE_VERIFIED (2026-06-02) — 今日の注目 + **選手検索box LIVE**、 zero-row のみ defer(user 判断)
+- **検索box 着地(2026-06-02、commit `bd7cdc64`、image `data-site-publisher:search-box-bd7cdc6`)**: /data/ に client-side インクリメンタル検索 box。全テーブル(打者/投手/監督コーチ/育成/OB)の `/data/` リンク行を選手名で絞り込み(全角空白除去で部分一致、0件時のみ「見つかりません」)。progressive enhancement(JS 無効でも全リスト保持)。**`<script>` 除去懸念は解消**: WP publish ユーザ `unfiltered_html` 保有で JSON-LD/実行 JS とも stored content + **公開 HTML まで生存**を実ページ確認(`addEventListener("input"` が公開 /data/ に存在)。検索対象は `section[class*="ys-cluster"][class*="-table"]` 内に限定(intro ナビ除外)。test: cluster+publisher 25 pass。
 - **実績**: commit `a572aa50`、image `data-site-publisher:hot-a572aa50`、execute SUCCESS。/data/ first view に「📈直近5試合の注目選手」カード(last_5_games OPS/ERA 上位、sample gate、pillar回遊)。verify = cluster page 73526 に 岸田OPS1.036/大城1.032/平山1.008/堀田防御率0.00/マルティネス1.80 反映確認。data-site test 105 passed。
 - **defer(別途)**:
   - 選手検索box: WP が post content の `<script>` を除去する可能性があり、動作 verify が先 → 別途。

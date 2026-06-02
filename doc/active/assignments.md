@@ -4,6 +4,13 @@
 
 ## 2026-06-02 session update
 
+### 460 — cluster 選手名検索box LIVE(検索sub-item、`<script>`保持懸念解消)
+
+/data/ に client-side インクリメンタル検索。全テーブルの `/data/` リンク行を選手名で絞り込み(全角空白除去・部分一致・0件表示)。progressive enhancement(JS無効でも全リスト保持)。
+`<script>`除去懸念は解消: publish ユーザ `unfiltered_html` で実行JSが**公開HTMLまで生存**を実ページ確認。
+commit `bd7cdc64` / image `data-site-publisher:search-box-bd7cdc6` / execute SUCCESS。cluster+publisher 25 pass。
+460 残: zero-row 抑制(user 判断)/ game-detail team_role 検証。doc: `doc/active/460-...md`。
+
 ### 464 — 眠り角度の再活性化(読者にわかりやすい4種を厳格gate付き)LIVE
 
 検証で「眠り角度=事故ではなく全て日付つき user 指示で OFF」と判明。「わかりやすさ」基準で選別再活性化。

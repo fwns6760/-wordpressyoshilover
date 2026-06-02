@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Yoshilover 063 Frontend (topic hub / SNS reactions / Phase 1 noindex)
  * Description: 062 contract §2 §3 §5 の front impl。topic hub / SNS block / noindex を基盤に、トップ速報帯・記事下回遊束・右カラム rail・上部密集ナビ・人気記事導線まで含めて SWELL front を高密度化する。既存 SWELL コメント欄は触らない。
- * Version: 0.18.1
+ * Version: 0.19.0
  * Author: yoshilover
  */
 
@@ -59,38 +59,42 @@ add_action( 'dynamic_sidebar_before', 'yoshilover_063_auto_inject_sidebar_rail',
  * 速報フィード本体は一切いじらない (データを上に足すだけ)。
  */
 function yoshilover_063_render_home_data_hub() {
+    // SEO: 各カードの title (h3) は「巨人 ◯◯」 の検索意図に合うアンカーテキスト。
     $cards = array(
-        array( 'href' => '/data/ranking/',          'ic' => '🏆', 't' => 'ランキング',       's' => '打撃・投手の上位' ),
-        array( 'href' => '/data/team/',             'ic' => '📊', 't' => 'チーム成績・順位', 's' => 'セ順位表・日程' ),
-        array( 'href' => '/data/',                  'ic' => '📈', 't' => '今日の注目選手',   's' => '直近5試合HOT' ),
-        array( 'href' => '/data/#ys-player-search', 'ic' => '👤', 't' => '選手を探す',       's' => '打者・投手・検索' ),
-        array( 'href' => '/data/legends/',          'ic' => '🎖', 't' => 'レジェンド',       's' => 'OB・名球会' ),
+        array( 'href' => '/data/ranking/',          'ic' => '🏆', 't' => '打撃成績ランキング', 's' => '打率・本塁打・打点' ),
+        array( 'href' => '/data/ranking/',          'ic' => '⚾', 't' => '投手成績ランキング', 's' => '防御率・勝利・奪三振' ),
+        array( 'href' => '/data/#ys-player-search', 'ic' => '👤', 't' => '選手別 個人成績',     's' => '全選手のデータを検索' ),
+        array( 'href' => '/data/team/',             'ic' => '📊', 't' => 'セ・リーグ順位表',   's' => '順位・ゲーム差・日程' ),
+        array( 'href' => '/data/',                  'ic' => '📈', 't' => '今日の注目選手',     's' => '直近5試合の好調選手' ),
+        array( 'href' => '/data/legends/',          'ic' => '🎖', 't' => 'レジェンド・OB成績', 's' => '歴代の巨人選手' ),
     );
     $cards_html = '';
     foreach ( $cards as $c ) {
         $cards_html .= '<a class="yoshi-home-data__card" href="' . esc_url( home_url( $c['href'] ) ) . '">'
             . '<span class="yoshi-home-data__ic" aria-hidden="true">' . $c['ic'] . '</span>'
-            . '<span class="yoshi-home-data__t">' . esc_html( $c['t'] ) . '</span>'
+            . '<h3 class="yoshi-home-data__t">' . esc_html( $c['t'] ) . '</h3>'
             . '<span class="yoshi-home-data__s">' . esc_html( $c['s'] ) . '</span>'
             . '</a>';
     }
     $style = '<style>'
         . '.yoshi-home-data{margin:0 0 22px;padding:0 0 18px;background:#fff;border:2px solid #ffcba8;border-radius:16px;box-shadow:0 4px 16px rgba(226,84,0,.12);overflow:hidden;}'
-        . '.yoshi-home-data__head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 16px;padding:14px 18px;background:linear-gradient(135deg,#ff6a00,#e25400);}'
+        . '.yoshi-home-data__head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0;padding:14px 18px;background:linear-gradient(135deg,#ff6a00,#e25400);}'
         . '.yoshi-home-data__head h2{font-size:24px;font-weight:900;margin:0;color:#fff;letter-spacing:.02em;text-shadow:0 1px 2px rgba(0,0,0,.15);}'
         . '.yoshi-home-data__more{font-size:14px;font-weight:800;color:#fff;text-decoration:none;white-space:nowrap;background:rgba(255,255,255,.22);padding:6px 12px;border-radius:999px;}'
-        . '.yoshi-home-data__grid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;padding:0 16px;}'
-        . '.yoshi-home-data__card{display:flex;flex-direction:column;align-items:center;text-align:center;gap:5px;padding:20px 8px;background:#fff8f3;border:1.5px solid #ffd9bf;border-radius:14px;text-decoration:none;transition:background .15s,transform .15s,box-shadow .15s;}'
+        . '.yoshi-home-data__lead{font-size:13px;color:#555;margin:12px 16px 14px;line-height:1.65;}'
+        . '.yoshi-home-data__grid{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;padding:0 16px;}'
+        . '.yoshi-home-data__card{display:flex;flex-direction:column;align-items:center;text-align:center;gap:5px;padding:18px 6px;background:#fff8f3;border:1.5px solid #ffd9bf;border-radius:14px;text-decoration:none;transition:background .15s,transform .15s,box-shadow .15s;}'
         . '.yoshi-home-data__card:hover{background:#fff1e6;transform:translateY(-3px);box-shadow:0 6px 14px rgba(226,84,0,.18);}'
-        . '.yoshi-home-data__ic{font-size:34px;line-height:1;}'
-        . '.yoshi-home-data__t{font-size:16px;font-weight:900;color:#1a1a1a;}'
-        . '.yoshi-home-data__s{font-size:12px;color:#777;}'
-        . '@media(max-width:600px){.yoshi-home-data__grid{grid-template-columns:repeat(2,1fr);gap:10px;padding:0 12px;}.yoshi-home-data__head{padding:12px 14px;}.yoshi-home-data__head h2{font-size:20px;}.yoshi-home-data__ic{font-size:30px;}.yoshi-home-data__t{font-size:15px;}}'
+        . '.yoshi-home-data__ic{font-size:32px;line-height:1;}'
+        . '.yoshi-home-data__t{font-size:15px;font-weight:900;color:#1a1a1a;margin:0;line-height:1.3;}'
+        . '.yoshi-home-data__s{font-size:11px;color:#777;}'
+        . '@media(max-width:600px){.yoshi-home-data__grid{grid-template-columns:repeat(2,1fr);gap:10px;padding:0 12px;}.yoshi-home-data__head{padding:12px 14px;}.yoshi-home-data__head h2{font-size:19px;}.yoshi-home-data__lead{margin:10px 12px 12px;}.yoshi-home-data__ic{font-size:29px;}.yoshi-home-data__t{font-size:14px;}}'
         . '</style>';
     $html  = $style;
-    $html .= '<section class="yoshi-home-data" aria-label="巨人データ">';
-    $html .= '<div class="yoshi-home-data__head"><h2>📊 巨人データ</h2>'
+    $html .= '<section class="yoshi-home-data" aria-label="巨人 選手データ・成績">';
+    $html .= '<div class="yoshi-home-data__head"><h2>📊 巨人 選手データ・成績</h2>'
         . '<a class="yoshi-home-data__more" href="' . esc_url( home_url( '/data/' ) ) . '">すべて見る ＞</a></div>';
+    $html .= '<p class="yoshi-home-data__lead">読売ジャイアンツの個人成績・打率・防御率・セ・リーグ順位を毎日更新。打撃／投手のランキングや選手別データをまとめています。</p>';
     $html .= '<div class="yoshi-home-data__grid">' . $cards_html . '</div>';
     $html .= '</section>';
     return $html;
@@ -104,8 +108,8 @@ function yoshilover_063_buffer_inject_header_titles( $buffer ) {
         return $buffer;
     }
 
-    $title_text    = 'ヨシラバー｜読売ジャイアンツ速報掲示板';
-    $subtitle_text = 'ヨシラバーは読売ジャイアンツ専門の速報・試合結果・スタメンまとめサイト';
+    $title_text    = 'ヨシラバー｜読売ジャイアンツ速報・データサイト';
+    $subtitle_text = '読売ジャイアンツ専門の速報＆データサイト｜試合結果・スタメン・選手成績(打率/防御率)・順位を毎日更新';
     $span_html = '<span class="yoshi-headLogo__text">' . esc_html( $title_text ) . '</span></a>';
     $h2_html   = '<h2 class="yoshi-headLogo__subtitle">' . esc_html( $subtitle_text ) . '</h2>';
 
@@ -200,7 +204,7 @@ function yoshilover_063_buffer_inject_header_titles( $buffer ) {
     // 具体内容を入れて CTR + entity 認識を補強。 既存値が generic な場合のみ上書き。
     // home (front page) でのみ書き換え。
     if ( is_front_page() ) {
-        $new_desc = 'ヨシラバーは読売ジャイアンツ専門の速報サイト。試合結果・スタメン・選手データを毎日更新。巨人ファンの集まる場所。';
+        $new_desc = '読売ジャイアンツ専門の速報＆データサイト。試合結果・スタメン・選手の個人成績(打率・防御率)・打撃/投手ランキング・セ・リーグ順位を毎日更新。巨人ファンが集まる場所。';
         // meta description の上書き (どの SEO プラグインが出していても string 置換で対応)
         $buffer = preg_replace(
             '#<meta\s+name="description"\s+content="[^"]*"\s*/?>#i',
@@ -219,6 +223,19 @@ function yoshilover_063_buffer_inject_header_titles( $buffer ) {
             '<meta name="twitter:description" content="' . esc_attr( $new_desc ) . '" />',
             $buffer,
             1
+        );
+    }
+
+    // 2026-06-02: グローバルナビに「📊 データ」項目を注入 (全ページ、「すべて」の隣)。
+    // データサイト (/data/) を速報カテゴリと対等な header ボタンにする。各 menu copy
+    // (PC / モバイル / fix header) の cat-all (すべて) li の直後に挿入。dedup は class で判定。
+    if ( strpos( $buffer, 'yoshi-data-nav' ) === false ) {
+        $data_li = '<li class="menu-item menu-item-type-custom menu-item-object-custom yoshi-data-nav">'
+            . '<a href="' . esc_url( home_url( '/data/' ) ) . '">📊 データ</a></li>';
+        $buffer = preg_replace(
+            '#(<li[^>]*class="[^"]*cat-all[^"]*menu-item[^"]*"[^>]*>.*?</li>)#s',
+            '$1' . $data_li,
+            $buffer
         );
     }
 

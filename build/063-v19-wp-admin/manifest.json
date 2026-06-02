@@ -1,0 +1,11 @@
+{
+  "generated_at": "2026-06-02T04:24:27.738178+00:00",
+  "git_head": "fcb5ac41",
+  "plugin_version": "0.19.0",
+  "plugin_source": "src/yoshilover-063-frontend.php",
+  "css_source": "src/custom.css",
+  "artifacts": {
+    "plugin_zip": "build/063-v19-wp-admin/yoshilover-063-frontend.zip",
+    "css_snippet": "build/063-v19-wp-admin/063-v19-custom.css"
+  }
+}

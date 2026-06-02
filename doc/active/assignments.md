@@ -1,6 +1,17 @@
 # assignments — 現場担当と次アクション
 
-最終更新: 2026-06-01 JST (447 metric #5 イニング別打率 LIVE_DEPLOYED_VERIFIED)
+最終更新: 2026-06-02 JST (467 年度別成績+通算+プロフィール 網羅 LIVE_VERIFIED)
+
+## 2026-06-02 session update
+
+### 467 — 選手pillarに年度別成績+通算+プロフィール(NPB公式 career scrape、網羅)LIVE_VERIFIED
+
+user「467で情報量を網羅させる」。NPB career page の全情報を網羅取得・描画。
+打者23列 / 投手24列 年度別+通算(移籍履歴含む)+ プロフィール(生年月日/身長体重/投打/経歴/ドラフト)。
+commit `e0fa0c15` / image `data-site-publisher:career-history-e0fa0c1` / Job `data-site-publisher-4mzq5` SUCCEEDED。
+cache = 別GCS object `npb_career.json`(284KiB、insight.db同梱は upload race 回避)、publisher内 staleness gate 20h で日次1回scrape、publish非ブロック。
+LIVE verify(WP REST): `/data/togo-shosei`(投手24列+防御率+投球回)/ `/data/sakamoto-hayato`(打者23列+出塁率+併殺打)。
+test: 新規9 + data-site全219 pass / regression 0。doc: `doc/done/2026-06/467-...md`、handoff: parent `session_logs/2026-06-02_data_site_467_career_history.md`。
 
 ## 2026-06-01 session update
 

@@ -2,7 +2,21 @@
 
 - **種別**: 実装 / **priority**: P2(ライバル超えの最大の残ギャップ=履歴) / **effort**: M
 - **親**: 443 / 設計: `455...md` §5/§17 / GH: #131
-- **status**: READY(source 確定済)
+- **status**: CLOSED / LIVE_VERIFIED(2026-06-02、commit `e0fa0c15`、image `data-site-publisher:career-history-e0fa0c1`)
+
+## 着地(2026-06-02、網羅実装 = user「467で情報量を網羅させる」)
+
+NPB公式 career page から取れる **全情報を網羅** 取得・描画して LIVE。
+
+- 取得網羅: プロフィール(生年月日/身長体重/投打/ポジション/経歴/ドラフト)+ 打者 **23列** 年度別+通算 + 投手 **24列** 年度別+通算(移籍履歴含む)。投球回 nested `table_inning`(8回2/3=8.2)を flatten 解決。
+- 実装: `npb_career_scraper.py`(純粋parse、実NPB fixture検証)/ `npb_career_ingest.py`(別GCS object `npb_career.json`、insight.db同梱は upload race のため回避、publisher内 staleness gate 20h で日次1回scrape、publish非ブロック、dry-run抑止)/ `data_site_template_pillar.py`(プロフィール + 年度別・通算 全列横スクロール section、通算行ハイライト)/ `data_site_publisher.py`(cache load + payload配線)。
+- test: `test_npb_career_scraper`(6)+ pillar career描画(3)、data-site 全219 pass / regression 0。
+- LIVE verify(WP REST stored content): `/data/togo-shosei`(投手24列+防御率+投球回+ドラフト)、`/data/sakamoto-hayato`(打者23列+出塁率+併殺打+ドラフト)。GCS `npb_career.json` 284KiB 生成、roster 104 id 解決。
+- IAM: publisher SA `storage.objectUser`(read+write)保有のため変更不要。
+
+### 残(別ticket / 任意)
+- 名鑑プロフィール拡充(出身地/血液型等。career page に無い項目は別source)。
+- OB・レジェンド(roster不在=id無)の career は対象外(config由来のまま)。
 
 ## 背景(2026-06-02 user 指摘)
 

@@ -40,6 +40,9 @@ class PillarPlayerInfo:
     related_players: list[tuple[str, str]] = field(default_factory=list)
     # OB・レジェンド profile (config/ob_legends.json 由来、 無ければ None)
     ob_profile: Optional[dict] = None
+    # 467: NPB 公式 career page 由来の網羅データ (npb_career_scraper.parse_player_career 結果)
+    # {"profile": {...}, "is_pitcher": bool, "batting": {...}, "pitching": {...}} / 無ければ None
+    npb_career: Optional[dict] = None
 
     # Phase 1.0 stats (insight.db 由来、 None なら placeholder)
     season_games: int = 0
@@ -954,6 +957,105 @@ def _job_title_for(player: PillarPlayerInfo) -> str:
     return f"プロ野球選手 ({player.position})" if player.position else "プロ野球選手"
 
 
+def _build_profile_html(player: PillarPlayerInfo) -> str:
+    """467: NPB 公式 career page 由来のプロフィール (生年月日 / 身長体重 / 投打 / 経歴 / ドラフト)。
+
+    ライバル (my-favorite-giants / baseballdata) が持つ「基本情報」の核。 取れた項目だけ出す。
+    """
+    career = player.npb_career or {}
+    prof = career.get("profile") or {}
+    if not prof:
+        return ""
+    rows = [
+        ("生年月日", prof.get("birthdate")),
+        ("身長／体重", prof.get("height_weight")),
+        ("投打", prof.get("bats_throws")),
+        ("ポジション", prof.get("position")),
+        ("経歴", prof.get("school")),
+        ("ドラフト", prof.get("draft")),
+    ]
+    cells = "".join(
+        f'<tr><th style="text-align:left;background:var(--ol);color:var(--od);'
+        f'padding:8px 10px;width:96px;white-space:nowrap;border-bottom:1px solid #f2e6dd;">{_esc(label)}</th>'
+        f'<td style="text-align:left;padding:8px 10px;border-bottom:1px solid #f2e6dd;">{_esc(val)}</td></tr>'
+        for (label, val) in rows if val
+    )
+    if not cells:
+        return ""
+    return (
+        '<div class="ys-card">'
+        '<h2>プロフィール</h2>'
+        '<table><tbody>' + cells + '</tbody></table>'
+        '<p class="ys-foot">※ NPB 公式選手データより。</p>'
+        '</div>'
+    )
+
+
+def _career_table_html(title: str, stats: dict, accent_cols: tuple) -> str:
+    """年度別 + 通算 の横スクロール表 1 枚を組む。 stats = {columns, years, total}。"""
+    columns = stats.get("columns") or []
+    years = stats.get("years") or []
+    total = stats.get("total")
+    if not columns or (not years and not total):
+        return ""
+    head = "".join(f"<th>{_esc(c)}</th>" for c in columns)
+
+    def row_html(row: dict, is_total: bool) -> str:
+        tds = []
+        for i, col in enumerate(columns):
+            val = row.get(col, "")
+            cls = ""
+            if i == 0:
+                cls = ' class="ys-k"'
+            elif col in accent_cols:
+                cls = ' class="ys-avg"'
+            tds.append(f"<td{cls}>{_esc(val)}</td>")
+        style = ' style="background:var(--od);color:#fff;font-weight:800;"' if is_total else ""
+        return f"<tr{style}>{''.join(tds)}</tr>"
+
+    body = "\n".join(row_html(y, False) for y in years)
+    if total:
+        body += "\n" + row_html(total, True)
+    # 列数が多い (23-24) ため横スクロール wrapper で網羅表示。
+    return (
+        f'<h3 style="font-size:14px;margin:14px 0 6px;color:var(--ink);">{_esc(title)}</h3>'
+        '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">'
+        '<table style="min-width:640px;white-space:nowrap;">'
+        f'<thead><tr>{head}</tr></thead>'
+        f'<tbody>{body}</tbody></table></div>'
+    )
+
+
+def _build_career_history_html(player: PillarPlayerInfo) -> str:
+    """467: 年度別成績 + 通算 (NPB 公式 career page、 移籍履歴含む全列網羅)。
+
+    投手は投手成績を主、 打者/野手は打撃成績を主に出す。 投手の打撃は出さない (冗長回避)。
+    """
+    career = player.npb_career or {}
+    if not career:
+        return ""
+    batting = career.get("batting") or {}
+    pitching = career.get("pitching") or {}
+    is_pitcher = bool(career.get("is_pitcher"))
+
+    tables = []
+    if is_pitcher and (pitching.get("years") or pitching.get("total")):
+        tables.append(_career_table_html("投手成績", pitching, ("防御率",)))
+    elif batting.get("years") or batting.get("total"):
+        tables.append(_career_table_html("打撃成績", batting, ("打率", "出塁率", "長打率")))
+    tables = [t for t in tables if t]
+    if not tables:
+        return ""
+    return (
+        '<div class="ys-card">'
+        '<h2>年度別成績・通算 <span class="ys-tag">NPB全記録</span></h2>'
+        '<p class="ys-note">入団からの年度別成績と通算記録 (移籍履歴を含む)。 横スクロールで全項目を表示。</p>'
+        + "\n".join(tables) +
+        '<p class="ys-foot">※ NPB 公式選手データより。 当該シーズン途中の数値は試合進行に応じて更新されます。</p>'
+        '</div>'
+    )
+
+
 def _build_datasite_nav_html() -> str:
     """データサイト内ナビ (トピクラ: pillar=中心 → hub/ranking/team spoke 回遊、 458 データ側)。"""
     return (
@@ -994,6 +1096,7 @@ def render_pillar_html(player: PillarPlayerInfo) -> str:
             _build_pitch_month_split_html(player),
             _build_pitch_interleague_split_html(player),
             _build_sabermetrics_html(player),
+            _build_career_history_html(player),
         ]
     else:
         stats_sections = [
@@ -1010,11 +1113,13 @@ def render_pillar_html(player: PillarPlayerInfo) -> str:
             _build_risp_split_html(player),
             _build_vs_lr_split_html(player),
             _build_sabermetrics_html(player),
+            _build_career_history_html(player),
         ]
     sections = [
         _build_lead_html(player),
         _build_breadcrumb_html(player.name),
         _build_featured_image_html(player),
+        _build_profile_html(player),
         _build_short_review_html(player),
         *stats_sections,
         _build_related_topic_html(player),

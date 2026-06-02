@@ -302,5 +302,66 @@ class RenderPillarTitleTests(unittest.TestCase):
         self.assertIn("巨人選手データ", title)
 
 
+class CareerHistoryRenderTests(unittest.TestCase):
+    """467: 実 NPB fixture を parse → pillar に profile + 年度別/通算が網羅描画されること。"""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        import os
+
+        from src.npb_career_scraper import parse_player_career
+
+        fix = os.path.join(os.path.dirname(__file__), "fixtures")
+        with open(os.path.join(fix, "npb_career_batter_sakamoto_51955114.html"),
+                  encoding="utf-8", errors="replace") as fh:
+            cls.bat_career = parse_player_career(fh.read())
+        with open(os.path.join(fix, "npb_career_pitcher_togo_41045138.html"),
+                  encoding="utf-8", errors="replace") as fh:
+            cls.pit_career = parse_player_career(fh.read())
+
+    def test_batter_profile_and_career(self) -> None:
+        p = PillarPlayerInfo(
+            name="坂本勇人", slug="sakamoto-hayato", position="内野手",
+            jersey_number="6", role="player", npb_career=self.bat_career,
+        )
+        html = render_pillar_html(p)
+        # profile section
+        self.assertIn("プロフィール", html)
+        self.assertIn("1988年12月14日", html)
+        self.assertIn("光星学院", html)
+        # 年度別/通算 section (全列網羅 + 通算)
+        self.assertIn("年度別成績・通算", html)
+        self.assertIn("打撃成績", html)
+        self.assertIn("2007", html)   # 入団年
+        self.assertIn("通", html)      # 通算行
+        self.assertIn("出塁率", html)  # 打撃フル列の末尾
+        self.assertIn("併殺打", html)
+        # 投手成績表は出ない (野手)
+        self.assertNotIn("投手成績", html)
+
+    def test_pitcher_career_columns(self) -> None:
+        p = PillarPlayerInfo(
+            name="戸郷翔征", slug="togo-shosei", position="投手",
+            jersey_number="20", role="player", npb_career=self.pit_career,
+        )
+        html = render_pillar_html(p)
+        self.assertIn("投手成績", html)
+        self.assertIn("防御率", html)
+        self.assertIn("投球回", html)
+        self.assertIn("8.2", html)    # nested inning table flatten が描画まで通る
+        self.assertIn("自責点", html)
+        # 投手は打撃成績表を出さない (冗長回避)。 lead 文の「打撃成績」は別物なので表見出しで判定。
+        self.assertNotIn(">打撃成績</h3>", html)
+
+    def test_no_career_no_section(self) -> None:
+        p = PillarPlayerInfo(
+            name="無記録選手", slug="none", position="内野手",
+            jersey_number="99", role="player", npb_career=None,
+        )
+        html = render_pillar_html(p)
+        self.assertNotIn("年度別成績・通算", html)
+        self.assertNotIn("プロフィール</h2>", html)
+
+
 if __name__ == "__main__":
     unittest.main()

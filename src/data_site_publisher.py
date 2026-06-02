@@ -111,9 +111,14 @@ from src.data_site_template_pillar import (
     render_pillar_title,
     render_pillar_excerpt,
 )
+from src import npb_career_ingest
 
 
 LOG = logging.getLogger("data_site_publisher")
+
+# 467: NPB career cache (publish_phase1 開始時に日次 1 回だけ load_or_refresh で満たす)。
+# 各 _build_pillar_info が name -> payload を引く。 publish をブロックしない (失敗時は空)。
+_CAREER_CACHE: dict = {}
 
 
 @dataclass
@@ -271,6 +276,8 @@ def _build_pillar_info(player_name: str) -> PillarPlayerInfo | None:
     info.related_players = [
         (player_slug(n), n) for n in related_shihai_players(player_name)
     ]
+    # 467: NPB career page 由来の網羅データ (年度別+通算+プロフィール)。 cache 由来、 無ければ None。
+    info.npb_career = npb_career_ingest.career_payload_for(_CAREER_CACHE, player_name)
     # 監督・コーチ は当年 stats を持たない (insight.db join しても空)。 当年 stats query は
     # 全 skip し、 現役時代の通算成績 (config 由来) + profile + 関連記事の page にする。
     if (roster.role or "").strip() in ("manager", "coach"):
@@ -378,6 +385,15 @@ def publish_phase1() -> dict[str, object]:
         return {"status": "abort", "reason": "no_target_players"}
 
     LOG.info("phase1 target players: %s", target_names)
+
+    # 467: NPB career cache を日次 1 回 refresh (staleness gate)。 publish 非ブロック。
+    global _CAREER_CACHE
+    try:
+        _CAREER_CACHE = npb_career_ingest.load_or_refresh(list(target_names))
+        LOG.info("career cache loaded: players=%d", len((_CAREER_CACHE or {}).get("players") or {}))
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("career cache load failed (continue without): %r", exc)
+        _CAREER_CACHE = {}
 
     # Cluster page 先に upsert (parent=0、 top-level)、 page id を取得して Pillar parent に使う
     cluster_entries: list[ClusterPlayerEntry] = []

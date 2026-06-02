@@ -3280,15 +3280,26 @@ class BuildVideoRadarCandidatesTests(unittest.TestCase):
         self.assertEqual(len(cands), 1)
         self.assertEqual(cands[0].post_text, "坂本勇人、最高だ！")  # LLM 出力を採用
 
-    def test_comment_fn_empty_falls_back_to_template(self):
+    def test_comment_fn_empty_skips_candidate(self):
+        # ネタ無しは書かない: comment_fn (LLM) が空/門番落ち時、 優等生・スカスカな
+        # 定型テンプレに逃げず候補ごとスキップする (comment_fn が渡された場合)。
         from src import x_post_mail_lane as lane
         with self._detect_patch():
             cands = lane.build_video_radar_candidates(
                 db_path=None, max_count=3, fetch_fn=lambda url: self._FEED,
-                comment_fn=lambda pt, pl: "",  # LLM 失敗 → template fallback
+                comment_fn=lambda pt, pl: "",  # LLM 失敗/門番落ち → skip
+            )
+        self.assertEqual(cands, [])
+
+    def test_no_comment_fn_uses_template(self):
+        # comment_fn 未設定 (key 無し / test) のみ graceful に出来事 template fallback。
+        from src import x_post_mail_lane as lane
+        with self._detect_patch():
+            cands = lane.build_video_radar_candidates(
+                db_path=None, max_count=3, fetch_fn=lambda url: self._FEED,
             )
         self.assertEqual(len(cands), 1)
-        self.assertIn("坂本勇人", cands[0].post_text)  # 出来事 template が効く
+        self.assertIn("坂本勇人", cands[0].post_text)
         self.assertNotIn("http", cands[0].post_text)
 
     def test_dedup_set_skips(self):

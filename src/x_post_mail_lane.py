@@ -1830,6 +1830,12 @@ def build_video_radar_candidates(
                 LOG.info("x_buzz comment_fn failed: %r", exc)
                 post_text = ""
         if not post_text:
+            if comment_fn is not None:
+                # ネタ無しは書かない: LLM voice が門番で弾かれた / 失敗した時、 優等生・スカスカな
+                # 定型テンプレ (「これは見ておきたい一件」 等) に逃げず候補ごとスキップする。
+                LOG.info("x_buzz skip: voice comment empty/gated player=%s", player or "(none)")
+                continue
+            # comment_fn 未設定 (key 無し / test) のみ graceful に template fallback。
             post_text = _x_buzz_event_comment(p.get("text", ""), player, phase=phase_label)
         fact = _x_buzz_player_fact(db_path, player) if player else ""
         draft = "\n".join([

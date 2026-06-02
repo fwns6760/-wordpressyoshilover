@@ -994,11 +994,13 @@ def detect_game_hero_batter(
 ) -> list[int]:
     """A: 直近 Giants 試合で活躍した打者を「今日のヒーロー」候補化。
 
-    対象基準 (いずれか満たせば候補化):
-      - H >= 3 (multi-hit 以上)
-      - H >= 2 AND RBI >= 1
-      - RBI >= 2
-      - HR を 1 本以上 (atbats_json に 'HR' 含む)
+    対象基準 (2026-06-02 issue#44 再活性化、 乱発防止で厳格化。 控えの平凡な活躍を除外し
+    「読者に一目でわかる活躍」 のみ拾う):
+      - H >= 3 (固め打ち)
+      - HR >= 1 AND RBI >= 2 (一発で複数得点)
+      - RBI >= 3 (大量打点)
+      - HR >= 2 (マルチ本塁打)
+    旧 (緩い) 基準 H>=2&RBI>=1 / RBI>=2 単独 / 単発 HR は乱発源のため撤去。
     """
     import json as _json
     game = _latest_giants_game(conn, snapshot_date=snapshot_date)
@@ -1026,9 +1028,9 @@ def detect_game_hero_batter(
                 hr_count = 0
         qualifies = (
             h >= 3
-            or (h >= 2 and rbi >= 1)
-            or rbi >= 2
-            or hr_count >= 1
+            or (hr_count >= 1 and rbi >= 2)
+            or rbi >= 3
+            or hr_count >= 2
         )
         if not qualifies:
             continue
@@ -1060,12 +1062,13 @@ def detect_game_pitcher_performance(
     snapshot_date: str,
     run_id: Optional[str] = None,
 ) -> list[int]:
-    """B: 直近 Giants 試合で登板した投手の好投 / 不調を検出。
+    """B: 直近 Giants 試合で登板した投手の好投を検出。
 
-    対象基準 (いずれか満たせば候補化):
-      - 好投: IP >= 5 AND ER <= 2 (先発の quality start 近似)
-      - 救援好投: IP >= 1 AND ER == 0 AND result_mark in ('S','H')
-      - 不調: IP < 5 AND ER >= 4 (KO 級)
+    対象基準 (2026-06-02 issue#44 再活性化、 厳格化。 読者にわかる好投のみ。 「不調」 は
+    巨人愛 voice に合わないため撤去):
+      - 先発好投: IP >= 6 AND ER <= 2 (真の quality start)
+      - 救援好投: IP >= 1 AND ER == 0 AND result_mark in ('S','H','勝')
+    旧基準の IP>=5 (準 QS) と 不調 (KO) は撤去。
     """
     game = _latest_giants_game(conn, snapshot_date=snapshot_date)
     if not game:
@@ -1086,13 +1089,12 @@ def detect_game_pitcher_performance(
         h_allowed = int(h_allowed or 0); bb = int(bb or 0)
         hr_allowed = int(hr_allowed or 0)
         result_mark = str(result_mark or "")
-        qualifies_good = (ip >= 5 and er <= 2) or (
+        qualifies_good = (ip >= 6 and er <= 2) or (
             ip >= 1 and er == 0 and result_mark in ("S", "H", "勝")
         )
-        qualifies_bad = ip < 5 and er >= 4
-        if not (qualifies_good or qualifies_bad):
+        if not qualifies_good:
             continue
-        direction = "好投" if qualifies_good else "不調"
+        direction = "好投"
         magnitude = float(round(k - er * 2, 2))  # 簡易 quality score
         cid = _insert_candidate(
             conn,
@@ -1835,13 +1837,25 @@ def run_all_anomaly_detectors(
                 )
             except Exception as exc:  # noqa: BLE001
                 _record_error(f"{SIGNAL_GIANTS_TOP_OUTLIER}:{metric}:{scope}", exc)
-    # 2026-05-15 user 指示「マニアック drop」適用、HR pace / 規定外好調 / 連続
-    # 多安打 / 巨人 top% は detector call せず空 (signal_type 自体は backward-
-    # compat で残し、env / code 復活余地)。
-    out[SIGNAL_PACE_HR_PROJECTION] = []
+    # 2026-06-02 (464 / user「読者にわかりやすい角度を優先」): 本塁打ペース と
+    # 連続多安打 は「このペースで○本」「○試合連続マルチ安打」= 一目でわかる角度
+    # なので再活性化。 規定外好調 (規定打席未満) は説明を要し分かりにくいため据え置き。
+    try:
+        out[SIGNAL_PACE_HR_PROJECTION] = detect_hr_pace_outliers(
+            conn, snapshot_date=snapshot_date, run_id=run_id,
+        )
+    except Exception as exc:  # noqa: BLE001
+        _record_error(SIGNAL_PACE_HR_PROJECTION, exc)
+        out[SIGNAL_PACE_HR_PROJECTION] = []
+    # 規定外好調 (HIDDEN_OPS): 「規定打席に満たないが好調」= 説明が要りわかりにくい → OFF 維持。
     out[SIGNAL_HIDDEN_OPS_LIMIT] = []
-    # 連続多安打 も「マニアック」分類で drop (user 指示)
-    out[SIGNAL_HIT_STREAK_RUN] = []
+    try:
+        out[SIGNAL_HIT_STREAK_RUN] = detect_consecutive_multi_hit_streak(
+            conn, snapshot_date=snapshot_date, run_id=run_id,
+        )
+    except Exception as exc:  # noqa: BLE001
+        _record_error(SIGNAL_HIT_STREAK_RUN, exc)
+        out[SIGNAL_HIT_STREAK_RUN] = []
     # 2026-05-16 user 指示「FIPはいらない。UZRはいる」適用。
     # FIP 系は drop 維持、UZR は title 側で "簡易UZR" として読者向けに表示する。
     try:
@@ -1854,12 +1868,25 @@ def run_all_anomaly_detectors(
         _record_error("detect_giants_defense_outliers", exc)
         out[SIGNAL_DEFENSE_UZR_OUTLIER] = []
         out[SIGNAL_DEFENSE_FIELDING_PCT] = []
-    # issue #44 B (2026-05-17 user lock): 1 試合 postgame data 記事
-    # (浦田 3 安打 1 打点 / マルティネス 1 イニング 0 自責 等) を完全 off。
-    # detect_game_hero_batter / detect_game_pitcher_performance の関数本体と
-    # renderer は残置 (将来再有効化のため)、 ここで呼び出しのみ skip。
-    out[SIGNAL_GAME_HERO_BATTER] = []
-    out[SIGNAL_GAME_PITCHER_PERF] = []
+    # issue #44 B 再活性化 (2026-06-02 / 464 / user「読者にわかりやすい角度を優先」):
+    # 「今日のヒーロー」「今日の好投」 は読者に一目でわかる最有力角度。 旧 off の真因は
+    # 乱発 (浦田 3安打1打点 級の平凡な活躍が記事化) なので、 detector 側で gate を厳格化
+    # (hero: 3安打 / HR+2打点 / 3打点 / マルチHR、 好投: 真 QS 6回2自責 以上、 不調は撤去)
+    # した上で再有効化する。
+    try:
+        out[SIGNAL_GAME_HERO_BATTER] = detect_game_hero_batter(
+            conn, snapshot_date=snapshot_date, run_id=run_id,
+        )
+    except Exception as exc:  # noqa: BLE001
+        _record_error(SIGNAL_GAME_HERO_BATTER, exc)
+        out[SIGNAL_GAME_HERO_BATTER] = []
+    try:
+        out[SIGNAL_GAME_PITCHER_PERF] = detect_game_pitcher_performance(
+            conn, snapshot_date=snapshot_date, run_id=run_id,
+        )
+    except Exception as exc:  # noqa: BLE001
+        _record_error(SIGNAL_GAME_PITCHER_PERF, exc)
+        out[SIGNAL_GAME_PITCHER_PERF] = []
     try:
         milestone_ids = detect_milestone_crossed(
             conn, snapshot_date=snapshot_date, run_id=run_id,

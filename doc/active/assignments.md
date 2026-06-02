@@ -4,6 +4,16 @@
 
 ## 2026-06-02 session update
 
+### 464 — 眠り角度の再活性化(読者にわかりやすい4種を厳格gate付き)LIVE
+
+検証で「眠り角度=事故ではなく全て日付つき user 指示で OFF」と判明。「わかりやすさ」基準で選別再活性化。
+ON(whitelist◯): 今日のヒーロー打者(gate厳格化 H>=3/HR+RBI2/RBI3/マルチHR)/ 今日の好投(真QS IP>=6&ER<=2)/ 本塁打ペース / 連続マルチ安打。
+据え置き(わかりにくい=whitelist×): BABIP / FIP-ERA / 変化率 / 規定外好調。
+bug fix: pace_hr/multi_hit の `_resolve_team_code_from_name` 未import NameError(dormant で未顕在)を配線。
+commit `00e795fa`(本体)+ `ecc6eb0e`(fix)/ image `insight-nightly:hero-reactivate-ecc6eb0`。
+prod read-only 検証: pace_hr 巨人=1(キャベッジ26本ペース)/ 非巨人は priority<=2 gate で除外=乱発なし。
+test 32 + insight/anomaly 917 pass / regression 0。doc: `doc/done/2026-06/464-...md`。次回 insight-nightly 発火で記事化。
+
 ### 467 — 選手pillarに年度別成績+通算+プロフィール(NPB公式 career scrape、網羅)LIVE_VERIFIED
 
 user「467で情報量を網羅させる」。NPB career page の全情報を網羅取得・描画。

@@ -2,7 +2,25 @@
 
 - **種別**: 実装 / **priority**: P2(差別化A・幅) / **effort**: S〜M
 - **親**: 443 / 設計: `455...md` §16 / §17 Phase2A / GH: #128
-- **status**: READY
+- **status**: CLOSED / LIVE(2026-06-02、commit `ecc6eb0e`、image `insight-nightly:hero-reactivate-ecc6eb0`)
+
+## 着地(2026-06-02、選別基準 = user「読者にわかりやすい角度を優先」)
+
+検証で判明: 眠り角度は**事故ではなく全て日付つき user 明示指示で OFF**(サバメいらない / マニアック drop / issue#44 hero off / 変化率わかりにくい)。よって「わかりやすさ」基準で**選別再活性化**した。
+
+**再活性化(読者にわかりやすい・全て whitelist◯ counting 系):**
+- 今日のヒーロー打者 — gate 厳格化(H>=3 / HR+RBI2 / RBI3 / マルチHR のみ。旧 H>=2&RBI1 / 単発HR / RBI2単独 を撤去 = issue#44 乱発源を遮断)
+- 今日の好投 — 真 QS(IP>=6 ER<=2)/ 救援無失点 S/H/勝 のみ(旧 IP>=5 準QS と不調を撤去)
+- 本塁打ペース(このペースで○本)
+- 連続マルチ安打(○試合連続)
+
+**据え置き(わかりにくい = whitelist×):** BABIP乖離 / FIP-ERA乖離 / 変化率(stat_delta)/ 規定外好調(規定打席の説明要)。
+
+**bug fix(read-only prod 検証で露呈):** 本塁打ペース / 連続多安打 detector は作成以来 dormant で `_resolve_team_code_from_name` 未 import の NameError が顕在化しておらず、再活性化で初発火。12球団網羅の `insight_defense_proxy._resolve_team_code` を alias import で配線。
+
+**prod 実検証(snapshot 2026-06-01、read-only):** pace_hr 巨人publish=**1**(キャベッジ HR換算26本)/ multi_hit 2(巨人0)/ hero・好投 0(当日該当者なし=gate正常)。非巨人(priority=3)は publish の `priority<=2` gate で除外 = **乱発なし**。renderer は `anomaly_article_publisher` に既登録。test: off-lock を reactivated-lock へ書換 + NameError 回帰防止、insight/anomaly/nomotoke 917 pass / regression 0。
+
+次回 insight-nightly 自然発火(12/17/20/21 JST)で記事化。
 
 ## 背景(深掘り 1次source・コメントとコードの矛盾)
 

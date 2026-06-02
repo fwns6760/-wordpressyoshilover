@@ -16,7 +16,10 @@ from src import video_radar as _vr  # RSSHub fetch + item 抽出を再利用
 
 # 巨人系 media / 公式 X (RSSHub handle)。 sns_realtime_topic と同じ系。
 # 旧 yomiuri_giants は RSSHub 死にハンドルのため除外 (実feed検証済 2026-06-01、 公式= TokyoGiants)。
-_MEDIA_HANDLES = ["TokyoGiants", "hochi_giants", "Sanspo_Giants"]
+# リプ先の優先度 = 親ツイートの閲覧が多い順 (公式 → 報知 → サンスポ)。
+# extract_rss_keywords はこの順で走査し、 build_reply_candidates は先頭から採るので
+# でかいアカの返信欄を優先して borrow する (インプ原理 ①: 親の大きさ)。
+_MEDIA_HANDLES = ["yomiuri_giants", "TokyoGiants", "hochi_giants", "Sanspo_Giants"]
 
 # 出来事キーワード (検出対象)
 _EVENT_WORDS = (
@@ -215,10 +218,16 @@ def build_reply_candidates(
     fetch_fn: Optional[Callable[[str], str]] = None,
     max_replies: int = 5,
     detect_player_fn: Optional[Callable[[str], str]] = None,
+    comment_fn: Optional[Callable[[str, str], str]] = None,
 ) -> list[dict]:
-    """大手巨人アカ投稿への『リプライ候補』。 同じヨシラバー声 + 大手投稿URL/tweet_id。
+    """大手巨人アカ投稿への『リプライ候補』。 ヨシラバーボイスのリプ文 + 大手投稿URL/tweet_id。
 
     user が大手投稿にリプ → 大手の客層に露出 (小規模アカウントのインプ近道)。 巨人選手限定。
+
+    インプ原理 ③ (順位燃料): 公式/報知の返信欄は数百件で溢れるため、 数字の羅列リプは
+    埋もれてインプを borrow できない。 ``comment_fn(parent_tweet_text, player)`` を渡すと
+    親ツイートに「データ気づき + 辛口読み」を足したヨシラバーボイスのリプ文を生成し、
+    いいねで上位に浮かせる。 comment_fn 無し / 生成失敗時は _caption_for の数字 1 行へ fallback。
     Returns [{player, reply, url, tweet_id, headline}]。
     """
     import re as _re2
@@ -236,17 +245,26 @@ def build_reply_candidates(
         if len(out) >= max_replies:
             break
         player, events, url = kw["player"], kw["events"], kw.get("url", "")
+        title = kw.get("title", "")
         if player in used or not url or not _is_giants(db_path, player):
             continue
         m = _re2.search(r"/status/(\d+)", url)
         if not m:
             continue
-        cap = _caption_for(db_path, player, events)
-        if not cap:
+        # ③ 順位燃料: まずヨシラバーボイスでリプ文を生成。 失敗時は数字 1 行へ fallback。
+        reply = ""
+        if comment_fn is not None and title:
+            try:
+                reply = (comment_fn(title, player) or "").strip()
+            except Exception:  # noqa: BLE001
+                reply = ""
+        if not reply:
+            reply = _caption_for(db_path, player, events) or ""
+        if not reply:
             continue
         used.add(player)
         out.append({
-            "player": player, "reply": cap, "url": url,
+            "player": player, "reply": reply, "url": url,
             "tweet_id": m.group(1), "headline": headline_from_events(events),
         })
     return out

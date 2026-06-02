@@ -1730,9 +1730,24 @@ def main(argv: Sequence[str] | None = None) -> int:
     # 451: 「💬リプライ候補」(大手投稿 + 同じヨシラバー声のリプ文)。 大手投稿に返信=大観客に
     # 露出 (小規模アカウントのインプ近道)。 1タップ返信ボタン (reply intent)。 flag ON 時のみ。
     if _reply_candidates_enabled() and db_path:
+        # ③ 順位燃料: リプ文をヨシラバーボイスで生成 (公式/報知の返信欄で上位に浮かせる)。
+        # GEMINI key があれば build_quote_rt_comment を comment_fn で渡し、 無ければ
+        # build_reply_candidates 内で数字 1 行 fallback。 Gemini 無料 tier 内、 公開投稿なし。
+        rep_comment_fn = None
+        _rep_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GEMMA_BRANDING_GEMINI_API_KEY") or ""
+        if _rep_key:
+            try:
+                from src import x_post_branding_gen as _rep_xbg
+
+                def rep_comment_fn(parent_text, player, _k=_rep_key, _g=_rep_xbg, _now=now_jst):  # noqa: E731
+                    # 親ツイート本文に対するヨシラバーボイスのリプ (= 引用RTコメントと同型)。
+                    return _g.build_quote_rt_comment(parent_text, player, gemini_api_key=_k, now=_now)
+            except Exception as _rep_imp_exc:  # noqa: BLE001
+                LOG.warning("reply_candidates LLM comment unavailable: %r", _rep_imp_exc)
+                rep_comment_fn = None
         try:
             from src import sns_topic_cards as _tc2
-            reps = _tc2.build_reply_candidates(db_path, max_replies=5)
+            reps = _tc2.build_reply_candidates(db_path, max_replies=5, comment_fn=rep_comment_fn)
         except Exception as _rep_exc:  # noqa: BLE001
             LOG.warning("reply_candidates build failed: %r", _rep_exc)
             reps = []

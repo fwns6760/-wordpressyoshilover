@@ -124,6 +124,40 @@ class ReplyCandidatesTests(unittest.TestCase):
         self.assertIn("プロ初完投", reps[0]["reply"])       # 同じ声
         self.assertIn("10K", reps[0]["reply"])             # データ
 
+    def test_reply_uses_voice_comment_fn_when_given(self):
+        # ③ 順位燃料: comment_fn (ヨシラバーボイス) が返れば数字 1 行でなくその文を使う。
+        feed = ("<rss><channel><item><title>竹丸和幸 プロ初完投 8回10K</title>"
+                "<link>https://x.com/hochi_giants/status/12345</link></item></channel></rss>")
+        seen = {}
+
+        def _voice(parent_text, player):
+            seen["parent"] = parent_text
+            seen["player"] = player
+            return "竹丸和幸、初完投か。球数は嵩んだけど中継ぎ温存できたのがデカい。次も任せたいわ。"
+
+        reps = tc.build_reply_candidates(
+            self._db(), fetch_fn=lambda u: feed, max_replies=3,
+            detect_player_fn=lambda t: "竹丸和幸" if "竹丸" in t else "",
+            comment_fn=_voice,
+        )
+        self.assertEqual(len(reps), 1)
+        self.assertIn("中継ぎ温存", reps[0]["reply"])      # ボイス文が採用される
+        self.assertNotIn("10K", reps[0]["reply"])          # 数字 1 行 fallback ではない
+        self.assertIn("竹丸和幸", seen["player"])          # 親ツイート本文 + player が渡る
+        self.assertIn("プロ初完投", seen["parent"])
+
+    def test_reply_falls_back_when_comment_fn_empty(self):
+        # comment_fn が空文字 (LLM 失敗 / safety NG) なら数字 1 行へ fallback。
+        feed = ("<rss><channel><item><title>竹丸和幸 プロ初完投 8回10K</title>"
+                "<link>https://x.com/hochi_giants/status/12345</link></item></channel></rss>")
+        reps = tc.build_reply_candidates(
+            self._db(), fetch_fn=lambda u: feed, max_replies=3,
+            detect_player_fn=lambda t: "竹丸和幸" if "竹丸" in t else "",
+            comment_fn=lambda parent, player: "",
+        )
+        self.assertEqual(len(reps), 1)
+        self.assertIn("10K", reps[0]["reply"])             # fallback の数字行
+
     def test_reply_intent_url(self):
         from src.x_post_mail_lane import encode_x_reply_intent_url
         u = encode_x_reply_intent_url("竹丸和幸 痺れた", "12345")

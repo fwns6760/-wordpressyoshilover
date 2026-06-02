@@ -43,6 +43,12 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.analysis import insight_whitelist as _wl  # noqa: E402
+# 464: 本塁打ペース / 連続多安打 detector が team 名→code 解決に使う。 これらは作成以来
+# dormant だったため未 import の NameError が顕在化していなかった (再活性化で露呈)。
+# 12 球団完全網羅の既存 resolver ('g'/'t'/.../'unknown') を再利用。
+from src.analysis.insight_defense_proxy import (  # noqa: E402
+    _resolve_team_code as _resolve_team_code_from_name,
+)
 
 LOGGER = logging.getLogger(__name__)
 DETECTOR_ERROR_KEY = "__detector_errors__"

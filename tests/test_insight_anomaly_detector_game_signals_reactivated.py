@@ -127,6 +127,19 @@ def test_pitcher_sub_qs_and_blowup_excluded(tmp_path):
         conn.close()
 
 
+# ── team code resolver 配線 (464 NameError 回帰防止) ────────────────────────
+
+def test_team_code_resolver_is_wired():
+    """本塁打ペース / 連続多安打 が使う team 名→code resolver が import 済 (NameError 防止)。
+
+    これらは作成以来 dormant だったため ``_resolve_team_code_from_name`` 未 import の
+    NameError が顕在化しておらず、 464 再活性化で初めて露呈した。 12 球団網羅を lock。
+    """
+    assert det._resolve_team_code_from_name("読売ジャイアンツ") == "g"
+    assert det._resolve_team_code_from_name("阪神タイガース") == "t"
+    assert det._resolve_team_code_from_name("") == "unknown"
+
+
 # ── サバメ / 変化率 はわかりにくいため OFF 維持 (回帰防止) ──────────────────
 
 def test_confusing_signals_remain_off(tmp_path):

@@ -576,6 +576,23 @@ _VOICE_POEM_MARKERS = _re.compile(
 )
 
 
+# 締めローテ: flash-lite は放っておくと全候補が「〜してくれ」「〜だぞ」 で終わって
+# 単調になる。 seed (選手名) のハッシュで締めの型を振り分け、 候補ごとに終わり方を散らす。
+_ENDING_STYLES = (
+    "締めは言い切りで終える (辛口や事実をそのまま。 例:「〜なんよな」「〜だわ」)。 願望で締めない",
+    "締めは自分の予想・見立てで終える (例:「〜だと思う」「〜になる気がする」「秋には〜してるはず」)",
+    "締めはファンへの問いかけで終える (例:「〜どう見てる?」「〜じゃない?」)",
+    "締めは危機感・正念場で終える (例:「〜しなきゃ後がない」「ここが勝負」)",
+    "締めは期待・本音の願望で終える、 ただし優等生にしない (例:「早よ〜見たい」「〜頼むわ」)",
+)
+
+
+def _ending_style_hint(seed: str) -> str:
+    """seed (選手名等) から締めの型を 1 つ deterministic に選ぶ (候補間で締めを散らす)。"""
+    h = _hashlib.sha1((seed or "x").encode("utf-8")).hexdigest()
+    return _ENDING_STYLES[int(h, 16) % len(_ENDING_STYLES)]
+
+
 def _voice_quality_ok(text: str, *, live: bool = False) -> bool:
     """門番: ヨシラバーボイスとして出してよいか (True=OK)。
 
@@ -1156,8 +1173,9 @@ def build_quote_rt_comment(
     else:
         len_rule = (
             "150〜250字、 2〜4文。 データ/事実を1個 → ファンの本音を辛口で代弁 → 巨人愛で着地。 "
-            "ファンが『それな』 と頷く本音にする。 『〜してほしいね/な』 等の優等生締め・ポエムは禁止。 "
-            "元ネタに無い数字・事実は足さない。"
+            "ファンが『それな』 と頷く本音にする。 『〜してほしい』 は文中でも避ける (願望は別の言い方に)。 "
+            "ポエム禁止。 元ネタに無い数字・事実は足さない。 "
+            + _ending_style_hint(who)
         )
     try:
         from google import genai
@@ -1429,6 +1447,13 @@ def build_gemma_branding_candidate(
         prompt_parts.extend(["", post_type_guidance])
     if pregame_section:
         prompt_parts.extend(["", pregame_section])
+    # 締めローテ (考察モードのみ): 候補ごとに締めの型を散らし単調さを防ぐ。 ライブ缶詰は対象外。
+    if resolved_persona != "kandume":
+        prompt_parts.extend([
+            "",
+            "締めのワンパターン回避: " + _ending_style_hint(player)
+            + "。 『〜してほしい』 は文中でも避ける。",
+        ])
     prompt_parts.extend([
         "",
         f"対象選手: {player}",

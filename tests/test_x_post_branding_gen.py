@@ -886,5 +886,20 @@ class VoiceQualityGateTests(unittest.TestCase):
         self.assertFalse(xbg._voice_quality_ok("泉口友汰！！！最後に美味しいとこ持ってったなあ。これはデカい！", live=False))
 
 
+class EndingStyleRotationTests(unittest.TestCase):
+    """締めローテ _ending_style_hint: 決定的 + 選手ごとに型を散らす."""
+
+    def test_deterministic(self):
+        self.assertEqual(xbg._ending_style_hint("甲斐拓也"), xbg._ending_style_hint("甲斐拓也"))
+
+    def test_returns_known_style(self):
+        self.assertIn(xbg._ending_style_hint("坂本勇人"), xbg._ENDING_STYLES)
+
+    def test_distributes_across_players(self):
+        seeds = ["甲斐拓也", "藤井健翔", "宇都宮葵星", "坂本勇人", "戸郷翔征", "岡本和真", "丸佳浩", "大城卓三"]
+        styles = {xbg._ending_style_hint(s) for s in seeds}
+        self.assertGreaterEqual(len(styles), 3)  # 単調回避: 複数型に散る
+
+
 if __name__ == "__main__":
     unittest.main()

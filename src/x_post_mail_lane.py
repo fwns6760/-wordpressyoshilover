@@ -3044,6 +3044,42 @@ def _player_counts_from_dedup_records(records: list[dict]) -> dict[str, int]:
     return counts
 
 
+def _players_within_cooldown(
+    records: list[dict],
+    now: datetime,
+    cooldown_hours: float,
+) -> set[str]:
+    """Return normalized focus-player keys posted within ``cooldown_hours``.
+
+    Used to suppress LLM branding generation for a player who was just posted
+    (during a game or the next day). Many media cover the same hot player, so
+    without a per-player cooldown the same player would be re-generated each
+    run and the Gemini cost is wasted on posts that will not be published.
+    ``cooldown_hours <= 0`` disables the gate (returns an empty set).
+    """
+    if cooldown_hours <= 0:
+        return set()
+    cutoff = now - timedelta(hours=cooldown_hours)
+    recent: set[str] = set()
+    for rec in records:
+        player_key = _normalize_player_name(rec.get("focus_player"))
+        if not player_key:
+            continue
+        ts_str = rec.get("ts") or ""
+        if not ts_str:
+            continue
+        try:
+            ts = datetime.fromisoformat(str(ts_str).replace("Z", "+00:00"))
+        except (ValueError, TypeError):
+            continue
+        if ts.tzinfo is None:
+            # Treat naive timestamps as JST per project convention.
+            ts = ts.replace(tzinfo=JST)
+        if ts >= cutoff:
+            recent.add(player_key)
+    return recent
+
+
 def _load_recent_player_counts(
     bucket_name: str,
     now: datetime,

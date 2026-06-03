@@ -3451,3 +3451,62 @@ class BuildPlayerCommentCandidateTests(unittest.TestCase):
             source_url="https://x.test/3", html_text=self._HTML,
         )
         self.assertIsNone(c)
+
+
+class GemmaBrandingPlayerCooldownTests(unittest.TestCase):
+    """LLM 費用節約: 同一選手の過剰生成を cooldown + window cap で抑える。"""
+
+    def _cand(self, player: str, fact: str = "") -> Candidate:
+        return Candidate(
+            title=f"Xポスト案｜{player}",
+            metric="OPS",
+            period_label="直近5試合",
+            draft_text=f"{player} 好調 #巨人",
+            char_count=10,
+            focus_player=player,
+            db_fact_line=fact,
+        )
+
+    def test_players_within_cooldown_filters_by_ts(self) -> None:
+        from src.x_post_mail_lane import _players_within_cooldown
+        now = datetime(2026, 6, 3, 21, 0, tzinfo=JST)
+        records = [
+            {"focus_player": "坂本勇人", "ts": "2026-06-03T20:00:00+09:00"},  # 1h ago
+            {"focus_player": "岡本和真", "ts": "2026-06-01T20:00:00+09:00"},  # ~49h ago
+            {"focus_player": "", "ts": "2026-06-03T20:30:00+09:00"},         # no player
+        ]
+        out = _players_within_cooldown(records, now, cooldown_hours=24)
+        self.assertIn("坂本勇人", out)
+        self.assertNotIn("岡本和真", out)
+
+    def test_players_within_cooldown_zero_disables(self) -> None:
+        from src.x_post_mail_lane import _players_within_cooldown
+        now = datetime(2026, 6, 3, 21, 0, tzinfo=JST)
+        records = [{"focus_player": "坂本勇人", "ts": "2026-06-03T20:00:00+09:00"}]
+        self.assertEqual(_players_within_cooldown(records, now, 0), set())
+
+    def test_pick_skips_player_in_cooldown(self) -> None:
+        from src.tools import run_x_post_mail
+        picks = run_x_post_mail._pick_gemma_branding_players(
+            [self._cand("坂本勇人"), self._cand("岡本和真")],
+            lineup_focus_names=None,
+            recent_player_counts=None,
+            max_count=3,
+            cooldown_players={"坂本勇人"},
+        )
+        names = [p[0] for p in picks]
+        self.assertNotIn("坂本勇人", names)
+        self.assertIn("岡本和真", names)
+
+    def test_pick_window_cap_defaults_to_two(self) -> None:
+        from src.tools import run_x_post_mail
+        # 既出 2 回の選手は default cap(2)で skip、 1 回なら通す。
+        picks = run_x_post_mail._pick_gemma_branding_players(
+            [self._cand("坂本勇人"), self._cand("岡本和真")],
+            lineup_focus_names=None,
+            recent_player_counts={"坂本勇人": 2, "岡本和真": 1},
+            max_count=3,
+        )
+        names = [p[0] for p in picks]
+        self.assertNotIn("坂本勇人", names)
+        self.assertIn("岡本和真", names)

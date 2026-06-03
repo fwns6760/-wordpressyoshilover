@@ -800,6 +800,7 @@ def _pick_gemma_branding_players(
     lineup_focus_names: list[str] | None,
     recent_player_counts: dict[str, int] | None,
     max_count: int,
+    cooldown_players: set[str] | None = None,
 ) -> list[tuple[str, str]]:
     """392: Gemma 生成対象の player を最大 max_count 件選ぶ。
 
@@ -814,6 +815,18 @@ def _pick_gemma_branding_players(
     if max_count <= 0:
         return []
     history = {k: v for k, v in (recent_player_counts or {}).items() if v}
+    cooldown = cooldown_players or set()
+    # 同一選手の過剰生成を抑える 2 段 gate (LLM 費用節約):
+    #   1. cooldown: 直近 X_POST_MAIL_GEMMA_PLAYER_COOLDOWN_HOURS (既定 24h)
+    #      以内に投稿済みの player は skip。試合中 / 翌日に同じ選手を何度も
+    #      生成して費用を捨てるのを防ぐ。
+    #   2. window cap: history window (X_POST_MAIL_PLAYER_HISTORY_HOURS、
+    #      既定 168h=7d) 内の既出回数が
+    #      X_POST_MAIL_GEMMA_PLAYER_MAX_PER_WINDOW (既定 2、 2026-05-25
+    #      user 「同一選手 最高 2 回まで」 を生成側にも適用) 以上なら skip。
+    max_per_window = _resolve_int_env(
+        "X_POST_MAIL_GEMMA_PLAYER_MAX_PER_WINDOW", 2, min_value=1
+    )
     seen_keys: set[str] = set()
     picks: list[tuple[str, str]] = []
 
@@ -827,8 +840,10 @@ def _pick_gemma_branding_players(
         key = lane._normalize_player_name(n)
         if not key or key in seen_keys:
             return
-        if history.get(key, 0) >= 3:
-            # 24h で 3 回以上既出は skip (既存 player diversity 思想継承)
+        if key in cooldown:
+            # 直近に投稿済み → 再生成は費用の無駄なので skip
+            return
+        if history.get(key, 0) >= max_per_window:
             return
         seen_keys.add(key)
         picks.append((n, fact))
@@ -1026,6 +1041,7 @@ def _build_gemma_branding_candidates(
     max_count: int,
     db_path: str | None = None,
     bucket_name: str | None = None,
+    cooldown_players: set[str] | None = None,
 ) -> list[lane.Candidate]:
     """392: max_count 件まで Gemma branding candidate を生成。
 
@@ -1055,6 +1071,7 @@ def _build_gemma_branding_candidates(
         lineup_focus_names=lineup_focus_names,
         recent_player_counts=recent_player_counts,
         max_count=max_count,
+        cooldown_players=cooldown_players,
     )
     if not players:
         LOG.info("Gemma branding skipped: no eligible players from lineup/candidates")
@@ -1524,10 +1541,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     # mail still sends).
     dedup_set: set[str] | None = None
     recent_player_counts: dict[str, int] = {}
+    cooldown_players: set[str] = set()
     bucket_name = os.environ.get("INSIGHT_GCS_BUCKET") or ""
     dedup_disabled = (os.environ.get("X_POST_MAIL_DEDUP_DISABLED") or "").strip()
     history_hours = _resolve_int_env(
         "X_POST_MAIL_PLAYER_HISTORY_HOURS", 168, min_value=1
+    )
+    gemma_player_cooldown_hours = _resolve_int_env(
+        "X_POST_MAIL_GEMMA_PLAYER_COOLDOWN_HOURS", 24, min_value=0
     )
     if bucket_name and dedup_disabled not in {"1", "true", "yes"}:
         try:
@@ -1550,6 +1571,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                 history_hours,
                 len(recent_player_counts),
                 sum(recent_player_counts.values()),
+            )
+            cooldown_players = lane._players_within_cooldown(
+                dedup_records, now_jst, gemma_player_cooldown_hours
+            )
+            LOG.info(
+                "Gemma player cooldown (%dh): %d players blocked from re-generation",
+                gemma_player_cooldown_hours,
+                len(cooldown_players),
             )
         except Exception as exc:  # noqa: BLE001
             LOG.warning("dedup load failed (continuing without dedup): %r", exc)
@@ -1798,6 +1827,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 max_count=gemma_count,
                 db_path=db_path,
                 bucket_name=bucket_name or None,
+                cooldown_players=cooldown_players,
             )
             if gemma_candidates:
                 before = len(candidates)

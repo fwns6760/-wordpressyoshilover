@@ -323,3 +323,41 @@ def test_run_loads_prev_and_saves_counts_for_both_pages():
     saved = mock_save.call_args.args[0]
     assert "1gun" in saved
     assert "farm" in saved
+
+
+# ----- 445 個人: 注目選手カード (Tier 1) -----
+
+def test_build_featured_players_ranks_and_filters():
+    from sns_realtime_topic import build_featured_players
+    counts = {"戸郷翔征": 12, "岡本和真": 5, "坂本勇人": 1, "大勢": 3}
+    prev = {"戸郷翔征": 8, "岡本和真": 5}
+    html = build_featured_players(
+        counts, prev, tag_resolver=lambda n: f"https://yoshilover.com/tag/{n}/",
+        db_path=None, top_n=8, min_count=2,
+    )
+    # min_count=2 で 坂本(1) は除外、 件数降順
+    assert "戸郷翔征" in html
+    assert "大勢" in html
+    assert "坂本勇人" not in html
+    # 内部リンク + 件数 + 注目選手見出し
+    assert "https://yoshilover.com/tag/" in html
+    assert "注目選手" in html
+    assert "12件" in html
+    # db_path=None なら成績は空 (graceful、 page は出る)
+    assert "今季" not in html
+
+
+def test_build_featured_players_empty_when_no_counts():
+    from sns_realtime_topic import build_featured_players
+    assert build_featured_players({}, {}, tag_resolver=None, db_path=None) == ""
+
+
+def test_render_featured_players_includes_stat_line():
+    from sns_realtime_topic_template import render_featured_players
+    html = render_featured_players([
+        {"name": "戸郷翔征", "count": 12, "badge": "", "stat_line": "今季 8登板・防御率2.10・60K",
+         "url": "https://yoshilover.com/data/togo/"},
+    ])
+    assert "今季 8登板" in html
+    assert 'href="https://yoshilover.com/data/togo/"' in html
+    assert "ysn-fp-section" in html

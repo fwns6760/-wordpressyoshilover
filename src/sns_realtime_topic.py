@@ -244,6 +244,74 @@ def make_tag_url_resolver(data_slugs_available: set):
     return resolve
 
 
+def _resolve_insight_db_path() -> Optional[str]:
+    """insight.db (read-only) の local path を返す。不在/失敗時は None (成績は空表示)。
+
+    445 enhancement (個人): 注目選手カードの今季成績充填用。GCS から read-only で
+    download (free tier、 1 fire 4 回/日)。失敗しても page 生成は止めない (graceful)。
+    """
+    try:
+        from src.manual_intake_insight_query import ensure_local_db
+        info = ensure_local_db()
+        if info and info.get("ok"):
+            return info.get("path")
+    except Exception as exc:  # noqa: BLE001
+        _logger.info("sns_realtime insight.db unavailable (stats skipped): %r", exc)
+    return None
+
+
+def _player_stat_line(db_path: Optional[str], player: str) -> str:
+    """選手の今季成績 1 行 (打者優先、 投手は登板/防御率/K)。取得不可なら空。"""
+    if not db_path or not player:
+        return ""
+    try:
+        from src.sns_topic_cards import _player_batting, _player_pitching
+        bat = _player_batting(db_path, player)
+        if bat and bat.get("avg") is not None:
+            avg = f"{bat['avg']:.3f}".lstrip("0")
+            return f"今季 打率{avg}・{bat['h']}安打{bat['rbi']}打点"
+        pit = _player_pitching(db_path, player)
+        if pit and pit.get("games"):
+            era = f"・防御率{pit['era']:.2f}" if pit.get("era") is not None else ""
+            return f"今季 {pit['games']}登板{era}・{pit['k']}K"
+    except Exception as exc:  # noqa: BLE001
+        _logger.info("sns_realtime stat_line skip player=%s: %r", player, exc)
+    return ""
+
+
+def build_featured_players(
+    page_counts: Dict[str, int],
+    prev_counts: Dict[str, int],
+    tag_resolver,
+    db_path: Optional[str],
+    top_n: int = 8,
+    min_count: int = 2,
+) -> str:
+    """445 enhancement (個人): 急上昇順の注目選手カード HTML (今季成績 1 行 + 内部リンク)。
+
+    急上昇 / 内部リンクは既存 trend chips と同じ算出 (count diff + tag_resolver) で整合。
+    db_path 不在時は成績空 (graceful、 page は出る)。Gemini 不使用 (¥0)。
+    """
+    from src.sns_realtime_topic_template import render_featured_players, _delta_badge
+    items = [(n, c) for n, c in (page_counts or {}).items() if c >= min_count]
+    items.sort(key=lambda t: (-t[1], t[0]))
+    items = items[:top_n]
+    if not items:
+        return ""
+    suppress_badge = not prev_counts
+    players: List[Dict] = []
+    for name, count in items:
+        badge = "" if suppress_badge else _delta_badge(count - int((prev_counts or {}).get(name, 0)))
+        players.append({
+            "name": name,
+            "count": count,
+            "badge": badge,
+            "stat_line": _player_stat_line(db_path, name),
+            "url": tag_resolver(name) if tag_resolver else "",
+        })
+    return render_featured_players(players)
+
+
 def build_pages(
     now: Optional[datetime] = None,
     prev_counts_by_page: Optional[PageCounts] = None,
@@ -264,6 +332,8 @@ def build_pages(
     updated_at = now.strftime("%Y-%m-%d %H:%M")
     data_slugs = _fetch_data_page_slugs(wp_client) if wp_client else set()
     tag_resolver = make_tag_url_resolver(data_slugs)
+    # 445 (個人): 注目選手カードの今季成績充填用 (read-only、無ければ成績空)。
+    insight_db_path = _resolve_insight_db_path()
 
     pages: List[Dict] = []
     counts_by_page: PageCounts = {}
@@ -280,6 +350,10 @@ def build_pages(
             page_counts,
             prev_counts=prev,
             tag_url_for=tag_resolver,
+        )
+        # 445 (個人): 注目選手カード (急上昇順 + 今季成績 + 内部リンク)
+        featured_html = build_featured_players(
+            page_counts, prev, tag_resolver, insight_db_path,
         )
 
         sections: List[Tuple[str, List[str]]] = []
@@ -322,6 +396,7 @@ def build_pages(
             updated_at_iso=updated_at_iso,
             posts_for_listing=posts_for_listing,
             coverage_start_iso=coverage_start_iso,
+            featured_html=featured_html,
         )
         title = f"巨人 SNS リアルタイム {page['title_suffix']} {now.strftime('%Y-%m-%d')}"
         # (B) OGP / Twitter Card description 用 excerpt

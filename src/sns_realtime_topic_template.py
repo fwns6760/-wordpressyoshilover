@@ -128,6 +128,56 @@ def render_trend_chips(
     )
 
 
+def render_featured_players(players: List[Dict]) -> str:
+    """445 enhancement (個人): 今日の注目選手カード (急上昇順 + 今季成績 1 行)。
+
+    ``players`` = [{name, count, badge, stat_line, url}] (build 側で算出済み)。
+    急上昇 / 内部リンクは既存 trend chips と整合。 成績は insight.db 由来 (無ければ空)。
+    共有 CSS を汚さないよう scoped <style> を同梱 (WP content 内で完結)。
+    """
+    if not players:
+        return ""
+    rows: List[str] = []
+    for rank, p in enumerate(players, 1):
+        name = _html.escape(str(p.get("name", "")))
+        url = _html.escape(str(p.get("url", "")))
+        count = int(p.get("count", 0))
+        badge = str(p.get("badge", ""))
+        stat = _html.escape(str(p.get("stat_line", "")))
+        stat_html = f'<span class="ysn-fp-stat">{stat}</span>' if stat else ""
+        name_html = (
+            f'<a class="ysn-fp-name" href="{url}">{name}</a>' if url
+            else f'<span class="ysn-fp-name">{name}</span>'
+        )
+        rows.append(
+            '<li class="ysn-fp-row">'
+            f'<span class="ysn-fp-rank">{rank}</span>'
+            f'{name_html}'
+            f'<span class="ysn-fp-count">{count}件</span>{badge}'
+            f'{stat_html}'
+            '</li>'
+        )
+    return (
+        '<section class="ysn-fp-section">\n'
+        '<style>\n'
+        '.ysn-fp-section{margin:18px 0;}\n'
+        '.ysn-fp-list{list-style:none;margin:0;padding:0;}\n'
+        '.ysn-fp-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;'
+        'padding:10px 12px;border:1px solid #eee;border-left:4px solid #FF6F00;'
+        'border-radius:8px;margin:6px 0;background:#fafafa;}\n'
+        '.ysn-fp-rank{font-weight:700;color:#FF6F00;min-width:1.4em;text-align:center;}\n'
+        '.ysn-fp-name{font-weight:700;color:#111;text-decoration:none;}\n'
+        '.ysn-fp-name:hover{text-decoration:underline;}\n'
+        '.ysn-fp-count{font-size:.82em;color:#666;}\n'
+        '.ysn-fp-stat{font-size:.85em;color:#333;background:#fff;border:1px solid #eee;'
+        'border-radius:6px;padding:2px 8px;margin-left:auto;}\n'
+        '</style>\n'
+        '  <h2 class="ysn-h2"><span class="ysn-h2-icon">⭐</span>注目選手（今日）</h2>\n'
+        '  <ul class="ysn-fp-list">' + "".join(rows) + '</ul>\n'
+        '</section>'
+    )
+
+
 def render_section(level_label: str, oembed_blocks: List[str]) -> str:
     if not oembed_blocks:
         return ""
@@ -345,6 +395,7 @@ def render_page_html(
     updated_at_iso: str = "",
     posts_for_listing: Optional[List[Dict]] = None,
     coverage_start_iso: str = "",
+    featured_html: str = "",
 ) -> str:
     parts = [_CSS]
     if page_url and updated_at_iso:
@@ -358,6 +409,8 @@ def render_page_html(
     parts.append(render_hero(page_label, updated_at, stats))
     if trend_html:
         parts.append(trend_html)
+    if featured_html:
+        parts.append(featured_html)
     for label, blocks in sections:
         s = render_section(label, blocks)
         if s:
@@ -379,6 +432,7 @@ def render_full_html(
     updated_at_iso: str = "",
     posts_for_listing: Optional[List[Dict]] = None,
     coverage_start_iso: str = "",
+    featured_html: str = "",
 ) -> str:
     return render_page_html(
         page_label or "",
@@ -391,4 +445,5 @@ def render_full_html(
         updated_at_iso=updated_at_iso,
         posts_for_listing=posts_for_listing,
         coverage_start_iso=coverage_start_iso,
+        featured_html=featured_html,
     )

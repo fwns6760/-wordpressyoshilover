@@ -1860,6 +1860,17 @@ def build_video_radar_candidates(
             # comment_fn 未設定 (key 無し / test) のみ graceful に template fallback。
             post_text = _x_buzz_event_comment(p.get("text", ""), player, phase=phase_label)
         fact = _x_buzz_player_fact(db_path, player) if player else ""
+        # 2026-06-03: ブランディング投稿に「おしゃれ系」ヨシラバー画像を1枚添付 (style B、
+        # 選手写真+ブランドパネル、 データなし、 ¥0=PILローカル合成)。 user 確定。
+        # env X_POST_BRAND_IMAGE_ENABLED=0 で無効化可。 失敗時は画像なしで続行 (graceful)。
+        brand_img = b""
+        if player and (os.environ.get("X_POST_BRAND_IMAGE_ENABLED", "1").strip() not in {"0", "false", "no"}):
+            try:
+                from src import x_post_brand_image as _bimg
+                brand_img = _bimg.build_brand_image_for_player(player) or b""
+            except Exception as _bexc:  # noqa: BLE001
+                LOG.info("brand image skip player=%s: %r", player, _bexc)
+                brand_img = b""
         draft = "\n".join([
             f"【引用RT候補: {tag}】",
             f"検出選手: {player or '(なし)'}",
@@ -1885,6 +1896,8 @@ def build_video_radar_candidates(
             quote_url=url,
             why_now="X バズ投稿 (引用RT、 native)",
             source_material_type="x_buzz_post",
+            image_bytes=brand_img,
+            image_alt_text=(f"ヨシラバー {player}" if player else "ヨシラバー"),
         ))
     LOG.info("x_buzz: built %d candidates (from X posts via RSSHub)", len(out))
     return out

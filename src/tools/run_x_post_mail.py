@@ -1485,6 +1485,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     _configure_logging()
     args = _parse_args(argv)
 
+    # per-fire LLM 生成上限 (2026-06-03 コスト削減)。1 fire の全 Gemini 経路
+    # (buzz/reply/引用RT/queue/roundup) 合算の生成回数を上限で抑える。0 = 無制限。
+    # 既定 8 (実測 8-18/fire → 高い回を 8 に抑制、 出力 1-7 候補は維持余地)。
+    if _xbg is not None:
+        _llm_budget_max = _resolve_int_env("X_POST_MAIL_MAX_LLM_PER_RUN", 8, min_value=0)
+        _xbg.set_llm_budget(_llm_budget_max)
+        LOG.info("per-fire LLM budget set: max=%s", _llm_budget_max or "unlimited")
+
     recipients = _resolve_recipients(args.to)
     if not recipients and not args.dry_run:
         LOG.error("No recipients configured (MAIL_BRIDGE_TO env or --to). Aborting.")

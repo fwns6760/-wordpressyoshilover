@@ -243,3 +243,23 @@ class BuildXPostFromArticleInfoPlayerDedupTests(unittest.TestCase):
             except RuntimeError:
                 pass
         self.assertTrue(reached["v"], "team-wide postgame must not be skipped by cap")
+
+
+class LLMBudgetTests(unittest.TestCase):
+    """2026-06-03: per-fire LLM 生成上限 (コスト削減)。"""
+
+    def test_budget_blocks_after_max(self):
+        xbg.set_llm_budget(2)
+        xbg._llm_budget_guard("t")   # used 1
+        xbg._llm_budget_guard("t")   # used 2
+        with self.assertRaises(RuntimeError):
+            xbg._llm_budget_guard("t")  # exceeds
+        xbg.set_llm_budget(None)  # reset to unlimited for other tests
+
+    def test_budget_zero_or_none_unlimited(self):
+        xbg.set_llm_budget(0)
+        for _ in range(50):
+            xbg._llm_budget_guard("t")  # never raises
+        xbg.set_llm_budget(None)
+        for _ in range(50):
+            xbg._llm_budget_guard("t")

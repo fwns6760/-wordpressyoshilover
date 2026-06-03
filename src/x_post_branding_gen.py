@@ -43,6 +43,27 @@ from src.x_post_mail_lane import (
 # 両方 free tier、 paid 切替禁止 lock 維持)。 変数 / metric 名は履歴互換のため温存。
 _GEMMA_BRANDING_METRIC = "GEMMA_BRANDING"
 
+# per-run LLM 予算 (per-fire 生成上限、 2026-06-03 コスト削減)。
+# 1 fire で全経路 (buzz/reply/引用RT/queue/roundup) 合算の Gemini 生成回数を
+# 上限で抑える。run_x_post_mail が run 開始時に set_llm_budget() で設定。
+# job は fire ごとに新プロセス → module state は自然 reset (cross-run 漏れ無し)。
+_LLM_BUDGET = {"used": 0, "max": None}
+
+
+def set_llm_budget(max_calls: Optional[int]) -> None:
+    """1 run の Gemini 生成呼び出し上限を設定。None / 0 / 負 = 無制限。"""
+    _LLM_BUDGET["used"] = 0
+    _LLM_BUDGET["max"] = max_calls if (max_calls and max_calls > 0) else None
+
+
+def _llm_budget_guard(label: str = "") -> None:
+    """generate_content 直前に呼ぶ。予算超過なら RuntimeError を上げ (各サイトの
+    既存 try/except が graceful skip)、未超過なら使用量を 1 消費する。"""
+    m = _LLM_BUDGET["max"]
+    if m is not None and _LLM_BUDGET["used"] >= m:
+        raise RuntimeError(f"llm_budget_exhausted used={_LLM_BUDGET['used']} max={m} site={label}")
+    _LLM_BUDGET["used"] += 1
+
 # X インプ向上 Phase 5 (2026-05-27): source URL → 公式 X @ handle のマッピング。
 # 投稿候補本文に「(出典 @hochi_giants)」 を末尾付与することで、 公式 / 媒体の
 # 引用 RT / リプライ流入を狙う。 X intent や手動投稿に対する attribution として機能。
@@ -1095,6 +1116,7 @@ def build_team_roundup_candidate(
     try:
         from google import genai
         client = genai.Client(api_key=gemini_api_key)
+        _llm_budget_guard("roundup")
         response = client.models.generate_content(
             model=model_id,
             contents=prompt,
@@ -1206,6 +1228,7 @@ def build_quote_rt_comment(
             "コメント:",
         ])
         try:
+            _llm_budget_guard("quote_rt")
             response = client.models.generate_content(
                 model=model_id, contents=prompt, config={"temperature": temperature},
             )
@@ -1470,6 +1493,7 @@ def build_gemma_branding_candidate(
     try:
         from google import genai
         client = genai.Client(api_key=gemini_api_key)
+        _llm_budget_guard("gemma_branding")
         response = client.models.generate_content(
             model=model_id,
             contents=prompt,
@@ -1952,6 +1976,7 @@ def build_x_post_from_article_info(
         from google import genai
 
         client = genai.Client(api_key=gemini_api_key)
+        _llm_budget_guard("article_info")
         response = client.models.generate_content(
             model=resolved_model_id,
             contents=prompt,

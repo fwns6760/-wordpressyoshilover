@@ -1491,9 +1491,9 @@ def render_player_counting_split_article(
 | 選手 | **{top_player}**(巨人) |
 | 指標 | {metric_label_jp}({split_label_jp}) = **{top_value}** |
 | 順位 | リーグ {giants_rank} 位 |
-| split | {split_field}={split_value}({split_label_jp}) |
+| 区分 | {split_label_jp} |
 | データ元 | NPB 公式 box score(https://npb.jp/) |
-| 集計式 | SUM({stat_col}) over {table} WHERE games.{split_field}=:{split_value} |
+| 集計式 | {split_label_jp}の試合に絞って選手ごとに集計 |
 | 集計期間 | {scope_label} |
 """
     body_html = markdown_to_html(body_md)
@@ -1781,7 +1781,7 @@ def render_batter_vs_lr_split_article(
     )
     scope_label = title_guard.period_label_for_scope(scope) or scope
     title = (
-        f"【巨人データ】{top_player} {hand_label}打率 {top_avg} "
+        f"【巨人データ】{top_player} {hand_label}打率 {top_avg:.3f} "
         f"でセ・リーグ {giants_rank} 位 ({scope_label})"
     )
     title = title_guard.ensure_title_period(title, scope=scope).title
@@ -1817,8 +1817,8 @@ def render_batter_vs_lr_split_article(
 巨人 {top_player} の **{hand_label}** での打率は **{top_avg:.3f}**
 ({scope_label} 時点)、 セ・リーグ内 **{giants_rank} 位**。
 
-※ 415 MVP: 「打者の全 PA = 対戦相手 starter と仮定」 する approx。
-リリーフ投手対戦は本集計に含まれず、 starter のみで calculation。
+※ 対右投手・対左投手の打率は、各打席をその試合の先発投手との対戦とみなした概算値です。
+中継ぎ投手との対戦は含みません。
 
 ## リーグ TOP {top_n}({hand_label})
 
@@ -1832,9 +1832,9 @@ def render_batter_vs_lr_split_article(
 | 指標 | 打率({hand_label}) = **{top_avg:.3f}** |
 | 打数 | {top_giants['ab']} |
 | 順位 | リーグ {giants_rank} 位 |
-| 集計式 | SUM(H) / SUM(AB) over 対戦 starter throws='{pitcher_hand}' games |
-| データ元 | NPB 公式 box score(https://npb.jp/) + roster (投/throws) |
-| approx | starter 限定 (reliever 対戦は集計外) |
+| 集計式 | 安打数 ÷ 打数({hand_label}先発の試合) |
+| データ元 | NPB 公式 box score(https://npb.jp/) |
+| 注記 | 各打席を先発投手との対戦とみなした概算(中継ぎは対象外) |
 | 集計期間 | {scope_label} |
 """
     body_html = markdown_to_html(body_md)
@@ -2112,9 +2112,9 @@ def render_pitcher_inning_split_article(
 | 選手 | **{top_player}**(巨人) |
 | 指標 | 防御率({role_label}) = **{top_era}** |
 | 順位 | リーグ {giants_rank} 位 |
-| 登板 inning | start_inning = {inning} ({role_label}) |
+| 登板回 | {inning}回({role_label}) |
 | データ元 | NPB 公式 box score(https://npb.jp/) |
-| 集計式 | SUM(ER) * 9 / SUM(IP) over pitching_logs WHERE start_inning={inning} |
+| 集計式 | 自責点 × 9 ÷ 投球回({role_label}の登板) |
 | 集計期間 | {scope_label} |
 """
     body_html = markdown_to_html(body_md)
@@ -2392,9 +2392,9 @@ def render_player_counting_by_slot_band_article(
 | 選手 | **{top_player}**(巨人) |
 | 指標 | {metric_label_jp}({band_label}) = **{top_value}** |
 | 順位 | リーグ {giants_rank} 位 |
-| 打順 band | {band_label}(打順 {','.join(str(s) for s in _slots)} 番) |
+| 打順 | {band_label}(打順 {','.join(str(s) for s in _slots)} 番) |
 | データ元 | NPB 公式 box score(https://npb.jp/) |
-| 集計式 | SUM({stat_col}) over batting_logs WHERE slot_order IN ({','.join(str(s) for s in _slots)}) AND is_sub=0 |
+| 集計式 | {band_label}で先発出場した試合の成績を選手ごとに合計 |
 | 集計期間 | {scope_label} |
 """
     body_html = markdown_to_html(body_md)
@@ -2652,7 +2652,7 @@ def render_player_counting_article(
 | 指標 | {metric_label_jp} = **{top_value}** |
 | 順位 | リーグ {giants_rank} 位 |
 | データ元 | NPB 公式 box score(https://npb.jp/) |
-| 集計式 | SUM({stat_col}) over {table} (期間内全試合) |
+| 集計式 | 期間内全試合の{metric_label_jp}を選手ごとに合計 |
 | 集計期間 | {scope_label}({period_range}) |
 """
     body_html = markdown_to_html(body_md)
@@ -3070,7 +3070,7 @@ def render_giants_batter_runner_state_article(
 | 順位 | 巨人内 1 位 |
 | 走者状況 | {state_label} |
 | データ元 | NPB 公式 playbyplay(https://npb.jp/) |
-| 集計式 | runner_state = '{runner_state}' 時の per-PA 打点を batter ごと SUM |
+| 集計式 | {state_label}の場面での打点を選手ごとに合計 |
 | 集計期間 | {scope_label} |
 """
     body_html = markdown_to_html(body_md)
@@ -3342,9 +3342,9 @@ def render_giants_batter_count_filter_article(
 | 選手 | **{top_player}**(巨人) |
 | 指標 | {label} 打席数 = **{top_pa}** (打点 {top_rbi}) |
 | 順位 | 巨人内 1 位 |
-| カウント条件 | {label} ({count_filter}) |
+| カウント条件 | {label} |
 | データ元 | NPB 公式 playbyplay(https://npb.jp/) |
-| 集計式 | count filter '{count_filter}' を満たす per-PA を batter ごと数える |
+| 集計式 | {label}の打席を選手ごとに集計 |
 | 集計期間 | {scope_label} |
 """
     body_html = markdown_to_html(body_md)
@@ -3583,7 +3583,7 @@ def render_giants_batter_vs_opponent_article(
 | 順位 | 巨人内 1 位 |
 | 対戦相手 | {opponent} |
 | データ元 | NPB 公式 playbyplay(https://npb.jp/) |
-| 集計式 | games.opponent = '{opponent}' の 巨人攻撃 PA を batter ごと SUM(打点) |
+| 集計式 | {opponent}戦での打点を選手ごとに合計 |
 | 集計期間 | {scope_label} |
 """
     body_html = markdown_to_html(body_md)
@@ -3880,9 +3880,9 @@ def render_giants_batter_vs_lr_strict_article(
 | 選手 | **{top_player}**(巨人) |
 | 指標 | 対{hand_label} (per-PA) 打点 = **{top_rbi}** ({top_pa} 打席 / {top_hits} 安打) |
 | 順位 | 巨人内 1 位 |
-| 対戦投手 | {hand_label} (throws='{pitcher_hand}') |
-| データ元 | NPB 公式 playbyplay(https://npb.jp/) + npb_pitcher_throws.json |
-| 集計式 | at_bat_details で per-PA current_pitcher → throws_map['{pitcher_hand}'] filter → batter SUM(打点) |
+| 対戦投手 | {hand_label} |
+| データ元 | NPB 公式 playbyplay(https://npb.jp/) |
+| 集計式 | {hand_label}との対戦での打点を選手ごとに合計 |
 | 集計期間 | {scope_label} |
 | 精度 | per-PA strict (reliever 含む全 PA で対戦投手 throws を解決、 (a) approx の starter 限定を超える) |
 """

@@ -646,7 +646,7 @@ def render_team_run_diff_article(
 | 球団 | **巨人** |
 | 指標 | 得失点差 = **{sign}{diff}** |
 | データ元 | NPB 公式 box score(https://npb.jp/) |
-| 集計式 | SUM(giants_score) - SUM(opp_score) over games |
+| 集計式 | 得点の合計 − 失点の合計 |
 | 集計期間 | {scope_label}({start} 〜 {end}) |
 | 注 | 中止 / 中断試合は含めない |
 """
@@ -778,7 +778,7 @@ def render_team_vs_opponent_article(
 | 勝敗 | {w}-{l}-{t} |
 | 勝率 | {win_pct_str} |
 | データ元 | NPB 公式 box score(https://npb.jp/) |
-| 集計式 | games WHERE opponent='{opponent}' の result count |
+| 集計式 | {opponent}戦の勝敗を集計 |
 | 集計期間 | {scope_label}({start} 〜 {end}) |
 """
     body_html = rap.markdown_to_html(body_md)

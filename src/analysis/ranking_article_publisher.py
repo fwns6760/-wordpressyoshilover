@@ -716,6 +716,25 @@ def _ensure_player_tag(wp_client_obj: Any, player_name: str) -> int:
         return 0
 
 
+def _ranking_voice_closer(giants_rank: Any) -> str:
+    """ランキング記事ひとことの締め(ヨシラバーVoice、順位で文面を変えて定型化を避ける)。
+
+    数字根拠×辛口示唆×巨人愛、優等生締め(〜してほしいね)NG。順位帯で分岐するため
+    全記事同一文にならない。空文字なら締めなし。
+    """
+    try:
+        r = int(giants_rank)
+    except (TypeError, ValueError):
+        return ""
+    if r == 1:
+        return "リーグ1位。今の巨人で一番計算できる数字だ。"
+    if r <= 3:
+        return "リーグ上位。これを続けられるかが本物との分かれ目。"
+    if r <= 6:
+        return "リーグ中位。巨人としてはもう一段上げたいところ。"
+    return ""
+
+
 def _resolve_publish_status(*, focus_team_code: Optional[str] = None) -> str:
     """Return WP status for newly generated data-insight articles.
 
@@ -1481,6 +1500,8 @@ def render_player_counting_split_article(
 巨人 {top_player} の **{split_label_jp}** での {metric_label_jp} は **{top_value}**
 ({scope_label} 時点)、 セ・リーグ内 **{giants_rank} 位**。
 
+{_ranking_voice_closer(giants_rank)}
+
 ## リーグ TOP {top_n}({split_label_jp})
 
 {table_md}
@@ -1818,6 +1839,8 @@ def render_batter_vs_lr_split_article(
 巨人 {top_player} の **{hand_label}** での打率は **{contrast_title.fmt_stat(top_avg, 'AVG')}**
 ({scope_label} 時点)、 セ・リーグ内 **{giants_rank} 位**。
 
+{_ranking_voice_closer(giants_rank)}
+
 ※ 対右投手・対左投手の打率は、各打席をその試合の先発投手との対戦とみなした概算値です。
 中継ぎ投手との対戦は含みません。
 
@@ -2102,6 +2125,8 @@ def render_pitcher_inning_split_article(
 巨人 {top_player} の **{role_label}** での防御率は **{top_era}**
 ({scope_label} 時点)、 セ・リーグ内 **{giants_rank} 位**。
 
+{_ranking_voice_closer(giants_rank)}
+
 ## リーグ TOP {top_n}({role_label})
 
 {table_md}
@@ -2382,6 +2407,8 @@ def render_player_counting_by_slot_band_article(
 巨人 {top_player} の **{band_label}** での {metric_label_jp} は **{top_value}**
 ({scope_label} 時点)、 セ・リーグ内 **{giants_rank} 位**。
 
+{_ranking_voice_closer(giants_rank)}
+
 ## リーグ TOP {top_n}({band_label})
 
 {table_md}
@@ -2640,6 +2667,8 @@ def render_player_counting_article(
 
 巨人 {top_player} の {metric_label_jp} は **{top_value}** ({scope_label} 時点)、
 セ・リーグ内 **{giants_rank} 位**。
+
+{_ranking_voice_closer(giants_rank)}
 
 ## リーグ TOP {top_n}
 
@@ -3867,7 +3896,7 @@ def render_giants_batter_vs_lr_strict_article(
 
 ## ひとこと
 
-巨人 {top_player} の **対{hand_label}** (per-PA strict) 打点は **{top_rbi}**
+巨人 {top_player} の **対{hand_label}** 打点は **{top_rbi}**
 ({scope_label}、 {top_pa} 打席 / {top_hits} 安打)、 巨人内 **1 位**。
 
 ## 巨人内 TOP {top_n}(対{hand_label} per-PA 打点)

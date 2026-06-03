@@ -1321,11 +1321,23 @@ def render_hr_pace_article(
     title = (
         f"【巨人データ】{player}、本塁打ペース 143 試合換算 約 {magnitude:.1f} 本（直近30日）"
     )
+    # baseline_value = "30日HR={hrs} 試合={games}"(detector 由来)から実数を復元し、
+    # データ section を 1 行 → 複数行に enrich(thin 記事化を防ぐ。§16-D)。
+    import re as _re
+    baseline = str(candidate_row.get("baseline_value") or "")
+    hr_m = _re.search(r"HR=(\d+)", baseline)
+    g_m = _re.search(r"試合=(\d+)", baseline)
+    hrs = hr_m.group(1) if hr_m else None
+    games = g_m.group(1) if g_m else None
     headline = (
-        f"{player} の直近 30 日 本塁打ペースをフルシーズン換算すると、約 **{magnitude:.1f} 本**"
-        f" のペースです。"
+        f"{player} は直近 30 日で本塁打を量産中。このまま続けば 143 試合換算で約 **{magnitude:.1f} 本** ペース。"
+        f"巨人の長打力を担えるか、ここからが本番だ。"
     )
-    detail = [f"換算ベース: {current or '直近 30 日 本塁打ペース × 143 試合'}"]
+    detail = []
+    if hrs and games:
+        detail.append(f"直近30日の本塁打: {hrs} 本")
+        detail.append(f"出場試合: {games} 試合")
+    detail.append(f"143試合フルシーズン換算: 約 {magnitude:.1f} 本")
     return _render_simple_data_article(
         title=title,
         headline=headline,

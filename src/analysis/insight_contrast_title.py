@@ -42,6 +42,32 @@ _LOWER_BETTER_BANDS = (
 )
 
 
+# 日本語野球慣習で先頭 0 を落とす率指標(.360 表記)。ERA/WHIP/FIP は先頭桁を残す。
+_RATE_STRIP_METRICS = {
+    "AVG", "OBP", "SLG", "OPS", "BABIP",
+    "打率", "出塁率", "長打率",
+}
+
+
+def fmt_stat(value: Optional[float], metric_name: Optional[str] = None, *, strip: Optional[bool] = None) -> str:
+    """率指標を 3 桁表示。打率系は先頭 0 を落として ``.360``、ERA 系は ``2.340`` のまま。
+
+    ``strip`` を明示するとそれを優先。未指定なら ``metric_name`` が打率系かで判定。
+    """
+    if value is None:
+        return "-"
+    s = f"{float(value):.3f}"
+    if strip is None:
+        nm = str(metric_name or "")
+        strip = nm in _RATE_STRIP_METRICS or nm.upper() in _RATE_STRIP_METRICS
+    if strip:
+        if s.startswith("0."):
+            s = s[1:]
+        elif s.startswith("-0."):
+            s = "-" + s[2:]
+    return s
+
+
 def _fmt(value: float) -> str:
     """Match the body's ``{:.3f}`` rate-stat formatting for title/body parity."""
     return f"{value:.3f}"
@@ -88,8 +114,9 @@ def build_contrast_title(
     if label is None:
         return None
 
-    value_s = _fmt(player_value)
-    mean_s = _fmt(league_mean)
+    # 打率系(higher-is-better の率)は .360 表記、ERA 系(lower-is-better)は据え置き。
+    value_s = fmt_stat(player_value, strip=not lower_is_better)
+    mean_s = fmt_stat(league_mean, strip=not lower_is_better)
 
     if lower_is_better:
         # "倍" reads oddly for lower-is-better metrics; use a direct comparison.

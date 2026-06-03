@@ -504,7 +504,7 @@ def _render_unified_article(
     rank_num: Any = "-"  # title 用クリーン順位(「4位」)。body は rank_str で「4/80」を維持。
     if player_rank_info:
         v = player_rank_info["value"]
-        value_str = f"{v:.3f}" if v is not None else "-"
+        value_str = contrast_title.fmt_stat(v, metric_name) if v is not None else "-"
         rank_str = f"{player_rank_info['rank']}/{player_rank_info['total']}"
         rank_num = player_rank_info["rank"]
 
@@ -1360,12 +1360,12 @@ def render_hidden_below_qualifier_article(
     # ranking 表 wire は規定未到達者の Central League ranking infra が無いため
     # 対象外、 title refit のみ。
     title = (
-        f"【巨人データ】{player}、OPS {magnitude:.3f} の好調"
+        f"【巨人データ】{player}、OPS {contrast_title.fmt_stat(magnitude, 'OPS')} の好調"
         f"（規定打席未満・今シーズン）"
     )
     headline = (
-        f"{player} は規定打席にはまだ届いていないものの、OPS が **{magnitude:.3f}**"
-        f" と league 上位帯の数字です。"
+        f"{player} は規定打席にはまだ届いていないものの、OPS が **{contrast_title.fmt_stat(magnitude, 'OPS')}**"
+        f" とリーグ上位帯の数字です。"
     )
     detail = [
         f"現状値: {current or '-'}",

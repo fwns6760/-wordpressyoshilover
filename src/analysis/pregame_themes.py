@@ -123,7 +123,10 @@ def _query_opponent_pitcher_matchup(
     parts = [f"対 {opponent_pitcher_canonical} (直近 {games} 試合)"]
     if ab is not None and ab > 0:
         avg = (h or 0) / ab
-        parts.append(f"巨人打撃 AB{ab} H{h or 0} ({avg:.3f}) RBI{rbi or 0}")
+        avg_s = f"{avg:.3f}"
+        if avg_s.startswith("0."):  # 打率は .360 表記(先頭0除去)
+            avg_s = avg_s[1:]
+        parts.append(f"巨人打撃 AB{ab} H{h or 0} ({avg_s}) RBI{rbi or 0}")
     return " ".join(parts)
 
 

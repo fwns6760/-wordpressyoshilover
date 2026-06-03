@@ -12,8 +12,8 @@ def test_higher_better_strong_ratio_emits_top_label():
         league_mean=0.701, scope_label="直近30日",
     )
     assert t is not None
-    assert "OPS0.912" in t
-    assert "リーグ平均0.701" in t
+    assert "OPS.912" in t  # 打率系は .360 表記(先頭0除去)
+    assert "リーグ平均.701" in t
     assert "1.3倍" in t
     assert "リーグ屈指" in t
     assert t.startswith("【巨人データ】坂本勇人、")
@@ -82,7 +82,7 @@ def test_title_never_exceeds_cap():
     if t is not None:
         assert len(t) <= MAX_TITLE_LEN
         # when over cap the label is dropped but the literal numbers remain
-        assert "リーグ平均0.700" in t
+        assert "リーグ平均.700" in t  # 打率系は .360 表記(先頭0除去)
 
 
 def test_no_ellipsis_truncation():

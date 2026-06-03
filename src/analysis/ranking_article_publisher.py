@@ -41,6 +41,7 @@ from src.analysis import insight_article_generator  # noqa: E402
 from src.analysis import insight_atbats_parser  # noqa: E402
 from src.analysis import insight_dedup_gate as dedup_gate  # noqa: E402
 from src.analysis import insight_quality_gate as quality_gate  # noqa: E402
+from src.analysis import insight_contrast_title as contrast_title  # noqa: E402
 from src.analysis import insight_title_guard as title_guard  # noqa: E402
 from src.analysis.insight_article_generator import (  # noqa: E402
     ArticleContext,
@@ -1781,7 +1782,7 @@ def render_batter_vs_lr_split_article(
     )
     scope_label = title_guard.period_label_for_scope(scope) or scope
     title = (
-        f"【巨人データ】{top_player} {hand_label}打率 {top_avg:.3f} "
+        f"【巨人データ】{top_player} {hand_label}打率 {contrast_title.fmt_stat(top_avg, 'AVG')} "
         f"でセ・リーグ {giants_rank} 位 ({scope_label})"
     )
     title = title_guard.ensure_title_period(title, scope=scope).title
@@ -1807,14 +1808,14 @@ def render_batter_vs_lr_split_article(
         team_disp = _TEAM_LABEL_JP.get(top_giants.get("team", ""), "?")
         r_disp = f'<span style="color:#c0392b"><strong>{giants_rank}</strong></span>'
         p_disp = f'<span style="color:#c0392b"><strong>{top_player} ★</strong></span>'
-        v_disp = f'<span style="color:#c0392b"><strong>{top_avg:.3f}</strong></span>'
+        v_disp = f'<span style="color:#c0392b"><strong>{contrast_title.fmt_stat(top_avg, 'AVG')}</strong></span>'
         table_lines.append(f"| {r_disp} | {p_disp} | {team_disp} | {v_disp} | {top_giants['ab']} |")
     table_md = "\n".join(table_lines)
     body_md = f"""# {title}
 
 ## ひとこと
 
-巨人 {top_player} の **{hand_label}** での打率は **{top_avg:.3f}**
+巨人 {top_player} の **{hand_label}** での打率は **{contrast_title.fmt_stat(top_avg, 'AVG')}**
 ({scope_label} 時点)、 セ・リーグ内 **{giants_rank} 位**。
 
 ※ 対右投手・対左投手の打率は、各打席をその試合の先発投手との対戦とみなした概算値です。
@@ -1829,7 +1830,7 @@ def render_batter_vs_lr_split_article(
 | 項目 | 内容 |
 |---|---|
 | 選手 | **{top_player}**(巨人) |
-| 指標 | 打率({hand_label}) = **{top_avg:.3f}** |
+| 指標 | 打率({hand_label}) = **{contrast_title.fmt_stat(top_avg, 'AVG')}** |
 | 打数 | {top_giants['ab']} |
 | 順位 | リーグ {giants_rank} 位 |
 | 集計式 | 安打数 ÷ 打数({hand_label}先発の試合) |

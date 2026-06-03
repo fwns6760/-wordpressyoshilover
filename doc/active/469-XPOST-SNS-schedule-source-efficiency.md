@@ -115,6 +115,6 @@
    - `x-post-mail-flush-game-1` = `0,15,30,45 19-21`(試合中15分・narrowing窓と整合・12発火・3ソース)
    - `x-post-mail-flush-game-2` / `-lineup` = PAUSED(集約)
    - 合計 35→**20発火/日**(うち12は3ソース)
-- step4 ⏭ SNSページ `FIRE_SLOTS`=10,12,15-22 + rss_fetcher トリガ整合(Gemini不使用=¥増なし)
+- step4 ✅ **DONE** SNSページ `FIRE_SLOTS`=10,12,15-22(commit 3edb27c3、fetcher rev 00511-hps、/health 200、traffic 100%)
 - step5 ⏭ giants-weekday-daytime(昼間毎時11)間引き + giants-realtime重複集約
 - step6 ⏭ publish-notice / guarded-publish 過密集約(§11、idempotency確認後)

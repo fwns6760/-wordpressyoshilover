@@ -706,7 +706,8 @@
         "V9 (9年連続日本一) の中心",
         "監督として日本一2回"
       ],
-      "kana": "ながしま しげお"
+      "kana": "ながしま しげお",
+      "birth": "1936-02-20"
     },
     "王貞治": {
       "slug": "oh-sadaharu",
@@ -726,7 +727,8 @@
         "本塁打王15回・三冠王2回・MVP9回",
         "国民栄誉賞 第1号"
       ],
-      "kana": "おう さだはる"
+      "kana": "おう さだはる",
+      "birth": "1940-05-20"
     },
     "川上哲治": {
       "slug": "kawakami-tetsuharu",
@@ -746,7 +748,8 @@
         "首位打者5回・MVP3回",
         "監督としてV9達成"
       ],
-      "kana": "かわかみ てつはる"
+      "kana": "かわかみ てつはる",
+      "birth": "1920-03-23"
     },
     "金田正一": {
       "slug": "kaneda-masaichi",
@@ -766,7 +769,8 @@
         "通算4490奪三振 (歴代1位)",
         "沢村賞3回"
       ],
-      "kana": "かねだ まさいち"
+      "kana": "かねだ まさいち",
+      "birth": "1933-08-01"
     },
     "原辰徳": {
       "slug": "hara-tatsunori",
@@ -785,7 +789,8 @@
         "新人王・MVP・打点王",
         "監督として日本一3回・リーグ優勝多数"
       ],
-      "kana": "はら たつのり"
+      "kana": "はら たつのり",
+      "birth": "1958-07-22"
     },
     "高橋由伸": {
       "slug": "takahashi-yoshinobu",
@@ -804,7 +809,8 @@
         "ベストナイン・ゴールデングラブ複数回",
         "引退後 巨人監督"
       ],
-      "kana": "たかはし よしのぶ"
+      "kana": "たかはし よしのぶ",
+      "birth": "1975-04-03"
     },
     "松井秀喜": {
       "slug": "matsui-hideki",
@@ -827,7 +833,8 @@
         "2009 ワールドシリーズMVP (日本人初)",
         "国民栄誉賞"
       ],
-      "kana": "まつい ひでき"
+      "kana": "まつい ひでき",
+      "birth": "1974-06-12"
     },
     "中畑清": {
       "slug": "nakahata-kiyoshi",
@@ -846,7 +853,8 @@
         "ベストナイン4回・ゴールデングラブ4回",
         "引退後 DeNA 監督"
       ],
-      "kana": "なかはた きよし"
+      "kana": "なかはた きよし",
+      "birth": "1954-01-06"
     },
     "篠塚和典": {
       "slug": "shinozuka-kazunori",
@@ -865,7 +873,8 @@
         "首位打者2回",
         "華麗な二塁守備でゴールデングラブ複数回"
       ],
-      "kana": "しのづか としお(かずのり)"
+      "kana": "しのづか としお(かずのり)",
+      "birth": "1957-07-16"
     },
     "小笠原道大": {
       "slug": "ogasawara-michihiro",
@@ -884,7 +893,8 @@
         "両リーグでMVP獲得 (史上唯一)",
         "首位打者2回・ガッツ"
       ],
-      "kana": "おがさわら みちひろ"
+      "kana": "おがさわら みちひろ",
+      "birth": "1973-10-25"
     },
     "村田修一": {
       "slug": "murata-shuichi",
@@ -903,7 +913,8 @@
         "本塁打王2回",
         "三塁守備でゴールデングラブ複数回"
       ],
-      "kana": "むらた しゅういち"
+      "kana": "むらた しゅういち",
+      "birth": "1980-12-28"
     },
     "アレックス・ラミレス": {
       "slug": "alex-ramirez",
@@ -921,7 +932,8 @@
         "外国人選手初の通算2000安打",
         "MVP2回・打点王4回",
         "引退後 DeNA 監督"
-      ]
+      ],
+      "birth": "1974-10-03"
     },
     "斎藤雅樹": {
       "slug": "saito-masaki",
@@ -939,7 +951,8 @@
         "通算180勝・ミスター完投",
         "沢村賞3回・最多勝5回",
         "11連続完投勝利"
-      ]
+      ],
+      "birth": "1965-02-18"
     },
     "江川卓": {
       "slug": "egawa-suguru",
@@ -958,7 +971,8 @@
         "最多勝2回・MVP",
         "9年間で135勝の高勝率"
       ],
-      "kana": "えがわ すぐる"
+      "kana": "えがわ すぐる",
+      "birth": "1955-05-25"
     },
     "桑田真澄": {
       "slug": "kuwata-masumi",
@@ -980,7 +994,8 @@
         "沢村賞・MVP・最優秀防御率2回",
         "投手ゴールデングラブ8回"
       ],
-      "kana": "くわた ますみ"
+      "kana": "くわた ますみ",
+      "birth": "1968-04-01"
     },
     "槙原寛己": {
       "slug": "makihara-hiromi",
@@ -999,7 +1014,8 @@
         "1994年 完全試合 (平成唯一の達成者)",
         "新人王・先発三本柱の一角"
       ],
-      "kana": "まきはら ひろみ"
+      "kana": "まきはら ひろみ",
+      "birth": "1963-08-11"
     },
     "上原浩治": {
       "slug": "uehara-koji",
@@ -1023,7 +1039,8 @@
         "2013 ワールドシリーズ胴上げ投手 (日本人初)",
         "日米通算100勝100セーブ100ホールド (史上初)"
       ],
-      "kana": "うえはら こうじ"
+      "kana": "うえはら こうじ",
+      "birth": "1975-04-03"
     },
     "堀内恒夫": {
       "slug": "horiuchi-tsuneo",
@@ -1043,7 +1060,8 @@
         "V9の中心・新人で16勝2敗",
         "引退後 巨人監督"
       ],
-      "kana": "ほりうち つねお"
+      "kana": "ほりうち つねお",
+      "birth": "1948-01-16"
     },
     "菅野智之": {
       "slug": "sugano-tomoyuki",
@@ -1065,7 +1083,8 @@
         "沢村賞2回・最多勝4回・最優秀防御率4回",
         "MVP3回 (セ・リーグ投手最多)"
       ],
-      "kana": "すがの ともゆき"
+      "kana": "すがの ともゆき",
+      "birth": "1989-10-11"
     },
     "長野久義": {
       "slug": "chono-hisayoshi",
@@ -1085,7 +1104,8 @@
         "ベストナイン3回・ゴールデングラブ3回",
         "全12球団から本塁打"
       ],
-      "kana": "ちょうの ひさよし"
+      "kana": "ちょうの ひさよし",
+      "birth": "1984-12-06"
     },
     "岡本和真": {
       "slug": "okamoto-kazuma",
@@ -1107,7 +1127,8 @@
         "通算248本塁打",
         "第20代主将・22歳で.300-30本-100打点"
       ],
-      "kana": "おかもと かずま"
+      "kana": "おかもと かずま",
+      "birth": "1996-06-30"
     },
     "趙成珉": {
       "type": "pitcher",
@@ -1117,6 +1138,7 @@
         "era": "2.84",
         "k": 127
       },
+      "birth": "1973-04-05",
       "source_url": "https://ja.wikipedia.org/wiki/%E8%B6%99%E6%88%90%E7%8F%89",
       "slug": "cho-sungmin",
       "years": "1996-2002",
@@ -1131,6 +1153,7 @@
         "era": "6.28",
         "k": 28
       },
+      "birth": "1970-03-01",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%84%AD%E7%8F%89%E5%8F%B0",
       "slug": "chung-mintae",
       "years": "2001-2002",
@@ -1145,6 +1168,7 @@
         "era": "3.06",
         "k": 484
       },
+      "birth": "1994-03-08",
       "source_url": "https://ja.wikipedia.org/wiki/C.C.%E3%83%A1%E3%83%AB%E3%82%BB%E3%83%87%E3%82%B9",
       "slug": "mercedes",
       "years": "2017-2022",
@@ -1159,6 +1183,7 @@
         "era": "4.70",
         "k": 44
       },
+      "birth": "1972-03-28",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%84%AD%E7%8F%89%E5%93%B2",
       "slug": "jung-minchul",
       "years": "2000-2001",
@@ -1173,6 +1198,7 @@
         "era": "12.60",
         "k": 4
       },
+      "birth": "1991-01-02",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%9E%97%E7%BE%BF%E8%B1%AA",
       "slug": "lin",
       "years": "2006-2013",
@@ -1188,6 +1214,7 @@
         "hr": 69,
         "rbi": 475
       },
+      "birth": "1976-07-11",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%9B%B8%E5%B7%9D%E4%BA%AE%E4%BA%8C",
       "slug": "aikawa-ryoji",
       "years": "2015-2017",
@@ -1202,6 +1229,7 @@
         "era": "2.88",
         "k": 17
       },
+      "birth": "1984-01-30",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%BC%9A%E7%94%B0%E6%9C%89%E5%BF%97",
       "slug": "aida-yushi",
       "years": "2005-2009",
@@ -1231,6 +1259,7 @@
         "era": "4.56",
         "k": 285
       },
+      "birth": "1981-11-26",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%9D%92%E6%9C%A8%E9%AB%98%E5%BA%83",
       "slug": "aoki-takahiro",
       "years": "2013-2015",
@@ -1259,6 +1288,7 @@
         "era": "2.95",
         "k": 25
       },
+      "birth": "1934-09-07",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%9D%92%E6%9C%A8%E7%A8%94",
       "slug": "aoki-minoru",
       "years": "1955-1957",
@@ -1273,6 +1303,7 @@
         "era": "2.33",
         "k": 29
       },
+      "birth": "1912-09-01",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%9D%92%E6%9F%B4%E6%86%B2%E4%B8%80",
       "slug": "aoshiba-kenichi",
       "years": "1934-1938",
@@ -1288,6 +1319,7 @@
         "hr": 265,
         "rbi": 1034
       },
+      "birth": "1924-11-22",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%9D%92%E7%94%B0%E6%98%87",
       "slug": "aota-noboru",
       "years": "1942-1952",
@@ -1302,6 +1334,7 @@
         "era": "3.86",
         "k": 2
       },
+      "birth": "1958-05-20",
       "source_url": "https://ja.wikipedia.org/wiki/%E8%B5%A4%E5%B6%BA%E8%B3%A2%E5%8B%87",
       "slug": "akamine-kenyuu",
       "years": "1976-1983",
@@ -1316,6 +1349,7 @@
         "era": "3.34",
         "k": 763
       },
+      "birth": "1935-06-30",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%A7%8B%E6%9C%AC%E7%A5%90%E4%BD%9C",
       "slug": "akimoto-yusaku",
       "years": "1972-1973",
@@ -1330,6 +1364,7 @@
         "era": "4.09",
         "k": 378
       },
+      "birth": "1984-01-01",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%9C%9D%E4%BA%95%E7%A7%80%E6%A8%B9",
       "slug": "asai-hideki",
       "years": "2010-2012",
@@ -1344,6 +1379,7 @@
         "era": "3.39",
         "k": 1043
       },
+      "birth": "1949-02-22",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%B5%85%E9%87%8E%E5%95%93%E5%8F%B8",
       "slug": "asano-keishi",
       "years": "1977-1984",
@@ -1358,6 +1394,7 @@
         "era": "6.56",
         "k": 25
       },
+      "birth": "1984-07-28",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%98%BF%E5%8D%97%E5%BE%B9",
       "slug": "anan-toru",
       "years": "2013-2016",
@@ -1373,6 +1410,7 @@
         "hr": 5,
         "rbi": 14
       },
+      "birth": "1948-01-01",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%98%BF%E9%87%8E%E9%89%B1%E4%BA%8C",
       "slug": "ano-kouji",
       "years": "1969-1976",
@@ -1388,6 +1426,7 @@
         "hr": 0,
         "rbi": 0
       },
+      "birth": "1972-07-05",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%98%BF%E9%83%A8%E8%8C%82%E6%A8%B9",
       "slug": "abe-shigeki",
       "years": "1990-1997",
@@ -1403,6 +1442,7 @@
         "hr": 406,
         "rbi": 1285
       },
+      "birth": "1979-03-20",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%98%BF%E9%83%A8%E6%85%8E%E4%B9%8B%E5%8A%A9",
       "slug": "abe-shinnosuke",
       "years": "2000-2019",
@@ -1418,6 +1458,7 @@
         "hr": 7,
         "rbi": 108
       },
+      "birth": "1947-03-27",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%98%BF%E9%83%A8%E6%88%90%E5%AE%8F",
       "slug": "abe-narihiro",
       "years": "1971-1972",
@@ -1432,6 +1473,7 @@
         "era": "2.11",
         "k": 189
       },
+      "birth": "1987-07-06",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%9B%A8%E5%AE%AE%E6%95%AC",
       "slug": "amemiya-takashi",
       "years": "2011-2014",
@@ -1447,6 +1489,7 @@
         "hr": 128,
         "rbi": 430
       },
+      "birth": "1951-09-27",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%9C%89%E7%94%B0%E4%BF%AE%E4%B8%89",
       "slug": "arita-syuzo",
       "years": "1986-1989",
@@ -1461,6 +1504,7 @@
         "era": "2.25",
         "k": 3
       },
+      "birth": "1955-04-10",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%9C%89%E7%94%B0%E4%BA%8C%E4%B8%89%E7%94%B7",
       "slug": "arita-fumio",
       "years": "1980-1984",
@@ -1476,6 +1520,7 @@
         "hr": 118,
         "rbi": 474
       },
+      "birth": "1952-04-05",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%B7%A1%E5%8F%A3%E6%86%B2%E6%B2%BB",
       "slug": "awaguchi-kenji",
       "years": "1970-1985",
@@ -1490,6 +1535,7 @@
         "era": "3.71",
         "k": 985
       },
+      "birth": "1964-07-28",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%98%BF%E6%B3%A2%E9%87%8E%E7%A7%80%E5%B9%B8",
       "slug": "awano-hideyuki",
       "years": "1995-1997",
@@ -1504,6 +1550,7 @@
         "era": "2.93",
         "k": 201
       },
+      "birth": "1939-10-26",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%AE%89%E8%97%A4%E5%85%83%E5%8D%9A",
       "slug": "ando-motohiro",
       "years": "1965-1965",
@@ -1519,6 +1566,7 @@
         "hr": 0,
         "rbi": 0
       },
+      "birth": "1930-08-10",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%BA%94%E5%8D%81%E5%B5%90%E8%BE%B0%E9%A6%AC",
       "slug": "igarashi-tatsuma",
       "years": "1949-1950",
@@ -1534,6 +1582,7 @@
         "hr": 13,
         "rbi": 76
       },
+      "birth": "1939-05-14",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%B1%A0%E6%B2%A2%E7%BE%A9%E8%A1%8C",
       "slug": "ikezawa-yoshiyuki",
       "years": "1962-1966",
@@ -1548,6 +1597,7 @@
         "era": "3.95",
         "k": 58
       },
+      "birth": "1992-11-29",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%B1%A0%E7%94%B0%E9%A7%BF",
       "slug": "ikeda-shun",
       "years": "2016-2020",
@@ -1562,6 +1612,7 @@
         "era": "3.46",
         "k": 1435
       },
+      "birth": "1939-05-06",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%9F%B3%E4%BA%95%E8%8C%82%E9%9B%84",
       "slug": "ishii-shigeo",
       "years": "1979-1979",
@@ -1577,6 +1628,7 @@
         "hr": 162,
         "rbi": 536
       },
+      "birth": "1964-06-21",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%9F%B3%E4%BA%95%E6%B5%A9%E9%83%8E",
       "slug": "ishii-hiroo",
       "years": "1997-1999",
@@ -1592,6 +1644,7 @@
         "hr": 3,
         "rbi": 15
       },
+      "birth": "1960-09-04",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%9F%B3%E4%BA%95%E9%9B%85%E5%8D%9A",
       "slug": "ishii-masahiro",
       "years": "1982-1990",
@@ -1607,6 +1660,7 @@
         "hr": 30,
         "rbi": 212
       },
+      "birth": "1978-07-12",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%9F%B3%E4%BA%95%E7%BE%A9%E4%BA%BA",
       "slug": "ishii-yoshihito",
       "years": "2012-2014",
@@ -1622,6 +1676,7 @@
         "hr": 17,
         "rbi": 80
       },
+      "birth": "1993-04-27",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%9F%B3%E5%B7%9D%E6%85%8E%E5%90%BE",
       "slug": "ishikawa-shingo",
       "years": "2017-2023",
@@ -1636,6 +1691,7 @@
         "era": "9.00",
         "k": 3
       },
+      "birth": "1981-03-28",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%9F%B3%E5%B7%9D%E9%9B%85%E5%AE%9F",
       "slug": "ishikawa-masami",
       "years": "2001-2003",
@@ -1650,6 +1706,7 @@
         "era": "3.44",
         "k": 594
       },
+      "birth": "1970-07-13",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%9F%B3%E6%AF%9B%E5%8D%9A%E5%8F%B2",
       "slug": "ishige-hiroshi",
       "years": "1988-1996",
@@ -1679,6 +1736,7 @@
         "hr": 53,
         "rbi": 280
       },
+      "birth": "1948-08-12",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%9F%B3%E6%B8%A1%E8%8C%82",
       "slug": "ishiwata-shigeru",
       "years": "1983-1985",
@@ -1693,6 +1751,7 @@
         "era": "2.71",
         "k": 14
       },
+      "birth": "1920-06-10",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%B3%89%E7%94%B0%E5%96%9C%E7%BE%A9",
       "slug": "izumida-kiyoshi",
       "years": "1940-1942",
@@ -1707,6 +1766,7 @@
         "era": "2.76",
         "k": 253
       },
+      "birth": "1991-01-11",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%B8%80%E5%B2%A1%E7%AB%9C%E5%8F%B8",
       "slug": "ichioka-ryuji",
       "years": "2011-2013",
@@ -1722,6 +1782,7 @@
         "hr": 8,
         "rbi": 47
       },
+      "birth": "1985-05-09",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B8%82%E5%B7%9D%E5%8F%8B%E4%B9%9F",
       "slug": "ichikawa-tomoya",
       "years": "2009-2013",
@@ -1737,6 +1798,7 @@
         "hr": 79,
         "rbi": 336
       },
+      "birth": "1971-04-19",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%BA%95%E5%87%BA%E7%AB%9C%E4%B9%9F",
       "slug": "ide-tatsuya",
       "years": "2004-2004",
@@ -1752,6 +1814,7 @@
         "hr": 19,
         "rbi": 142
       },
+      "birth": "1916-12-28",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%BC%8A%E8%97%A4%E5%81%A5%E5%A4%AA%E9%83%8E",
       "slug": "itoh-kentaro",
       "years": "1936-1943",
@@ -1766,6 +1829,7 @@
         "era": "3.84",
         "k": 591
       },
+      "birth": "1963-10-21",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%BC%8A%E8%97%A4%E9%9A%86%E5%81%89",
       "slug": "itoh-takahide",
       "years": "1999-1999",
@@ -1781,6 +1845,7 @@
         "hr": 0,
         "rbi": 0
       },
+      "birth": "1969-09-13",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%BC%8A%E8%97%A4%E5%8D%9A%E5%BA%B7",
       "slug": "itoh-hiroyasu",
       "years": "1991-1995",
@@ -1795,6 +1860,7 @@
         "era": "1.04",
         "k": 13
       },
+      "birth": "1997-01-14",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%BC%8A%E8%97%A4%E5%84%AA%E8%BC%94",
       "slug": "itoh-yusuke",
       "years": "2020-2024",
@@ -1809,6 +1875,7 @@
         "era": "2.87",
         "k": 1093
       },
+      "birth": "1933-12-30",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%BC%8A%E8%97%A4%E8%8A%B3%E6%98%8E",
       "slug": "itoh-yoshiaki",
       "years": "1959-1965",
@@ -1823,6 +1890,7 @@
         "era": "5.65",
         "k": 83
       },
+      "birth": "1988-12-08",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%B9%BE%E7%9C%9F%E5%A4%A7",
       "slug": "inui-masahiro",
       "years": "2016-2017",
@@ -1838,6 +1906,7 @@
         "hr": 0,
         "rbi": 13
       },
+      "birth": "1983-11-23",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%BA%95%E9%87%8E%E5%8D%93",
       "slug": "ino-suguru",
       "years": "2013-2014",
@@ -1852,6 +1921,7 @@
         "era": "3.98",
         "k": 640
       },
+      "birth": "1986-05-01",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%BA%95%E7%B4%8D%E7%BF%94%E4%B8%80",
       "slug": "inoh-shoichi",
       "years": "2021-2022",
@@ -1867,6 +1937,7 @@
         "hr": 16,
         "rbi": 60
       },
+      "birth": "1966-07-12",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%BA%95%E4%B8%8A%E7%9C%9F%E4%BA%8C",
       "slug": "inoue-shinji",
       "years": "1984-1998",
@@ -1882,6 +1953,7 @@
         "hr": 0,
         "rbi": 0
       },
+      "birth": "1931-01-10",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%BA%95%E4%B8%8A%E5%AE%89%E9%9B%84",
       "slug": "inoue-yasuo",
       "years": "1953-1955",
@@ -1897,6 +1969,7 @@
         "hr": 0,
         "rbi": 14
       },
+      "birth": "1918-06-02",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%BA%95%E4%B8%8A%E5%BA%B7%E5%BC%98",
       "slug": "inoue-yasuhiro",
       "years": "1937-1939",
@@ -1911,6 +1984,7 @@
         "era": "3.39",
         "k": 612
       },
+      "birth": "1941-09-27",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%BA%95%E4%B8%8A%E5%96%84%E5%A4%AB",
       "slug": "inoue-yoshio",
       "years": "1968-1968",
@@ -1926,6 +2000,7 @@
         "hr": 2,
         "rbi": 14
       },
+      "birth": "1926-03-25",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%BA%95%E4%B8%8A%E5%98%89%E5%BC%98",
       "slug": "inoue-yoshihiro",
       "years": "1949-1949",
@@ -1941,6 +2016,7 @@
         "hr": 12,
         "rbi": 58
       },
+      "birth": "1949-01-18",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%BC%8A%E5%8E%9F%E6%98%A5%E6%A8%B9",
       "slug": "ihara-haruki",
       "years": "1976-1977",
@@ -1956,6 +2032,7 @@
         "hr": 56,
         "rbi": 510
       },
+      "birth": "1975-05-12",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%BA%95%E7%AB%AF%E5%BC%98%E5%92%8C",
       "slug": "ibata-hirokazu",
       "years": "2014-2015",
@@ -1971,6 +2048,7 @@
         "hr": 0,
         "rbi": 0
       },
+      "birth": "1926-01-02",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%BB%8A%E6%B3%89%E5%8B%9D%E7%BE%A9",
       "slug": "imaizumi-katsuyoshi",
       "years": "1944-1946",
@@ -1985,6 +2063,7 @@
         "era": "4.25",
         "k": 422
       },
+      "birth": "1967-06-03",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%85%A5%E6%9D%A5%E6%99%BA",
       "slug": "iriki-satoshi",
       "years": "1999-2000",
@@ -1999,6 +2078,7 @@
         "era": "3.77",
         "k": 674
       },
+      "birth": "1972-08-13",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%85%A5%E6%9D%A5%E7%A5%90%E4%BD%9C",
       "slug": "iriki-yusaku",
       "years": "1996-2003",
@@ -2013,6 +2093,7 @@
         "era": "2.33",
         "k": 151
       },
+      "birth": "1928-10-15",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%85%A5%E8%B0%B7%E6%AD%A3%E5%85%B8",
       "slug": "iritani-masanori",
       "years": "1952-1956",
@@ -2027,6 +2108,7 @@
         "hr": 0,
         "rbi": 0
       },
+      "birth": "1941-07-10",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B2%A9%E5%B0%BE%E5%AD%9D%E5%B9%B8",
       "slug": "iwao-takayuki",
       "years": "1960-1962",
@@ -2041,6 +2123,7 @@
         "era": "3.25",
         "k": 1175
       },
+      "birth": "1981-04-12",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B2%A9%E9%9A%88%E4%B9%85%E5%BF%97",
       "slug": "iwakuma-hisashi",
       "years": "2019-2020",
@@ -2056,6 +2139,7 @@
         "hr": 0,
         "rbi": 0
       },
+      "birth": "1943-08-03",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B2%A9%E9%83%B7%E6%B3%B0%E5%8D%9A",
       "slug": "iwagoh-yasuhiro",
       "years": "1962-1963",
@@ -2071,6 +2155,7 @@
         "hr": 9,
         "rbi": 94
       },
+      "birth": "1931-12-09",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B2%A9%E4%B8%8B%E5%AE%88%E9%81%93",
       "slug": "iwashita-morimichi",
       "years": "1949-1958",
@@ -2086,6 +2171,7 @@
         "hr": 2,
         "rbi": 10
       },
+      "birth": "1981-04-14",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B2%A9%E8%88%98%E5%AD%A6",
       "slug": "iwadate-manabu",
       "years": "2003-2009",
@@ -2101,6 +2187,7 @@
         "hr": 47,
         "rbi": 274
       },
+      "birth": "1921-01-14",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B2%A9%E6%9C%AC%E7%AB%A0",
       "slug": "iwamoto-akira",
       "years": "1938-1939",
@@ -2116,6 +2203,7 @@
         "hr": 1,
         "rbi": 5
       },
+      "birth": "1942-01-27",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B2%A9%E6%9C%AC%E9%80%B2",
       "slug": "iwamoto-susumu",
       "years": "1961-1962",
@@ -2131,6 +2219,7 @@
         "hr": 49,
         "rbi": 295
       },
+      "birth": "1930-04-20",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B2%A9%E6%9C%AC%E5%A0%AF",
       "slug": "iwamoto-takashi",
       "years": "1953-1958",
@@ -2146,6 +2235,7 @@
         "hr": 0,
         "rbi": 7
       },
+      "birth": "1984-06-05",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%9A%A0%E5%96%84%E6%99%BA%E4%B9%9F",
       "slug": "inzen-tomoya",
       "years": "2006-2015",
@@ -2161,6 +2251,7 @@
         "hr": 5,
         "rbi": 18
       },
+      "birth": "1962-08-03",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%B8%8A%E7%94%B0%E5%92%8C%E6%98%8E",
       "slug": "ueda-kazuaki",
       "years": "1984-1993",
@@ -2176,6 +2267,7 @@
         "hr": 15,
         "rbi": 89
       },
+      "birth": "1946-03-16",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%B8%8A%E7%94%B0%E6%AD%A6%E5%8F%B8",
       "slug": "ueda-takeshi",
       "years": "1964-1978",
@@ -2190,6 +2282,7 @@
         "era": "13.50",
         "k": 1
       },
+      "birth": "1948-07-15",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%B8%8A%E8%BE%BB%E4%BF%AE",
       "slug": "uetsuji-osamu",
       "years": "1977-1980",
@@ -2204,6 +2297,7 @@
         "era": "0.00",
         "k": 0
       },
+      "birth": "1982-12-09",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%B8%8A%E9%87%8E%E8%B2%B4%E4%B9%85",
       "slug": "ueno-takahisa",
       "years": "2006-2011",
@@ -2218,6 +2312,7 @@
         "era": "0.00",
         "k": 1
       },
+      "birth": "1978-12-25",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%B8%8A%E9%87%8E%E8%A3%95%E5%B9%B3",
       "slug": "ueno-yuhei",
       "years": "2000-2004",
@@ -2233,6 +2328,7 @@
         "hr": 19,
         "rbi": 93
       },
+      "birth": "1993-06-04",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%AE%87%E4%BD%90%E8%A6%8B%E7%9C%9F%E5%90%BE",
       "slug": "usami-shingo",
       "years": "2015-2019",
@@ -2247,6 +2343,7 @@
         "era": "4.50",
         "k": 6
       },
+      "birth": "1947-08-05",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%AE%87%E4%BD%90%E7%BE%8E%E6%95%8F%E6%99%B4",
       "slug": "usami-toshiharu",
       "years": "1965-1970",
@@ -2261,6 +2358,7 @@
         "era": "5.50",
         "k": 30
       },
+      "birth": "1974-05-14",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%86%85%E8%96%97%E7%9B%B4%E6%A8%B9",
       "slug": "uchizono-naoki",
       "years": "1999-2001",
@@ -2276,6 +2374,7 @@
         "hr": 0,
         "rbi": 0
       },
+      "birth": "1946-07-13",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%86%85%E7%94%B0%E5%9C%AD%E4%B8%80",
       "slug": "uchida-keiichi",
       "years": "1971-1972",
@@ -2291,6 +2390,7 @@
         "hr": 2,
         "rbi": 66
       },
+      "birth": "1917-03-12",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%86%85%E5%A0%80%E4%BF%9D",
       "slug": "uchibori-tamotsu",
       "years": "1935-1951",
@@ -2320,6 +2420,7 @@
         "era": "3.24",
         "k": 1519
       },
+      "birth": "1982-04-29",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%86%85%E6%B5%B7%E5%93%B2%E4%B9%9F",
       "slug": "utsumi-tetsuya",
       "years": "2003-2018",
@@ -2334,6 +2435,7 @@
         "era": "3.60",
         "k": 2
       },
+      "birth": "1978-05-02",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%AE%87%E9%87%8E%E9%9B%85%E7%BE%8E",
       "slug": "uno-masami",
       "years": "1996-1998",
@@ -2349,6 +2451,7 @@
         "hr": 30,
         "rbi": 292
       },
+      "birth": "1917-04-10",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%AE%87%E9%87%8E%E5%85%89%E9%9B%84",
       "slug": "uno-mitsuo",
       "years": "1947-1953",
@@ -2364,6 +2467,7 @@
         "hr": 3,
         "rbi": 71
       },
+      "birth": "1947-02-01",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%A2%85%E7%94%B0%E9%82%A6%E4%B8%89",
       "slug": "umeda-kunizoh",
       "years": "1968-1970",
@@ -2378,6 +2482,7 @@
         "era": "27.00",
         "k": 0
       },
+      "birth": "1989-05-22",
       "source_url": "https://ja.wikipedia.org/wiki/%E3%82%A6%E3%83%BC%E3%82%B4",
       "slug": "kanabushi-hugo",
       "years": "2016-2016",
@@ -2392,6 +2497,7 @@
         "era": "4.10",
         "k": 37
       },
+      "birth": "1986-11-14",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%B1%9F%E6%9F%84%E5%AD%90%E8%A3%95%E6%A8%B9",
       "slug": "egarashi-yuki",
       "years": "2011-2017",
@@ -2421,6 +2527,7 @@
         "era": "4.48",
         "k": 82
       },
+      "birth": "1947-10-31",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%B1%9F%E7%94%B0%E5%B9%B8%E4%B8%80",
       "slug": "eda-koichi",
       "years": "1980-1980",
@@ -2436,6 +2543,7 @@
         "hr": 364,
         "rbi": 1020
       },
+      "birth": "1970-04-15",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%B1%9F%E8%97%A4%E6%99%BA",
       "slug": "etoh-akira",
       "years": "2000-2005",
@@ -2451,6 +2559,7 @@
         "hr": 12,
         "rbi": 65
       },
+      "birth": "1942-04-29",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%B1%9F%E8%97%A4%E7%9C%81%E4%B8%89",
       "slug": "etoh-syozoh",
       "years": "1965-1968",
@@ -2465,6 +2574,7 @@
         "era": "4.71",
         "k": 98
       },
+      "birth": "1972-05-22",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%A6%8E%E5%BA%B7%E5%BC%98",
       "slug": "enoki-yasuhiro",
       "years": "1998-1999",
@@ -2480,6 +2590,7 @@
         "hr": 1,
         "rbi": 4
       },
+      "birth": "1952-07-25",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%A4%A7%E5%8C%97%E6%95%8F%E5%8D%9A",
       "slug": "ohkita-toshihiro",
       "years": "1970-1979",
@@ -2495,6 +2606,7 @@
         "hr": 41,
         "rbi": 100
       },
+      "birth": "1967-02-01",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%A4%A7%E4%B9%85%E4%BF%9D%E5%8D%9A%E5%85%83",
       "slug": "ohkubo-hiromoto",
       "years": "1992-1995",
@@ -2509,6 +2621,7 @@
         "era": "5.40",
         "k": 9
       },
+      "birth": "1942-03-24",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%A4%A7%E7%86%8A%E4%BC%B8%E8%A1%8C",
       "slug": "okuma-nobuyuki",
       "years": "1961-1965",
@@ -2524,6 +2637,7 @@
         "hr": 1,
         "rbi": 3
       },
+      "birth": "1980-03-08",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%A4%A7%E9%A0%88%E8%B3%80%E5%85%81",
       "slug": "ohsuga-makoto",
       "years": "2001-2006",
@@ -2539,6 +2653,7 @@
         "hr": 2,
         "rbi": 21
       },
+      "birth": "1948-02-17",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%A4%A7%E9%9A%85%E6%AD%A3%E4%BA%BA",
       "slug": "ohsumi-masato",
       "years": "1967-1970",
@@ -2553,6 +2668,7 @@
         "era": "4.05",
         "k": 604
       },
+      "birth": "1952-01-23",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%A4%AA%E7%94%B0%E5%B9%B8%E5%8F%B8",
       "slug": "ohta-koji",
       "years": "1983-1983",
@@ -2568,6 +2684,7 @@
         "hr": 84,
         "rbi": 343
       },
+      "birth": "1990-06-09",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%A4%A7%E7%94%B0%E6%B3%B0%E7%A4%BA",
       "slug": "ohta-taishi",
       "years": "2008-2016",
@@ -2582,6 +2699,7 @@
         "era": "3.77",
         "k": 1186
       },
+      "birth": "1983-05-21",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%A4%A7%E7%AB%B9%E5%AF%9B",
       "slug": "ohtake-kan",
       "years": "2014-2021",
@@ -2597,6 +2715,7 @@
         "hr": 1,
         "rbi": 4
       },
+      "birth": "1951-07-31",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%A4%A7%E7%AB%B9%E6%86%B2%E6%B2%BB",
       "slug": "ohtake-kenji",
       "years": "1969-1976",
@@ -2611,6 +2730,7 @@
         "era": "3.81",
         "k": 135
       },
+      "birth": "1988-07-26",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%A4%A7%E7%AB%B9%E7%A7%80%E7%BE%A9",
       "slug": "ohtake-hideyoshi",
       "years": "2015-2017",
@@ -2640,6 +2760,7 @@
         "hr": 18,
         "rbi": 108
       },
+      "birth": "1971-07-02",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%A4%A7%E8%A5%BF%E5%B4%87%E4%B9%8B",
       "slug": "ohnishi-takayuki",
       "years": "2006-2006",
@@ -2655,6 +2776,7 @@
         "hr": 0,
         "rbi": 0
       },
+      "birth": "1971-09-16",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%A4%A7%E9%87%8E%E5%92%8C%E5%93%89",
       "slug": "ohno-kazuya",
       "years": "1989-1999",
@@ -2670,6 +2792,7 @@
         "hr": 27,
         "rbi": 116
       },
+      "birth": "1961-02-02",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%A4%A7%E9%87%8E%E9%9B%84%E6%AC%A1",
       "slug": "ohno-yuuji",
       "years": "1992-1993",
@@ -2685,6 +2808,7 @@
         "hr": 1,
         "rbi": 2
       },
+      "birth": "1973-04-03",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%A4%A7%E9%87%8E%E5%80%AB",
       "slug": "ohno-rin",
       "years": "1995-2000",
@@ -2700,6 +2824,7 @@
         "hr": 8,
         "rbi": 74
       },
+      "birth": "1941-03-25",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%A4%A7%E6%A9%8B%E5%8B%B2",
       "slug": "ohashi-isao",
       "years": "1963-1968",
@@ -2715,6 +2840,7 @@
         "hr": 0,
         "rbi": 1
       },
+      "birth": "1921-06-25",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%A4%A7%E6%A9%8B%E6%99%BA%E5%B9%B2",
       "slug": "ohhashi-tomohisa",
       "years": "1940-1940",
@@ -2730,6 +2856,7 @@
         "hr": 60,
         "rbi": 415
       },
+      "birth": "1969-10-28",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%A4%A7%E9%81%93%E5%85%B8%E5%98%89",
       "slug": "ohmichi-noriyoshi",
       "years": "2007-2010",
@@ -2745,6 +2872,7 @@
         "hr": 127,
         "rbi": 655
       },
+      "birth": "1976-06-01",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%A4%A7%E6%9D%91%E4%B8%89%E9%83%8E",
       "slug": "ohmura-saburo",
       "years": "2011-2011",
@@ -2760,6 +2888,7 @@
         "hr": 5,
         "rbi": 16
       },
+      "birth": "1967-08-04",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%A4%A7%E6%A3%AE%E5%89%9B",
       "slug": "ohmori-takeshi",
       "years": "1989-1998",
@@ -2775,6 +2904,7 @@
         "hr": 0,
         "rbi": 2
       },
+      "birth": "1923-04-16",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%A4%A7%E5%B1%8B%E5%85%8B%E5%B7%B1",
       "slug": "ohya-katsumi",
       "years": "1943-1943",
@@ -2790,6 +2920,7 @@
         "hr": 0,
         "rbi": 0
       },
+      "birth": "1990-08-31",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%A4%A7%E7%B4%AF%E9%80%B2",
       "slug": "ohrui-susumu",
       "years": "2012-2016",
@@ -2805,6 +2936,7 @@
         "hr": 63,
         "rbi": 384
       },
+      "birth": "1961-06-07",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B2%A1%E5%B4%8E%E9%83%81",
       "slug": "okazaki-kaoru",
       "years": "1979-1996",
@@ -2819,6 +2951,7 @@
         "era": "3.19",
         "k": 760
       },
+      "birth": "1975-12-25",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B2%A1%E5%B3%B6%E7%A7%80%E6%A8%B9",
       "slug": "okajima-hideki",
       "years": "1993-2005",
@@ -2833,6 +2966,7 @@
         "era": "4.24",
         "k": 210
       },
+      "birth": "1968-01-21",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B2%A1%E7%94%B0%E5%B1%95%E5%92%8C",
       "slug": "okada-hirokazu",
       "years": "1992-1999",
@@ -2848,6 +2982,7 @@
         "hr": 37,
         "rbi": 183
       },
+      "birth": "1956-08-16",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B2%A1%E6%9C%AC%E5%9C%AD%E5%8F%B3",
       "slug": "okamoto-keisuke",
       "years": "1987-1987",
@@ -2862,6 +2997,7 @@
         "era": "3.55",
         "k": 58
       },
+      "birth": "1960-08-17",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B2%A1%E6%9C%AC%E5%85%89",
       "slug": "okamoto-koh",
       "years": "1982-1988",
@@ -2877,6 +3013,7 @@
         "hr": 17,
         "rbi": 130
       },
+      "birth": "1968-09-02",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%B7%92%E6%96%B9%E8%80%95%E4%B8%80",
       "slug": "ogata-kouichi",
       "years": "1986-1998",
@@ -2891,6 +3028,7 @@
         "era": "3.33",
         "k": 389
       },
+      "birth": "1922-04-23",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%B7%92%E6%96%B9%E4%BF%8A%E6%98%8E",
       "slug": "ogata-toshiaki",
       "years": "1947-1949",
@@ -2905,6 +3043,7 @@
         "era": "3.83",
         "k": 252
       },
+      "birth": "1947-02-01",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B0%8F%E5%B7%9D%E9%82%A6%E5%92%8C",
       "slug": "ogawa-kunikazu",
       "years": "1972-1977",
@@ -2919,6 +3058,7 @@
         "era": "4.29",
         "k": 88
       },
+      "birth": "1952-07-28",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B0%8F%E5%B7%9D%E6%B8%85%E4%B8%80",
       "slug": "ogawa-seiichi",
       "years": "1980-1981",
@@ -2933,6 +3073,7 @@
         "era": "9.00",
         "k": 2
       },
+      "birth": "1965-12-19",
       "source_url": "https://ja.wikipedia.org/wiki/%E8%8D%BB%E5%8E%9F%E6%BA%80",
       "slug": "ogiwara-mitsuru",
       "years": "1987-1992",
@@ -2948,6 +3089,7 @@
         "hr": 2,
         "rbi": 24
       },
+      "birth": "1995-05-26",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%A5%A5%E6%9D%91%E5%B1%95%E5%BE%81",
       "slug": "okumura-nobuyuki",
       "years": "2013-2014",
@@ -2963,6 +3105,7 @@
         "hr": 0,
         "rbi": 3
       },
+      "birth": "1940-02-19",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%B7%A1%E6%B2%B3%E5%BC%98",
       "slug": "ogoh-hiroshi",
       "years": "1962-1974",
@@ -2978,6 +3121,7 @@
         "hr": 0,
         "rbi": 0
       },
+      "birth": "1967-01-14",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B0%8F%E6%B2%A2%E6%B5%A9%E4%B8%80",
       "slug": "ozawa-kouichi",
       "years": "1987-1994",
@@ -2993,6 +3137,7 @@
         "hr": 18,
         "rbi": 259
       },
+      "birth": "1976-07-24",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B0%8F%E9%96%A2%E7%AB%9C%E4%B9%9F",
       "slug": "ozeki-tatsuya",
       "years": "2006-2007",
@@ -3008,6 +3153,7 @@
         "hr": 2,
         "rbi": 45
       },
+      "birth": "1977-03-15",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B0%8F%E7%94%B0%E5%B9%B8%E5%B9%B3",
       "slug": "oda-kouhei",
       "years": "1997-2005",
@@ -3023,6 +3169,7 @@
         "hr": 6,
         "rbi": 17
       },
+      "birth": "1979-04-12",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B0%8F%E7%94%B0%E5%B6%8B%E6%AD%A3%E9%82%A6",
       "slug": "odajima-masakuni",
       "years": "2007-2010",
@@ -3037,6 +3184,7 @@
         "era": "3.05",
         "k": 263
       },
+      "birth": "1983-06-30",
       "source_url": "https://ja.wikipedia.org/wiki/%E8%B6%8A%E6%99%BA%E5%A4%A7%E7%A5%90",
       "slug": "ochi-daisuke",
       "years": "2005-2014",
@@ -3052,6 +3200,7 @@
         "hr": 510,
         "rbi": 1564
       },
+      "birth": "1953-12-09",
       "source_url": "https://ja.wikipedia.org/wiki/%E8%90%BD%E5%90%88%E5%8D%9A%E6%BA%80",
       "slug": "ochiai-hiromitsu",
       "years": "1994-1996",
@@ -3066,6 +3215,7 @@
         "era": "6.68",
         "k": 19
       },
+      "birth": "1998-06-11",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B0%8F%E6%B2%BC%E5%81%A5%E5%A4%AA",
       "slug": "onuma-kenta",
       "years": "2023-2024",
@@ -3080,6 +3230,7 @@
         "era": "4.57",
         "k": 17
       },
+      "birth": "1978-05-06",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B0%8F%E9%87%8E%E5%89%9B",
       "slug": "ono-go",
       "years": "2000-2002",
@@ -3094,6 +3245,7 @@
         "era": "4.33",
         "k": 74
       },
+      "birth": "1987-04-05",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B0%8F%E9%87%8E%E6%B7%B3%E5%B9%B3",
       "slug": "ono-jyunpei",
       "years": "2009-2013",
@@ -3108,6 +3260,7 @@
         "era": "5.77",
         "k": 65
       },
+      "birth": "1976-08-23",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B0%8F%E9%87%8E%E4%BB%81",
       "slug": "ono-hitoshi",
       "years": "1996-2002",
@@ -3122,6 +3275,7 @@
         "era": "4.73",
         "k": 235
       },
+      "birth": "1951-08-18",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B0%8F%E4%BF%A3%E9%80%B2",
       "slug": "omata-susumu",
       "years": "1976-1979",
@@ -3137,6 +3291,7 @@
         "hr": 11,
         "rbi": 79
       },
+      "birth": "2000-02-14",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%8A%98%E4%B8%8B%E5%85%89%E8%BC%9D",
       "slug": "orishita-koki",
       "years": "2017-2020",
@@ -3151,6 +3306,7 @@
         "era": "4.57",
         "k": 20
       },
+      "birth": "1972-08-08",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%B9%94%E7%94%B0%E6%B7%B3%E5%93%89",
       "slug": "orita-jyunya",
       "years": "1994-1999",
@@ -3165,6 +3321,7 @@
         "era": "3.45",
         "k": 324
       },
+      "birth": "1990-09-23",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%8D%B5%E8%B0%B7%E9%99%BD%E5%B9%B3",
       "slug": "kagiya-yohei",
       "years": "2019-2023",
@@ -3194,6 +3351,7 @@
         "era": "4.34",
         "k": 116
       },
+      "birth": "1991-01-09",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%AC%A0%E5%8E%9F%E5%B0%86%E7%94%9F",
       "slug": "kasahara-shoki",
       "years": "2008-2015",
@@ -3223,6 +3381,7 @@
         "hr": 25,
         "rbi": 85
       },
+      "birth": "1953-03-22",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%AC%A0%E9%96%93%E9%9B%84%E4%BA%8C",
       "slug": "kasama-yuuji",
       "years": "1976-1979",
@@ -3238,6 +3397,7 @@
         "hr": 18,
         "rbi": 125
       },
+      "birth": "1925-05-20",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%9F%8F%E6%9E%9D%E6%96%87%E6%B2%BB",
       "slug": "kashiwaeda-bunji",
       "years": "1953-1956",
@@ -3252,6 +3412,7 @@
         "era": "3.91",
         "k": 115
       },
+      "birth": "1971-05-14",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%9F%8F%E7%94%B0%E8%B2%B4%E5%8F%B2",
       "slug": "kashiwada-takashi",
       "years": "1989-2005",
@@ -3267,6 +3428,7 @@
         "hr": 126,
         "rbi": 441
       },
+      "birth": "1988-08-28",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%A2%B6%E8%B0%B7%E9%9A%86%E5%B9%B8",
       "slug": "kajitani-takayuki",
       "years": "2021-2024",
@@ -3282,6 +3444,7 @@
         "hr": 2,
         "rbi": 10
       },
+      "birth": "1985-04-06",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%8A%A0%E6%B2%BB%E5%89%8D%E7%AB%9C%E4%B8%80",
       "slug": "kajimae-ryuichi",
       "years": "2007-2014",
@@ -3296,6 +3459,7 @@
         "era": "0.00",
         "k": 2
       },
+      "birth": "1933-06-14",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%89%87%E5%B2%A1%E7%AF%80%E6%AC%A1%E9%83%8E",
       "slug": "kataoka-setsujiro",
       "years": "1953-1954",
@@ -3311,6 +3475,7 @@
         "hr": 66,
         "rbi": 389
       },
+      "birth": "1983-02-17",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%89%87%E5%B2%A1%E6%B2%BB%E5%A4%A7",
       "slug": "kataoka-yasuyuki",
       "years": "2014-2017",
@@ -3326,6 +3491,7 @@
         "hr": 0,
         "rbi": 0
       },
+      "birth": "1938-10-03",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%8A%A0%E7%94%B0%E6%AC%A1%E7%94%B7",
       "slug": "kada-tsugio",
       "years": "1961-1962",
@@ -3356,6 +3522,7 @@
         "hr": 4,
         "rbi": 13
       },
+      "birth": "1996-04-16",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%A6%99%E6%9C%88%E4%B8%80%E4%B9%9F",
       "slug": "katsuki-kazuya",
       "years": "2020-2023",
@@ -3370,6 +3537,7 @@
         "era": "3.88",
         "k": 188
       },
+      "birth": "1982-07-27",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%A6%99%E6%9C%88%E8%89%AF%E5%A4%AA",
       "slug": "katsuki-ryota",
       "years": "2013-2016",
@@ -3385,6 +3553,7 @@
         "hr": 0,
         "rbi": 0
       },
+      "birth": "1997-07-20",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%8B%9D%E4%BF%A3%E7%BF%94%E8%B2%B4",
       "slug": "katsumata-shoki",
       "years": "2022-2022",
@@ -3400,6 +3569,7 @@
         "hr": 0,
         "rbi": 4
       },
+      "birth": "1935-06-13",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%8A%A0%E8%97%A4%E5%85%8B%E5%B7%B3",
       "slug": "katoh-katsumi",
       "years": "1957-1961",
@@ -3415,6 +3585,7 @@
         "hr": 3,
         "rbi": 24
       },
+      "birth": "1981-03-23",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%8A%A0%E8%97%A4%E5%81%A5",
       "slug": "katoh-ken",
       "years": "1998-2016",
@@ -3430,6 +3601,7 @@
         "hr": 0,
         "rbi": 0
       },
+      "birth": "1999-03-28",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%8A%A0%E8%97%A4%E8%84%A9%E5%B9%B3",
       "slug": "katoh-shuhei",
       "years": "2016-2020",
@@ -3445,6 +3617,7 @@
         "hr": 8,
         "rbi": 67
       },
+      "birth": "1998-04-15",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%8A%A0%E8%97%A4%E5%A3%AE%E5%A4%AA",
       "slug": "katoh-sota",
       "years": "2019-2021",
@@ -3459,6 +3632,7 @@
         "era": "4.52",
         "k": 80
       },
+      "birth": "1978-06-15",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%AD%8C%E8%97%A4%E9%81%94%E5%A4%AB",
       "slug": "katoh-tatsuo",
       "years": "2009-2009",
@@ -3473,6 +3647,7 @@
         "era": "3.50",
         "k": 1500
       },
+      "birth": "1949-12-20",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%8A%A0%E8%97%A4%E5%88%9D",
       "slug": "katoh-hajime",
       "years": "1976-1990",
@@ -3488,6 +3663,7 @@
         "hr": 347,
         "rbi": 1268
       },
+      "birth": "1948-05-24",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%8A%A0%E8%97%A4%E8%8B%B1%E5%8F%B8",
       "slug": "katoh-hideji",
       "years": "1986-1986",
@@ -3503,6 +3679,7 @@
         "hr": 0,
         "rbi": 0
       },
+      "birth": "1939-05-14",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%B2%B3%E6%9D%B1%E7%9C%9F",
       "slug": "katoh-makoto",
       "years": "1962-1964",
@@ -3517,6 +3694,7 @@
         "era": "2.76",
         "k": 846
       },
+      "birth": "1957-03-10",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%B9%BF%E5%8F%96%E7%BE%A9%E9%9A%86",
       "slug": "katori-yoshitaka",
       "years": "1978-1989",
@@ -3531,6 +3709,7 @@
         "era": "4.36",
         "k": 1146
       },
+      "birth": "1973-07-29",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%96%80%E5%80%89%E5%81%A5",
       "slug": "kadokura-ken",
       "years": "2007-2008",
@@ -3546,6 +3725,7 @@
         "hr": 10,
         "rbi": 40
       },
+      "birth": "1987-06-12",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%8A%A0%E7%99%BB%E8%84%87%E5%8D%93%E7%9C%9F",
       "slug": "kadowaki-takuma",
       "years": "2005-2008",
@@ -3560,6 +3740,7 @@
         "era": "3.38",
         "k": 610
       },
+      "birth": "1960-12-26",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%87%91%E7%9F%B3%E6%98%AD%E4%BA%BA",
       "slug": "kaneishi-akihito",
       "years": "1998-1998",
@@ -3574,6 +3755,7 @@
         "era": "3.33",
         "k": 919
       },
+      "birth": "1952-10-16",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%87%91%E5%9F%8E%E5%9F%BA%E6%B3%B0",
       "slug": "kaneshiro-motoyasu",
       "years": "1985-1985",
@@ -3588,6 +3770,7 @@
         "era": "3.97",
         "k": 215
       },
+      "birth": "1984-04-10",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%87%91%E5%88%83%E6%86%B2%E4%BA%BA",
       "slug": "kaneto-norihito",
       "years": "2006-2013",
@@ -3602,6 +3785,7 @@
         "era": "3.86",
         "k": 12
       },
+      "birth": "1932-08-07",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%85%BC%E5%90%89%E5%AF%9B",
       "slug": "kaneyoshi-hiroshi",
       "years": "1951-1952",
@@ -3616,6 +3800,7 @@
         "era": "7.20",
         "k": 3
       },
+      "birth": "1944-06-03",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%8F%91%E6%9C%A8%E6%82%A6%E7%B4%94",
       "slug": "kaburaki-yoshizumi",
       "years": "1972-1977",
@@ -3631,6 +3816,7 @@
         "hr": 101,
         "rbi": 462
       },
+      "birth": "1982-07-28",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%BA%80%E4%BA%95%E5%96%84%E8%A1%8C",
       "slug": "kamei-yoshiyuki",
       "years": "2004-2021",
@@ -3645,6 +3831,7 @@
         "era": "5.46",
         "k": 15
       },
+      "birth": "1966-03-17",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%8A%A0%E8%8C%82%E5%B7%9D%E9%87%8D%E6%B2%BB",
       "slug": "kamogawa-shigeharu",
       "years": "1983-1988",
@@ -3659,6 +3846,7 @@
         "era": "5.14",
         "k": 89
       },
+      "birth": "1983-12-29",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%B4%A8%E5%BF%97%E7%94%B0%E8%B2%B4%E5%8F%B8",
       "slug": "kamoshida-takashi",
       "years": "2001-2006",
@@ -3689,6 +3877,7 @@
         "hr": 43,
         "rbi": 322
       },
+      "birth": "1964-09-27",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B7%9D%E7%9B%B8%E6%98%8C%E5%BC%98",
       "slug": "kawai-masahiro",
       "years": "1982-2003",
@@ -3704,6 +3893,7 @@
         "hr": 2,
         "rbi": 4
       },
+      "birth": "1948-03-15",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B7%9D%E5%86%85%E9%9B%84%E5%AF%8C",
       "slug": "kawauchi-kazutomi",
       "years": "1968-1970",
@@ -3719,6 +3909,7 @@
         "hr": 1,
         "rbi": 11
       },
+      "birth": "1932-06-13",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B7%9D%E4%B8%8A%E7%BE%A9%E4%BF%A1",
       "slug": "kawakami-yoshinobu",
       "years": "1954-1958",
@@ -3733,6 +3924,7 @@
         "era": "3.38",
         "k": 2092
       },
+      "birth": "1959-07-08",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B7%9D%E5%8F%A3%E5%92%8C%E4%B9%85",
       "slug": "kawaguchi-kazuhisa",
       "years": "1995-1998",
@@ -3761,6 +3953,7 @@
         "era": "3.59",
         "k": 34
       },
+      "birth": "1947-08-17",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B7%9D%E8%97%A4%E7%AB%9C%E4%B9%8B%E8%BC%94",
       "slug": "kawatoh-ryunosuke",
       "years": "1970-1972",
@@ -3776,6 +3969,7 @@
         "hr": 10,
         "rbi": 43
       },
+      "birth": "1973-12-19",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B7%9D%E4%B8%AD%E5%9F%BA%E5%97%A3",
       "slug": "kawanaka-mototsugu",
       "years": "1997-2007",
@@ -3791,6 +3985,7 @@
         "hr": 1,
         "rbi": 3
       },
+      "birth": "1991-06-14",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%B2%B3%E9%87%8E%E5%85%83%E8%B2%B4",
       "slug": "kawano-genki",
       "years": "2009-2018",
@@ -3806,6 +4001,7 @@
         "hr": 1,
         "rbi": 7
       },
+      "birth": "1936-05-29",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%B2%B3%E9%87%8E%E6%AD%A3",
       "slug": "kawano-tadashi",
       "years": "1955-1961",
@@ -3820,6 +4016,7 @@
         "era": "4.26",
         "k": 452
       },
+      "birth": "1973-01-22",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%B2%B3%E5%8E%9F%E7%B4%94%E4%B8%80",
       "slug": "kawahara-jyunichi",
       "years": "1994-2004",
@@ -3835,6 +4032,7 @@
         "hr": 3,
         "rbi": 24
       },
+      "birth": "1924-11-23",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B7%9D%E7%95%91%E5%8D%9A",
       "slug": "kawabata-hiroshi",
       "years": "1942-1944",
@@ -3849,6 +4047,7 @@
         "era": "4.89",
         "k": 29
       },
+      "birth": "1968-04-30",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B7%9D%E8%BE%BA%E5%BF%A0%E7%BE%A9",
       "slug": "kawabe-tadayoshi",
       "years": "1989-1995",
@@ -3863,6 +4062,7 @@
         "era": "3.57",
         "k": 634
       },
+      "birth": "1967-10-21",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%B2%B3%E6%9C%AC%E8%82%B2%E4%B9%8B",
       "slug": "kawamoto-yasuyuki",
       "years": "2000-2004",
@@ -3878,6 +4078,7 @@
         "hr": 0,
         "rbi": 0
       },
+      "birth": "2001-07-23",
       "source_url": "https://ja.wikipedia.org/wiki/%E8%8F%8A%E7%94%B0%E6%8B%A1%E5%92%8C",
       "slug": "kikuta-hirokazu",
       "years": "2019-2024",
@@ -3892,6 +4093,7 @@
         "era": "3.76",
         "k": 958
       },
+      "birth": "1980-05-17",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%9C%A8%E4%BD%90%E8%B2%AB%E6%B4%8B",
       "slug": "kisanuki-hiroshi",
       "years": "2002-2009",
@@ -3907,6 +4109,7 @@
         "hr": 97,
         "rbi": 307
       },
+      "birth": "1965-04-24",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B2%B8%E5%B7%9D%E5%8B%9D%E4%B9%9F",
       "slug": "kishikawa-katsuya",
       "years": "1994-1997",
@@ -3922,6 +4125,7 @@
         "hr": 2,
         "rbi": 4
       },
+      "birth": "1988-11-26",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%8C%97%E7%AF%A4",
       "slug": "kita-atsushi",
       "years": "2015-2017",
@@ -3936,6 +4140,7 @@
         "era": "2.46",
         "k": 486
       },
+      "birth": "1932-10-18",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%8C%97%E5%B7%9D%E8%8A%B3%E7%94%B7",
       "slug": "kitagawa-yoshio",
       "years": "1963-1965",
@@ -3951,6 +4156,7 @@
         "hr": 10,
         "rbi": 33
       },
+      "birth": "1995-08-29",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%8C%97%E6%9D%91%E6%8B%93%E5%B7%B1",
       "slug": "kitamura-takumi",
       "years": "2017-2023",
@@ -3965,6 +4171,7 @@
         "era": "3.91",
         "k": 1036
       },
+      "birth": "1968-09-12",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%9C%A8%E7%94%B0%E5%84%AA%E5%A4%AB",
       "slug": "kida-masao",
       "years": "1986-1997",
@@ -3994,6 +4201,7 @@
         "era": "3.28",
         "k": 246
       },
+      "birth": "1937-09-18",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%9C%A8%E6%88%B8%E7%BE%8E%E6%91%B8",
       "slug": "kido-yoshinori",
       "years": "1955-1961",
@@ -4008,6 +4216,7 @@
         "era": "4.52",
         "k": 104
       },
+      "birth": "1957-07-31",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%9C%A8%E4%B8%8B%E6%99%BA%E8%A3%95",
       "slug": "kinoshita-tomohiro",
       "years": "1986-1988",
@@ -4022,6 +4231,7 @@
         "era": "3.38",
         "k": 23
       },
+      "birth": "1986-05-24",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%9C%A8%E6%9D%91%E6%AD%A3%E5%A4%AA",
       "slug": "kimura-syota",
       "years": "2004-2011",
@@ -4037,6 +4247,7 @@
         "hr": 53,
         "rbi": 280
       },
+      "birth": "1972-04-15",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%9C%A8%E6%9D%91%E6%8B%93%E4%B9%9F",
       "slug": "kimura-takuya",
       "years": "2006-2009",
@@ -4052,6 +4263,7 @@
         "hr": 0,
         "rbi": 1
       },
+      "birth": "1925-08-10",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%9C%A8%E6%9D%91%E7%94%B1%E5%A4%AB",
       "slug": "kimura-yoshio",
       "years": "1943-1943",
@@ -4066,6 +4278,7 @@
         "era": "4.21",
         "k": 124
       },
+      "birth": "1970-09-01",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%9C%A8%E6%9D%91%E9%BE%8D%E6%B2%BB",
       "slug": "kimura-ryuji",
       "years": "1992-2004",
@@ -4081,6 +4294,7 @@
         "hr": 0,
         "rbi": 0
       },
+      "birth": "1991-06-19",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%AC%BC%E5%B1%8B%E6%95%B7%E6%AD%A3%E4%BA%BA",
       "slug": "kiyashiki-masato",
       "years": "2009-2017",
@@ -4096,6 +4310,7 @@
         "hr": 525,
         "rbi": 1530
       },
+      "birth": "1967-08-18",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%B8%85%E5%8E%9F%E5%92%8C%E5%8D%9A",
       "slug": "kiyohara-kazuhiro",
       "years": "1997-2005",
@@ -4111,6 +4326,7 @@
         "hr": 104,
         "rbi": 592
       },
+      "birth": "1976-07-27",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%87%91%E5%9F%8E%E9%BE%8D%E5%BD%A6",
       "slug": "kinjoh-tatsuhiko",
       "years": "2015-2015",
@@ -4126,6 +4342,7 @@
         "hr": 22,
         "rbi": 218
       },
+      "birth": "1920-06-21",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%A5%A0%E5%8D%94%E9%83%8E",
       "slug": "kusunoki-yasuo",
       "years": "1938-1954",
@@ -4140,6 +4357,7 @@
         "era": "3.45",
         "k": 2859
       },
+      "birth": "1963-05-05",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B7%A5%E8%97%A4%E5%85%AC%E5%BA%B7",
       "slug": "kudoh-kimiyasu",
       "years": "2000-2006",
@@ -4155,6 +4373,7 @@
         "hr": 1,
         "rbi": 49
       },
+      "birth": "1981-03-30",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B7%A5%E8%97%A4%E9%9A%86%E4%BA%BA",
       "slug": "kudoh-takahito",
       "years": "2009-2011",
@@ -4170,6 +4389,7 @@
         "hr": 0,
         "rbi": 0
       },
+      "birth": "1936-07-21",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B7%A5%E8%97%A4%E6%AD%A3%E6%98%8E",
       "slug": "kudoh-masaaki",
       "years": "1955-1959",
@@ -4185,6 +4405,7 @@
         "hr": 93,
         "rbi": 427
       },
+      "birth": "1934-09-14",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%9B%BD%E6%9D%BE%E5%BD%B0",
       "slug": "kunimatsu-akira",
       "years": "1955-1970",
@@ -4199,6 +4420,7 @@
         "era": "3.45",
         "k": 676
       },
+      "birth": "1980-05-23",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%B9%85%E4%BF%9D%E8%A3%95%E4%B9%9F",
       "slug": "kubo-yuya",
       "years": "2002-2015",
@@ -4214,6 +4436,7 @@
         "hr": 0,
         "rbi": 1
       },
+      "birth": "1921-07-31",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%B9%85%E4%BF%9D%E6%9C%A8%E6%B8%85",
       "slug": "kuboki-kiyoshi",
       "years": "1950-1953",
@@ -4228,6 +4451,7 @@
         "era": "2.83",
         "k": 453
       },
+      "birth": "1934-12-19",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%B9%85%E4%BF%9D%E7%94%B0%E6%B2%BB",
       "slug": "kubota-osamu",
       "years": "1966-1966",
@@ -4243,6 +4467,7 @@
         "hr": 50,
         "rbi": 195
       },
+      "birth": "1957-08-28",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%86%8A%E9%87%8E%E8%BC%9D%E5%85%89",
       "slug": "kumano-terumitsu",
       "years": "1992-1993",
@@ -4258,6 +4483,7 @@
         "hr": 0,
         "rbi": 2
       },
+      "birth": "1920-05-07",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%9A%88%E9%83%A8%E4%B8%80%E9%83%8E",
       "slug": "kumabe-ichiro",
       "years": "1940-1942",
@@ -4272,6 +4498,7 @@
         "era": "3.72",
         "k": 34
       },
+      "birth": "1985-09-10",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%B9%85%E7%B1%B3%E5%8B%87%E7%B4%80",
       "slug": "kume-yuki",
       "years": "2012-2012",
@@ -4286,6 +4513,7 @@
         "era": "3.45",
         "k": 174
       },
+      "birth": "1992-03-04",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%85%AC%E6%96%87%E5%85%8B%E5%BD%A6",
       "slug": "kumon-katsuhiko",
       "years": "2012-2016",
@@ -4315,6 +4543,7 @@
         "era": "3.36",
         "k": 644
       },
+      "birth": "1946-06-03",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%80%89%E7%94%B0%E8%AA%A0",
       "slug": "kurata-makoto",
       "years": "1965-1976",
@@ -4330,6 +4559,7 @@
         "hr": 57,
         "rbi": 371
       },
+      "birth": "1938-12-12",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%BB%92%E6%B1%9F%E9%80%8F%E4%BF%AE",
       "slug": "kuroe-yukinobu",
       "years": "1964-1974",
@@ -4345,6 +4575,7 @@
         "hr": 7,
         "rbi": 201
       },
+      "birth": "1914-06-10",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%BB%92%E6%B2%A2%E4%BF%8A%E5%A4%AB",
       "slug": "kurosawa-toshio",
       "years": "1944-1947",
@@ -4360,6 +4591,7 @@
         "hr": 6,
         "rbi": 24
       },
+      "birth": "1975-01-11",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%BB%92%E7%94%B0%E5%93%B2%E5%8F%B2",
       "slug": "kuroda-satoshi",
       "years": "2002-2006",
@@ -4374,6 +4606,7 @@
         "era": "0.00",
         "k": 1
       },
+      "birth": "1940-06-15",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%BB%92%E7%94%B0%E8%83%BD%E5%BC%98",
       "slug": "kuroda-yoshihiro",
       "years": "1959-1961",
@@ -4389,6 +4622,7 @@
         "hr": 223,
         "rbi": 674
       },
+      "birth": "1937-01-05",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%A1%91%E7%94%B0%E6%AD%A6",
       "slug": "kuwata-takeshi",
       "years": "1969-1969",
@@ -4403,6 +4637,7 @@
         "era": "5.80",
         "k": 91
       },
+      "birth": "1996-03-26",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%8D%AC%E5%8E%9F%E6%8B%93%E4%B9%9F",
       "slug": "kuwahara-takuya",
       "years": "2017-2023",
@@ -4418,6 +4653,7 @@
         "hr": 0,
         "rbi": 11
       },
+      "birth": "1922-08-15",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B0%8F%E6%B1%A0%E7%B9%81%E9%9B%84",
       "slug": "koike-shigeo",
       "years": "1941-1943",
@@ -4432,6 +4668,7 @@
         "era": "4.38",
         "k": 10
       },
+      "birth": "1957-10-19",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%A6%99%E5%9D%82%E8%8B%B1%E5%85%B8",
       "slug": "kohsaka-hidenori",
       "years": "1979-1984",
@@ -4446,6 +4683,7 @@
         "era": "3.82",
         "k": 738
       },
+      "birth": "1965-05-29",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%A6%99%E7%94%B0%E5%8B%B2%E7%94%B7",
       "slug": "kohda-isao",
       "years": "1983-1994",
@@ -4461,6 +4699,7 @@
         "hr": 115,
         "rbi": 416
       },
+      "birth": "1951-11-07",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%B2%B3%E5%9F%9C%E5%92%8C%E6%AD%A3",
       "slug": "kohno-kazumasa",
       "years": "1969-1986",
@@ -4476,6 +4715,7 @@
         "hr": 14,
         "rbi": 60
       },
+      "birth": "1961-07-10",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%B4%BB%E9%87%8E%E6%B7%B3%E5%9F%BA",
       "slug": "kohno-jyunki",
       "years": "1985-1991",
@@ -4490,6 +4730,7 @@
         "era": "3.93",
         "k": 828
       },
+      "birth": "1962-04-28",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%B2%B3%E9%87%8E%E5%8D%9A%E6%96%87",
       "slug": "kohno-hirofumi",
       "years": "1996-1999",
@@ -4505,6 +4746,7 @@
         "hr": 0,
         "rbi": 6
       },
+      "birth": "1971-02-10",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%AB%98%E6%9D%91%E8%89%AF%E5%98%89",
       "slug": "kohmura-yoshikazu",
       "years": "1994-1998",
@@ -4520,6 +4762,7 @@
         "hr": 0,
         "rbi": 0
       },
+      "birth": "1939-09-03",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%8F%A4%E8%B3%80%E8%8B%B1%E5%BD%A6",
       "slug": "koga-hidehiko",
       "years": "1962-1964",
@@ -4534,6 +4777,7 @@
         "era": "4.59",
         "k": 456
       },
+      "birth": "1949-04-11",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%8F%A4%E8%B3%80%E6%AD%A3%E6%98%8E",
       "slug": "koga-masaaki",
       "years": "1980-1980",
@@ -4549,6 +4793,7 @@
         "hr": 413,
         "rbi": 1304
       },
+      "birth": "1971-10-08",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B0%8F%E4%B9%85%E4%BF%9D%E8%A3%95%E7%B4%80",
       "slug": "kokubo-hiroki",
       "years": "2004-2006",
@@ -4564,6 +4809,7 @@
         "hr": 13,
         "rbi": 109
       },
+      "birth": "1923-02-21",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%9C%A8%E6%9A%AE%E5%8A%9B%E4%B8%89",
       "slug": "kogure-rikizoh",
       "years": "1942-1944",
@@ -4578,6 +4824,7 @@
         "era": "4.74",
         "k": 110
       },
+      "birth": "1947-09-17",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B0%8F%E5%9D%82%E6%95%8F%E5%BD%A6",
       "slug": "kosaka-toshihiko",
       "years": "1969-1972",
@@ -4593,6 +4840,7 @@
         "hr": 19,
         "rbi": 303
       },
+      "birth": "1973-07-02",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B0%8F%E5%9D%82%E8%AA%A0",
       "slug": "kosaka-makoto",
       "years": "2006-2008",
@@ -4607,6 +4855,7 @@
         "era": "8.84",
         "k": 29
       },
+      "birth": "1968-07-01",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B0%8F%E5%B3%B6%E5%9C%AD%E5%B8%82",
       "slug": "kojima-keiichi",
       "years": "1986-1994",
@@ -4621,6 +4870,7 @@
         "era": "6.55",
         "k": 55
       },
+      "birth": "1969-08-09",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B0%8F%E5%8E%9F%E6%B2%A2%E9%87%8D%E9%A0%BC",
       "slug": "koharazawa-shigeyori",
       "years": "1991-1997",
@@ -4635,6 +4885,7 @@
         "era": "0.00",
         "k": 2
       },
+      "birth": "1977-08-21",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B0%8F%E6%9E%97%E8%81%A1",
       "slug": "kobayashi-satoshi",
       "years": "1995-1999",
@@ -4664,6 +4915,7 @@
         "hr": 0,
         "rbi": 27
       },
+      "birth": "1994-01-15",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B0%8F%E6%9E%97%E5%A4%A7%E8%AA%A0",
       "slug": "kobayashi-daisei",
       "years": "2015-2016",
@@ -4678,6 +4930,7 @@
         "era": "2.93",
         "k": 465
       },
+      "birth": "1974-05-24",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B0%8F%E6%9E%97%E9%9B%85%E8%8B%B1",
       "slug": "kobayashi-masahide",
       "years": "2010-2010",
@@ -4693,6 +4946,7 @@
         "hr": 195,
         "rbi": 953
       },
+      "birth": "1962-09-14",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%A7%92%E7%94%B0%E5%BE%B3%E5%BA%83",
       "slug": "komada-norihiro",
       "years": "1980-1993",
@@ -4707,6 +4961,7 @@
         "era": "3.42",
         "k": 72
       },
+      "birth": "1940-01-13",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B0%8F%E6%9D%BE%E4%BF%8A%E5%BA%83",
       "slug": "komatsu-toshihiro",
       "years": "1958-1960",
@@ -4736,6 +4991,7 @@
         "era": "3.08",
         "k": 164
       },
+      "birth": "1988-12-05",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B0%8F%E5%B1%B1%E9%9B%84%E8%BC%9D",
       "slug": "koyama-yuki",
       "years": "2010-2016",
@@ -4751,6 +5007,7 @@
         "hr": 2,
         "rbi": 22
       },
+      "birth": "1980-08-12",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%B4%BA%E7%94%B0%E6%95%8F%E6%AD%A3",
       "slug": "konta-toshimasa",
       "years": "2011-2011",
@@ -4766,6 +5023,7 @@
         "hr": 0,
         "rbi": 0
       },
+      "birth": "1943-07-01",
       "source_url": "https://ja.wikipedia.org/wiki/%E8%BF%91%E8%97%A4%E9%87%91%E5%90%BE",
       "slug": "kondoh-kingo",
       "years": "1962-1965",
@@ -4780,6 +5038,7 @@
         "era": "2.91",
         "k": 274
       },
+      "birth": "1925-10-02",
       "source_url": "https://ja.wikipedia.org/wiki/%E8%BF%91%E8%97%A4%E8%B2%9E%E9%9B%84",
       "slug": "kondoh-sadao",
       "years": "1944-1947",
@@ -4794,6 +5053,7 @@
         "era": "15.75",
         "k": 1
       },
+      "birth": "1941-09-19",
       "source_url": "https://ja.wikipedia.org/wiki/%E8%BF%91%E8%97%A4%E9%9A%86%E6%AD%A3",
       "slug": "kondoh-takamasa",
       "years": "1960-1963",
@@ -4809,6 +5069,7 @@
         "hr": 21,
         "rbi": 389
       },
+      "birth": "1916-06-28",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%91%89%E6%B3%A2",
       "slug": "go-ha",
       "years": "1937-1943",
@@ -4838,6 +5099,7 @@
         "hr": 30,
         "rbi": 119
       },
+      "birth": "1969-05-14",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%BE%8C%E8%97%A4%E5%AD%9D%E5%BF%97",
       "slug": "gotoh-koji",
       "years": "1987-2005",
@@ -4852,6 +5114,7 @@
         "era": "3.79",
         "k": 284
       },
+      "birth": "1974-08-27",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%BE%8C%E8%97%A4%E5%85%89%E8%B2%B4",
       "slug": "gotoh-mitsutaka",
       "years": "2005-2005",
@@ -4867,6 +5130,7 @@
         "hr": 0,
         "rbi": 1
       },
+      "birth": "1942-04-07",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%89%8D%E6%89%80%E4%BF%8A%E9%83%8E",
       "slug": "saisyo-toshiro",
       "years": "1965-1971",
@@ -4881,6 +5145,7 @@
         "era": "0.00",
         "k": 2
       },
+      "birth": "1941-08-14",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%96%8E%E8%97%A4%E8%AA%A0%E4%BA%8C",
       "slug": "saitoh-seiji",
       "years": "1961-1964",
@@ -4896,6 +5161,7 @@
         "hr": 19,
         "rbi": 113
       },
+      "birth": "1976-06-10",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%96%89%E8%97%A4%E5%AE%9C%E4%B9%8B",
       "slug": "saitoh-takayuki",
       "years": "1994-2007",
@@ -4910,6 +5176,7 @@
         "hr": 0,
         "rbi": 0
       },
+      "birth": "1944-02-17",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%96%8E%E8%97%A4%E5%8B%9D%E5%8D%9A",
       "slug": "saitoh-masahiro",
       "years": "1962-1966",
@@ -4924,6 +5191,7 @@
         "era": "6.71",
         "k": 32
       },
+      "birth": "1981-03-04",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%85%92%E4%BA%95%E7%B4%94%E4%B9%9F",
       "slug": "sakai-jyunya",
       "years": "1998-2007",
@@ -4939,6 +5207,7 @@
         "hr": 0,
         "rbi": 2
       },
+      "birth": "1961-09-10",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%A0%84%E6%9D%91%E5%BF%A0%E5%BA%83",
       "slug": "sakaemura-tadahiro",
       "years": "1982-1990",
@@ -4954,6 +5223,7 @@
         "hr": 0,
         "rbi": 1
       },
+      "birth": "1990-09-29",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%9D%82%E5%8F%A3%E7%9C%9F%E8%A6%8F",
       "slug": "sakaguchi-masaki",
       "years": "2012-2017",
@@ -4969,6 +5239,7 @@
         "hr": 74,
         "rbi": 387
       },
+      "birth": "1938-01-05",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%9D%82%E5%B4%8E%E4%B8%80%E5%BD%A6",
       "slug": "sakazaki-kazuhiko",
       "years": "1956-1964",
@@ -4983,6 +5254,7 @@
         "era": "13.50",
         "k": 3
       },
+      "birth": "1994-08-19",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%9D%82%E6%9C%AC%E5%B7%A5%E5%AE%9C",
       "slug": "sakamoto-koki",
       "years": "2016-2019",
@@ -5012,6 +5284,7 @@
         "era": "3.16",
         "k": 320
       },
+      "birth": "1937-08-15",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B5%AF%E5%B3%A8%E5%81%A5%E5%9B%9B%E9%83%8E",
       "slug": "saga-kenshiro",
       "years": "1968-1968",
@@ -5026,6 +5299,7 @@
         "era": "5.18",
         "k": 175
       },
+      "birth": "1993-10-21",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%A1%9C%E4%BA%95%E4%BF%8A%E8%B2%B4",
       "slug": "sakurai-toshiki",
       "years": "2015-2022",
@@ -5041,6 +5315,7 @@
         "hr": 0,
         "rbi": 2
       },
+      "birth": "1951-07-27",
       "source_url": "https://ja.wikipedia.org/wiki/%E8%BF%AB%E4%B8%B8%E9%87%91%E6%AC%A1%E9%83%8E",
       "slug": "sakomaru-kousyo",
       "years": "1973-1981",
@@ -5056,6 +5331,7 @@
         "hr": 1,
         "rbi": 3
       },
+      "birth": "1971-07-20",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%BD%90%E3%80%85%E6%9C%A8%E6%98%8E%E7%BE%A9",
       "slug": "sasaki-akiyoshi",
       "years": "1995-2001",
@@ -5071,6 +5347,7 @@
         "hr": 0,
         "rbi": 2
       },
+      "birth": "1937-10-10",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%BD%90%E3%80%85%E6%9C%A8%E5%8B%B2",
       "slug": "sasaki-isao",
       "years": "1960-1961",
@@ -5086,6 +5363,7 @@
         "hr": 16,
         "rbi": 82
       },
+      "birth": "1952-04-18",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%AC%B9%E6%9C%AC%E4%BF%A1%E4%BA%8C",
       "slug": "sasamoto-shinji",
       "years": "1982-1986",
@@ -5100,6 +5378,7 @@
         "era": "3.83",
         "k": 492
       },
+      "birth": "1956-11-29",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%AE%9A%E5%B2%A1%E6%AD%A3%E4%BA%8C",
       "slug": "sadaoka-syouji",
       "years": "1974-1985",
@@ -5130,6 +5409,7 @@
         "hr": 1,
         "rbi": 6
       },
+      "birth": "1962-06-09",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%BD%90%E8%97%A4%E6%B4%8B",
       "slug": "satoh-hiroshi84",
       "years": "1984-1994",
@@ -5144,6 +5424,7 @@
         "era": "5.74",
         "k": 77
       },
+      "birth": "1977-08-11",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%BD%90%E8%97%A4%E5%AE%8F%E5%BF%97",
       "slug": "satoh-hiroshi99",
       "years": "1999-2006",
@@ -5159,6 +5440,7 @@
         "hr": 0,
         "rbi": 1
       },
+      "birth": "1971-01-04",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%BD%90%E8%97%A4%E8%A3%95%E5%B9%B8",
       "slug": "satoh-hiroyuki",
       "years": "1996-1998",
@@ -5173,6 +5455,7 @@
         "era": "4.14",
         "k": 145
       },
+      "birth": "1975-06-12",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%BD%90%E8%97%A4%E8%AA%A0",
       "slug": "satoh-makoto",
       "years": "1993-2000",
@@ -5187,6 +5470,7 @@
         "era": "3.96",
         "k": 308
       },
+      "birth": "1950-12-18",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%BD%90%E8%97%A4%E6%94%BF%E5%A4%AB",
       "slug": "satoh-masao",
       "years": "1969-1970",
@@ -5201,6 +5485,7 @@
         "era": "4.98",
         "k": 102
       },
+      "birth": "1993-06-29",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%BD%90%E8%97%A4%E5%84%AA",
       "slug": "satoh-masaru",
       "years": "1964-1964",
@@ -5215,6 +5500,7 @@
         "era": "4.42",
         "k": 240
       },
+      "birth": "1984-02-07",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%9C%9F%E7%94%B0%E8%A3%95%E8%B2%B4",
       "slug": "sanada-hiroki",
       "years": "2001-2012",
@@ -5230,6 +5516,7 @@
         "hr": 20,
         "rbi": 58
       },
+      "birth": "1981-01-18",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%AF%A6%E6%9D%BE%E4%B8%80%E6%88%90",
       "slug": "sanematsu-kazunari",
       "years": "2006-2017",
@@ -5245,6 +5532,7 @@
         "hr": 1,
         "rbi": 3
       },
+      "birth": "1958-03-06",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%BD%90%E9%87%8E%E5%85%83%E5%9B%BD",
       "slug": "sano-motokuni",
       "years": "1985-1988",
@@ -5273,6 +5561,7 @@
         "era": "2.88",
         "k": 850
       },
+      "birth": "1988-04-03",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%BE%A4%E6%9D%91%E6%8B%93%E4%B8%80",
       "slug": "sawamura-hirokazu",
       "years": "2010-2020",
@@ -5317,6 +5606,7 @@
         "hr": 10,
         "rbi": 70
       },
+      "birth": "1940-05-30",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%A1%A9%E5%8E%9F%E6%98%8E",
       "slug": "shiobara-akira",
       "years": "1960-1967",
@@ -5332,6 +5622,7 @@
         "hr": 92,
         "rbi": 628
       },
+      "birth": "1957-07-16",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%AF%A0%E5%A1%9A%E5%88%A9%E5%A4%AB",
       "slug": "shinozuka-kazunori",
       "years": "1975-1994",
@@ -5346,6 +5637,7 @@
         "era": "4.34",
         "k": 21
       },
+      "birth": "1990-06-13",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%AF%A0%E5%8E%9F%E6%85%8E%E5%B9%B3",
       "slug": "shinohara-shinpei",
       "years": "2014-2018",
@@ -5361,6 +5653,7 @@
         "hr": 194,
         "rbi": 708
       },
+      "birth": "1944-02-08",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%9F%B4%E7%94%B0%E5%8B%B2",
       "slug": "shibata-isao",
       "years": "1962-1981",
@@ -5375,6 +5668,7 @@
         "hr": 0,
         "rbi": 1
       },
+      "birth": "1925-11-02",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%9F%B4%E7%94%B0%E5%B4%8E%E9%9B%84",
       "slug": "shibata-sakio",
       "years": "1944-1944",
@@ -5390,6 +5684,7 @@
         "hr": 16,
         "rbi": 123
       },
+      "birth": "1935-01-01",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B3%B6%E7%94%B0%E9%9B%84%E4%BA%8C",
       "slug": "shimada-yuuji",
       "years": "1966-1966",
@@ -5405,6 +5700,7 @@
         "hr": 3,
         "rbi": 10
       },
+      "birth": "1957-07-24",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B3%B6%E8%B2%AB%E7%9C%81%E4%B8%80",
       "slug": "shimanuki-syoichi",
       "years": "1979-1984",
@@ -5419,6 +5715,7 @@
         "era": "5.05",
         "k": 23
       },
+      "birth": "1950-06-02",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B3%B6%E9%87%8E%E4%BF%AE",
       "slug": "shimano-osamu",
       "years": "1968-1975",
@@ -5434,6 +5731,7 @@
         "hr": 131,
         "rbi": 488
       },
+      "birth": "1973-10-23",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%B8%85%E6%B0%B4%E9%9A%86%E8%A1%8C",
       "slug": "shimizu-takayuki",
       "years": "1995-2008",
@@ -5449,6 +5747,7 @@
         "hr": 0,
         "rbi": 0
       },
+      "birth": "1922-04-21",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%B8%85%E6%B0%B4%E5%96%84%E7%A7%8B",
       "slug": "shimizu-yoshiaki",
       "years": "1941-1943",
@@ -5464,6 +5763,7 @@
         "hr": 44,
         "rbi": 197
       },
+      "birth": "1953-05-30",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%BA%84%E5%8F%B8%E6%99%BA%E4%B9%85",
       "slug": "syoji-tomohisa",
       "years": "1971-1979",
@@ -5479,6 +5779,7 @@
         "hr": 84,
         "rbi": 571
       },
+      "birth": "1918-04-15",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%99%BD%E7%9F%B3%E6%95%8F%E7%94%B7",
       "slug": "shiraishi-katsumi",
       "years": "1936-1949",
@@ -5494,6 +5795,7 @@
         "hr": 8,
         "rbi": 44
       },
+      "birth": "1962-05-27",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%99%BD%E5%B9%A1%E9%9A%86%E5%AE%97",
       "slug": "shirahata-takahiro",
       "years": "1989-1990",
@@ -5509,6 +5811,7 @@
         "hr": 5,
         "rbi": 50
       },
+      "birth": "1915-02-13",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%96%B0%E5%AF%8C%E5%8D%AF%E4%B8%89%E9%83%8E",
       "slug": "shintomi-uzaburo",
       "years": "1934-1935",
@@ -5523,6 +5826,7 @@
         "era": "3.20",
         "k": 61
       },
+      "birth": "1985-05-27",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%A7%9C%E5%BB%BA%E9%8A%98",
       "slug": "chiang",
       "years": "2005-2008",
@@ -5537,6 +5841,7 @@
         "era": "2.57",
         "k": 936
       },
+      "birth": "1940-02-03",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%9F%8E%E4%B9%8B%E5%86%85%E9%82%A6%E9%9B%84",
       "slug": "jyonouchi-kunio",
       "years": "1962-1971",
@@ -5551,6 +5856,7 @@
         "era": "4.58",
         "k": 113
       },
+      "birth": "1981-06-08",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%A2%9D%E8%BE%BA%E5%89%9B",
       "slug": "jyobe-tsuyoshi",
       "years": "1999-2005",
@@ -5566,6 +5872,7 @@
         "hr": 107,
         "rbi": 456
       },
+      "birth": "1942-03-02",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%9C%AB%E6%AC%A1%E5%88%A9%E5%85%89",
       "slug": "suetsugu-toshimitsu",
       "years": "1965-1977",
@@ -5580,6 +5887,7 @@
         "era": "2.98",
         "k": 315
       },
+      "birth": "1945-04-04",
       "source_url": "https://ja.wikipedia.org/wiki/%E8%8F%85%E5%8E%9F%E5%8B%9D%E7%9F%A2",
       "slug": "sugawara-katsuya",
       "years": "1964-1973",
@@ -5594,6 +5902,7 @@
         "era": "2.95",
         "k": 2156
       },
+      "birth": "1980-10-30",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%9D%89%E5%86%85%E4%BF%8A%E5%93%89",
       "slug": "sugiuchi-toshiya",
       "years": "2012-2018",
@@ -5609,6 +5918,7 @@
         "hr": 0,
         "rbi": 6
       },
+      "birth": "1925-01-02",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%9D%89%E6%B1%9F%E7%B9%81%E9%9B%84",
       "slug": "sugie-shigeo",
       "years": "1944-1944",
@@ -5624,6 +5934,7 @@
         "hr": 0,
         "rbi": 7
       },
+      "birth": "1950-04-23",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%9D%89%E5%B1%B1%E8%8C%82",
       "slug": "sugiyama-shigeru",
       "years": "1968-1982",
@@ -5639,6 +5950,7 @@
         "hr": 12,
         "rbi": 48
       },
+      "birth": "1969-09-03",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%9D%89%E5%B1%B1%E7%9B%B4%E6%A8%B9",
       "slug": "sugiyama-naoki",
       "years": "1987-2000",
@@ -5654,6 +5966,7 @@
         "hr": 12,
         "rbi": 107
       },
+      "birth": "1963-09-23",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%8B%9D%E5%91%82%E5%8D%9A%E6%86%B2",
       "slug": "suguro-hironori",
       "years": "1986-1991",
@@ -5669,6 +5982,7 @@
         "hr": 1,
         "rbi": 2
       },
+      "birth": "1959-06-27",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%88%B4%E6%9C%A8%E4%BC%B8%E8%89%AF",
       "slug": "suzuki-nobuyoshi",
       "years": "1977-1983",
@@ -5683,6 +5997,7 @@
         "era": "6.75",
         "k": 17
       },
+      "birth": "1956-09-11",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%88%B4%E6%9C%A8%E5%BC%98%E8%A6%8F",
       "slug": "suzuki-kouki",
       "years": "1984-1984",
@@ -5697,6 +6012,7 @@
         "era": "5.10",
         "k": 167
       },
+      "birth": "1994-01-21",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%88%B4%E6%9C%A8%E5%BA%B7%E5%B9%B3",
       "slug": "suzuki-kohei",
       "years": "2023-2024",
@@ -5712,6 +6028,7 @@
         "hr": 10,
         "rbi": 75
       },
+      "birth": "1978-04-27",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%88%B4%E6%9C%A8%E5%B0%9A%E5%BA%83",
       "slug": "suzuki-takahiro",
       "years": "1996-2016",
@@ -5727,6 +6044,7 @@
         "hr": 1,
         "rbi": 1
       },
+      "birth": "1967-05-02",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%88%B4%E6%9C%A8%E6%9C%9B",
       "slug": "suzuki-nozomu",
       "years": "1989-1995",
@@ -5742,6 +6060,7 @@
         "hr": 24,
         "rbi": 91
       },
+      "birth": "1959-07-06",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%88%B4%E6%9C%A8%E5%BA%B7%E5%8F%8B",
       "slug": "suzuki-yasutomo",
       "years": "1977-1984",
@@ -5756,6 +6075,7 @@
         "era": "7.91",
         "k": 56
       },
+      "birth": "1997-02-05",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%88%B4%E6%9C%A8%E5%84%AA",
       "slug": "suzuki-yu",
       "years": "2022-2022",
@@ -5786,6 +6106,7 @@
         "hr": 8,
         "rbi": 143
       },
+      "birth": "1937-04-21",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%A0%88%E8%97%A4%E8%B1%8A",
       "slug": "sudoh-yutaka",
       "years": "1962-1968",
@@ -5800,6 +6121,7 @@
         "era": "7.71",
         "k": 35
       },
+      "birth": "1985-10-28",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%A0%88%E6%B0%B8%E8%8B%B1%E8%BC%9D",
       "slug": "sunaga-hideki",
       "years": "2011-2015",
@@ -5814,6 +6136,7 @@
         "era": "3.06",
         "k": 888
       },
+      "birth": "1956-06-26",
       "source_url": "https://ja.wikipedia.org/wiki/%E8%A7%92%E4%B8%89%E7%94%B7",
       "slug": "sumi-mitsuo",
       "years": "1976-1989",
@@ -5829,6 +6152,7 @@
         "hr": 47,
         "rbi": 357
       },
+      "birth": "1987-07-19",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%82%AD%E8%B0%B7%E9%8A%80%E4%BB%81%EF%A4%A9",
       "slug": "sumitani-ginjiro",
       "years": "2019-2021",
@@ -5843,6 +6167,7 @@
         "era": "3.77",
         "k": 532
       },
+      "birth": "1924-02-24",
       "source_url": "https://ja.wikipedia.org/wiki/%E8%AB%8F%E8%A8%AA%E8%A3%95%E8%89%AF",
       "slug": "suwa-hiroyoshi",
       "years": "1946-1947",
@@ -5857,6 +6182,7 @@
         "era": "3.25",
         "k": 41
       },
+      "birth": "1973-08-15",
       "source_url": "https://ja.wikipedia.org/wiki/%E8%83%8C%E5%B0%BE%E4%BC%8A%E6%B4%8B",
       "slug": "seo-yoshihiro",
       "years": "1998-2000",
@@ -5886,6 +6212,7 @@
         "era": "5.14",
         "k": 4
       },
+      "birth": "1935-08-13",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%96%A2%E5%8F%A3%E6%AD%A3%E5%B7%B3",
       "slug": "sekiguchi-masami",
       "years": "1954-1958",
@@ -5901,6 +6228,7 @@
         "hr": 59,
         "rbi": 424
       },
+      "birth": "1927-03-15",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%96%A2%E6%A0%B9%E6%BD%A4%E4%B8%89",
       "slug": "sekine-jyunzo",
       "years": "1965-1965",
@@ -5915,6 +6243,7 @@
         "era": "3.14",
         "k": 257
       },
+      "birth": "1949-05-01",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%96%A2%E6%9C%AC%E5%9B%9B%E5%8D%81%E5%9B%9B",
       "slug": "sekimoto-shitoshi",
       "years": "1967-1975",
@@ -5930,6 +6259,7 @@
         "hr": 9,
         "rbi": 73
       },
+      "birth": "1943-06-28",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%8D%83%E7%94%B0%E5%95%93%E4%BB%8B",
       "slug": "senda-keisuke",
       "years": "1962-1969",
@@ -5944,6 +6274,7 @@
         "era": "3.38",
         "k": 13
       },
+      "birth": "1936-09-18",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%B7%BB%E5%B3%B6%E6%99%82%E4%BA%BA",
       "slug": "soejima-tokito",
       "years": "1955-1960",
@@ -5959,6 +6290,7 @@
         "hr": 1,
         "rbi": 1
       },
+      "birth": "1977-05-29",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%8D%81%E5%B7%9D%E5%AD%9D%E5%AF%8C",
       "slug": "sogawa-takatomi",
       "years": "1999-2007",
@@ -5973,6 +6305,7 @@
         "hr": 0,
         "rbi": 0
       },
+      "birth": "1983-07-01",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%8D%81%E5%B7%9D%E9%9B%84%E4%BA%8C",
       "slug": "sogawa-yuji",
       "years": "2001-2006",
@@ -5987,6 +6320,7 @@
         "era": "3.21",
         "k": 318
       },
+      "birth": "1995-07-12",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B9%B3%E8%89%AF%E6%8B%B3%E5%A4%AA%E9%83%8E",
       "slug": "taira-kentaro",
       "years": "2013-2016",
@@ -6001,6 +6335,7 @@
         "era": "4.84",
         "k": 57
       },
+      "birth": "1995-08-22",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%AB%99%E4%BA%95%E4%BF%8A",
       "slug": "takai-suguru",
       "years": "2016-2020",
@@ -6015,6 +6350,7 @@
         "era": "5.68",
         "k": 11
       },
+      "birth": "1939-03-10",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%AB%98%E5%B2%A1%E8%8B%B1%E5%8F%B8",
       "slug": "takaoka-eiji",
       "years": "1969-1970",
@@ -6029,6 +6365,7 @@
         "era": "3.90",
         "k": 248
       },
+      "birth": "1989-07-13",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%AB%98%E6%9C%A8%E5%8B%87%E4%BA%BA",
       "slug": "takagi-hayato",
       "years": "2014-2017",
@@ -6043,6 +6380,7 @@
         "era": "3.64",
         "k": 267
       },
+      "birth": "1982-03-30",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%AB%98%E6%9C%A8%E5%BA%B7%E6%88%90",
       "slug": "takagi-yasunari",
       "years": "2010-2014",
@@ -6058,6 +6396,7 @@
         "hr": 168,
         "rbi": 641
       },
+      "birth": "1934-12-08",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%AB%98%E5%80%89%E7%85%A7%E5%B9%B8",
       "slug": "takakura-teruyuki",
       "years": "1967-1968",
@@ -6073,6 +6412,7 @@
         "hr": 2,
         "rbi": 19
       },
+      "birth": "1983-08-23",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%AB%98%E5%8F%A3%E9%9A%86%E8%A1%8C",
       "slug": "takaguchi-takayuki",
       "years": "2012-2013",
@@ -6087,6 +6427,7 @@
         "era": "9.61",
         "k": 20
       },
+      "birth": "1998-07-04",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%AB%99%E7%94%B0%E8%90%8C%E7%94%9F",
       "slug": "takata-hosei",
       "years": "2016-2020",
@@ -6101,6 +6442,7 @@
         "era": "2.93",
         "k": 87
       },
+      "birth": "2002-08-19",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%AB%99%E7%94%B0%E7%AB%9C%E6%98%9F",
       "slug": "takata-ryusei",
       "years": "2021-2023",
@@ -6116,6 +6458,7 @@
         "hr": 139,
         "rbi": 499
       },
+      "birth": "1945-07-24",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%AB%98%E7%94%B0%E7%B9%81",
       "slug": "takada-shigeru",
       "years": "1967-1980",
@@ -6131,6 +6474,7 @@
         "hr": 10,
         "rbi": 101
       },
+      "birth": "1964-06-09",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%AB%98%E7%94%B0%E8%AA%A0",
       "slug": "takada-makoto",
       "years": "1986-1991",
@@ -6146,6 +6490,7 @@
         "hr": 1,
         "rbi": 1
       },
+      "birth": "1974-12-10",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%AB%98%E9%87%8E%E5%BF%8D",
       "slug": "takano-shinobu",
       "years": "1998-2003",
@@ -6174,6 +6519,7 @@
         "hr": 0,
         "rbi": 0
       },
+      "birth": "1949-10-29",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%AB%98%E6%A9%8B%E8%8B%B1%E4%BA%8C",
       "slug": "takahashi-eiji",
       "years": "1970-1975",
@@ -6188,6 +6534,7 @@
         "era": "3.18",
         "k": 1997
       },
+      "birth": "1946-06-09",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%AB%98%E6%A9%8B%E4%B8%80%E4%B8%89",
       "slug": "takahashi-kazumi",
       "years": "1965-1975",
@@ -6203,6 +6550,7 @@
         "hr": 82,
         "rbi": 416
       },
+      "birth": "1978-08-07",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%AB%98%E6%A9%8B%E4%BF%A1%E4%BA%8C",
       "slug": "takahashi-shinji",
       "years": "2011-2011",
@@ -6217,6 +6565,7 @@
         "era": "3.32",
         "k": 1391
       },
+      "birth": "1945-02-15",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%AB%98%E6%A9%8B%E7%9B%B4%E6%A8%B9",
       "slug": "takahashi-naoki",
       "years": "1986-1986",
@@ -6231,6 +6580,7 @@
         "era": "3.79",
         "k": 1069
       },
+      "birth": "1975-04-02",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%AB%98%E6%A9%8B%E5%B0%9A%E6%88%90",
       "slug": "takahashi-hisanori",
       "years": "1999-2009",
@@ -6246,6 +6596,7 @@
         "hr": 0,
         "rbi": 0
       },
+      "birth": "1938-02-26",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%AB%98%E6%A9%8B%E6%AD%A3%E5%8B%9D",
       "slug": "takahashi-masakatsu",
       "years": "1957-1960",
@@ -6260,6 +6611,7 @@
         "era": "3.66",
         "k": 218
       },
+      "birth": "1997-02-01",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%AB%99%E6%A9%8B%E5%84%AA%E8%B2%B4",
       "slug": "takahashi-yuki",
       "years": "2018-2024",
@@ -6274,6 +6626,7 @@
         "era": "3.34",
         "k": 625
       },
+      "birth": "1944-05-05",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%AB%98%E6%A9%8B%E5%96%84%E6%AD%A3",
       "slug": "takahashi-yoshimasa",
       "years": "1973-1977",
@@ -6289,6 +6642,7 @@
         "hr": 11,
         "rbi": 93
       },
+      "birth": "1938-01-12",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%AB%98%E6%9E%97%E6%81%92%E5%A4%AB",
       "slug": "takabayashi-tsuneo",
       "years": "1961-1962",
@@ -6304,6 +6658,7 @@
         "hr": 0,
         "rbi": 0
       },
+      "birth": "1968-07-11",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%AB%98%E8%A6%8B%E6%98%8C%E5%AE%8F",
       "slug": "takami-masahiro",
       "years": "1986-1997",
@@ -6333,6 +6688,7 @@
         "era": "3.32",
         "k": 710
       },
+      "birth": "1995-09-14",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%94%B0%E5%8F%A3%E9%BA%97%E6%96%97",
       "slug": "taguchi-kazuto",
       "years": "2013-2021",
@@ -6347,6 +6703,7 @@
         "era": "7.00",
         "k": 3
       },
+      "birth": "1963-06-18",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%AB%B9%E4%B8%8B%E6%B5%A9%E4%BA%8C",
       "slug": "takeshita-koji",
       "years": "1987-1988",
@@ -6361,6 +6718,7 @@
         "era": "3.92",
         "k": 1008
       },
+      "birth": "1965-06-22",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%AD%A6%E7%94%B0%E4%B8%80%E6%B5%A9",
       "slug": "takeda-kazuhiro",
       "years": "2002-2002",
@@ -6406,6 +6764,7 @@
         "hr": 1,
         "rbi": 18
       },
+      "birth": "1996-07-13",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%94%B0%E5%B3%B6%E6%B4%B8%E6%88%90",
       "slug": "tajima-kosei",
       "years": "2015-2019",
@@ -6420,6 +6779,7 @@
         "era": "13.50",
         "k": 1
       },
+      "birth": "1948-05-30",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%94%B0%E5%B0%BB%E8%8C%82%E6%95%8F",
       "slug": "tajiri-shigetoshi",
       "years": "1971-1978",
@@ -6450,6 +6810,7 @@
         "hr": 4,
         "rbi": 62
       },
+      "birth": "1990-05-18",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%AB%8B%E5%B2%A1%E5%AE%97%E4%B8%80%E9%83%8E",
       "slug": "tateoka-soichiro",
       "years": "2012-2024",
@@ -6464,6 +6825,7 @@
         "era": "3.10",
         "k": 330
       },
+      "birth": "1944-07-20",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%94%B0%E4%B8%AD%E7%AB%A0",
       "slug": "tanaka-akira",
       "years": "1968-1970",
@@ -6494,6 +6856,7 @@
         "hr": 7,
         "rbi": 41
       },
+      "birth": "1993-08-18",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%94%B0%E4%B8%AD%E4%BF%8A%E5%A4%AA",
       "slug": "tanaka-shunta",
       "years": "2017-2021",
@@ -6509,6 +6872,7 @@
         "hr": 3,
         "rbi": 8
       },
+      "birth": "1992-08-27",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%94%B0%E4%B8%AD%E8%B2%B4%E4%B9%9F",
       "slug": "tanaka-takaya",
       "years": "2014-2020",
@@ -6524,6 +6888,7 @@
         "hr": 0,
         "rbi": 1
       },
+      "birth": "1988-04-29",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%94%B0%E4%B8%AD%E5%A4%A7%E4%BA%8C%E9%83%8E",
       "slug": "tanaka-daijiro",
       "years": "2006-2012",
@@ -6539,6 +6904,7 @@
         "hr": 2,
         "rbi": 55
       },
+      "birth": "1921-01-16",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%94%B0%E4%B8%AD%E8%B3%87%E6%98%AD",
       "slug": "tanaka-toshiaki",
       "years": "1947-1949",
@@ -6553,6 +6919,7 @@
         "era": "4.13",
         "k": 99
       },
+      "birth": "1993-12-01",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%94%B0%E4%B8%AD%E8%B1%8A%E6%A8%B9",
       "slug": "tanaka-toyoki",
       "years": "2020-2023",
@@ -6568,6 +6935,7 @@
         "hr": 87,
         "rbi": 442
       },
+      "birth": "1966-05-11",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%94%B0%E8%BE%BA%E8%B7%AF%E6%9C%97",
       "slug": "tanabe-norio",
       "years": "2000-2000",
@@ -6582,6 +6950,7 @@
         "era": "37.80",
         "k": 0
       },
+      "birth": "1977-07-01",
       "source_url": "https://ja.wikipedia.org/wiki/%E8%B0%B7%E6%B5%A9%E5%BC%A5",
       "slug": "tani-hiroya",
       "years": "1999-2003",
@@ -6597,6 +6966,7 @@
         "hr": 133,
         "rbi": 741
       },
+      "birth": "1973-02-09",
       "source_url": "https://ja.wikipedia.org/wiki/%E8%B0%B7%E4%BD%B3%E7%9F%A5",
       "slug": "tani-yoshitomo",
       "years": "2007-2013",
@@ -6611,6 +6981,7 @@
         "era": "6.97",
         "k": 32
       },
+      "birth": "1996-03-21",
       "source_url": "https://ja.wikipedia.org/wiki/%E8%B0%B7%E5%B2%A1%E7%AB%9C%E5%B9%B3",
       "slug": "tanioka-tappei",
       "years": "2016-2023",
@@ -6625,6 +6996,7 @@
         "era": "7.36",
         "k": 9
       },
+      "birth": "1973-05-04",
       "source_url": "https://ja.wikipedia.org/wiki/%E8%B0%B7%E5%8F%A3%E5%8A%9F%E4%B8%80",
       "slug": "taniguchi-kouichi",
       "years": "1991-1997",
@@ -6639,6 +7011,7 @@
         "era": "4.91",
         "k": 14
       },
+      "birth": "1950-10-08",
       "source_url": "https://ja.wikipedia.org/wiki/%E8%B0%B7%E5%B1%B1%E9%AB%98%E6%98%8E",
       "slug": "taniyama-takaaki",
       "years": "1971-1976",
@@ -6653,6 +7026,7 @@
         "era": "3.04",
         "k": 155
       },
+      "birth": "1938-01-21",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%A8%AE%E9%83%A8%E5%84%80%E5%BA%B7",
       "slug": "tanebe-noriyasu",
       "years": "1964-1969",
@@ -6667,6 +7041,7 @@
         "era": "3.13",
         "k": 138
       },
+      "birth": "1989-09-02",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%94%B0%E5%8E%9F%E8%AA%A0%E6%AC%A1",
       "slug": "tahara-seiji",
       "years": "2011-2020",
@@ -6681,6 +7056,7 @@
         "era": "4.14",
         "k": 376
       },
+      "birth": "1969-02-27",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%94%B0%E7%95%91%E4%B8%80%E4%B9%9F",
       "slug": "tabata-kazuya",
       "years": "2001-2002",
@@ -6695,6 +7071,7 @@
         "era": "4.33",
         "k": 159
       },
+      "birth": "1949-09-07",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%8E%89%E4%BA%95%E4%BF%A1%E5%8D%9A",
       "slug": "tamai-nobuhiro",
       "years": "1971-1975",
@@ -6723,6 +7100,7 @@
         "era": "3.33",
         "k": 117
       },
+      "birth": "1975-08-23",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%BC%8A%E9%81%94%E6%98%8C%E5%8F%B8",
       "slug": "date-masashi",
       "years": "2005-2006",
@@ -6738,6 +7116,7 @@
         "hr": 96,
         "rbi": 691
       },
+      "birth": "1919-05-10",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%8D%83%E8%91%89%E8%8C%82",
       "slug": "chiba-shigeru",
       "years": "1938-1956",
@@ -6753,6 +7132,7 @@
         "hr": 0,
         "rbi": 1
       },
+      "birth": "1994-08-11",
       "source_url": "https://ja.wikipedia.org/wiki/%E8%BE%BB%E6%9D%B1%E5%80%AB",
       "slug": "tsuji-harutomo",
       "years": "2012-2018",
@@ -6768,6 +7148,7 @@
         "hr": 42,
         "rbi": 128
       },
+      "birth": "1958-10-16",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%B4%A5%E6%9C%AB%E8%8B%B1%E6%98%8E",
       "slug": "tsusue-hideaki",
       "years": "1989-1990",
@@ -6783,6 +7164,7 @@
         "hr": 0,
         "rbi": 6
       },
+      "birth": "1908-09-08",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%B4%A5%E7%94%B0%E5%9B%9B%E9%83%8E",
       "slug": "tsuda-shiro",
       "years": "1934-1941",
@@ -6812,6 +7194,7 @@
         "era": "6.89",
         "k": 27
       },
+      "birth": "1990-01-01",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%9C%9F%E7%94%B0%E7%91%9E%E8%B5%B7",
       "slug": "tsuchida-mizuki",
       "years": "2011-2017",
@@ -6826,6 +7209,7 @@
         "era": "7.36",
         "k": 5
       },
+      "birth": "1985-10-13",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%9C%9F%E6%9C%AC%E6%81%AD%E5%B9%B3",
       "slug": "tsuchimoto-kyohei",
       "years": "2009-2012",
@@ -6841,6 +7225,7 @@
         "hr": 54,
         "rbi": 299
       },
+      "birth": "1935-10-06",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%9C%9F%E5%B1%8B%E6%AD%A3%E5%AD%9D",
       "slug": "tsuchiya-masataka",
       "years": "1955-1960",
@@ -6871,6 +7256,7 @@
         "hr": 1,
         "rbi": 5
       },
+      "birth": "1984-09-17",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%86%86%E8%B0%B7%E8%8B%B1%E4%BF%8A",
       "slug": "tsuburaya-hidetoshi",
       "years": "2006-2012",
@@ -6886,6 +7272,7 @@
         "hr": 18,
         "rbi": 140
       },
+      "birth": "1977-05-30",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%B6%B4%E5%B2%A1%E4%B8%80%E6%88%90",
       "slug": "tsuruoka-kazunari",
       "years": "2008-2011",
@@ -6901,6 +7288,7 @@
         "hr": 22,
         "rbi": 194
       },
+      "birth": "1921-10-10",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%89%8B%E5%A1%9A%E6%98%8E%E6%B2%BB",
       "slug": "teduka-akiharu",
       "years": "1949-1954",
@@ -6916,6 +7304,7 @@
         "hr": 5,
         "rbi": 39
       },
+      "birth": "1983-05-27",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%AF%BA%E5%86%85%E5%B4%87%E5%B9%B8",
       "slug": "terauchi-takayuki",
       "years": "2006-2018",
@@ -6931,6 +7320,7 @@
         "hr": 0,
         "rbi": 1
       },
+      "birth": "1929-09-18",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%AF%BA%E6%9C%AC%E5%93%B2%E6%B2%BB",
       "slug": "teramoto-tetsuji",
       "years": "1949-1954",
@@ -6946,6 +7336,7 @@
         "hr": 13,
         "rbi": 68
       },
+      "birth": "1971-09-23",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%87%BA%E5%8F%A3%E9%9B%84%E5%A4%A7",
       "slug": "deguchi-yudai",
       "years": "1989-1998",
@@ -6960,6 +7351,7 @@
         "era": "3.43",
         "k": 458
       },
+      "birth": "1986-07-11",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%9D%B1%E9%87%8E%E5%B3%BB",
       "slug": "tohno-syun",
       "years": "2004-2012",
@@ -6975,6 +7367,7 @@
         "hr": 8,
         "rbi": 40
       },
+      "birth": "1938-05-03",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%B8%A1%E6%B5%B7%E6%98%87%E4%BA%8C",
       "slug": "tokai-syoji",
       "years": "1961-1963",
@@ -6989,6 +7382,7 @@
         "era": "6.14",
         "k": 20
       },
+      "birth": "1984-10-19",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%A0%82%E9%87%8E%E9%9B%85%E5%8F%B2",
       "slug": "togano-masafumi",
       "years": "2005-2010",
@@ -7004,6 +7398,7 @@
         "hr": 0,
         "rbi": 0
       },
+      "birth": "1913-11-01",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%88%B8%E7%94%B0%E5%90%89%E8%94%B5",
       "slug": "toda-kichizo",
       "years": "1943-1946",
@@ -7033,6 +7428,7 @@
         "era": "4.04",
         "k": 152
       },
+      "birth": "1992-10-17",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%88%B8%E6%A0%B9%E5%8D%83%E6%98%8E",
       "slug": "tone-chiaki",
       "years": "2014-2022",
@@ -7048,6 +7444,7 @@
         "hr": 107,
         "rbi": 451
       },
+      "birth": "1946-10-11",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%AF%8C%E7%94%B0%E5%8B%9D",
       "slug": "tomita-masaru",
       "years": "1973-1975",
@@ -7062,6 +7459,7 @@
         "era": "2.99",
         "k": 859
       },
+      "birth": "1971-02-02",
       "source_url": "https://ja.wikipedia.org/wiki/%E8%B1%8A%E7%94%B0%E6%B8%85",
       "slug": "toyoda-kiyoshi",
       "years": "2006-2010",
@@ -7077,6 +7475,7 @@
         "hr": 10,
         "rbi": 47
       },
+      "birth": "1937-09-03",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%9C%9F%E5%B1%85%E7%AB%A0%E5%8A%A9",
       "slug": "doi-syosuke",
       "years": "1961-1961",
@@ -7092,6 +7491,7 @@
         "hr": 65,
         "rbi": 425
       },
+      "birth": "1942-06-28",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%9C%9F%E4%BA%95%E6%AD%A3%E4%B8%89",
       "slug": "doi-syozo",
       "years": "1965-1978",
@@ -7106,6 +7506,7 @@
         "era": "4.95",
         "k": 91
       },
+      "birth": "1956-06-20",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%9C%9F%E5%B1%85%E6%AD%A3%E5%8F%B2",
       "slug": "doi-masashi",
       "years": "1984-1984",
@@ -7120,6 +7521,7 @@
         "era": "4.50",
         "k": 0
       },
+      "birth": "1935-04-06",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%9C%9F%E5%B2%90%E9%81%93%E9%9B%84",
       "slug": "doki-michio",
       "years": "1954-1959",
@@ -7135,6 +7537,7 @@
         "hr": 15,
         "rbi": 86
       },
+      "birth": "1985-05-27",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%A0%82%E4%B8%8A%E5%89%9B%E8%A3%95",
       "slug": "donoue-takehiro",
       "years": "2015-2017",
@@ -7150,6 +7553,7 @@
         "hr": 27,
         "rbi": 186
       },
+      "birth": "1931-01-20",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%86%85%E8%97%A4%E5%8D%9A%E6%96%87",
       "slug": "naitoh-hirofumi",
       "years": "1948-1958",
@@ -7165,6 +7569,7 @@
         "hr": 16,
         "rbi": 65
       },
+      "birth": "1989-11-27",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%B8%AD%E4%BA%95%E5%A4%A7%E4%BB%8B",
       "slug": "nakai-daisuke",
       "years": "2007-2018",
@@ -7180,6 +7585,7 @@
         "hr": 3,
         "rbi": 19
       },
+      "birth": "1954-08-07",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%B8%AD%E4%BA%95%E5%BA%B7%E4%B9%8B",
       "slug": "nakai-yasuyuki",
       "years": "1972-1984",
@@ -7195,6 +7601,7 @@
         "hr": 109,
         "rbi": 335
       },
+      "birth": "1956-02-16",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%B8%AD%E5%B0%BE%E5%AD%9D%E7%BE%A9",
       "slug": "nakao-takayoshi",
       "years": "1989-1992",
@@ -7223,6 +7630,7 @@
         "era": "4.65",
         "k": 32
       },
+      "birth": "1982-09-12",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%B8%AD%E9%87%8C%E7%AF%A4%E5%8F%B2",
       "slug": "nakazato-atsushi",
       "years": "2010-2011",
@@ -7238,6 +7646,7 @@
         "hr": 0,
         "rbi": 1
       },
+      "birth": "1987-01-22",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%BB%B2%E6%BE%A4%E5%BA%83%E5%9F%BA",
       "slug": "nakazawa-hiroki",
       "years": "2008-2012",
@@ -7253,6 +7662,7 @@
         "hr": 57,
         "rbi": 493
       },
+      "birth": "1909-06-28",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%B8%AD%E5%B3%B6%E6%B2%BB%E5%BA%B7",
       "slug": "nakajima-haruyasu",
       "years": "1934-1949",
@@ -7267,6 +7677,7 @@
         "era": "3.38",
         "k": 7
       },
+      "birth": "1960-04-11",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%B8%AD%E5%B3%B6%E6%B5%A9%E4%BA%BA",
       "slug": "nakajima-hiroto",
       "years": "1982-1987",
@@ -7282,6 +7693,7 @@
         "hr": 209,
         "rbi": 995
       },
+      "birth": "1982-07-31",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%B8%AD%E5%B3%B6%E5%AE%8F%E4%B9%8B",
       "slug": "nakajima-hiroyuki",
       "years": "2019-2023",
@@ -7297,6 +7709,7 @@
         "hr": 6,
         "rbi": 74
       },
+      "birth": "1930-10-20",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%B8%AD%E5%B3%B6%E5%9F%B7",
       "slug": "nakajima-mamoru",
       "years": "1949-1955",
@@ -7311,6 +7724,7 @@
         "era": "4.10",
         "k": 94
       },
+      "birth": "1962-04-12",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%B8%AD%E6%9D%A1%E5%96%84%E4%BC%B8",
       "slug": "nakajyo-yoshinobu",
       "years": "1980-1984",
@@ -7326,6 +7740,7 @@
         "hr": 309,
         "rbi": 1087
       },
+      "birth": "1989-04-22",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%B8%AD%E7%94%B0%E7%BF%94",
       "slug": "nakata-sho",
       "years": "2021-2023",
@@ -7341,6 +7756,7 @@
         "hr": 4,
         "rbi": 17
       },
+      "birth": "1979-05-05",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%B8%AD%E8%B0%B7%E4%BB%81",
       "slug": "nakatani-jin",
       "years": "2012-2012",
@@ -7356,6 +7772,7 @@
         "hr": 0,
         "rbi": 0
       },
+      "birth": "1953-05-18",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%B8%AD%E5%8F%B8%E5%BE%97%E4%B8%89",
       "slug": "nakatsukasa-tokuzo",
       "years": "1978-1984",
@@ -7371,6 +7788,7 @@
         "hr": 0,
         "rbi": 1
       },
+      "birth": "1978-04-10",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%B8%AD%E6%BF%B1%E8%A3%95%E4%B9%8B",
       "slug": "nakahama-hiroyuki",
       "years": "2003-2005",
@@ -7385,6 +7803,7 @@
         "era": "4.32",
         "k": 185
       },
+      "birth": "1975-08-22",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%B8%AD%E6%9D%91%E9%9A%BC%E4%BA%BA",
       "slug": "nakamura-hayato",
       "years": "2004-2005",
@@ -7400,6 +7819,7 @@
         "hr": 1,
         "rbi": 23
       },
+      "birth": "1924-04-08",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%B8%AD%E6%9D%91%E6%94%BF%E7%BE%8E",
       "slug": "nakamura-masami",
       "years": "1943-1944",
@@ -7415,6 +7835,7 @@
         "hr": 0,
         "rbi": 8
       },
+      "birth": "1916-05-17",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%B8%AD%E5%B1%B1%E6%AD%A6",
       "slug": "nakayama-takeshi",
       "years": "1935-1939",
@@ -7429,6 +7850,7 @@
         "era": "5.19",
         "k": 18
       },
+      "birth": "1951-06-25",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%B8%AD%E5%B1%B1%E4%BF%8A%E4%B9%8B",
       "slug": "nakayama-toshiyuki",
       "years": "1974-1978",
@@ -7444,6 +7866,7 @@
         "hr": 0,
         "rbi": 0
       },
+      "birth": "1923-11-30",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%B0%B8%E4%BA%95%E6%B4%8B%E4%BA%8C%E9%83%8E",
       "slug": "nagai-yojiro",
       "years": "1949-1950",
@@ -7459,6 +7882,7 @@
         "hr": 3,
         "rbi": 27
       },
+      "birth": "1973-10-05",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%B0%B8%E6%B1%A0%E5%80%91%E5%A4%9A",
       "slug": "nagaike-yasuo",
       "years": "1998-2002",
@@ -7474,6 +7898,7 @@
         "hr": 5,
         "rbi": 96
       },
+      "birth": "1904-09-13",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%B0%B8%E6%B2%A2%E5%AF%8C%E5%A3%AB%E9%9B%84",
       "slug": "nagasawa-fujio",
       "years": "1934-1943",
@@ -7489,6 +7914,7 @@
         "hr": 18,
         "rbi": 82
       },
+      "birth": "1966-01-26",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%95%B7%E5%B6%8B%E4%B8%80%E8%8C%82",
       "slug": "nagashima-kazushige",
       "years": "1993-1996",
@@ -7504,6 +7930,7 @@
         "hr": 1,
         "rbi": 42
       },
+      "birth": "1920-07-04",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%95%B7%E5%B3%B6%E9%80%B2",
       "slug": "nagashima-susumu",
       "years": "1951-1952",
@@ -7519,6 +7946,7 @@
         "hr": 0,
         "rbi": 0
       },
+      "birth": "1984-06-10",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%95%B7%E7%94%B0%E6%98%8C%E6%B5%A9",
       "slug": "nagata-masahiro",
       "years": "2002-2006",
@@ -7533,6 +7961,7 @@
         "era": "4.19",
         "k": 333
       },
+      "birth": "1952-11-05",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%B0%B8%E6%9C%AC%E8%A3%95%E7%AB%A0",
       "slug": "nagamoto-hiroaki",
       "years": "1980-1980",
@@ -7547,6 +7976,7 @@
         "era": "4.50",
         "k": 9
       },
+      "birth": "1944-04-26",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%B8%83%E6%A3%AE%E7%94%B1%E5%BA%B7",
       "slug": "nanamori-yoshiyasu",
       "years": "1963-1964",
@@ -7561,6 +7991,7 @@
         "era": "3.95",
         "k": 227
       },
+      "birth": "1948-04-20",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%88%90%E9%87%8D%E6%98%A5%E7%94%9F",
       "slug": "narishige-haruo",
       "years": "1980-1980",
@@ -7575,6 +8006,7 @@
         "era": "2.83",
         "k": 33
       },
+      "birth": "1917-06-06",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%88%90%E7%94%B0%E5%8F%8B%E4%B8%89%E9%83%8E",
       "slug": "narita-tomozaburo",
       "years": "1936-1938",
@@ -7590,6 +8022,7 @@
         "hr": 7,
         "rbi": 25
       },
+      "birth": "1935-02-19",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%9B%A3%E6%B3%A2%E6%98%AD%E4%BA%8C%E9%83%8E",
       "slug": "nanba-syojiro",
       "years": "1958-1961",
@@ -7604,6 +8037,7 @@
         "era": "3.45",
         "k": 1706
       },
+      "birth": "1951-05-11",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%96%B0%E6%B5%A6%E5%AF%BF%E5%A4%AB",
       "slug": "nihra-hisao",
       "years": "1968-1983",
@@ -7619,6 +8053,7 @@
         "hr": 173,
         "rbi": 622
       },
+      "birth": "1976-04-29",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%BA%8C%E5%B2%A1%E6%99%BA%E5%AE%8F",
       "slug": "nioka-tomohiro",
       "years": "1998-2008",
@@ -7634,6 +8069,7 @@
         "hr": 154,
         "rbi": 541
       },
+      "birth": "1971-10-04",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%BB%81%E5%BF%97%E6%95%8F%E4%B9%85",
       "slug": "nishi-toshihisa",
       "years": "1995-2006",
@@ -7649,6 +8085,7 @@
         "hr": 50,
         "rbi": 202
       },
+      "birth": "1961-06-28",
       "source_url": "https://ja.wikipedia.org/wiki/%E8%A5%BF%E5%B2%A1%E8%89%AF%E6%B4%8B",
       "slug": "nishioka-yoshihiro",
       "years": "1990-1994",
@@ -7663,6 +8100,7 @@
         "era": "2.66",
         "k": 341
       },
+      "birth": "1930-07-01",
       "source_url": "https://ja.wikipedia.org/wiki/%E8%A5%BF%E7%94%B0%E4%BA%A8",
       "slug": "nishida-toru",
       "years": "1952-1955",
@@ -7678,6 +8116,7 @@
         "hr": 0,
         "rbi": 3
       },
+      "birth": "1941-03-10",
       "source_url": "https://ja.wikipedia.org/wiki/%E8%A5%BF%E9%87%8E%E5%BF%A0%E8%87%A3",
       "slug": "nishino-tadaomi",
       "years": "1960-1963",
@@ -7692,6 +8131,7 @@
         "era": "3.12",
         "k": 529
       },
+      "birth": "1985-05-10",
       "source_url": "https://ja.wikipedia.org/wiki/%E8%A5%BF%E6%9D%91%E5%81%A5%E5%A4%AA%E6%9C%97",
       "slug": "nishimura-kentaro",
       "years": "2003-2018",
@@ -7707,6 +8147,7 @@
         "hr": 0,
         "rbi": 3
       },
+      "birth": "1958-08-19",
       "source_url": "https://ja.wikipedia.org/wiki/%E8%A5%BF%E6%9C%AC%E5%92%8C%E7%BE%8E",
       "slug": "nishimoto-kazumi",
       "years": "1981-1985",
@@ -7721,6 +8162,7 @@
         "era": "3.20",
         "k": 1239
       },
+      "birth": "1956-06-27",
       "source_url": "https://ja.wikipedia.org/wiki/%E8%A5%BF%E6%9C%AC%E8%81%96",
       "slug": "nishimoto-takashi",
       "years": "1974-1994",
@@ -7735,6 +8177,7 @@
         "era": "4.11",
         "k": 258
       },
+      "birth": "1970-08-28",
       "source_url": "https://ja.wikipedia.org/wiki/%E8%A5%BF%E5%B1%B1%E4%B8%80%E5%AE%87",
       "slug": "nishiyama-kazutaka",
       "years": "1992-2003",
@@ -7750,6 +8193,7 @@
         "hr": 50,
         "rbi": 282
       },
+      "birth": "1967-07-07",
       "source_url": "https://ja.wikipedia.org/wiki/%E8%A5%BF%E5%B1%B1%E7%A7%80%E4%BA%8C",
       "slug": "nishiyama-syuuji",
       "years": "2005-2005",
@@ -7765,6 +8209,7 @@
         "hr": 0,
         "rbi": 2
       },
+      "birth": "1953-11-15",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%BA%8C%E5%AE%AE%E8%87%B3",
       "slug": "ninomiya-itaru",
       "years": "1975-1983",
@@ -7780,6 +8225,7 @@
         "hr": 15,
         "rbi": 60
       },
+      "birth": "1959-05-09",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%BB%81%E6%9D%91%E8%96%AB",
       "slug": "nimura-kaoru",
       "years": "1981-1987",
@@ -7794,6 +8240,7 @@
         "era": "12.91",
         "k": 6
       },
+      "birth": "2000-06-24",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%B2%BC%E7%94%B0%E7%BF%94%E5%B9%B3",
       "slug": "numata-shohei",
       "years": "2018-2022",
@@ -7808,6 +8255,7 @@
         "era": "4.03",
         "k": 623
       },
+      "birth": "1987-06-15",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%87%8E%E4%B8%8A%E4%BA%AE%E7%A3%A8",
       "slug": "nogami-ryoma",
       "years": "2018-2021",
@@ -7822,6 +8270,7 @@
         "era": "3.69",
         "k": 1122
       },
+      "birth": "1974-05-13",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%87%8E%E5%8F%A3%E8%8C%82%E6%A8%B9",
       "slug": "noguchi-shigeki",
       "years": "2006-2008",
@@ -7837,6 +8286,7 @@
         "hr": 0,
         "rbi": 0
       },
+      "birth": "1941-10-06",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%87%8E%E5%8F%A3%E5%85%83%E4%B8%89",
       "slug": "noguchi-motozo",
       "years": "1960-1962",
@@ -7851,6 +8301,7 @@
         "era": "4.57",
         "k": 172
       },
+      "birth": "1983-05-31",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%87%8E%E9%96%93%E5%8F%A3%E8%B2%B4%E5%BD%A6",
       "slug": "nomaguchi-takahiko",
       "years": "2004-2015",
@@ -7866,6 +8317,7 @@
         "hr": 4,
         "rbi": 17
       },
+      "birth": "1973-07-23",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%87%8E%E6%9D%91%E5%85%8B%E5%89%87",
       "slug": "nomura-katsunori",
       "years": "2004-2004",
@@ -7880,6 +8332,7 @@
         "era": "3.21",
         "k": 476
       },
+      "birth": "1969-01-10",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%87%8E%E6%9D%91%E8%B2%B4%E4%BB%81",
       "slug": "nomura-takahito",
       "years": "1998-2001",
@@ -7910,6 +8363,7 @@
         "hr": 20,
         "rbi": 114
       },
+      "birth": "1947-11-17",
       "source_url": "https://ja.wikipedia.org/wiki/%E8%90%A9%E5%8E%9F%E5%BA%B7%E5%BC%98",
       "slug": "hagiwara-yasuhiro",
       "years": "1969-1975",
@@ -7925,6 +8379,7 @@
         "hr": 9,
         "rbi": 79
       },
+      "birth": "1990-04-28",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%A9%8B%E6%9C%AC%E5%88%B0",
       "slug": "hashimoto-itaru",
       "years": "2008-2018",
@@ -7939,6 +8394,7 @@
         "era": "3.17",
         "k": 186
       },
+      "birth": "1969-05-22",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%A9%8B%E6%9C%AC%E6%B8%85",
       "slug": "hashimoto-kiyoshi",
       "years": "1987-2000",
@@ -7953,6 +8409,7 @@
         "era": "4.52",
         "k": 123
       },
+      "birth": "1958-06-20",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%A9%8B%E6%9C%AC%E6%95%AC%E5%8F%B8",
       "slug": "hashimoto-keiji",
       "years": "1981-1986",
@@ -7967,6 +8424,7 @@
         "era": "8.53",
         "k": 3
       },
+      "birth": "1991-06-15",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%95%B7%E8%B0%B7%E5%B7%9D%E6%BD%A4",
       "slug": "hasegawa-jyun",
       "years": "2015-2017",
@@ -7981,6 +8439,7 @@
         "era": "3.08",
         "k": 270
       },
+      "birth": "1994-05-31",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%95%A0%E4%B8%96%E5%91%A8",
       "slug": "hatake-seishu",
       "years": "2016-2024",
@@ -8009,6 +8468,7 @@
         "era": "6.35",
         "k": 4
       },
+      "birth": "1973-06-05",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%BE%BD%E6%A0%B9%E5%B7%9D%E7%AB%9C",
       "slug": "hanekawa-ryu",
       "years": "1991-1996",
@@ -8024,6 +8484,7 @@
         "hr": 13,
         "rbi": 58
       },
+      "birth": "1947-04-26",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%B5%9C%E6%9D%91%E5%81%A5%E5%8F%B2",
       "slug": "hamamura-takashi",
       "years": "1971-1971",
@@ -8039,6 +8500,7 @@
         "hr": 2,
         "rbi": 67
       },
+      "birth": "1915-10-31",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%9E%97%E6%B8%85%E4%B8%80",
       "slug": "hayashi-seiichi",
       "years": "1936-1947",
@@ -8054,6 +8516,7 @@
         "hr": 1,
         "rbi": 3
       },
+      "birth": "1947-05-04",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%9E%97%E5%8D%83%E4%BB%A3%E4%BD%9C",
       "slug": "hayashi-chiyosaku",
       "years": "1965-1969",
@@ -8068,6 +8531,7 @@
         "era": "3.49",
         "k": 502
       },
+      "birth": "1983-09-19",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%9E%97%E6%98%8C%E7%AF%84",
       "slug": "hayashi-masanori",
       "years": "2001-2008",
@@ -8083,6 +8547,7 @@
         "hr": 3,
         "rbi": 10
       },
+      "birth": "1977-08-30",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%8E%9F%E4%BF%8A%E4%BB%8B",
       "slug": "hara-syunsuke",
       "years": "1995-2006",
@@ -8097,6 +8562,7 @@
         "hr": 0,
         "rbi": 0
       },
+      "birth": "1966-07-25",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%8E%9F%E7%94%B0%E6%98%8E%E5%BA%83",
       "slug": "harada-akihiro",
       "years": "1984-1991",
@@ -8112,6 +8578,7 @@
         "hr": 4,
         "rbi": 38
       },
+      "birth": "1947-07-28",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%8E%9F%E7%94%B0%E4%BF%8A%E6%B2%BB",
       "slug": "harada-haruaki",
       "years": "1972-1981",
@@ -8127,6 +8594,7 @@
         "hr": 504,
         "rbi": 1676
       },
+      "birth": "1940-06-19",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%BC%B5%E6%9C%AC%E5%8B%B2",
       "slug": "harimoto-isao",
       "years": "1976-1979",
@@ -8141,6 +8609,7 @@
         "era": "1.29",
         "k": 3
       },
+      "birth": "1938-01-23",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%A6%AC%E5%A0%B4%E6%AD%A3%E5%B9%B3",
       "slug": "baba-syohei",
       "years": "1955-1959",
@@ -8185,6 +8654,7 @@
         "era": "4.50",
         "k": 10
       },
+      "birth": "1985-07-01",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B9%B3%E5%B2%A1%E6%94%BF%E6%A8%B9",
       "slug": "hiraoka-masaki",
       "years": "2003-2005",
@@ -8200,6 +8670,7 @@
         "hr": 22,
         "rbi": 112
       },
+      "birth": "1954-02-09",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B9%B3%E7%94%B0%E8%96%AB",
       "slug": "hirata-kaoru",
       "years": "1975-1984",
@@ -8214,6 +8685,7 @@
         "hr": 0,
         "rbi": 0
       },
+      "birth": "1996-12-16",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B9%B3%E9%96%93%E9%9A%BC%E4%BA%BA",
       "slug": "hirama-hayato",
       "years": "2019-2022",
@@ -8228,6 +8700,7 @@
         "era": "4.42",
         "k": 101
       },
+      "birth": "1974-03-23",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B9%B3%E6%9D%BE%E4%B8%80%E5%AE%8F",
       "slug": "hiramatsu-kazuhiro",
       "years": "1997-2001",
@@ -8258,6 +8731,7 @@
         "hr": 35,
         "rbi": 123
       },
+      "birth": "1997-04-09",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%BB%A3%E5%B2%A1%E5%A4%A7%E5%BF%97",
       "slug": "hirooka-taishi",
       "years": "2021-2023",
@@ -8273,6 +8747,7 @@
         "hr": 117,
         "rbi": 465
       },
+      "birth": "1932-02-09",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%BA%83%E5%B2%A1%E9%81%94%E6%9C%97",
       "slug": "hirooka-tatsuro",
       "years": "1954-1966",
@@ -8302,6 +8777,7 @@
         "hr": 26,
         "rbi": 144
       },
+      "birth": "1925-08-03",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%BA%83%E7%94%B0%E9%A0%86",
       "slug": "hirota-jyun",
       "years": "1952-1956",
@@ -8316,6 +8792,7 @@
         "era": "3.00",
         "k": 289
       },
+      "birth": "1964-02-26",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%BA%83%E7%94%B0%E6%B5%A9%E7%AB%A0",
       "slug": "hirota-hiroaki",
       "years": "1985-1994",
@@ -8331,6 +8808,7 @@
         "hr": 78,
         "rbi": 264
       },
+      "birth": "1943-10-16",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%BA%83%E9%87%8E%E5%8A%9F",
       "slug": "hirono-isao",
       "years": "1971-1973",
@@ -8345,6 +8823,7 @@
         "era": "2.40",
         "k": 197
       },
+      "birth": "1983-09-16",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%B7%B1%E6%B2%A2%E5%92%8C%E5%B8%86",
       "slug": "fukasawa-kazuho",
       "years": "2006-2008",
@@ -8360,6 +8839,7 @@
         "hr": 6,
         "rbi": 43
       },
+      "birth": "1948-06-17",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%B7%B1%E6%B2%A2%E4%BF%AE%E4%B8%80",
       "slug": "fukasawa-syuichi",
       "years": "1966-1968",
@@ -8374,6 +8854,7 @@
         "era": "8.03",
         "k": 10
       },
+      "birth": "1983-04-23",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%B7%B1%E7%94%B0%E6%8B%93%E4%B9%9F",
       "slug": "fukata-takuya",
       "years": "2005-2010",
@@ -8388,6 +8869,7 @@
         "era": "54.00",
         "k": 0
       },
+      "birth": "1984-10-25",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%B7%B1%E7%94%BA%E4%BA%AE%E4%BB%8B",
       "slug": "fukamachi-ryosuke",
       "years": "2006-2008",
@@ -8403,6 +8885,7 @@
         "hr": 8,
         "rbi": 25
       },
+      "birth": "1976-05-12",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%A6%8F%E4%BA%95%E6%95%AC%E6%B2%BB",
       "slug": "fukui-keiji",
       "years": "1994-2004",
@@ -8417,6 +8900,7 @@
         "era": "2.77",
         "k": 38
       },
+      "birth": "1988-09-02",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%A6%8F%E6%B3%89%E6%95%AC%E5%A4%A7",
       "slug": "fukuizumi-keita",
       "years": "2010-2011",
@@ -8432,6 +8916,7 @@
         "hr": 9,
         "rbi": 45
       },
+      "birth": "1964-01-10",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%A6%8F%E7%8E%8B%E6%98%AD%E4%BB%81",
       "slug": "fukuoh-akihito",
       "years": "1985-1999",
@@ -8446,6 +8931,7 @@
         "era": "4.15",
         "k": 205
       },
+      "birth": "1983-09-12",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%A6%8F%E7%94%B0%E8%81%A1%E5%BF%97",
       "slug": "fukuda-satoshi",
       "years": "2005-2015",
@@ -8476,6 +8962,7 @@
         "hr": 0,
         "rbi": 4
       },
+      "birth": "1983-08-24",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%A6%8F%E5%85%83%E6%B7%B3%E5%8F%B2",
       "slug": "fukumoto-atsushi",
       "years": "2008-2012",
@@ -8490,6 +8977,7 @@
         "era": "3.77",
         "k": 1064
       },
+      "birth": "1977-05-12",
       "source_url": "https://ja.wikipedia.org/wiki/%E8%97%A4%E4%BA%95%E7%A7%80%E6%82%9F",
       "slug": "fujii-syugo",
       "years": "2010-2011",
@@ -8505,6 +8993,7 @@
         "hr": 74,
         "rbi": 346
       },
+      "birth": "1934-10-08",
       "source_url": "https://ja.wikipedia.org/wiki/%E8%97%A4%E5%B0%BE%E8%8C%82",
       "slug": "fujio-shigeru",
       "years": "1953-1964",
@@ -8519,6 +9008,7 @@
         "era": "4.14",
         "k": 359
       },
+      "birth": "1989-07-17",
       "source_url": "https://ja.wikipedia.org/wiki/%E8%97%A4%E5%B2%A1%E8%B2%B4%E8%A3%95",
       "slug": "fujioka-takahiro",
       "years": "2019-2020",
@@ -8534,6 +9024,7 @@
         "hr": 0,
         "rbi": 1
       },
+      "birth": "1966-10-18",
       "source_url": "https://ja.wikipedia.org/wiki/%E8%97%A4%E5%B2%A1%E5%AF%9B%E7%94%9F",
       "slug": "fujioka-hiroki",
       "years": "1984-1992",
@@ -8548,6 +9039,7 @@
         "era": "4.51",
         "k": 224
       },
+      "birth": "1956-04-05",
       "source_url": "https://ja.wikipedia.org/wiki/%E8%97%A4%E5%9F%8E%E5%92%8C%E6%98%8E",
       "slug": "fujishiro-kazuaki",
       "years": "1976-1982",
@@ -8563,6 +9055,7 @@
         "hr": 72,
         "rbi": 279
       },
+      "birth": "1961-10-03",
       "source_url": "https://ja.wikipedia.org/wiki/%E8%97%A4%E7%94%B0%E6%B5%A9%E9%9B%85",
       "slug": "fujita-hiromasa",
       "years": "1992-1996",
@@ -8577,6 +9070,7 @@
         "era": "2.20",
         "k": 924
       },
+      "birth": "1931-08-07",
       "source_url": "https://ja.wikipedia.org/wiki/%E8%97%A4%E7%94%B0%E5%85%83%E5%8F%B8",
       "slug": "fujita-motoshi",
       "years": "1957-1964",
@@ -8592,6 +9086,7 @@
         "hr": 0,
         "rbi": 27
       },
+      "birth": "1989-07-25",
       "source_url": "https://ja.wikipedia.org/wiki/%E8%97%A4%E6%9D%91%E5%A4%A7%E4%BB%8B",
       "slug": "fujimura-daisuke",
       "years": "2007-2017",
@@ -8606,6 +9101,7 @@
         "era": "4.50",
         "k": 2
       },
+      "birth": "1940-07-11",
       "source_url": "https://ja.wikipedia.org/wiki/%E8%97%A4%E6%9C%AC%E5%81%A5%E4%BD%9C",
       "slug": "fujimoto-kensaku",
       "years": "1959-1964",
@@ -8621,6 +9117,7 @@
         "hr": 0,
         "rbi": 1
       },
+      "birth": "1966-06-12",
       "source_url": "https://ja.wikipedia.org/wiki/%E8%97%A4%E6%9C%AC%E5%81%A5%E6%B2%BB",
       "slug": "fujimoto-kenji",
       "years": "1984-1993",
@@ -8636,6 +9133,7 @@
         "hr": 0,
         "rbi": 0
       },
+      "birth": "1964-10-07",
       "source_url": "https://ja.wikipedia.org/wiki/%E8%97%A4%E6%9C%AC%E8%8C%82%E5%96%9C",
       "slug": "fujimoto-shigeki",
       "years": "1982-1989",
@@ -8651,6 +9149,7 @@
         "hr": 5,
         "rbi": 60
       },
+      "birth": "1938-03-31",
       "source_url": "https://ja.wikipedia.org/wiki/%E8%97%A4%E6%9C%AC%E4%BC%B8",
       "slug": "fujimoto-shin",
       "years": "1957-1963",
@@ -8665,6 +9164,7 @@
         "era": "1.90",
         "k": 1177
       },
+      "birth": "1918-05-18",
       "source_url": "https://ja.wikipedia.org/wiki/%E8%97%A4%E6%9C%AC%E8%8B%B1%E9%9B%84",
       "slug": "fujimoto-hideo",
       "years": "1942-1955",
@@ -8709,6 +9209,7 @@
         "era": "4.50",
         "k": 0
       },
+      "birth": "1985-04-05",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%8F%A4%E5%B7%9D%E7%A5%90%E6%A8%B9",
       "slug": "furukawa-yuki",
       "years": "2007-2012",
@@ -8723,6 +9224,7 @@
         "era": "4.97",
         "k": 184
       },
+      "birth": "1995-09-08",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%8F%A4%E5%B7%9D%E4%BE%91%E5%88%A9",
       "slug": "furukawa-yuri",
       "years": "2019-2021",
@@ -8738,6 +9240,7 @@
         "hr": 9,
         "rbi": 88
       },
+      "birth": "1976-01-12",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%8F%A4%E5%9F%8E%E8%8C%82%E5%B9%B8",
       "slug": "furuki-shigeyuki",
       "years": "2006-2013",
@@ -8753,6 +9256,7 @@
         "hr": 1,
         "rbi": 11
       },
+      "birth": "1921-03-09",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%8F%A4%E5%AE%B6%E6%AD%A6%E5%A4%AB",
       "slug": "furuya-takeo",
       "years": "1946-1947",
@@ -8768,6 +9272,7 @@
         "hr": 0,
         "rbi": 0
       },
+      "birth": "1943-04-05",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B1%8F%E9%81%93%E5%A4%AB",
       "slug": "hei-michio",
       "years": "1962-1964",
@@ -8797,6 +9302,7 @@
         "hr": 0,
         "rbi": 3
       },
+      "birth": "1982-05-04",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%98%9F%E5%AD%9D%E5%85%B8",
       "slug": "hoshi-takanori",
       "years": "2004-2011",
@@ -8811,6 +9317,7 @@
         "era": "4.37",
         "k": 32
       },
+      "birth": "1984-04-04",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%98%9F%E9%87%8E%E7%9C%9F%E6%BE%84",
       "slug": "hoshino-masumi",
       "years": "2009-2014",
@@ -8826,6 +9333,7 @@
         "hr": 0,
         "rbi": 0
       },
+      "birth": "1941-01-01",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%A0%80%E7%94%B0%E6%98%8E",
       "slug": "hotta-akira",
       "years": "1964-1966",
@@ -8840,6 +9348,7 @@
         "era": "2.17",
         "k": 756
       },
+      "birth": "1935-10-05",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%A0%80%E5%86%85%E5%BA%84",
       "slug": "horiuchi-syo",
       "years": "1954-1963",
@@ -8855,6 +9364,7 @@
         "hr": 22,
         "rbi": 209
       },
+      "birth": "1907-03-15",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%A0%80%E5%B0%BE%E6%96%87%E4%BA%BA",
       "slug": "horio-fumito",
       "years": "1934-1935",
@@ -8869,6 +9379,7 @@
         "era": "5.49",
         "k": 42
       },
+      "birth": "1998-09-11",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%A0%80%E5%B2%A1%E9%9A%BC%E4%BA%BA",
       "slug": "horioka-hayato",
       "years": "2016-2023",
@@ -8884,6 +9395,7 @@
         "hr": 4,
         "rbi": 18
       },
+      "birth": "1974-04-18",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%A0%80%E7%94%B0%E4%B8%80%E9%83%8E",
       "slug": "horita-ichiro",
       "years": "1996-2006",
@@ -8899,6 +9411,7 @@
         "hr": 6,
         "rbi": 35
       },
+      "birth": "1955-06-26",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%A0%80%E5%A0%B4%E8%8B%B1%E5%AD%9D",
       "slug": "horiba-hidetaka",
       "years": "1990-1990",
@@ -8913,6 +9426,7 @@
         "era": "2.82",
         "k": 515
       },
+      "birth": "1935-01-20",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%A0%80%E6%9C%AC%E5%BE%8B%E9%9B%84",
       "slug": "horimoto-ritsuo",
       "years": "1960-1962",
@@ -8927,6 +9441,7 @@
         "era": "3.34",
         "k": 143
       },
+      "birth": "1912-04-01",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%89%8D%E5%B7%9D%E5%85%AB%E9%83%8E",
       "slug": "maekawa-hachiro",
       "years": "1936-1938",
@@ -8941,6 +9456,7 @@
         "era": "4.17",
         "k": 1241
       },
+      "birth": "1970-08-26",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%89%8D%E7%94%B0%E5%B9%B8%E9%95%B7",
       "slug": "maeda-yukinaga",
       "years": "2002-2007",
@@ -8955,6 +9471,7 @@
         "era": "4.71",
         "k": 138
       },
+      "birth": "1976-02-13",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%9C%9F%E6%9C%A8%E5%B0%86%E6%A8%B9",
       "slug": "maki-masaki",
       "years": "2001-2002",
@@ -8984,6 +9501,7 @@
         "era": "3.07",
         "k": 361
       },
+      "birth": "1938-01-15",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%9B%8A%E7%94%B0%E6%98%AD%E9%9B%84",
       "slug": "masuda-akio",
       "years": "1962-1967",
@@ -8998,6 +9516,7 @@
         "era": "3.60",
         "k": 1
       },
+      "birth": "1965-09-23",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%9B%8A%E7%94%B0%E6%98%8E%E5%85%B8",
       "slug": "masuda-akinori",
       "years": "1987-1991",
@@ -9013,6 +9532,7 @@
         "hr": 12,
         "rbi": 73
       },
+      "birth": "1935-04-25",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%A2%97%E7%94%B0%E6%B5%A9",
       "slug": "masuda-hiroshi",
       "years": "1961-1961",
@@ -9028,6 +9548,7 @@
         "hr": 129,
         "rbi": 459
       },
+      "birth": "1934-03-08",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%94%BA%E7%94%B0%E8%A1%8C%E5%BD%A6",
       "slug": "machida-yukihiko",
       "years": "1965-1965",
@@ -9042,6 +9563,7 @@
         "era": "5.14",
         "k": 2
       },
+      "birth": "1951-04-23",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%9D%BE%E5%B0%BE%E8%BC%9D%E7%BE%A9",
       "slug": "matsuo-teruyoshi",
       "years": "1969-1979",
@@ -9057,6 +9579,7 @@
         "hr": 12,
         "rbi": 60
       },
+      "birth": "1992-07-01",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%9D%BE%E6%BE%A4%E8%A3%95%E4%BB%8B",
       "slug": "matsuzawa-yusuke",
       "years": "2016-2018",
@@ -9072,6 +9595,7 @@
         "hr": 0,
         "rbi": 2
       },
+      "birth": "1936-09-01",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%9D%BE%E4%B8%8B%E7%A7%80%E6%96%87",
       "slug": "matsushita-hidefumi",
       "years": "1959-1959",
@@ -9086,6 +9610,7 @@
         "era": "5.06",
         "k": 97
       },
+      "birth": "1964-07-10",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%9D%BE%E8%B0%B7%E7%AB%9C%E4%BA%8C%E9%83%8E",
       "slug": "matsutani-ryujiro",
       "years": "1988-1994",
@@ -9116,6 +9641,7 @@
         "hr": 301,
         "rbi": 991
       },
+      "birth": "1983-05-17",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%9D%BE%E7%94%B0%E5%AE%A3%E6%B5%A9",
       "slug": "matsuda-nobuhiro",
       "years": "2023-2023",
@@ -9131,6 +9657,7 @@
         "hr": 15,
         "rbi": 67
       },
+      "birth": "1995-01-26",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%9D%BE%E5%8E%9F%E8%81%96%E5%BC%A5",
       "slug": "matsubara-seiya",
       "years": "2016-2024",
@@ -9146,6 +9673,7 @@
         "hr": 331,
         "rbi": 1180
       },
+      "birth": "1944-01-13",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%9D%BE%E5%8E%9F%E8%AA%A0",
       "slug": "matsubara-makoto",
       "years": "1981-1981",
@@ -9160,6 +9688,7 @@
         "era": "4.82",
         "k": 28
       },
+      "birth": "1964-11-16",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%9D%BE%E5%8E%9F%E9%9D%96",
       "slug": "matsubara-yasushi",
       "years": "1985-1991",
@@ -9175,6 +9704,7 @@
         "hr": 8,
         "rbi": 30
       },
+      "birth": "1941-10-01",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%9D%BE%E6%9D%91%E6%AD%A3%E6%99%B4",
       "slug": "matsumura-masaharu",
       "years": "1964-1967",
@@ -9190,6 +9720,7 @@
         "hr": 29,
         "rbi": 195
       },
+      "birth": "1954-08-08",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%9D%BE%E6%9C%AC%E5%8C%A1%E5%8F%B2",
       "slug": "matsumoto-tadashi",
       "years": "1976-1987",
@@ -9205,6 +9736,7 @@
         "hr": 0,
         "rbi": 57
       },
+      "birth": "1984-07-03",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%9D%BE%E6%9C%AC%E5%93%B2%E4%B9%9F",
       "slug": "matsumoto-tetsuya",
       "years": "2006-2017",
@@ -9220,6 +9752,7 @@
         "hr": 0,
         "rbi": 0
       },
+      "birth": "1988-08-02",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%B8%B8%E6%AF%9B%E8%AC%99%E4%B8%80",
       "slug": "marumo-kenichi",
       "years": "2010-2013",
@@ -9235,6 +9768,7 @@
         "hr": 1,
         "rbi": 5
       },
+      "birth": "1978-05-21",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%B8%89%E6%B5%A6%E8%B2%B4",
       "slug": "miura-taka",
       "years": "2000-2007",
@@ -9249,6 +9783,7 @@
         "era": "2.84",
         "k": 475
       },
+      "birth": "1933-08-23",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%B8%89%E6%B5%A6%E6%96%B9%E7%BE%A9",
       "slug": "miura-masayoshi",
       "years": "1952-1955",
@@ -9263,6 +9798,7 @@
         "era": "3.22",
         "k": 257
       },
+      "birth": "1989-04-10",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%B8%89%E4%B8%8A%E6%9C%8B%E4%B9%9F",
       "slug": "mikami-tomoya",
       "years": "2023-2023",
@@ -9277,6 +9813,7 @@
         "era": "11.12",
         "k": 4
       },
+      "birth": "1982-08-08",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%B8%89%E6%9C%A8%E5%9D%87",
       "slug": "miki-hitoshi",
       "years": "2004-2008",
@@ -9291,6 +9828,7 @@
         "era": "3.98",
         "k": 306
       },
+      "birth": "1974-06-08",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%B8%89%E6%B2%A2%E8%88%88%E4%B8%80",
       "slug": "misawa-koichi",
       "years": "1996-2004",
@@ -9305,6 +9843,7 @@
         "era": "3.17",
         "k": 289
       },
+      "birth": "1948-04-28",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%B0%B4%E8%B0%B7%E5%AD%9D",
       "slug": "mizutani-takashi",
       "years": "1976-1976",
@@ -9319,6 +9858,7 @@
         "era": "3.10",
         "k": 519
       },
+      "birth": "1965-09-03",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%B0%B4%E9%87%8E%E9%9B%84%E4%BB%81",
       "slug": "mizuno-katsuhito",
       "years": "1983-1996",
@@ -9334,6 +9874,7 @@
         "hr": 0,
         "rbi": 0
       },
+      "birth": "1926-08-15",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%B0%B4%E9%87%8E%E5%BF%A0%E5%BD%A6",
       "slug": "mizuno-tadahiko",
       "years": "1944-1946",
@@ -9349,6 +9890,7 @@
         "hr": 12,
         "rbi": 184
       },
+      "birth": "1909-01-19",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%B0%B4%E5%8E%9F%E8%8C%82",
       "slug": "mizuhara-shigeru",
       "years": "1934-1949",
@@ -9364,6 +9906,7 @@
         "hr": 42,
         "rbi": 136
       },
+      "birth": "1965-11-20",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%85%89%E5%B1%B1%E8%8B%B1%E5%92%8C",
       "slug": "mitsuyama-hidekazu",
       "years": "1999-2000",
@@ -9379,6 +9922,7 @@
         "hr": 1,
         "rbi": 8
       },
+      "birth": "1930-01-06",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%8D%97%E6%B8%A9%E5%B9%B3",
       "slug": "minami-onpei",
       "years": "1951-1954",
@@ -9393,6 +9937,7 @@
         "era": "9.00",
         "k": 2
       },
+      "birth": "1981-08-27",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%8D%97%E5%92%8C%E5%BD%B0",
       "slug": "minami-kazuaki",
       "years": "2003-2006",
@@ -9407,6 +9952,7 @@
         "era": "5.53",
         "k": 46
       },
+      "birth": "1973-04-11",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%8D%97%E7%9C%9F%E4%B8%80%E9%83%8E",
       "slug": "minami-shinichiro",
       "years": "1998-2002",
@@ -9436,6 +9982,7 @@
         "era": "7.50",
         "k": 11
       },
+      "birth": "1971-07-06",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%B8%89%E9%87%8E%E5%8B%9D%E5%A4%A7",
       "slug": "mino-katsuhiro",
       "years": "1993-1999",
@@ -9451,6 +9998,7 @@
         "hr": 204,
         "rbi": 678
       },
+      "birth": "1952-03-11",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%B0%91%E7%94%B0%E6%B5%A9%E4%BA%8C",
       "slug": "minoda-koji",
       "years": "1988-1990",
@@ -9466,6 +10014,7 @@
         "hr": 0,
         "rbi": 40
       },
+      "birth": "1911-11-21",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%B8%89%E5%8E%9F%E4%BF%AE",
       "slug": "mihara-osamu",
       "years": "1934-1938",
@@ -9480,6 +10029,7 @@
         "era": "5.80",
         "k": 127
       },
+      "birth": "1958-12-01",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%B8%89%E5%AE%85%E5%AE%97%E6%BA%90",
       "slug": "miyake-sogen",
       "years": "1984-1985",
@@ -9495,6 +10045,7 @@
         "hr": 0,
         "rbi": 3
       },
+      "birth": "1975-04-24",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%AE%AE%EF%A8%91%E4%B8%80%E5%BD%B0",
       "slug": "miyazaki-kazuaki",
       "years": "1999-2003",
@@ -9538,6 +10089,7 @@
         "hr": 42,
         "rbi": 145
       },
+      "birth": "1940-11-04",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%AE%AE%E5%AF%BA%E5%8B%9D%E5%88%A9",
       "slug": "miyadera-katsutoshi",
       "years": "1964-1966",
@@ -9552,6 +10104,7 @@
         "era": "3.60",
         "k": 967
       },
+      "birth": "1964-02-13",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%AE%AE%E6%9C%AC%E5%92%8C%E7%9F%A5",
       "slug": "miyamoto-kazutomo",
       "years": "1984-1997",
@@ -9581,6 +10134,7 @@
         "era": "3.44",
         "k": 249
       },
+      "birth": "1942-04-03",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%AE%AE%E6%9C%AC%E6%B4%8B%E4%BA%8C%E9%83%8E",
       "slug": "miyamoto-yojiro",
       "years": "1965-1966",
@@ -9596,6 +10150,7 @@
         "hr": 0,
         "rbi": 6
       },
+      "birth": "1923-01-03",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%B8%89%E5%A5%BD%E4%B8%BB",
       "slug": "miyoshi-chikara",
       "years": "1942-1946",
@@ -9611,6 +10166,7 @@
         "hr": 0,
         "rbi": 6
       },
+      "birth": "1932-11-02",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%A3%9F%E5%B1%85%E9%80%B2",
       "slug": "munesue-susumu",
       "years": "1955-1957",
@@ -9625,6 +10181,7 @@
         "era": "4.39",
         "k": 36
       },
+      "birth": "1995-07-07",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%9D%91%E4%B8%8A%E6%B5%B7%E6%96%97",
       "slug": "murakami-kaito",
       "years": "2017-2020",
@@ -9639,6 +10196,7 @@
         "era": "2.45",
         "k": 37
       },
+      "birth": "1941-07-16",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%9D%91%E7%80%AC%E5%BA%83%E5%9F%BA",
       "slug": "murase-hiromoto",
       "years": "1961-1963",
@@ -9654,6 +10212,7 @@
         "hr": 98,
         "rbi": 367
       },
+      "birth": "1963-12-05",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%9D%91%E7%94%B0%E7%9C%9F%E4%B8%80",
       "slug": "murata-shinichi",
       "years": "1981-2001",
@@ -9668,6 +10227,7 @@
         "era": "3.46",
         "k": 135
       },
+      "birth": "1985-05-20",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%9D%91%E7%94%B0%E9%80%8F",
       "slug": "murata-toru",
       "years": "2007-2010",
@@ -9683,6 +10243,7 @@
         "hr": 6,
         "rbi": 43
       },
+      "birth": "1974-04-24",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%9D%91%E7%94%B0%E5%96%84%E5%89%87",
       "slug": "murata-yoshinori",
       "years": "1992-2008",
@@ -9698,6 +10259,7 @@
         "hr": 66,
         "rbi": 378
       },
+      "birth": "1971-12-30",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%85%83%E6%9C%A8%E5%A4%A7%E4%BB%8B",
       "slug": "motoki-daisuke",
       "years": "1990-2005",
@@ -9712,6 +10274,7 @@
         "era": "4.64",
         "k": 116
       },
+      "birth": "1967-04-23",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%9C%AC%E5%8E%9F%E6%AD%A3%E6%B2%BB",
       "slug": "motohara-masaharu",
       "years": "1985-1990",
@@ -9727,6 +10290,7 @@
         "hr": 0,
         "rbi": 0
       },
+      "birth": "1955-07-18",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%A3%AE%E8%B0%B7%E6%98%AD",
       "slug": "moritani-akira",
       "years": "1978-1983",
@@ -9742,6 +10306,7 @@
         "hr": 81,
         "rbi": 421
       },
+      "birth": "1934-04-05",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%A3%AE%E6%B0%B8%E5%8B%9D%E4%B9%9F",
       "slug": "morinaga-katsuya",
       "years": "1967-1970",
@@ -9756,6 +10321,7 @@
         "era": "2.59",
         "k": 326
       },
+      "birth": "1986-07-29",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%A3%AE%E7%A6%8F%E5%85%81%E5%BD%A6",
       "slug": "morifuku-masahiko",
       "years": "2017-2019",
@@ -9770,6 +10336,7 @@
         "era": "3.38",
         "k": 73
       },
+      "birth": "1970-05-30",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%96%80%E5%A5%88%E5%93%B2%E5%AF%9B",
       "slug": "monna-tetsuhiro",
       "years": "1992-1999",
@@ -9785,6 +10352,7 @@
         "hr": 0,
         "rbi": 1
       },
+      "birth": "1997-01-17",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%85%AB%E7%99%BE%E6%9D%BF%E5%8D%93%E4%B8%B8",
       "slug": "yaoita-takumaru",
       "years": "2020-2022",
@@ -9800,6 +10368,7 @@
         "hr": 15,
         "rbi": 64
       },
+      "birth": "1948-08-02",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%9F%A2%E6%B2%A2%E6%AD%A3",
       "slug": "yazawa-tadashi",
       "years": "1966-1977",
@@ -9815,6 +10384,7 @@
         "hr": 58,
         "rbi": 375
       },
+      "birth": "1959-06-11",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B1%8B%E9%8B%AA%E8%A6%81",
       "slug": "yashiki-kaname",
       "years": "1994-1995",
@@ -9829,6 +10399,7 @@
         "era": "2.71",
         "k": 454
       },
+      "birth": "1936-03-05",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%AE%89%E5%8E%9F%E9%81%94%E4%BD%B3",
       "slug": "yasuhara-tatsuyoshi",
       "years": "1954-1963",
@@ -9843,6 +10414,7 @@
         "era": "9.00",
         "k": 1
       },
+      "birth": "1980-10-08",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%AE%89%E5%8E%9F%E6%94%BF%E4%BF%8A",
       "slug": "yasuhara-masatoshi",
       "years": "1998-2002",
@@ -9858,6 +10430,7 @@
         "hr": 1,
         "rbi": 17
       },
+      "birth": "1971-08-02",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%9F%B3%E6%B2%A2%E8%A3%95%E4%B8%80",
       "slug": "yanagisawa-yuichi",
       "years": "1993-1999",
@@ -9873,6 +10446,7 @@
         "hr": 68,
         "rbi": 287
       },
+      "birth": "1936-08-18",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%9F%B3%E7%94%B0%E5%88%A9%E5%A4%AB",
       "slug": "yanagida-toshio",
       "years": "1963-1967",
@@ -9888,6 +10462,7 @@
         "hr": 99,
         "rbi": 344
       },
+      "birth": "1948-05-21",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%9F%B3%E7%94%B0%E4%BF%8A%E9%83%8E",
       "slug": "yanagida-toshiro",
       "years": "1969-1982",
@@ -9902,6 +10477,7 @@
         "era": "3.76",
         "k": 150
       },
+      "birth": "1983-12-15",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%9F%A2%E8%B2%AB%E4%BF%8A%E4%B9%8B",
       "slug": "yanuki-toshiyuki",
       "years": "2015-2016",
@@ -9917,6 +10493,7 @@
         "hr": 29,
         "rbi": 153
       },
+      "birth": "1980-09-21",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%9F%A2%E9%87%8E%E8%AC%99%E6%AC%A1",
       "slug": "yano-kenji",
       "years": "2002-2015",
@@ -9932,6 +10509,7 @@
         "hr": 57,
         "rbi": 264
       },
+      "birth": "1941-02-23",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%9F%A2%E3%83%8E%E6%B5%A6%E5%9B%BD%E6%BA%80",
       "slug": "yanoura-kunimitsu",
       "years": "1968-1968",
@@ -9947,6 +10525,7 @@
         "hr": 0,
         "rbi": 0
       },
+      "birth": "1946-08-24",
       "source_url": "https://ja.wikipedia.org/wiki/%E7%9F%A2%E9%83%A8%E7%A5%90%E4%B8%80",
       "slug": "yabe-yuichi",
       "years": "1968-1972",
@@ -9961,6 +10540,7 @@
         "era": "3.74",
         "k": 774
       },
+      "birth": "1947-12-03",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B1%B1%E5%86%85%E6%96%B0%E4%B8%80",
       "slug": "yamauchi-shinichi",
       "years": "1967-1972",
@@ -9975,6 +10555,7 @@
         "era": "5.76",
         "k": 10
       },
+      "birth": "1961-12-11",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B1%B1%E5%B2%A1%E5%8B%9D",
       "slug": "yamaoka-masaru",
       "years": "1979-1985",
@@ -9989,6 +10570,7 @@
         "era": "4.51",
         "k": 103
       },
+      "birth": "1999-09-21",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B1%B1%E4%B8%8A%E4%BF%A1%E5%90%BE",
       "slug": "yamakami-shingo",
       "years": "2017-2020",
@@ -10019,6 +10601,7 @@
         "hr": 0,
         "rbi": 15
       },
+      "birth": "1995-01-04",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B1%B1%E5%B7%9D%E5%92%8C%E5%A4%A7",
       "slug": "yamakawa-tomohiro",
       "years": "2016-2021",
@@ -10034,6 +10617,7 @@
         "hr": 113,
         "rbi": 426
       },
+      "birth": "1955-09-02",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B1%B1%E5%80%89%E5%92%8C%E5%8D%9A",
       "slug": "yamakura-kazuhiro",
       "years": "1977-1990",
@@ -10048,6 +10632,7 @@
         "era": "3.36",
         "k": 1140
       },
+      "birth": "1987-07-11",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B1%B1%E5%8F%A3%E4%BF%8A",
       "slug": "yamaguchi-shun",
       "years": "2017-2022",
@@ -10062,6 +10647,7 @@
         "era": "2.34",
         "k": 509
       },
+      "birth": "1983-11-11",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B1%B1%E5%8F%A3%E9%89%84%E4%B9%9F",
       "slug": "yamaguchi-tetsuya",
       "years": "2005-2018",
@@ -10077,6 +10663,7 @@
         "hr": 0,
         "rbi": 7
       },
+      "birth": "1961-05-02",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B1%B1%E5%B4%8E%E7%AB%A0%E5%BC%98",
       "slug": "yamasaki-akihiro",
       "years": "1979-1989",
@@ -10107,6 +10694,7 @@
         "hr": 8,
         "rbi": 19
       },
+      "birth": "1938-06-18",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B1%B1%E5%B4%8E%E6%AD%A3%E4%B9%8B",
       "slug": "yamazaki-masayuki",
       "years": "1961-1964",
@@ -10122,6 +10710,7 @@
         "hr": 0,
         "rbi": 0
       },
+      "birth": "2000-11-15",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B1%B1%E4%B8%8B%E8%88%AA%E6%B1%B0",
       "slug": "yamashita-kota",
       "years": "2018-2021",
@@ -10137,6 +10726,7 @@
         "hr": 1,
         "rbi": 8
       },
+      "birth": "1948-07-08",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B1%B1%E4%B8%8B%E5%8F%B8",
       "slug": "yamashita-tsukasa",
       "years": "1966-1976",
@@ -10167,6 +10757,7 @@
         "hr": 1,
         "rbi": 5
       },
+      "birth": "1979-06-15",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B1%B1%E7%94%B0%E7%9C%9F%E4%BB%8B",
       "slug": "yamada-shinsuke",
       "years": "1997-2006",
@@ -10181,6 +10772,7 @@
         "era": "4.89",
         "k": 26
       },
+      "birth": "1965-06-01",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B1%B1%E7%94%B0%E6%AD%A6%E5%8F%B2",
       "slug": "yamada-takeshi",
       "years": "1986-1990",
@@ -10195,6 +10787,7 @@
         "era": "0.00",
         "k": 0
       },
+      "birth": "1998-06-28",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B1%B1%E6%9C%AC%E4%B8%80%E8%BC%9D",
       "slug": "yamamoto-itsuki",
       "years": "2020-2023",
@@ -10225,6 +10818,7 @@
         "hr": 2,
         "rbi": 5
       },
+      "birth": "1946-09-30",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B1%B1%E6%9C%AC%E5%92%8C%E7%94%9F",
       "slug": "yamamoto-kazuo",
       "years": "1972-1978",
@@ -10240,6 +10834,7 @@
         "hr": 4,
         "rbi": 17
       },
+      "birth": "1986-09-21",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B1%B1%E6%9C%AC%E5%92%8C%E4%BD%9C",
       "slug": "yamamoto-kazunao",
       "years": "2008-2012",
@@ -10255,6 +10850,7 @@
         "hr": 1,
         "rbi": 9
       },
+      "birth": "1959-05-12",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B1%B1%E6%9C%AC%E5%8B%9D%E5%93%89",
       "slug": "yamamoto-katsuya",
       "years": "1985-1987",
@@ -10270,6 +10866,7 @@
         "hr": 64,
         "rbi": 369
       },
+      "birth": "1951-12-25",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B1%B1%E6%9C%AC%E5%8A%9F%E5%85%90",
       "slug": "yamamoto-koji76",
       "years": "1975-1983",
@@ -10285,6 +10882,7 @@
         "hr": 2,
         "rbi": 7
       },
+      "birth": "1963-11-14",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B1%B1%E6%9C%AC%E5%B9%B8%E4%BA%8C",
       "slug": "yamamoto-koji82",
       "years": "1981-1991",
@@ -10300,6 +10898,7 @@
         "hr": 37,
         "rbi": 139
       },
+      "birth": "1953-08-12",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B1%B1%E6%9C%AC%E9%9B%85%E5%A4%AB",
       "slug": "yamamoto-masao",
       "years": "1984-1986",
@@ -10315,6 +10914,7 @@
         "hr": 10,
         "rbi": 72
       },
+      "birth": "1993-10-10",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%B1%B1%E6%9C%AC%E6%B3%B0%E5%AF%9B",
       "slug": "yamamoto-yasuhiro",
       "years": "2015-2021",
@@ -10330,6 +10930,7 @@
         "hr": 105,
         "rbi": 482
       },
+      "birth": "1987-01-17",
       "source_url": "https://ja.wikipedia.org/wiki/%E9%99%BD%E5%B2%B1%E9%8B%BC",
       "slug": "yoh",
       "years": "2017-2021",
@@ -10345,6 +10946,7 @@
         "hr": 9,
         "rbi": 40
       },
+      "birth": "1984-12-03",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%A8%AA%E5%B7%9D%E5%8F%B2%E5%AD%A6",
       "slug": "yokogawa-fuminori",
       "years": "2013-2015",
@@ -10359,6 +10961,7 @@
         "era": "4.64",
         "k": 129
       },
+      "birth": "1950-01-04",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%A8%AA%E5%B1%B1%E5%BF%A0%E5%A4%AB",
       "slug": "yokoyama-tadao",
       "years": "1971-1977",
@@ -10388,6 +10991,7 @@
         "hr": 131,
         "rbi": 463
       },
+      "birth": "1971-07-29",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%90%89%E5%B2%A1%E9%9B%84%E4%BA%8C",
       "slug": "yoshioka-yuji",
       "years": "1989-1996",
@@ -10403,6 +11007,7 @@
         "hr": 0,
         "rbi": 6
       },
+      "birth": "1992-08-21",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%90%89%E5%B7%9D%E5%A4%A7%E5%B9%BE",
       "slug": "yoshikawa-daiki",
       "years": "2015-2020",
@@ -10417,6 +11022,7 @@
         "era": "3.96",
         "k": 745
       },
+      "birth": "1988-04-06",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%90%89%E5%B7%9D%E5%85%89%E5%A4%AB",
       "slug": "yoshikawa-mitsuo",
       "years": "2017-2019",
@@ -10432,6 +11038,7 @@
         "hr": 2,
         "rbi": 5
       },
+      "birth": "1979-07-29",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%90%89%E5%B7%9D%E5%85%83%E6%B5%A9",
       "slug": "yoshikawa-motohiro",
       "years": "2003-2007",
@@ -10446,6 +11053,7 @@
         "era": "3.60",
         "k": 1
       },
+      "birth": "1945-05-13",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%90%89%E6%B2%A2%E5%8B%9D",
       "slug": "yoshizawa-hidekazu",
       "years": "1964-1968",
@@ -10460,6 +11068,7 @@
         "era": "3.81",
         "k": 402
       },
+      "birth": "1975-06-03",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%90%89%E6%AD%A6%E7%9C%9F%E5%A4%AA%E9%83%8E",
       "slug": "yoshitake-shintaro",
       "years": "2007-2008",
@@ -10475,6 +11084,7 @@
         "hr": 105,
         "rbi": 502
       },
+      "birth": "1935-03-21",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%90%89%E7%94%B0%E5%8B%9D%E8%B1%8A",
       "slug": "yoshida-katsutoyo",
       "years": "1965-1967",
@@ -10489,6 +11099,7 @@
         "era": "3.57",
         "k": 511
       },
+      "birth": "1966-11-29",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%90%89%E7%94%B0%E4%BF%AE%E5%8F%B8",
       "slug": "yoshida-syuji",
       "years": "1988-1994",
@@ -10504,6 +11115,7 @@
         "hr": 42,
         "rbi": 199
       },
+      "birth": "1946-06-23",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%90%89%E7%94%B0%E5%AD%9D%E5%8F%B8",
       "slug": "yoshida-takashi",
       "years": "1965-1984",
@@ -10519,6 +11131,7 @@
         "hr": 153,
         "rbi": 505
       },
+      "birth": "1969-05-01",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%90%89%E6%B0%B8%E5%B9%B8%E4%B8%80%E9%83%8E",
       "slug": "yoshinaga-koichiro",
       "years": "2001-2003",
@@ -10534,6 +11147,7 @@
         "hr": 4,
         "rbi": 27
       },
+      "birth": "1969-03-29",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%90%89%E5%8E%9F%E5%AD%9D%E4%BB%8B",
       "slug": "yoshihara-kousuke",
       "years": "1990-1999",
@@ -10563,6 +11177,7 @@
         "hr": 9,
         "rbi": 103
       },
+      "birth": "1919-01-02",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%90%89%E5%8E%9F%E6%AD%A3%E5%96%9C",
       "slug": "yoshihara-masaki",
       "years": "1938-1941",
@@ -10578,6 +11193,7 @@
         "hr": 149,
         "rbi": 535
       },
+      "birth": "1963-04-27",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%90%89%E6%9D%91%E7%A6%8E%E7%AB%A0",
       "slug": "yoshimura-sadaaki",
       "years": "1981-1998",
@@ -10592,6 +11208,7 @@
         "era": "5.25",
         "k": 7
       },
+      "birth": "1944-09-10",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%90%89%E6%9D%91%E5%85%B8%E7%94%B7",
       "slug": "yoshimura-mareo",
       "years": "1968-1970",
@@ -10607,6 +11224,7 @@
         "hr": 2,
         "rbi": 23
       },
+      "birth": "1966-09-27",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%9B%9B%E6%A2%9D%E7%A8%94",
       "slug": "yojyo-minoru",
       "years": "1988-1995",
@@ -10622,6 +11240,7 @@
         "hr": 82,
         "rbi": 482
       },
+      "birth": "1925-06-24",
       "source_url": "https://ja.wikipedia.org/wiki/%E4%B8%8E%E9%82%A3%E5%B6%BA%E8%A6%81",
       "slug": "yonamine-kaname",
       "years": "1951-1960",
@@ -10636,6 +11255,7 @@
         "era": "3.00",
         "k": 4
       },
+      "birth": "1993-08-30",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%BB%96%E4%BB%BB%E7%A3%8A",
       "slug": "liao",
       "years": "2016-2018",
@@ -10651,6 +11271,7 @@
         "hr": 12,
         "rbi": 59
       },
+      "birth": "1993-08-26",
       "source_url": "https://ja.wikipedia.org/wiki/%E8%8B%A5%E6%9E%97%E6%99%83%E5%BC%98",
       "slug": "wakabayashi-akihiro",
       "years": "2017-2023",
@@ -10666,6 +11287,7 @@
         "hr": 18,
         "rbi": 159
       },
+      "birth": "1981-11-04",
       "source_url": "https://ja.wikipedia.org/wiki/%E8%84%87%E8%B0%B7%E4%BA%AE%E5%A4%AA",
       "slug": "wakiya-ryota",
       "years": "2005-2018",
@@ -10680,6 +11302,7 @@
         "era": "2.81",
         "k": 1459
       },
+      "birth": "1937-08-22",
       "source_url": "https://ja.wikipedia.org/wiki/%E8%8B%A5%E7%94%9F%E5%BF%A0%E7%94%B7",
       "slug": "wako-tadayasu",
       "years": "1969-1970",
@@ -10695,6 +11318,7 @@
         "hr": 0,
         "rbi": 45
       },
+      "birth": "1992-08-26",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%B8%A1%E8%BE%BA%E8%B2%B4%E6%B4%8B",
       "slug": "watanabe-takahiro",
       "years": "2011-2013",
@@ -10709,6 +11333,7 @@
         "era": "3.35",
         "k": 1041
       },
+      "birth": "1941-09-16",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%B8%A1%E8%BE%BA%E7%A7%80%E6%AD%A6",
       "slug": "watanabe-hidetake",
       "years": "1963-1972",
@@ -10724,6 +11349,7 @@
         "hr": 0,
         "rbi": 0
       },
+      "birth": "1967-07-14",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%B8%A1%E8%BE%BA%E6%94%BF%E4%BB%81",
       "slug": "watanabe-masahito",
       "years": "1985-2000",
@@ -10739,6 +11365,7 @@
         "hr": 0,
         "rbi": 6
       },
+      "birth": "1924-02-14",
       "source_url": "https://ja.wikipedia.org/wiki/%E6%B8%A1%E9%83%A8%E5%BC%98",
       "slug": "watabe-hiroshi",
       "years": "1944-1946",
@@ -10754,6 +11381,7 @@
         "hr": 2,
         "rbi": 15
       },
+      "birth": "1995-09-26",
       "source_url": "https://ja.wikipedia.org/wiki/%E5%92%8C%E7%94%B0%E6%81%8B",
       "slug": "wada-ren",
       "years": "2013-2019",

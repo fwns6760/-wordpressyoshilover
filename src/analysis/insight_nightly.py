@@ -165,6 +165,18 @@ def _run_data_insight_auto_publish(*, db_path: Path) -> tuple[dict[str, Any], di
                     ranking_publish_summary["team_error"] = (
                         f"{type(exc).__name__}:{exc}"
                     )
+                # ③ 今日は何の日(OB 誕生日)。新タイプのため env flag gate
+                # (DATA_INSIGHT_OB_ANNIVERSARY=1)+ 既定 draft。X 解放は §11 user 判断。
+                try:
+                    from src.analysis import ob_anniversary as ob_anniv
+                    if ob_anniv.enabled():
+                        ranking_publish_summary["ob_anniversary"] = (
+                            ob_anniv.publish_today_birthday_articles(wp)
+                        )
+                except Exception as exc:  # noqa: BLE001
+                    ranking_publish_summary["ob_anniversary_error"] = (
+                        f"{type(exc).__name__}:{exc}"
+                    )
                 # 348 step 3 part 2 D-1: player counting stats ranking
                 # title variation のため multi-scope 投入
                 # (season / last_30d / monthly / weekly)、 step 3 part 1

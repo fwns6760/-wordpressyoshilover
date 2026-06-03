@@ -159,6 +159,10 @@ def extract(name: str) -> Optional[dict]:
         out = {"type": "batter", "npb": {k: v for k, v in npb.items() if v is not None}}
     if not out.get("npb"):
         return None
+    # 生年月日(Wikipedia microformat <span class="bday">1957-07-16</span>)→ "今日は何の日" 月日トリガ用。
+    bm = re.search(r'class="bday"[^>]*>(\d{4})-(\d{2})-(\d{2})', htmltext)
+    if bm:
+        out["birth"] = f"{bm.group(1)}-{bm.group(2)}-{bm.group(3)}"
     out["source_url"] = f"https://ja.wikipedia.org/wiki/{urllib.parse.quote(title)}"
     return out
 
@@ -222,9 +226,15 @@ def _build() -> int:
     done = hit = miss = 0
     for p in targets:
         key = _norm_key(p["name"])
-        if key in cur_stats or key in cache:
+        if key in cur_stats:
             done += 1
             continue
+        cached = cache.get(key, "__absent__")
+        # 既存 hit に birth が無ければ再fetchで補完(③今日は何の日 用)。miss(None)は再試行しない。
+        if cached != "__absent__":
+            if cached is None or (isinstance(cached, dict) and cached.get("birth")):
+                done += 1
+                continue
         e = extract(p["name"])
         time.sleep(0.5)
         done += 1
@@ -250,6 +260,26 @@ def _build() -> int:
     for key, e in cache.items():
         if e and key not in merged and key in target_keys:
             merged[key] = {k: v for k, v in e.items() if k != "display_name"}
+    # kana を roster から恒久 enrich(五十音 hub 用。rebuild で消えないよう本ステップで毎回付与)。
+    slug_kana = {
+        p["rival_slug"].rsplit("/", 1)[-1].replace(".htm", ""): p.get("kana")
+        for p in roster
+    }
+    for e in merged.values():
+        k = slug_kana.get(e.get("slug"))
+        if k and not e.get("kana"):
+            e["kana"] = k
+    # curated 21(王/長嶋 等)は main loop を通らず birth 未取得 → ここで補完(③今日は何の日用)。
+    for name, e in merged.items():
+        if name in cur_stats and not e.get("birth"):
+            try:
+                got = extract(name)
+                if got and got.get("birth"):
+                    e["birth"] = got["birth"]
+                time.sleep(0.3)
+            except Exception:
+                pass
+
     order = list(curated.get("order", [])) + [k for k in merged if k not in curated.get("order", [])]
     out = {
         "_source": "21名=手動精密curation(温存) + その他=ja.wikipedia 通算成績 自動抽出(21名 ground truth で 100% 一致検証済)",

@@ -59,7 +59,10 @@ MAJOR_GENERAL_HANDLES = [
 SOURCE_HANDLES = GIANTS_SPECIALIST_HANDLES + MAJOR_GENERAL_HANDLES
 GIANTS_FILTER_HANDLES = set(MAJOR_GENERAL_HANDLES)
 JST = timezone(timedelta(hours=9))
-FIRE_SLOTS = {10, 13, 17, 21}
+# 2026-06-03 user: 朝(10,12)+ 15時から毎時 (練習シーン増・試合・試合後)。
+# /run は giants-* trigger が該当時刻 :00 に発火済み (6-16 hourly + 17-21 0,30 + 22)。
+# Gemini 不使用ページなので頻度UPしてもコスト増ほぼ無し (RSSHub+Cloud Runのみ)。
+FIRE_SLOTS = {10, 12, 15, 16, 17, 18, 19, 20, 21, 22}
 SLOT_MINUTE_WINDOW = 5
 RSSHUB_TIMEOUT_SECONDS = 20
 WP_TIMEOUT_SECONDS = 30

@@ -35,7 +35,8 @@ JST = timezone(timedelta(hours=9))
 
 def test_should_run_in_slot():
     assert should_run_now(datetime(2026, 5, 28, 10, 0, tzinfo=JST))
-    assert should_run_now(datetime(2026, 5, 28, 13, 4, tzinfo=JST))
+    assert should_run_now(datetime(2026, 5, 28, 15, 4, tzinfo=JST))
+    assert should_run_now(datetime(2026, 5, 28, 22, 0, tzinfo=JST))
     assert should_run_now(datetime(2026, 5, 28, 17, 2, tzinfo=JST))
     assert should_run_now(datetime(2026, 5, 28, 21, 0, tzinfo=JST))
 

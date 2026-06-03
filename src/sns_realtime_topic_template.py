@@ -210,7 +210,7 @@ def render_hero(
         '  <div class="ysn-hero-meta">\n'
         '    <span class="ysn-pulse">●</span><span class="ysn-live">LIVE</span>\n'
         f'    <span class="ysn-updated">最終更新 {_html.escape(updated_at)} JST '
-        '(10/13/17/21 JST 更新)</span>\n'
+        '(10/12時 + 15〜22時 毎時 更新)</span>\n'
         '  </div>\n'
         '  <div class="ysn-stats">\n'
         f'    <div class="ysn-stat"><span class="ysn-stat-num">{posts}</span>'

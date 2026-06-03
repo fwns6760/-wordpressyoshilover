@@ -1962,19 +1962,25 @@ def main(argv: Sequence[str] | None = None) -> int:
                 LOG.info("queue 417 drain: queue empty — 0 items")
             else:
                 LOG.info("queue 417 drain: %d items", len(queue_items))
-                # 同一選手の重複 Gemini 生成を呼び出し前に抑止 (LLM 費用節約)。
-                # 多媒体が同じ選手を扱い queue に同 player 記事が複数入ると、
-                # build_x_post_from_article_info が 1 件ずつ Gemini を叩いて大半 drop
-                # になる。 cooldown / window-cap 既出 player は skip_player_keys、
-                # 1 run 内の重複は queue_seen_players で抑える。
+                # 同一選手の重複 Gemini 生成を抑えつつ出力は守る (LLM 費用節約 + 回帰修正)。
+                # 多媒体が同じ選手を扱い queue に同 player 記事が複数入ると、昔は全件
+                # 生成していた。費用のため 1 選手 1 成功 (succeeded_player_keys) に絞るが、
+                # 最初の 1 本が品質ゲート (unverified_numbers 等) で落ちても次の記事を
+                # 試せるよう「成功するまで最大 N 試行」(attempt_counts) にする。これで
+                # 出力 (旧来の通過チャンス) を維持しつつ無駄叩きを上限で抑える。
+                # cross-run cooldown/cap は skip_player_keys (env で有効化、既定は無効)。
                 queue_cap = _resolve_int_env(
                     "X_POST_MAIL_GEMMA_PLAYER_MAX_PER_WINDOW", 2, min_value=1
+                )
+                queue_attempts_max = _resolve_int_env(
+                    "X_POST_MAIL_QUEUE_PLAYER_MAX_ATTEMPTS", 3, min_value=1
                 )
                 queue_skip_players = set(cooldown_players) | {
                     k for k, v in (recent_player_counts or {}).items()
                     if int(v or 0) >= queue_cap
                 }
-                queue_seen_players: set[str] = set()
+                queue_succeeded_players: set[str] = set()
+                queue_attempt_counts: dict[str, int] = {}
                 queue_candidates: list[lane.Candidate] = []
                 for item in queue_items:
                     try:
@@ -1984,7 +1990,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                             db_path=db_path or "",
                             logger=LOG,
                             skip_player_keys=queue_skip_players,
-                            seen_player_keys=queue_seen_players,
+                            succeeded_player_keys=queue_succeeded_players,
+                            attempt_counts=queue_attempt_counts,
+                            max_attempts_per_player=queue_attempts_max,
                         )
                     except Exception as exc:  # noqa: BLE001
                         LOG.warning(

@@ -180,17 +180,45 @@ class BuildXPostFromArticleInfoPlayerDedupTests(unittest.TestCase):
             )
         self.assertIsNone(out)
 
-    def test_seen_player_keys_blocks_within_run_repeat(self):
-        # 同 run で既に生成済みの player は再生成しない。
+    def test_succeeded_player_blocks_within_run_repeat(self):
+        # 同 run で既に投稿成立済みの player は再生成しない (1 選手 1 投稿)。
         article = _make_article(title="巨人の戸郷翔征が完封勝利")
         key = xbg._normalize_player_name("戸郷翔征")
         with patch.object(
             xbg, "_build_system_prompt", side_effect=AssertionError("must skip before Gemini")
         ):
             out = xbg.build_x_post_from_article_info(
-                article, gemini_api_key="key", seen_player_keys={key}
+                article, gemini_api_key="key", succeeded_player_keys={key}
             )
         self.assertIsNone(out)
+
+    def test_attempt_cap_blocks_after_max_attempts(self):
+        # 試行上限到達 player は生成しない (全部品質ゲート落ちの暴走防止)。
+        article = _make_article(title="巨人の戸郷翔征が完封勝利")
+        key = xbg._normalize_player_name("戸郷翔征")
+        with patch.object(
+            xbg, "_build_system_prompt", side_effect=AssertionError("must skip before Gemini")
+        ):
+            out = xbg.build_x_post_from_article_info(
+                article, gemini_api_key="key",
+                attempt_counts={key: 3}, max_attempts_per_player=3,
+            )
+        self.assertIsNone(out)
+
+    def test_attempt_count_increments_below_cap(self):
+        # 上限未満なら試行カウントを増やして生成へ進む (Gemini 手前で stop)。
+        article = _make_article(title="巨人の戸郷翔征が完封勝利")
+        key = xbg._normalize_player_name("戸郷翔征")
+        counts: dict = {}
+        with patch.object(xbg, "_build_system_prompt", side_effect=RuntimeError("stop")):
+            try:
+                xbg.build_x_post_from_article_info(
+                    article, gemini_api_key="key",
+                    attempt_counts=counts, max_attempts_per_player=3,
+                )
+            except RuntimeError:
+                pass
+        self.assertEqual(counts.get(key), 1)
 
     def test_team_wide_postgame_not_capped_by_skip_keys(self):
         # postgame team-wide ("巨人") は試合ごと 1 回なので cross-run cap 対象外。

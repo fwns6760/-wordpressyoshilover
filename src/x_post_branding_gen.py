@@ -1764,7 +1764,9 @@ def build_x_post_from_article_info(
     persona: Optional[str] = None,
     logger: Optional[_logging.Logger] = None,
     skip_player_keys: Optional[set] = None,
-    seen_player_keys: Optional[set] = None,
+    succeeded_player_keys: Optional[set] = None,
+    attempt_counts: Optional[dict] = None,
+    max_attempts_per_player: int = 3,
 ) -> Optional[Candidate]:
     """417: queue 経由 article_info (Hochi/Sanspo source) から X-post 候補 1 件を生成.
 
@@ -1830,22 +1832,37 @@ def build_x_post_from_article_info(
             )
             return None
 
-    # 1.5 同一選手の重複生成を Gemini 呼び出し前に抑止 (2026-06-03 LLM 費用節約)。
-    #   多媒体が同じ選手を扱うと queue に同一 player 記事が複数入り、 1 件ずつ
-    #   Gemini 生成 → 大半 drop で費用を捨てる (実ログ: 則本昂大 ×5+ 等)。
-    #   - within-run: seen_player_keys で 1 run 1 player 1 生成に絞る
-    #   - cross-run : skip_player_keys (cooldown + window-cap) は個別 player のみ
-    #     適用。 postgame team-wide ("巨人") は試合ごと 1 回なので cap 対象外。
+    # 1.5 同一選手の重複生成を抑えつつ出力は守る (2026-06-03 LLM 費用節約 + 回帰修正)。
+    #   多媒体が同じ選手を扱うと queue に同一 player 記事が複数入る。費用のため
+    #   1 選手 1 成功 (1 投稿) に絞るが、生成は「成功するまで最大 N 試行」許す。
+    #   - succeeded_player_keys: その run で既に投稿候補が成立した player は skip
+    #     (= 1 選手 1 投稿)。マークは末尾 (品質ゲート通過後) で行う。
+    #   - attempt_counts: 全部 unverified_numbers 等で落ちる player の暴走を防ぐ
+    #     試行上限 (max_attempts_per_player, 既定 3)。最初の 1 本が品質ゲートで
+    #     落ちても次の記事を試せるので、旧来の「複数記事=通過チャンス」を維持。
+    #   - skip_player_keys: cross-run cooldown/cap (env で有効化、既定は無効)。
+    #     postgame team-wide ("巨人") は試合ごと 1 回なので cap 対象外。
     player_key = _normalize_player_name(player) if player else ""
     if player_key:
-        if seen_player_keys is not None and player_key in seen_player_keys:
+        if succeeded_player_keys is not None and player_key in succeeded_player_keys:
             log.info(
-                "article_info_branding_skip reason=player_already_generated_this_run "
+                "article_info_branding_skip reason=player_already_posted_this_run "
                 "player=%s source_url=%s",
                 player,
                 source_url,
             )
             return None
+        if attempt_counts is not None:
+            if attempt_counts.get(player_key, 0) >= max_attempts_per_player:
+                log.info(
+                    "article_info_branding_skip reason=player_attempt_cap "
+                    "player=%s attempts=%d source_url=%s",
+                    player,
+                    attempt_counts.get(player_key, 0),
+                    source_url,
+                )
+                return None
+            attempt_counts[player_key] = attempt_counts.get(player_key, 0) + 1
         if (
             not is_postgame_team_wide
             and skip_player_keys
@@ -1858,8 +1875,6 @@ def build_x_post_from_article_info(
                 source_url,
             )
             return None
-        if seen_player_keys is not None:
-            seen_player_keys.add(player_key)
 
     # 2. persona 自動選択
     #    - postgame (試合総括) → フーガ voice 強制 (team-wide、 試合中でも fuuga)
@@ -2065,6 +2080,9 @@ def build_x_post_from_article_info(
         "yes" if image_bytes else "no",
         pattern_label,
     )
+    # 品質ゲートを通過し候補成立 → この run では同 player を以後 skip (1 選手 1 投稿)。
+    if player_key and succeeded_player_keys is not None:
+        succeeded_player_keys.add(player_key)
     return Candidate(
         title=f"X-post branding｜{player} ({resolved_model_id}) [{pattern_label}]",
         metric=_GEMMA_BRANDING_METRIC,

@@ -977,6 +977,8 @@ _NEWS_OPINION_METRIC = "NEWS_OPINION"
 _COMMENT_DB_METRIC = "COMMENT_DB"
 _FAN_VOICE_METRIC = "FAN_VOICE"
 _GEMMA_BRANDING_METRIC = "GEMMA_BRANDING"
+_HOCHI_REPLY_METRIC = "HOCHI_REPLY"
+_REPLY_CANDIDATE_METRIC = "reply_candidate"
 _COMMENT_TERMS = (
     "コメント",
     "語った",
@@ -2438,7 +2440,13 @@ def _candidate_char_count(candidate: Candidate) -> int:
     return len(_candidate_post_text(candidate))
 
 
-_SOURCE_A_METRICS = {_NEWS_OPINION_METRIC, _COMMENT_DB_METRIC, _FAN_VOICE_METRIC}
+_SOURCE_A_METRICS = {
+    _NEWS_OPINION_METRIC,
+    _COMMENT_DB_METRIC,
+    _FAN_VOICE_METRIC,
+    _HOCHI_REPLY_METRIC,
+    _REPLY_CANDIDATE_METRIC,
+}
 _DB_TABLE_REQUIRED_TOKENS = ("📊", "TOP", "巨人最上位", "🟧巨人🟧")
 _SOURCE_C_CONDITION_TOKENS = ("規定", "条件", "対象", "sample", "サンプル", "打席", "登板", "投球回")
 _SOURCE_C_SLICE_TOKENS = ("対左", "対右", "左右", "打順", "守備", "走者", "カウント", "状況", "起用")
@@ -2460,6 +2468,8 @@ _SELECTED_REASON_LABELS = {
     "metric_family:pitching": "投手指標",
     "metric_family:fielding": "守備指標",
     "metric_family:news": "ニュース材料",
+    "reply:hochi": "報知リプ",
+    "manual_only": "手動投稿",
     "period:short_window": "短期変化",
     "period:monthly": "月別",
     "period:calendar": "カレンダー期間",
@@ -2641,10 +2651,14 @@ def apply_x_impression_policy(
         elif (
             player_key
             and player_key in seen_players
-            and candidate.metric != _VIDEO_RADAR_METRIC
+            and candidate.metric not in {
+                _VIDEO_RADAR_METRIC,
+                _HOCHI_REPLY_METRIC,
+                _REPLY_CANDIDATE_METRIC,
+            }
         ):
             # 動画候補 (451) は別 content type。 同選手のデータ候補が居ても落とさず
-            # 確実にメールへ届ける (一記事一本は build_video_radar_candidates 側で担保)。
+            # 確実にメールへ届ける。 報知リプも同様に返信欄用の別用途として残す。
             reason = "dedup_player_in_mail"
 
         if reason:
@@ -2661,7 +2675,11 @@ def apply_x_impression_policy(
             seen_text_hashes.add(text_hash)
         if image_hash:
             seen_image_hashes.add(image_hash)
-        if player_key and candidate.metric != _VIDEO_RADAR_METRIC:
+        if player_key and candidate.metric not in {
+            _VIDEO_RADAR_METRIC,
+            _HOCHI_REPLY_METRIC,
+            _REPLY_CANDIDATE_METRIC,
+        }:
             seen_players.add(player_key)
     return kept, dropped
 
@@ -3950,6 +3968,8 @@ _NEWS_DERIVED_METRICS = frozenset(
         _COMMENT_DB_METRIC,
         _FAN_VOICE_METRIC,
         _GEMMA_BRANDING_METRIC,
+        _HOCHI_REPLY_METRIC,
+        _REPLY_CANDIDATE_METRIC,
     }
 )
 
@@ -4067,8 +4087,17 @@ def _compose_text_body(
             parts.append("【根拠データ】")
             parts.append(cand.draft_text)
         parts.append("")
-        parts.append("🐦 X 投稿 URL:")
-        parts.append(encode_x_intent_url(post_text))
+        cand_quote_url = getattr(cand, "quote_url", "") or ""
+        cand_reply_id = getattr(cand, "reply_to_id", "") or ""
+        if cand_reply_id:
+            parts.append("💬 X 返信 URL:")
+            parts.append(encode_x_reply_intent_url(post_text, cand_reply_id))
+        elif cand_quote_url:
+            parts.append("🐦 X 引用RT URL:")
+            parts.append(encode_x_quote_intent_url(post_text, cand_quote_url))
+        else:
+            parts.append("🐦 X 投稿 URL:")
+            parts.append(encode_x_intent_url(post_text))
         parts.append("")
     parts.extend(_format_dropped_section_text(dropped))
     return "\n".join(parts)

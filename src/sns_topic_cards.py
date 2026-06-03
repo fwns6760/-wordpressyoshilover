@@ -63,7 +63,13 @@ def extract_rss_keywords(
             if key in seen:
                 continue
             seen.add(key)
-            out.append({"player": player, "events": events, "title": title, "url": item.get("url", "")})
+            out.append({
+                "player": player,
+                "events": events,
+                "title": title,
+                "url": item.get("url", ""),
+                "handle": h,
+            })
     return out
 
 
@@ -212,6 +218,41 @@ def _caption_for(db_path: str, player: str, events: list) -> Optional[str]:
     return f"{player}、{stem}…！{data}。"
 
 
+def _yoshilover_reply_fallback(db_path: str, player: str, events: list, parent_text: str) -> str:
+    """LLM を使わず、報知リプ向けの短いヨシラバー風返信文を作る。
+
+    返信欄で読まれる前提なので、URL / hashtag / 媒体名を本文に入れず、
+    「事実の反応 + 次に見るポイント」に絞る。
+    """
+    fact = (_caption_for(db_path, player, events) or "").strip()
+    if fact:
+        stem = fact.rstrip("。")
+        text = (
+            f"{stem}。\n"
+            "ここは結果だけでなく、次にどう任されるかまで見たいですね。"
+        )
+    else:
+        headline = headline_from_events(events).rstrip("！!")
+        if headline and headline != "注目":
+            text = (
+                f"{player}の{headline}、ここは流れを変える材料として見たいです。\n"
+                "次の場面で同じ形を出せるかまで追いたいですね。"
+            )
+        else:
+            text = (
+                f"{player}のこの話題、結果だけでなく立ち位置まで含めて見たいです。\n"
+                "次の出番でどうつながるかですね。"
+            )
+    # 返信本文には親投稿 URL / hashtag / 媒体名を混ぜない。
+    for ng in ("http", "#", "@", "報知", "スポーツ報知"):
+        if ng in text:
+            return ""
+    # 親投稿の数字を広げないため、 fallback は 2 行・280 字以内に収める。
+    if len(text) <= 279:
+        return text.strip()
+    return text[:279].rstrip("、。 \n") + "…"
+
+
 def build_reply_candidates(
     db_path: str,
     *,
@@ -219,6 +260,7 @@ def build_reply_candidates(
     max_replies: int = 5,
     detect_player_fn: Optional[Callable[[str], str]] = None,
     comment_fn: Optional[Callable[[str, str], str]] = None,
+    handles: Optional[list[str]] = None,
 ) -> list[dict]:
     """大手巨人アカ投稿への『リプライ候補』。 ヨシラバーボイスのリプ文 + 大手投稿URL/tweet_id。
 
@@ -238,7 +280,11 @@ def build_reply_candidates(
         def detect_player_fn(t: str) -> str:  # noqa: E731
             return detect_giants_player_name(t, alias_map=_am)
 
-    kws = extract_rss_keywords(detect_player_fn=detect_player_fn, fetch_fn=fetch_fn)
+    kws = extract_rss_keywords(
+        detect_player_fn=detect_player_fn,
+        fetch_fn=fetch_fn,
+        handles=handles,
+    )
     out: list[dict] = []
     used: set[str] = set()
     for kw in kws:
@@ -259,13 +305,14 @@ def build_reply_candidates(
             except Exception:  # noqa: BLE001
                 reply = ""
         if not reply:
-            reply = _caption_for(db_path, player, events) or ""
+            reply = _yoshilover_reply_fallback(db_path, player, events, title)
         if not reply:
             continue
         used.add(player)
         out.append({
             "player": player, "reply": reply, "url": url,
             "tweet_id": m.group(1), "headline": headline_from_events(events),
+            "handle": kw.get("handle", ""),
         })
     return out
 

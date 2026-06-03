@@ -954,6 +954,29 @@ class ComposeMailTests(unittest.TestCase):
         self.assertIn("根拠データを開く", mail.html_body)
         self.assertIn("%E6%8A%95%E7%A8%BF%E6%9C%AC%E6%96%87", mail.html_body)
 
+    def test_reply_candidate_uses_reply_intent_button(self) -> None:
+        ts = datetime(2026, 6, 3, 21, 0, tzinfo=JST)
+        cand = Candidate(
+            title="報知リプ候補",
+            metric="HOCHI_REPLY",
+            period_label="報知リプ候補",
+            draft_text="根拠",
+            post_text="坂本勇人、この流れは次の場面まで見たいですね。",
+            char_count=25,
+            reply_to_id="12345",
+        )
+        mail = compose_mail([cand], now=ts)
+        self.assertIn("in_reply_to=12345", mail.html_body)
+        self.assertIn("この投稿にリプライ", mail.html_body)
+        reply_urls = [
+            line.strip()
+            for line in mail.text_body.splitlines()
+            if "in_reply_to=12345" in line
+        ]
+        self.assertEqual(len(reply_urls), 1)
+        decoded = parse_qs(urlparse(reply_urls[0]).query)["text"][0]
+        self.assertEqual(decoded, cand.post_text)
+
     def test_text_body_x_intent_decodes_final_post_text_not_draft_text(self) -> None:
         ts = datetime(2026, 5, 16, 17, 30, tzinfo=JST)
         cand = Candidate(
@@ -1048,6 +1071,25 @@ class ComposeMailTests(unittest.TestCase):
         b_flags = _candidate_anomaly_flags(source_b_broken)
         self.assertTrue(any(flag.startswith("hard:source_b_table_token_missing") for flag in b_flags))
         self.assertIn("hard:source_b_prose_overwrite", b_flags)
+
+    def test_hochi_reply_is_source_a_and_does_not_need_db_tokens(self) -> None:
+        reply = Candidate(
+            title="報知リプ候補",
+            metric="HOCHI_REPLY",
+            period_label="報知リプ候補",
+            draft_text="根拠",
+            post_text=(
+                "坂本勇人のこの流れは、結果だけでなく立ち位置まで見たいですね。\n"
+                "次の場面でどうつながるかまで追いたいです。"
+            ),
+            char_count=56,
+            focus_player="坂本勇人",
+            reply_to_id="12345",
+        )
+        self.assertEqual(_candidate_source_kind(reply), "A")
+        self.assertFalse(
+            any(flag.startswith("hard:source_b_table_token_missing") for flag in _candidate_anomaly_flags(reply))
+        )
 
     def test_source_c_slice_requires_sample_condition(self) -> None:
         source_c_ok = Candidate(
@@ -3408,6 +3450,68 @@ class VideoRadarImpressionPolicyTests(unittest.TestCase):
         self.assertIn("ops|sakamoto", kept_sigs)
         self.assertIn("video_radar|VID1", kept_sigs)  # 同選手でも動画は残る
         self.assertEqual(dropped, [])
+
+    def test_hochi_reply_survives_player_dedup_against_data_candidate(self):
+        from src.x_post_mail_lane import Candidate, apply_x_impression_policy, _HOCHI_REPLY_METRIC
+        data_c = Candidate(
+            title="坂本勇人 OPS", metric="OPS", period_label="今シーズン",
+            draft_text="x", char_count=10, signature="ops|sakamoto",
+            post_text="坂本勇人 OPS .900", focus_player="坂本勇人",
+        )
+        reply_c = Candidate(
+            title="(報知リプ) 坂本勇人", metric=_HOCHI_REPLY_METRIC,
+            period_label="報知リプ候補", draft_text="y", char_count=80,
+            signature="reply_cand|hochi_giants|12345",
+            post_text=(
+                "坂本勇人のこの流れは、結果だけでなく立ち位置まで見たいですね。\n"
+                "次の場面でどうつながるかまで追いたいです。"
+            ),
+            focus_player="坂本勇人", reply_to_id="12345",
+        )
+        kept, dropped = apply_x_impression_policy([data_c, reply_c], max_candidates=2)
+        kept_sigs = {c.signature for c in kept}
+        self.assertIn("ops|sakamoto", kept_sigs)
+        self.assertIn("reply_cand|hochi_giants|12345", kept_sigs)
+        self.assertEqual(dropped, [])
+
+
+class ReplyCandidateRuntimeConfigTests(unittest.TestCase):
+    """報知リプ候補は費用を増やさない設定を default にする。"""
+
+    def test_reply_candidate_defaults_are_hochi_and_no_llm(self):
+        import os
+        from src.tools import run_x_post_mail
+        with patch.dict(
+            os.environ,
+            {
+                "X_POST_REPLY_TARGET_HANDLES": "",
+                "X_POST_REPLY_CANDIDATES_MAX": "",
+                "ENABLE_X_POST_REPLY_LLM": "",
+            },
+            clear=False,
+        ):
+            self.assertEqual(run_x_post_mail._reply_target_handles(), ["hochi_giants"])
+            self.assertEqual(run_x_post_mail._reply_candidates_max_per_run(), 3)
+            self.assertFalse(run_x_post_mail._reply_llm_enabled())
+
+    def test_reply_candidate_env_overrides(self):
+        import os
+        from src.tools import run_x_post_mail
+        with patch.dict(
+            os.environ,
+            {
+                "X_POST_REPLY_TARGET_HANDLES": "@hochi_giants,Sanspo_Giants",
+                "X_POST_REPLY_CANDIDATES_MAX": "5",
+                "ENABLE_X_POST_REPLY_LLM": "1",
+            },
+            clear=False,
+        ):
+            self.assertEqual(
+                run_x_post_mail._reply_target_handles(),
+                ["hochi_giants", "Sanspo_Giants"],
+            )
+            self.assertEqual(run_x_post_mail._reply_candidates_max_per_run(), 5)
+            self.assertTrue(run_x_post_mail._reply_llm_enabled())
 
 
 if __name__ == "__main__":

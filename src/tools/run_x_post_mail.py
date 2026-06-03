@@ -199,6 +199,24 @@ def _reply_candidates_enabled() -> bool:
     return raw in {"1", "true", "yes", "on"}
 
 
+def _reply_candidates_max_per_run() -> int:
+    """リプライ候補数 / fire の上限。 報知返信欄を厚くするため default 3。"""
+    return _resolve_int_env("X_POST_REPLY_CANDIDATES_MAX", 3, min_value=0)
+
+
+def _reply_target_handles() -> list[str]:
+    """リプライ候補の対象 X handle。 default は user 方針の報知巨人班。"""
+    raw = (os.environ.get("X_POST_REPLY_TARGET_HANDLES") or "hochi_giants").strip()
+    handles = [h.strip().lstrip("@") for h in raw.split(",") if h.strip()]
+    return handles or ["hochi_giants"]
+
+
+def _reply_llm_enabled() -> bool:
+    """返信文の LLM 生成。 default OFF = 追加費用なしの deterministic reply。"""
+    raw = (os.environ.get("ENABLE_X_POST_REPLY_LLM") or "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
 def _video_radar_llm_enabled() -> bool:
     """451: 引用RTコメントを Gemini 3.1 Flash Lite で生成するか (default OFF)。
 
@@ -1666,6 +1684,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "Dedup fallback found no additional candidates (relaxed=%d)",
                 len(relaxed_candidates),
             )
+    # Add-on candidates can intentionally increase the review mail without
+    # displacing the base DB/news set. Keep the normal cap for baseline
+    # candidates, then add explicit slots for reply candidates below.
+    extra_policy_slots = 0
+
     # 448: flag ON 時、 大手未掲載の差別化 data split (序盤/中盤/終盤・本拠地/ビジター
     # 別打率の大きな差) 候補を append する。 公開 X 自動投稿はしない (候補=メールまで)。
     # flag OFF (default) では既存挙動完全不変。
@@ -1767,48 +1790,76 @@ def main(argv: Sequence[str] | None = None) -> int:
     # 451: 「💬リプライ候補」(大手投稿 + 同じヨシラバー声のリプ文)。 大手投稿に返信=大観客に
     # 露出 (小規模アカウントのインプ近道)。 1タップ返信ボタン (reply intent)。 flag ON 時のみ。
     if _reply_candidates_enabled() and db_path:
-        # ③ 順位燃料: リプ文をヨシラバーボイスで生成 (公式/報知の返信欄で上位に浮かせる)。
-        # GEMINI key があれば build_quote_rt_comment を comment_fn で渡し、 無ければ
-        # build_reply_candidates 内で数字 1 行 fallback。 Gemini 無料 tier 内、 公開投稿なし。
-        rep_comment_fn = None
-        _rep_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GEMMA_BRANDING_GEMINI_API_KEY") or ""
-        if _rep_key:
-            try:
-                from src import x_post_branding_gen as _rep_xbg
+        rep_max = _reply_candidates_max_per_run()
+        if rep_max > 0:
+            # ③ 順位燃料: default は LLM 不使用のヨシラバー風 deterministic reply。
+            # 追加費用を避けるため、 Gemini は ENABLE_X_POST_REPLY_LLM=1 の時だけ使う。
+            rep_comment_fn = None
+            _rep_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GEMMA_BRANDING_GEMINI_API_KEY") or ""
+            if _reply_llm_enabled() and _rep_key:
+                try:
+                    from src import x_post_branding_gen as _rep_xbg
 
-                def rep_comment_fn(parent_text, player, _k=_rep_key, _g=_rep_xbg, _now=now_jst):  # noqa: E731
-                    # 親ツイート本文に対するヨシラバーボイスのリプ (= 引用RTコメントと同型)。
-                    return _g.build_quote_rt_comment(parent_text, player, gemini_api_key=_k, now=_now)
-            except Exception as _rep_imp_exc:  # noqa: BLE001
-                LOG.warning("reply_candidates LLM comment unavailable: %r", _rep_imp_exc)
-                rep_comment_fn = None
-        try:
-            from src import sns_topic_cards as _tc2
-            reps = _tc2.build_reply_candidates(db_path, max_replies=5, comment_fn=rep_comment_fn)
-        except Exception as _rep_exc:  # noqa: BLE001
-            LOG.warning("reply_candidates build failed: %r", _rep_exc)
-            reps = []
-        rep_cands = []
-        for r in reps:
-            sig = "reply_cand|" + r["tweet_id"]
-            if dedup_set is not None and sig in dedup_set:
-                continue
-            draft = (
-                f"返信先(大手投稿): {r['url']}\n"
-                f"リプ文: {r['reply']}\n\n"
-                "※ ボタンで返信画面が開く(リプ文入り)→ 投稿。 大手の客層に露出=インプ近道。"
-            )
-            rep_cands.append(lane.Candidate(
-                title=f"💬 リプライ候補: {r['player']} {r['headline']}",
-                metric="reply_candidate", period_label="リプライ候補",
-                draft_text=draft, char_count=len(r["reply"]), signature=sig,
-                post_text=r["reply"], focus_player=r["player"], reply_to_id=r["tweet_id"],
-                why_now="大手投稿に返信=インプ近道", source_material_type="reply_candidate",
-            ))
-        if rep_cands:
-            before = len(candidates)
-            candidates = candidates + rep_cands
-            LOG.info("reply_candidates appended: base=%d rep=%d total=%d", before, len(rep_cands), len(candidates))
+                    def rep_comment_fn(parent_text, player, _k=_rep_key, _g=_rep_xbg, _now=now_jst):  # noqa: E731
+                        # 親ツイート本文に対するヨシラバーボイスのリプ (= 引用RTコメントと同型)。
+                        return _g.build_quote_rt_comment(parent_text, player, gemini_api_key=_k, now=_now)
+                except Exception as _rep_imp_exc:  # noqa: BLE001
+                    LOG.warning("reply_candidates LLM comment unavailable: %r", _rep_imp_exc)
+                    rep_comment_fn = None
+            target_handles = _reply_target_handles()
+            try:
+                from src import sns_topic_cards as _tc2
+                reps = _tc2.build_reply_candidates(
+                    db_path,
+                    max_replies=rep_max,
+                    comment_fn=rep_comment_fn,
+                    handles=target_handles,
+                )
+            except Exception as _rep_exc:  # noqa: BLE001
+                LOG.warning("reply_candidates build failed: %r", _rep_exc)
+                reps = []
+            rep_cands = []
+            for r in reps:
+                handle = str(r.get("handle") or "").strip().lstrip("@")
+                is_hochi = handle.lower() == "hochi_giants"
+                sig = f"reply_cand|{handle or 'unknown'}|{r['tweet_id']}"
+                if dedup_set is not None and sig in dedup_set:
+                    continue
+                label = "報知リプ候補" if is_hochi else "リプライ候補"
+                draft = (
+                    f"返信先({label}): {r['url']}\n"
+                    f"対象handle: @{handle or 'unknown'}\n"
+                    f"リプ文: {r['reply']}\n\n"
+                    "※ ボタンで返信画面が開く(リプ文入り)→ 投稿。"
+                    "大手の返信欄に露出=インプ近道。自動投稿はしない。"
+                    + ("" if rep_comment_fn else "\n※ 生成: LLM不使用 (追加費用なし)。")
+                )
+                metric = lane._HOCHI_REPLY_METRIC if is_hochi else lane._REPLY_CANDIDATE_METRIC
+                rep_cands.append(lane.Candidate(
+                    title=f"💬 {label}: {r['player']} {r['headline']}",
+                    metric=metric,
+                    period_label=label,
+                    draft_text=draft,
+                    char_count=len(r["reply"]),
+                    signature=sig,
+                    post_text=r["reply"],
+                    focus_player=r["player"],
+                    reply_to_id=r["tweet_id"],
+                    why_now="報知投稿への返信=リアルタイムの返信欄で露出" if is_hochi else "大手投稿に返信=インプ近道",
+                    source_material_type="hochi_reply" if is_hochi else "reply_candidate",
+                    reason_tags=("reply:hochi", "manual_only") if is_hochi else ("manual_only",),
+                ))
+            if rep_cands:
+                before = len(candidates)
+                candidates = candidates + rep_cands
+                extra_policy_slots += len(rep_cands)
+                LOG.info(
+                    "reply_candidates appended: base=%d rep=%d total=%d handles=%s",
+                    before,
+                    len(rep_cands),
+                    len(candidates),
+                    ",".join(target_handles),
+                )
 
     # 392: flag ON 時は news_opinion fallback (template) を skip し、 Gemma 4
     # + Tavily REST で branding candidate を 1-3 件生成して append する。
@@ -2048,7 +2099,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     candidates, policy_drops = lane.apply_x_impression_policy(
         candidates,
         now=now_jst,
-        max_candidates=args.max_candidates,
+        max_candidates=args.max_candidates + extra_policy_slots,
     )
     for dropped, reason in policy_drops:
         LOG.info(

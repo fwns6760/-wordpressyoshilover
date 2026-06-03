@@ -117,12 +117,18 @@ class ReplyCandidatesTests(unittest.TestCase):
         reps = tc.build_reply_candidates(
             self._db(), fetch_fn=lambda u: feed, max_replies=3,
             detect_player_fn=lambda t: "竹丸和幸" if "竹丸" in t else "",
+            handles=["hochi_giants"],
         )
         self.assertEqual(len(reps), 1)
         self.assertEqual(reps[0]["tweet_id"], "12345")     # 返信先 tweet id
+        self.assertEqual(reps[0]["handle"], "hochi_giants")
         self.assertIn("status/12345", reps[0]["url"])
         self.assertIn("プロ初完投", reps[0]["reply"])       # 同じ声
         self.assertIn("10K", reps[0]["reply"])             # データ
+        self.assertIn("次にどう任されるか", reps[0]["reply"])
+        self.assertNotIn("http", reps[0]["reply"])
+        self.assertNotIn("#", reps[0]["reply"])
+        self.assertNotIn("報知", reps[0]["reply"])
 
     def test_reply_uses_voice_comment_fn_when_given(self):
         # ③ 順位燃料: comment_fn (ヨシラバーボイス) が返れば数字 1 行でなくその文を使う。
@@ -139,6 +145,7 @@ class ReplyCandidatesTests(unittest.TestCase):
             self._db(), fetch_fn=lambda u: feed, max_replies=3,
             detect_player_fn=lambda t: "竹丸和幸" if "竹丸" in t else "",
             comment_fn=_voice,
+            handles=["hochi_giants"],
         )
         self.assertEqual(len(reps), 1)
         self.assertIn("中継ぎ温存", reps[0]["reply"])      # ボイス文が採用される
@@ -154,9 +161,37 @@ class ReplyCandidatesTests(unittest.TestCase):
             self._db(), fetch_fn=lambda u: feed, max_replies=3,
             detect_player_fn=lambda t: "竹丸和幸" if "竹丸" in t else "",
             comment_fn=lambda parent, player: "",
+            handles=["hochi_giants"],
         )
         self.assertEqual(len(reps), 1)
         self.assertIn("10K", reps[0]["reply"])             # fallback の数字行
+        self.assertIn("次にどう任されるか", reps[0]["reply"])
+
+    def test_reply_can_target_hochi_only(self):
+        hochi_feed = (
+            "<rss><channel><item><title>竹丸和幸 プロ初完投 8回10K</title>"
+            "<link>https://x.com/hochi_giants/status/12345</link></item></channel></rss>"
+        )
+        sanspo_feed = (
+            "<rss><channel><item><title>竹丸和幸 プロ初完投 8回10K</title>"
+            "<link>https://x.com/Sanspo_Giants/status/99999</link></item></channel></rss>"
+        )
+
+        def _fetch(url):
+            if "hochi_giants" in url:
+                return hochi_feed
+            if "Sanspo_Giants" in url:
+                return sanspo_feed
+            return "<rss><channel></channel></rss>"
+
+        reps = tc.build_reply_candidates(
+            self._db(), fetch_fn=_fetch, max_replies=3,
+            detect_player_fn=lambda t: "竹丸和幸" if "竹丸" in t else "",
+            handles=["hochi_giants"],
+        )
+        self.assertEqual(len(reps), 1)
+        self.assertEqual(reps[0]["tweet_id"], "12345")
+        self.assertEqual(reps[0]["handle"], "hochi_giants")
 
     def test_reply_intent_url(self):
         from src.x_post_mail_lane import encode_x_reply_intent_url

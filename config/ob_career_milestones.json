@@ -1,0 +1,943 @@
+{
+ "_source": "レジェンド年度別 (各 Wikipedia 年度別成績表、2026-06-03 抽出) から compute_career_milestones で算出。各 stat は ob_legends.json 確定通算と再検算済 (不一致 stat は非採用)。",
+ "milestones": {
+  "長嶋茂雄": [
+   {
+    "stat": "本塁打",
+    "label": "本塁打",
+    "milestone": 100,
+    "year": "1961",
+    "cum_games": 510,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "安打",
+    "label": "安打",
+    "milestone": 1000,
+    "year": "1964",
+    "cum_games": 911,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "本塁打",
+    "label": "本塁打",
+    "milestone": 200,
+    "year": "1965",
+    "cum_games": 1042,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "安打",
+    "label": "安打",
+    "milestone": 1500,
+    "year": "1967",
+    "cum_games": 1292,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "本塁打",
+    "label": "本塁打",
+    "milestone": 300,
+    "year": "1969",
+    "cum_games": 1549,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "打点",
+    "label": "打点",
+    "milestone": 1000,
+    "year": "1969",
+    "cum_games": 1549,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "安打",
+    "label": "安打",
+    "milestone": 2000,
+    "year": "1971",
+    "cum_games": 1806,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "本塁打",
+    "label": "本塁打",
+    "milestone": 400,
+    "year": "1972",
+    "cum_games": 1931,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "打点",
+    "label": "打点",
+    "milestone": 1500,
+    "year": "1974",
+    "cum_games": 2186,
+    "games_unit": "試合"
+   }
+  ],
+  "王貞治": [
+   {
+    "stat": "本塁打",
+    "label": "本塁打",
+    "milestone": 100,
+    "year": "1963",
+    "cum_games": 625,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "本塁打",
+    "label": "本塁打",
+    "milestone": 200,
+    "year": "1965",
+    "cum_games": 900,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "本塁打",
+    "label": "本塁打",
+    "milestone": 300,
+    "year": "1967",
+    "cum_games": 1162,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "安打",
+    "label": "安打",
+    "milestone": 1000,
+    "year": "1967",
+    "cum_games": 1162,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "本塁打",
+    "label": "本塁打",
+    "milestone": 400,
+    "year": "1969",
+    "cum_games": 1423,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "打点",
+    "label": "打点",
+    "milestone": 1000,
+    "year": "1969",
+    "cum_games": 1423,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "安打",
+    "label": "安打",
+    "milestone": 1500,
+    "year": "1970",
+    "cum_games": 1552,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "本塁打",
+    "label": "本塁打",
+    "milestone": 500,
+    "year": "1972",
+    "cum_games": 1812,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "本塁打",
+    "label": "本塁打",
+    "milestone": 600,
+    "year": "1974",
+    "cum_games": 2072,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "打点",
+    "label": "打点",
+    "milestone": 1500,
+    "year": "1974",
+    "cum_games": 2072,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "安打",
+    "label": "安打",
+    "milestone": 2000,
+    "year": "1974",
+    "cum_games": 2072,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "本塁打",
+    "label": "本塁打",
+    "milestone": 700,
+    "year": "1976",
+    "cum_games": 2322,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "本塁打",
+    "label": "本塁打",
+    "milestone": 800,
+    "year": "1978",
+    "cum_games": 2582,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "打点",
+    "label": "打点",
+    "milestone": 2000,
+    "year": "1978",
+    "cum_games": 2582,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "安打",
+    "label": "安打",
+    "milestone": 2500,
+    "year": "1978",
+    "cum_games": 2582,
+    "games_unit": "試合"
+   }
+  ],
+  "川上哲治": [
+   {
+    "stat": "安打",
+    "label": "安打",
+    "milestone": 1000,
+    "year": "1949",
+    "cum_games": 876,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "本塁打",
+    "label": "本塁打",
+    "milestone": 100,
+    "year": "1950",
+    "cum_games": 1014,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "安打",
+    "label": "安打",
+    "milestone": 1500,
+    "year": "1953",
+    "cum_games": 1350,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "打点",
+    "label": "打点",
+    "milestone": 1000,
+    "year": "1954",
+    "cum_games": 1479,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "盗塁",
+    "label": "盗塁",
+    "milestone": 200,
+    "year": "1956",
+    "cum_games": 1727,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "安打",
+    "label": "安打",
+    "milestone": 2000,
+    "year": "1956",
+    "cum_games": 1727,
+    "games_unit": "試合"
+   }
+  ],
+  "原辰徳": [
+   {
+    "stat": "本塁打",
+    "label": "本塁打",
+    "milestone": 100,
+    "year": "1984",
+    "cum_games": 515,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "本塁打",
+    "label": "本塁打",
+    "milestone": 200,
+    "year": "1987",
+    "cum_games": 875,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "安打",
+    "label": "安打",
+    "milestone": 1000,
+    "year": "1988",
+    "cum_games": 1001,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "本塁打",
+    "label": "本塁打",
+    "milestone": 300,
+    "year": "1991",
+    "cum_games": 1345,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "安打",
+    "label": "安打",
+    "milestone": 1500,
+    "year": "1992",
+    "cum_games": 1462,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "打点",
+    "label": "打点",
+    "milestone": 1000,
+    "year": "1993",
+    "cum_games": 1560,
+    "games_unit": "試合"
+   }
+  ],
+  "高橋由伸": [
+   {
+    "stat": "本塁打",
+    "label": "本塁打",
+    "milestone": 100,
+    "year": "2001",
+    "cum_games": 519,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "安打",
+    "label": "安打",
+    "milestone": 1000,
+    "year": "2004",
+    "cum_games": 851,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "本塁打",
+    "label": "本塁打",
+    "milestone": 200,
+    "year": "2006",
+    "cum_games": 1036,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "安打",
+    "label": "安打",
+    "milestone": 1500,
+    "year": "2011",
+    "cum_games": 1472,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "本塁打",
+    "label": "本塁打",
+    "milestone": 300,
+    "year": "2012",
+    "cum_games": 1602,
+    "games_unit": "試合"
+   }
+  ],
+  "松井秀喜": [
+   {
+    "stat": "本塁打",
+    "label": "本塁打",
+    "milestone": 100,
+    "year": "1997",
+    "cum_games": 583,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "本塁打",
+    "label": "本塁打",
+    "milestone": 200,
+    "year": "1999",
+    "cum_games": 853,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "安打",
+    "label": "安打",
+    "milestone": 1000,
+    "year": "2000",
+    "cum_games": 988,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "本塁打",
+    "label": "本塁打",
+    "milestone": 300,
+    "year": "2002",
+    "cum_games": 1268,
+    "games_unit": "試合"
+   }
+  ],
+  "中畑清": [
+   {
+    "stat": "本塁打",
+    "label": "本塁打",
+    "milestone": 100,
+    "year": "1984",
+    "cum_games": 713,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "安打",
+    "label": "安打",
+    "milestone": 1000,
+    "year": "1986",
+    "cum_games": 965,
+    "games_unit": "試合"
+   }
+  ],
+  "篠塚和典": [
+   {
+    "stat": "安打",
+    "label": "安打",
+    "milestone": 1000,
+    "year": "1987",
+    "cum_games": 1058,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "安打",
+    "label": "安打",
+    "milestone": 1500,
+    "year": "1991",
+    "cum_games": 1461,
+    "games_unit": "試合"
+   }
+  ],
+  "小笠原道大": [
+   {
+    "stat": "本塁打",
+    "label": "本塁打",
+    "milestone": 100,
+    "year": "2002",
+    "cum_games": 660,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "安打",
+    "label": "安打",
+    "milestone": 1000,
+    "year": "2004",
+    "cum_games": 889,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "本塁打",
+    "label": "本塁打",
+    "milestone": 200,
+    "year": "2005",
+    "cum_games": 1022,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "安打",
+    "label": "安打",
+    "milestone": 1500,
+    "year": "2007",
+    "cum_games": 1299,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "本塁打",
+    "label": "本塁打",
+    "milestone": 300,
+    "year": "2008",
+    "cum_games": 1443,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "打点",
+    "label": "打点",
+    "milestone": 1000,
+    "year": "2009",
+    "cum_games": 1582,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "安打",
+    "label": "安打",
+    "milestone": 2000,
+    "year": "2011",
+    "cum_games": 1802,
+    "games_unit": "試合"
+   }
+  ],
+  "村田修一": [
+   {
+    "stat": "本塁打",
+    "label": "本塁打",
+    "milestone": 100,
+    "year": "2007",
+    "cum_games": 645,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "本塁打",
+    "label": "本塁打",
+    "milestone": 200,
+    "year": "2009",
+    "cum_games": 870,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "安打",
+    "label": "安打",
+    "milestone": 1000,
+    "year": "2011",
+    "cum_games": 1158,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "本塁打",
+    "label": "本塁打",
+    "milestone": 300,
+    "year": "2014",
+    "cum_games": 1589,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "安打",
+    "label": "安打",
+    "milestone": 1500,
+    "year": "2014",
+    "cum_games": 1589,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "打点",
+    "label": "打点",
+    "milestone": 1000,
+    "year": "2016",
+    "cum_games": 1835,
+    "games_unit": "試合"
+   }
+  ],
+  "アレックス・ラミレス": [
+   {
+    "stat": "本塁打",
+    "label": "本塁打",
+    "milestone": 100,
+    "year": "2004",
+    "cum_games": 546,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "本塁打",
+    "label": "本塁打",
+    "milestone": 200,
+    "year": "2007",
+    "cum_games": 982,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "安打",
+    "label": "安打",
+    "milestone": 1000,
+    "year": "2007",
+    "cum_games": 982,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "安打",
+    "label": "安打",
+    "milestone": 1500,
+    "year": "2009",
+    "cum_games": 1270,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "本塁打",
+    "label": "本塁打",
+    "milestone": 300,
+    "year": "2010",
+    "cum_games": 1414,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "打点",
+    "label": "打点",
+    "milestone": 1000,
+    "year": "2010",
+    "cum_games": 1414,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "安打",
+    "label": "安打",
+    "milestone": 2000,
+    "year": "2013",
+    "cum_games": 1744,
+    "games_unit": "試合"
+   }
+  ],
+  "長野久義": [
+   {
+    "stat": "本塁打",
+    "label": "本塁打",
+    "milestone": 100,
+    "year": "2016",
+    "cum_games": 959,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "安打",
+    "label": "安打",
+    "milestone": 1000,
+    "year": "2016",
+    "cum_games": 959,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "安打",
+    "label": "安打",
+    "milestone": 1500,
+    "year": "2024",
+    "cum_games": 1634,
+    "games_unit": "試合"
+   }
+  ],
+  "岡本和真": [
+   {
+    "stat": "本塁打",
+    "label": "本塁打",
+    "milestone": 100,
+    "year": "2021",
+    "cum_games": 582,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "本塁打",
+    "label": "本塁打",
+    "milestone": 200,
+    "year": "2023",
+    "cum_games": 862,
+    "games_unit": "試合"
+   },
+   {
+    "stat": "安打",
+    "label": "安打",
+    "milestone": 1000,
+    "year": "2024",
+    "cum_games": 1005,
+    "games_unit": "試合"
+   }
+  ],
+  "金田正一": [
+   {
+    "stat": "勝利",
+    "label": "勝",
+    "milestone": 100,
+    "year": "1954",
+    "cum_games": 250,
+    "games_unit": "登板"
+   },
+   {
+    "stat": "三振",
+    "label": "奪三振",
+    "milestone": 1000,
+    "year": "1954",
+    "cum_games": 250,
+    "games_unit": "登板"
+   },
+   {
+    "stat": "勝利",
+    "label": "勝",
+    "milestone": 150,
+    "year": "1956",
+    "cum_games": 380,
+    "games_unit": "登板"
+   },
+   {
+    "stat": "三振",
+    "label": "奪三振",
+    "milestone": 1500,
+    "year": "1956",
+    "cum_games": 380,
+    "games_unit": "登板"
+   },
+   {
+    "stat": "三振",
+    "label": "奪三振",
+    "milestone": 2000,
+    "year": "1957",
+    "cum_games": 441,
+    "games_unit": "登板"
+   },
+   {
+    "stat": "勝利",
+    "label": "勝",
+    "milestone": 200,
+    "year": "1958",
+    "cum_games": 497,
+    "games_unit": "登板"
+   },
+   {
+    "stat": "三振",
+    "label": "奪三振",
+    "milestone": 2500,
+    "year": "1959",
+    "cum_games": 555,
+    "games_unit": "登板"
+   },
+   {
+    "stat": "勝利",
+    "label": "勝",
+    "milestone": 250,
+    "year": "1960",
+    "cum_games": 612,
+    "games_unit": "登板"
+   },
+   {
+    "stat": "三振",
+    "label": "奪三振",
+    "milestone": 3000,
+    "year": "1960",
+    "cum_games": 612,
+    "games_unit": "登板"
+   },
+   {
+    "stat": "勝利",
+    "label": "勝",
+    "milestone": 300,
+    "year": "1963",
+    "cum_games": 770,
+    "games_unit": "登板"
+   },
+   {
+    "stat": "三振",
+    "label": "奪三振",
+    "milestone": 4000,
+    "year": "1964",
+    "cum_games": 814,
+    "games_unit": "登板"
+   },
+   {
+    "stat": "勝利",
+    "label": "勝",
+    "milestone": 400,
+    "year": "1969",
+    "cum_games": 944,
+    "games_unit": "登板"
+   }
+  ],
+  "斎藤雅樹": [
+   {
+    "stat": "勝利",
+    "label": "勝",
+    "milestone": 100,
+    "year": "1993",
+    "cum_games": 266,
+    "games_unit": "登板"
+   },
+   {
+    "stat": "三振",
+    "label": "奪三振",
+    "milestone": 1000,
+    "year": "1994",
+    "cum_games": 296,
+    "games_unit": "登板"
+   },
+   {
+    "stat": "勝利",
+    "label": "勝",
+    "milestone": 150,
+    "year": "1996",
+    "cum_games": 349,
+    "games_unit": "登板"
+   },
+   {
+    "stat": "三振",
+    "label": "奪三振",
+    "milestone": 1500,
+    "year": "1997",
+    "cum_games": 368,
+    "games_unit": "登板"
+   }
+  ],
+  "江川卓": [
+   {
+    "stat": "三振",
+    "label": "奪三振",
+    "milestone": 1000,
+    "year": "1984",
+    "cum_games": 184,
+    "games_unit": "登板"
+   },
+   {
+    "stat": "勝利",
+    "label": "勝",
+    "milestone": 100,
+    "year": "1985",
+    "cum_games": 214,
+    "games_unit": "登板"
+   }
+  ],
+  "桑田真澄": [
+   {
+    "stat": "三振",
+    "label": "奪三振",
+    "milestone": 1000,
+    "year": "1993",
+    "cum_games": 206,
+    "games_unit": "登板"
+   },
+   {
+    "stat": "勝利",
+    "label": "勝",
+    "milestone": 100,
+    "year": "1994",
+    "cum_games": 234,
+    "games_unit": "登板"
+   },
+   {
+    "stat": "三振",
+    "label": "奪三振",
+    "milestone": 1500,
+    "year": "1998",
+    "cum_games": 296,
+    "games_unit": "登板"
+   },
+   {
+    "stat": "勝利",
+    "label": "勝",
+    "milestone": 150,
+    "year": "2001",
+    "cum_games": 374,
+    "games_unit": "登板"
+   }
+  ],
+  "槙原寛己": [
+   {
+    "stat": "三振",
+    "label": "奪三振",
+    "milestone": 1000,
+    "year": "1991",
+    "cum_games": 205,
+    "games_unit": "登板"
+   },
+   {
+    "stat": "勝利",
+    "label": "勝",
+    "milestone": 100,
+    "year": "1993",
+    "cum_games": 262,
+    "games_unit": "登板"
+   },
+   {
+    "stat": "三振",
+    "label": "奪三振",
+    "milestone": 1500,
+    "year": "1994",
+    "cum_games": 291,
+    "games_unit": "登板"
+   },
+   {
+    "stat": "勝利",
+    "label": "勝",
+    "milestone": 150,
+    "year": "1998",
+    "cum_games": 396,
+    "games_unit": "登板"
+   },
+   {
+    "stat": "三振",
+    "label": "奪三振",
+    "milestone": 2000,
+    "year": "1998",
+    "cum_games": 396,
+    "games_unit": "登板"
+   }
+  ],
+  "上原浩治": [
+   {
+    "stat": "三振",
+    "label": "奪三振",
+    "milestone": 1000,
+    "year": "2005",
+    "cum_games": 171,
+    "games_unit": "登板"
+   },
+   {
+    "stat": "勝利",
+    "label": "勝",
+    "milestone": 100,
+    "year": "2006",
+    "cum_games": 195,
+    "games_unit": "登板"
+   }
+  ],
+  "堀内恒夫": [
+   {
+    "stat": "勝利",
+    "label": "勝",
+    "milestone": 100,
+    "year": "1972",
+    "cum_games": 267,
+    "games_unit": "登板"
+   },
+   {
+    "stat": "三振",
+    "label": "奪三振",
+    "milestone": 1000,
+    "year": "1972",
+    "cum_games": 267,
+    "games_unit": "登板"
+   },
+   {
+    "stat": "勝利",
+    "label": "勝",
+    "milestone": 150,
+    "year": "1975",
+    "cum_games": 390,
+    "games_unit": "登板"
+   },
+   {
+    "stat": "三振",
+    "label": "奪三振",
+    "milestone": 1500,
+    "year": "1976",
+    "cum_games": 424,
+    "games_unit": "登板"
+   },
+   {
+    "stat": "勝利",
+    "label": "勝",
+    "milestone": 200,
+    "year": "1980",
+    "cum_games": 536,
+    "games_unit": "登板"
+   }
+  ],
+  "菅野智之": [
+   {
+    "stat": "三振",
+    "label": "奪三振",
+    "milestone": 1000,
+    "year": "2019",
+    "cum_games": 176,
+    "games_unit": "登板"
+   },
+   {
+    "stat": "勝利",
+    "label": "勝",
+    "milestone": 100,
+    "year": "2020",
+    "cum_games": 196,
+    "games_unit": "登板"
+   },
+   {
+    "stat": "三振",
+    "label": "奪三振",
+    "milestone": 1500,
+    "year": "2024",
+    "cum_games": 276,
+    "games_unit": "登板"
+   }
+  ]
+ }
+}

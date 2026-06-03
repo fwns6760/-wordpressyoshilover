@@ -11,6 +11,8 @@ from src.data_site_template_pillar import (
     render_pillar_html,
     render_pillar_title,
     render_pillar_excerpt,
+    _build_ob_milestones_html,
+    _build_career_milestones_html,
 )
 
 
@@ -361,6 +363,44 @@ class CareerHistoryRenderTests(unittest.TestCase):
         html = render_pillar_html(p)
         self.assertNotIn("年度別成績・通算", html)
         self.assertNotIn("プロフィール</h2>", html)
+
+
+class CareerMilestoneRenderTests(unittest.TestCase):
+    """468-2: 通算節目の到達ブロック (現役 = live 計算 / OB = precomputed)。"""
+
+    def test_active_player_milestone_block(self) -> None:
+        # 年度別から 1000安打 を跨ぐ最小 career
+        career = {
+            "is_pitcher": False,
+            "batting": {
+                "years": [
+                    {"年度": "2010", "試合": "140", "安打": "600", "本塁打": "20", "打点": "60", "盗塁": "5"},
+                    {"年度": "2011", "試合": "140", "安打": "600", "本塁打": "20", "打点": "60", "盗塁": "5"},
+                ],
+                "total": {"安打": "1200", "本塁打": "40", "打点": "120", "試合": "280"},
+            },
+            "pitching": None,
+        }
+        p = PillarPlayerInfo(name="テスト選手", slug="test", position="内野手",
+                             jersey_number="00", npb_career=career)
+        html = _build_career_milestones_html(p)
+        self.assertIn("通算節目の到達", html)
+        self.assertIn("通算1000安打", html)
+        self.assertIn("2011年に到達", html)
+
+    def test_ob_legend_milestone_block_oh(self) -> None:
+        # 王貞治: precomputed JSON 由来。868本→800本塁打、2786安打→2500安打 が出る
+        p = PillarPlayerInfo(name="王貞治", slug="oh-sadaharu", position="", jersey_number="")
+        html = _build_ob_milestones_html(p)
+        self.assertIn("通算節目の到達", html)
+        self.assertIn("通算800本塁打", html)
+        self.assertIn("通算2500安打", html)
+        # 868本に届かない 900本塁打 は出さない
+        self.assertNotIn("通算900本塁打", html)
+
+    def test_ob_unknown_player_empty(self) -> None:
+        p = PillarPlayerInfo(name="存在しない人", slug="nobody", position="", jersey_number="")
+        self.assertEqual(_build_ob_milestones_html(p), "")
 
 
 if __name__ == "__main__":

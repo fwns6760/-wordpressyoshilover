@@ -14,8 +14,10 @@ Phase 1.0 simplification:
 
 from __future__ import annotations
 
+import functools as _functools
 import html as _html
 import json as _json
+import os as _os
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -1026,16 +1028,11 @@ def _career_table_html(title: str, stats: dict, accent_cols: tuple) -> str:
     )
 
 
-def _build_career_milestones_html(player: PillarPlayerInfo) -> str:
-    """468-2: 通算節目の到達点 (年度別行から決定的に計算、 到達なしなら空)。
+def _render_milestones_block(milestones: list) -> str:
+    """468-2: 節目到達 list (dict: label/milestone/year/cum_games/games_unit) を 1 枚の card に。
 
-    丸い通算記録 (2000安打 / 500本塁打 / 200勝 等) に到達した年と、 その
-    シーズン終了時点の通算試合数 (投手は登板数) を併記する。 計算は
-    ``compute_career_milestones`` (年度別累計を total 行で検算) に委譲。
+    現役 (年度別から live 計算) と OB (precomputed JSON) で共通利用。 空なら空文字。
     """
-    from src.npb_career_scraper import compute_career_milestones
-
-    milestones = compute_career_milestones(player.npb_career or {})
     if not milestones:
         return ""
     items = []
@@ -1060,6 +1057,32 @@ def _build_career_milestones_html(player: PillarPlayerInfo) -> str:
         '<ul style="list-style:none;padding:0;margin:0;">' + "\n".join(items) + '</ul>'
         '</div>'
     )
+
+
+def _build_career_milestones_html(player: PillarPlayerInfo) -> str:
+    """468-2: 現役選手の通算節目の到達点 (年度別行から決定的に計算、 到達なしなら空)。
+
+    計算は ``compute_career_milestones`` (年度別累計を total 行で検算) に委譲。
+    """
+    from src.npb_career_scraper import compute_career_milestones
+
+    return _render_milestones_block(compute_career_milestones(player.npb_career or {}))
+
+
+@_functools.lru_cache(maxsize=1)
+def _load_ob_milestones_map() -> dict:
+    """468-2 Phase2: レジェンドの precomputed 節目 (config/ob_career_milestones.json)。"""
+    path = _os.path.join(_os.path.dirname(__file__), "..", "config", "ob_career_milestones.json")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return _json.load(fh).get("milestones") or {}
+    except Exception:
+        return {}
+
+
+def _build_ob_milestones_html(player: PillarPlayerInfo) -> str:
+    """468-2 Phase2: OB・レジェンドの通算節目 (precomputed、 ob_legends 通算で検算済)。"""
+    return _render_milestones_block(_load_ob_milestones_map().get(player.name or "") or [])
 
 
 def _build_career_history_html(player: PillarPlayerInfo) -> str:
@@ -1116,6 +1139,7 @@ def render_pillar_html(player: PillarPlayerInfo) -> str:
     if _is_ob(player):
         stats_sections = [
             _build_ob_html(player),
+            _build_ob_milestones_html(player),
         ]
     elif _is_staff(player):
         stats_sections = [

@@ -106,6 +106,7 @@ class ReplyCandidatesTests(unittest.TestCase):
         conn = sqlite3.connect(path)
         conn.execute("CREATE TABLE batting_logs (game_id TEXT, team_name TEXT, player_canonical TEXT, AB INT, H INT, RBI INT)")
         conn.execute("CREATE TABLE pitching_logs (game_id TEXT, team_name TEXT, player_canonical TEXT, result_mark TEXT, K INT, IP REAL, ER INT)")
+        conn.execute("INSERT INTO batting_logs VALUES ('g1','巨人','坂本勇人',100,25,10)")
         conn.execute("INSERT INTO pitching_logs VALUES ('g1','巨人','竹丸和幸','○',10,8.0,1)")
         conn.commit(); conn.close()
         self.addCleanup(lambda: os.path.exists(path) and os.remove(path))
@@ -125,7 +126,8 @@ class ReplyCandidatesTests(unittest.TestCase):
         self.assertIn("status/12345", reps[0]["url"])
         self.assertIn("プロ初完投", reps[0]["reply"])       # 同じ声
         self.assertIn("10K", reps[0]["reply"])             # データ
-        self.assertIn("次にどう任されるか", reps[0]["reply"])
+        self.assertIn("次も長い回を任せる", reps[0]["reply"])
+        self.assertIn("見方が分かれそう", reps[0]["reply"])
         self.assertNotIn("http", reps[0]["reply"])
         self.assertNotIn("#", reps[0]["reply"])
         self.assertNotIn("報知", reps[0]["reply"])
@@ -165,7 +167,25 @@ class ReplyCandidatesTests(unittest.TestCase):
         )
         self.assertEqual(len(reps), 1)
         self.assertIn("10K", reps[0]["reply"])             # fallback の数字行
-        self.assertIn("次にどう任されるか", reps[0]["reply"])
+        self.assertIn("次も長い回を任せる", reps[0]["reply"])
+
+    def test_reply_usage_template_invites_giants_fan_reaction(self):
+        feed = (
+            "<rss><channel><item><title>阿部監督が坂本勇人のスタメン起用と打順に言及</title>"
+            "<link>https://x.com/hochi_giants/status/22345</link></item></channel></rss>"
+        )
+        reps = tc.build_reply_candidates(
+            self._db(), fetch_fn=lambda u: feed, max_replies=3,
+            detect_player_fn=lambda t: "坂本勇人" if "坂本" in t else "",
+            handles=["hochi_giants"],
+        )
+        self.assertEqual(len(reps), 1)
+        reply = reps[0]["reply"]
+        self.assertTrue(reply.startswith("坂本勇人、"))
+        self.assertIn("この起用", reply)
+        self.assertIn("意見分かれそう", reply)
+        self.assertNotIn("阿部監督", reply)
+        self.assertNotIn("今季打率", reply)  # 起用論点に無関係なDB数字は混ぜない
 
     def test_reply_can_target_hochi_only(self):
         hochi_feed = (

@@ -26,6 +26,7 @@ _EVENT_WORDS = (
     "完投", "完封", "ホームラン", "本塁打", "アーチ", "一発", "サヨナラ", "猛打賞",
     "タイムリー", "適時", "好投", "無失点", "奪三振", "ファインプレー", "好守",
     "初", "プロ初", "昇格", "復帰", "勝利", "連勝", "二軍", "ファーム", "誕生日", "号",
+    "起用", "スタメン", "打順", "代打", "守備", "継投", "先発", "ローテ",
 )
 
 
@@ -100,6 +101,8 @@ def headline_from_events(events: list[str]) -> str:
         return "一軍昇格！"
     if e & {"二軍", "ファーム"}:
         return "ファームで躍動！"
+    if e & {"起用", "スタメン", "打順", "代打", "守備", "継投", "先発", "ローテ"}:
+        return "起用の話題！"
     return "注目！"
 
 
@@ -224,33 +227,52 @@ def _yoshilover_reply_fallback(db_path: str, player: str, events: list, parent_t
     返信欄で読まれる前提なので、URL / hashtag / 媒体名を本文に入れず、
     「事実の反応 + 次に見るポイント」に絞る。
     """
-    fact = (_caption_for(db_path, player, events) or "").strip()
-    if fact:
-        stem = fact.rstrip("。")
+    haystack = f"{parent_text or ''} {' '.join(str(e) for e in events or [])}"
+    fact = (_caption_for(db_path, player, events) or "").strip().rstrip("。")
+    headline = headline_from_events(events).rstrip("！!")
+    if any(t in haystack for t in ("起用", "スタメン", "打順", "代打", "守備", "継投", "捕手", "先発", "ローテ")):
         text = (
-            f"{stem}。\n"
-            "ここは結果だけでなく、次にどう任されるかまで見たいですね。"
+            f"{player}、この起用はかなり見どころありますね。\n"
+            "次も同じ形で行くのか、ここは意見分かれそうです。"
+        )
+    elif any(t in haystack for t in ("若手", "昇格", "一軍", "2軍", "２軍", "二軍", "ファーム", "育成")):
+        text = (
+            f"{player}、ここから続けてチャンスが来るかですね。\n"
+            "一試合の結果より、次の使われ方まで見たいです。"
+        )
+    elif any(t in haystack for t in ("復帰", "復活", "再合流", "実戦復帰")):
+        text = (
+            f"{player}、復帰はまず安心材料ですね。\n"
+            "ここからどこまで戻してくるか、次の出番まで見たいです。"
+        )
+    elif any(t in haystack for t in ("完投", "完封", "好投", "無失点", "奪三振", "勝利")) and fact:
+        text = (
+            f"{fact}。\n"
+            "次も長い回を任せるのか、ここは見方が分かれそうです。"
+        )
+    elif any(t in haystack for t in ("ホームラン", "本塁打", "アーチ", "一発", "サヨナラ", "タイムリー", "適時", "猛打賞")) and fact:
+        text = (
+            f"{fact}。\n"
+            "次の打席でもう一回同じ空気を作れるか見たいです。"
+        )
+    elif headline and headline != "注目":
+        text = (
+            f"{player}の{headline}、ここは流れを変える材料として見たいです。\n"
+            "次の場面で同じ形を出せるかまで追いたいですね。"
         )
     else:
-        headline = headline_from_events(events).rstrip("！!")
-        if headline and headline != "注目":
-            text = (
-                f"{player}の{headline}、ここは流れを変える材料として見たいです。\n"
-                "次の場面で同じ形を出せるかまで追いたいですね。"
-            )
-        else:
-            text = (
-                f"{player}のこの話題、結果だけでなく立ち位置まで含めて見たいです。\n"
-                "次の出番でどうつながるかですね。"
-            )
+        text = (
+            f"{player}、ここで名前が出るのはやっぱり気になりますね。\n"
+            "結果だけじゃなく、次にどう使われるかまで見たいです。"
+        )
     # 返信本文には親投稿 URL / hashtag / 媒体名を混ぜない。
     for ng in ("http", "#", "@", "報知", "スポーツ報知"):
         if ng in text:
             return ""
-    # 親投稿の数字を広げないため、 fallback は 2 行・280 字以内に収める。
-    if len(text) <= 279:
+    # 親投稿の数字を広げないため、 fallback は 2 行・180 字以内に収める。
+    if len(text) <= 180:
         return text.strip()
-    return text[:279].rstrip("、。 \n") + "…"
+    return text[:179].rstrip("、。 \n") + "…"
 
 
 def build_reply_candidates(
@@ -269,7 +291,8 @@ def build_reply_candidates(
     インプ原理 ③ (順位燃料): 公式/報知の返信欄は数百件で溢れるため、 数字の羅列リプは
     埋もれてインプを borrow できない。 ``comment_fn(parent_tweet_text, player)`` を渡すと
     親ツイートに「データ気づき + 辛口読み」を足したヨシラバーボイスのリプ文を生成し、
-    いいねで上位に浮かせる。 comment_fn 無し / 生成失敗時は _caption_for の数字 1 行へ fallback。
+    いいねで上位に浮かせる。 comment_fn 無し / 生成失敗時は deterministic なヨシラバー風
+    短文 reply へ fallback。
     Returns [{player, reply, url, tweet_id, headline}]。
     """
     import re as _re2

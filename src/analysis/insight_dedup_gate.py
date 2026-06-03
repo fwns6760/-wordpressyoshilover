@@ -130,19 +130,16 @@ def parse_rank(text: Any) -> Optional[int]:
 
 
 def rank_band(rank: Optional[int], total: Optional[int] = None) -> str:
+    """順位 → band。spec(data-insight.md)の絶対順位 band [1,5,10,30] に統一。
+
+    旧実装は total があると percentile 判定だったが、total=30 で rank 3(10%)↔4(13%)
+    が 10% 境界をまたいで band 反転 → 7日 cooldown をすり抜けて連日 publish される
+    事故源(大城 対右投手 rank 3→4→6 で 5/31・6/2 連日掲載)だった。絶対 band なら
+    rank 3,4 はともに top_5 で同一 band となり、値変化 <5% は cooldown でブロックされる。
+    ``total`` は署名互換のため残すが band 判定には用いない。
+    """
     if not rank or rank <= 0:
         return "unknown"
-    if total and total > 0:
-        pct = float(rank) / float(total)
-        if pct <= 0.01:
-            return "top_1pct"
-        if pct <= 0.05:
-            return "top_5pct"
-        if pct <= 0.10:
-            return "top_10pct"
-        if pct <= 0.30:
-            return "top_30pct"
-        return "field"
     for boundary in rank_bands():
         if rank <= boundary:
             return f"top_{boundary}"

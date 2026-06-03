@@ -3,7 +3,7 @@
 ## 1. ticket header
 
 - **ticket id**: 445
-- **status**: LIVE_DEPLOYED_VERIFIED (2026-05-28 18:14 JST、 全機能 deploy + verify 済)
+- **status**: LIVE_DEPLOYED_VERIFIED (2026-06-03 13:18 JST、 SEO 編集要約 follow-up deploy + verify 済)
 - **owner**: Claude Code
 - **lane**: ingest / sns-realtime
 - **created**: 2026-05-28
@@ -96,10 +96,11 @@ Yahoo リアルタイム検索の **巨人専門 一軍 / 二軍・三軍 版** 
 | `0d09e60` | `sns-realtime-0d09e60` | `00502-qdx` | Giants design + JSON-LD (CollectionPage + Breadcrumb) |
 | `3cbe211` | `sns-realtime-3cbe211` | `00503-bxc` | A LiveBlogPosting + B OGP excerpt + C /data/ 内部リンク |
 | `6609bae` | `disable-social-news-6609bae` | `00504-9hw` (LIVE) | DISABLE_SOCIAL_NEWS_ARTICLES kill switch follow-up |
+| `b4c8d61` | `sns-seo-b4c8d61` | `00509-wrl` (LIVE) | SEO 編集要約 + 固定 title + 人間向け excerpt + RSSHub 重複除去 |
 
 env: `ENABLE_SNS_REALTIME_TOPIC=1` + `DISABLE_SOCIAL_NEWS_ARTICLES=1` 設定済。
 
-## 8. tests (29/29 PASS)
+## 8. tests (38/38 PASS)
 
 - `test_sns_realtime_topic_classifier.py`: 11 tests
   - 育成 / 三軍 / 3軍 keyword → 三軍
@@ -118,6 +119,13 @@ env: `ENABLE_SNS_REALTIME_TOPIC=1` + `DISABLE_SOCIAL_NEWS_ARTICLES=1` 設定済�
   - build_pages: 2 page / slugs / title suffix / level 分離
   - 急上昇 badge: 初日抑制 / 2 日目表示
   - run: outside_slot / 両 page upsert / load/save nested
+
+2026-06-03 SEO follow-up:
+
+- `python3 -m pytest tests/test_sns_realtime_topic.py tests/test_sns_realtime_topic_classifier.py` → 38 passed
+- `python3 -m compileall src/sns_realtime_topic.py src/sns_realtime_topic_template.py tests/test_sns_realtime_topic.py tests/test_sns_realtime_topic_classifier.py` → OK
+- AST parse (`sns_realtime_topic.py` / `sns_realtime_topic_template.py` / `tests/test_sns_realtime_topic.py`) → OK
+- `git diff --check -- src/sns_realtime_topic.py src/sns_realtime_topic_template.py tests/test_sns_realtime_topic.py` → OK
 
 ## 9. 受け入れ条件 (全達成)
 
@@ -145,9 +153,24 @@ user 「SNS のポストは作りたいが、 SNS の記事はいらない」 �
 - 21:00 JST 初回 fire で `event=social_news_sources_disabled` log で動作確認予定
 - 仕様書 `mkdocs_docs/spec/sns-realtime-topic.md` § DISABLE_SOCIAL_NEWS_ARTICLES に明記
 
+## 10-B. follow-up 完了 (2026-06-03 13:18 JST)
+
+### SEO 編集要約 + meta 安定化
+
+user 「SNSのリアルタイムについて」「このサイトSEO強くならないのは？」への対応。
+
+- commit `b4c8d61` / image `sns-seo-b4c8d61` / revision `yoshilover-fetcher-00509-wrl` (LIVE)
+- build `031e1390-bda4-466b-9bf4-78425b788c6c` SUCCESS、 digest `sha256:4acc271e...`
+- Cloud Run service `yoshilover-fetcher` 100% traffic、 Ready / Active / ContainerHealthy = True
+- deploy 後 15 分 ERROR log = 0
+- title を日付入りから固定型 `巨人 SNSリアルタイム速報 (一軍) | 今日のX話題まとめ` へ変更
+- WP excerpt を `投稿/24h` 型の計測文から、ヨシラバーが整理する人間向け要約へ変更
+- 本文 top に `ヨシラバー注目ポイント` セクションを追加し、X 埋め込み一覧だけに見えない構成へ変更
+- RSSHub の title / summary 重複を除去し、JSON-LD / editor summary の重複文を軽減
+- local `/health` curl は sandbox DNS 制約で未確認。Cloud Run revision health は `ContainerHealthy=True` で確認済み。
+
 ## 11. 残課題 (本 ticket scope 外、 別 ticket 候補)
 
-- **(D) ヨシラバー独自 commentary 挿入** (E-E-A-T 強化) — 本文 top に 100-200 字の編集部まとめテキスト。 Gemini Flash で生成 or 手動。 工事 1.5h。
 - **(E) embed lazy load** (Core Web Vitals LCP 改善) — IntersectionObserver で scroll で初めて load。 工事 1h。
 - **1軍 / 2軍 コーチ split** — 監督 / コーチ言及は現在 一軍 仮定。 lineup data で per-team split は別 ticket。
 - **2軍3軍 source 追加** — `TokyoGiantsFarm` 等が公式に存在すれば source list 追加検討。

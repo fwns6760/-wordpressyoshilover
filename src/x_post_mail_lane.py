@@ -1731,6 +1731,12 @@ def _x_buzz_player_fact(db_path: Optional[str], canonical: str) -> str:
     return ""
 
 
+# 2026-06-03 コスト削減: 試合中 (in_game_strong 枠) は 15 分毎発火のため、 buzz ソースを
+# 高シグナルな3アカウント (報知 + スポニチ巨人 + 読売ジャイアンツ公式) に絞り、 全8feed
+# 取得→生成の叩きを抑える (user 確定)。 試合外は従来通り全ソース。
+_GAME_BUZZ_HANDLES = ["hochi_giants", "SponichiGiants", "TokyoGiants"]
+
+
 def build_video_radar_candidates(
     db_path: Optional[str] = None,
     *,
@@ -1740,6 +1746,7 @@ def build_video_radar_candidates(
     fetch_fn=None,
     min_score: int = 2,
     comment_fn=None,
+    handles: Optional[list[str]] = None,
 ) -> list[Candidate]:
     """451: 巨人系 X account の投稿 (RSSHub 経由) から「懐かしい・ファンが面白い・いま話題」の
     投稿を拾い、 **引用RT / リプライ** 用の X 投稿候補 (メール) を作る。
@@ -1750,6 +1757,11 @@ def build_video_radar_candidates(
     """
     if now is None:
         now = datetime.now(JST)
+    # 試合中はソースを3アカウントに絞る (コスト削減)。 caller が handles を明示した
+    # 場合はそれを優先 (override / test 用)。
+    if handles is None and x_impression_timing_label(now) == _X_IMPRESSION_TIMING_LABELS["in_game_strong"]:
+        handles = _GAME_BUZZ_HANDLES
+        LOG.info("x_buzz in-game: source narrowed to %s", handles)
     try:
         from src import video_radar as _vr
     except Exception as exc:  # noqa: BLE001
@@ -1774,7 +1786,9 @@ def build_video_radar_candidates(
 
     # X バズ signal (RSSHub 経由、 X API 不使用)。 取得失敗は空で続行 (graceful)。
     try:
-        buzz_counts = _vr.fetch_buzzing_players(detect_player_fn=_detect, fetch_fn=_cached_fetch)
+        buzz_counts = _vr.fetch_buzzing_players(
+            detect_player_fn=_detect, fetch_fn=_cached_fetch, handles=handles
+        )
     except Exception as exc:  # noqa: BLE001
         LOG.info("x_buzz buzz skip: %r", exc)
         buzz_counts = {}
@@ -1790,6 +1804,7 @@ def build_video_radar_candidates(
             min_score=min_score,
             now=now,
             max_age_hours=phase_freshness_max_age_hours(now),
+            handles=handles,
         )
     except Exception as exc:  # noqa: BLE001
         LOG.warning("x_buzz gather failed: %r", exc)

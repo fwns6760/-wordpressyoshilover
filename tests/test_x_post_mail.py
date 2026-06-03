@@ -3614,3 +3614,27 @@ class GemmaBrandingPlayerCooldownTests(unittest.TestCase):
         names = [p[0] for p in picks]
         self.assertNotIn("坂本勇人", names)
         self.assertIn("岡本和真", names)
+
+
+class VideoRadarSourceNarrowingTests(unittest.TestCase):
+    """2026-06-03: 試合中は buzz ソースを報知+スポニチ+公式の3つに絞る (コスト削減)。"""
+
+    def _handles_hit(self, hour: int) -> list:
+        import src.x_post_mail_lane as lane
+        captured = []
+        def fake_fetch(url):
+            captured.append(url); return ""
+        lane.build_video_radar_candidates(
+            now=datetime(2026, 6, 3, hour, 0, tzinfo=JST),
+            fetch_fn=fake_fetch, comment_fn=None, max_count=3,
+        )
+        ig = [u for u in captured if "twitter/user/" in u]
+        return sorted({u.split("twitter/user/")[1].split("?")[0] for u in ig})
+
+    def test_in_game_narrows_to_three_sources(self):
+        # 20:00 = in_game_strong → 3ソースのみ
+        self.assertEqual(self._handles_hit(20), ["SponichiGiants", "TokyoGiants", "hochi_giants"])
+
+    def test_off_game_uses_all_sources(self):
+        # 10:00 = 試合外 → 全8ソース
+        self.assertEqual(len(self._handles_hit(10)), 8)

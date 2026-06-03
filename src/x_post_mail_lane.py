@@ -1732,9 +1732,16 @@ def _x_buzz_player_fact(db_path: Optional[str], canonical: str) -> str:
 
 
 # 2026-06-03 コスト削減: 試合中 (in_game_strong 枠) は 15 分毎発火のため、 buzz ソースを
-# 高シグナルな3アカウント (報知 + スポニチ巨人 + 読売ジャイアンツ公式) に絞り、 全8feed
-# 取得→生成の叩きを抑える (user 確定)。 試合外は従来通り全ソース。
-_GAME_BUZZ_HANDLES = ["hochi_giants", "SponichiGiants", "TokyoGiants"]
+# 高シグナルなアカウントに絞り、 全8feed 取得→生成の叩きを抑える (user 確定)。 試合外は全ソース。
+# 2026-06-03 user: 試合中は DAZN (DAZNJPNBaseball) と 日テレ巨人中継 (ntv_baseball) の動画ソースを
+# 戻す。 試合中は動画ハイライトが最も高シグナルなため (報知 + スポニチ + 読売公式 + 日テレ + DAZN)。
+_GAME_BUZZ_HANDLES = [
+    "hochi_giants",
+    "SponichiGiants",
+    "TokyoGiants",
+    "ntv_baseball",
+    "DAZNJPNBaseball",
+]
 
 
 def build_video_radar_candidates(

@@ -3617,7 +3617,12 @@ class GemmaBrandingPlayerCooldownTests(unittest.TestCase):
 
 
 class VideoRadarSourceNarrowingTests(unittest.TestCase):
-    """2026-06-03: 試合中は buzz ソースを報知+スポニチ+公式の3つに絞る (コスト削減)。"""
+    """2026-06-03: 試合中は buzz ソースを高シグナル5アカウントに絞る (コスト削減 +
+    user: DAZN/日テレ動画を戻す)。報知+スポニチ+公式+日テレ巨人中継+DAZN。"""
+
+    _GAME_SOURCES = sorted(
+        ["hochi_giants", "SponichiGiants", "TokyoGiants", "ntv_baseball", "DAZNJPNBaseball"]
+    )
 
     def _handles_hit(self, hour: int) -> list:
         import src.x_post_mail_lane as lane
@@ -3631,13 +3636,13 @@ class VideoRadarSourceNarrowingTests(unittest.TestCase):
         ig = [u for u in captured if "twitter/user/" in u]
         return sorted({u.split("twitter/user/")[1].split("?")[0] for u in ig})
 
-    def test_in_game_narrows_to_three_sources(self):
-        # 20:00 = in_game_strong → 3ソースのみ
-        self.assertEqual(self._handles_hit(20), ["SponichiGiants", "TokyoGiants", "hochi_giants"])
+    def test_in_game_narrows_to_five_sources(self):
+        # 20:00 = in_game_strong → 5ソース(報知+スポニチ+公式+日テレ+DAZN)
+        self.assertEqual(self._handles_hit(20), self._GAME_SOURCES)
 
     def test_lineup_window_also_narrows(self):
-        # 18:00 = lineup 枠(試合ランプ)→ 3ソースのみ(user: 18時から)
-        self.assertEqual(self._handles_hit(18), ["SponichiGiants", "TokyoGiants", "hochi_giants"])
+        # 18:00 = lineup 枠(試合ランプ)→ 同5ソース(user: 18時から)
+        self.assertEqual(self._handles_hit(18), self._GAME_SOURCES)
 
     def test_off_game_uses_all_sources(self):
         # 10:00 = 試合外 → 全8ソース

@@ -100,8 +100,16 @@
 
 ---
 
-## 6. 確認したい点(user)
+## 6. user 決定(2026-06-03 確定)
 
-- 試合中ソース「報知+スポニチ」に **TokyoGiants公式** も足す?(ハイライト動画が多い)それとも2つで十分?
-- A群 `fact-check-morning-report` 毎時24回は意図的? 朝数回でよい?
-- B群(publish-notice / guarded-publish の過密)は今回触る? それとも publish 系は別途 user 判断?
+1. **試合中ソース = 報知 + スポニチ巨人 + TokyoGiants公式 の3つ**(`hochi_giants` + `SponichiGiants` + `TokyoGiants`)。
+2. **`fact-check-morning-report`** = `/fact_check_notify?since=yesterday` を毎時24回叩く誤設定だった → **朝7:05の1回に修正済(DONE 2026-06-03)**。
+3. **publish系(publish-notice / guarded-publish)も今回 scope に含めて触る**(過密集約)。ただし公開・通知パイプラインなので ledger/idempotency 確認の上で慎重に。
+
+### 実装順序(確定後)
+- step1 ✅ fact-check → 朝のみ(DONE)
+- step2: x-post code(試合中3ソース絞り + 空振りskip)→ build → deploy(code先行、でないと15分×全ソースで逆に増える)
+- step3: x-post scheduler 再構成(7時開始 / 試合外2h / 試合中15分 / 試合直後)
+- step4: SNSページ `FIRE_SLOTS`=10,12,15-22 + rss_fetcher トリガ整合
+- step5: giants-weekday-daytime(昼間毎時11回)間引き + giants-realtime重複集約
+- step6: publish-notice / guarded-publish 過密集約(idempotency確認後)

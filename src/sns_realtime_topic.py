@@ -89,11 +89,32 @@ PAGE_FARM = {
     "max_per_section": 5,
 }
 PAGES = (PAGE_1GUN, PAGE_FARM)
+SOURCE_LABEL = "巨人公式・専門メディア・主要スポーツ紙X"
 
 
 def should_run_now(now: Optional[datetime] = None) -> bool:
     now = now or datetime.now(JST)
     return now.hour in FIRE_SLOTS and now.minute < SLOT_MINUTE_WINDOW
+
+
+def _strip_feed_text(value: str) -> str:
+    text = re.sub(r"<[^>]+>", " ", value or "")
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _merge_entry_text(title: str, summary: str) -> str:
+    """RSSHub の title/summary 重複を軽く除去して、独自まとめ/JSON-LDを汚さない。"""
+    title_text = _strip_feed_text(title)
+    summary_text = _strip_feed_text(summary)
+    if title_text and summary_text:
+        if title_text == summary_text:
+            return title_text
+        if summary_text.startswith(title_text) or title_text in summary_text:
+            return summary_text
+        if title_text.startswith(summary_text):
+            return title_text
+        return f"{title_text} {summary_text}"
+    return title_text or summary_text
 
 
 def fetch_handle_posts(handle: str, limit: int = 30) -> List[Dict]:
@@ -114,8 +135,7 @@ def fetch_handle_posts(handle: str, limit: int = 30) -> List[Dict]:
             continue
         title = entry.get("title", "") or ""
         summary = entry.get("summary", "") or ""
-        text = re.sub(r"<[^>]+>", " ", title + " " + summary)
-        text = re.sub(r"\s+", " ", text).strip()
+        text = _merge_entry_text(title, summary)
         published = entry.get("published_parsed") or entry.get("updated_parsed")
         posts.append(
             {
@@ -312,6 +332,84 @@ def build_featured_players(
     return render_featured_players(players)
 
 
+def _top_mention_items(page_counts: Dict[str, int], limit: int = 3) -> List[Tuple[str, int]]:
+    items = [(n, c) for n, c in (page_counts or {}).items() if c >= 2]
+    items.sort(key=lambda t: (-t[1], t[0]))
+    return items[:limit]
+
+
+def _join_names(names: List[str]) -> str:
+    if not names:
+        return ""
+    return "、".join(names)
+
+
+def build_editor_summary(
+    page_label: str,
+    page_posts: List[Dict],
+    page_counts: Dict[str, int],
+    prev_counts: Dict[str, int],
+) -> Dict:
+    """X 埋め込み一覧を独自コンテンツ化する deterministic summary。
+
+    LLM/API なし。トレンド count と前日差分だけで、検索にも人間にも読める導入文を作る。
+    """
+    label_text = (page_label or "").strip("()") or "巨人"
+    top_items = _top_mention_items(page_counts, limit=3)
+    top_names = [name for name, _count in top_items]
+    if top_names:
+        lead = (
+            f"今日の{label_text}SNSは{_join_names(top_names)}を中心に動いています。"
+            f"{SOURCE_LABEL}の過去24時間投稿から、試合前後に追うべき話題をヨシラバーが整理します。"
+        )
+    else:
+        lead = (
+            f"今日の{label_text}SNSは投稿量が少なめです。"
+            f"{SOURCE_LABEL}の過去24時間投稿から、更新が入り次第このページで整理します。"
+        )
+
+    bullets: List[str] = [
+        f"{len(page_posts)}件の投稿を確認。ページは10時・13時・17時・21時に自動更新します。"
+    ]
+
+    spike_items: List[Tuple[str, int]] = []
+    if prev_counts:
+        for name, count in top_items:
+            delta = count - int(prev_counts.get(name, 0))
+            if delta >= 2:
+                spike_items.append((name, delta))
+    if spike_items:
+        spike_text = " / ".join(f"{name} +{delta}" for name, delta in spike_items[:3])
+        bullets.append(f"前日比で伸びた話題は {spike_text}。急に増えた選手名から流れを追えます。")
+    elif top_names:
+        bullets.append(f"言及が多い選手は {_join_names(top_names)}。各チップから選手データや関連記事へ移動できます。")
+    else:
+        bullets.append("トレンドが出た選手は上部のチップに自動表示し、選手データや関連記事へつなぎます。")
+
+    bullets.append("X埋め込みは出典確認用として下部にまとめ、上部では話題の流れを先に読める構成にしています。")
+    return {"lead": lead, "bullets": bullets}
+
+
+def build_seo_excerpt(
+    page_label: str,
+    page_posts: List[Dict],
+    page_counts: Dict[str, int],
+) -> str:
+    top_names = [name for name, _count in _top_mention_items(page_counts, limit=3)]
+    label_text = (page_label or "").strip("()") or "巨人"
+    topic = f"注目: {_join_names(top_names)}。" if top_names else "注目選手が出次第、上部に自動表示。"
+    return (
+        f"巨人{label_text}のSNSリアルタイム速報。{SOURCE_LABEL}の過去24時間投稿から、"
+        f"今日の話題と注目選手をヨシラバーが整理。{topic}"
+        f"現在{len(page_posts)}件、10/13/17/21時更新。"
+    )
+
+
+def build_seo_title(page_label: str) -> str:
+    label_text = f" {page_label}" if page_label else ""
+    return f"巨人 SNSリアルタイム速報{label_text} | 今日のX話題まとめ"
+
+
 def build_pages(
     now: Optional[datetime] = None,
     prev_counts_by_page: Optional[PageCounts] = None,
@@ -376,6 +474,12 @@ def build_pages(
 
         page_url = f"https://yoshilover.com/{page['slug']}/"
         page_label = page["title_suffix"]  # "(一軍)" 等
+        editor_summary = build_editor_summary(page_label, page_posts, page_counts, prev)
+        try:
+            from src.sns_realtime_topic_template import render_editor_summary
+        except Exception:
+            from sns_realtime_topic_template import render_editor_summary  # type: ignore
+        editor_html = render_editor_summary(editor_summary)
         # JSON-LD LiveBlogPosting 用に published_iso を付与 (post の published_parsed → ISO 8601)
         for p in posts_for_listing:
             pub = p.get("published")
@@ -396,18 +500,12 @@ def build_pages(
             updated_at_iso=updated_at_iso,
             posts_for_listing=posts_for_listing,
             coverage_start_iso=coverage_start_iso,
+            editor_html=editor_html,
             featured_html=featured_html,
         )
-        title = f"巨人 SNS リアルタイム {page['title_suffix']} {now.strftime('%Y-%m-%d')}"
-        # (B) OGP / Twitter Card description 用 excerpt
-        top3 = sorted(page_counts.items(), key=lambda t: -t[1])[:3]
-        top3_str = " / ".join(f"#{n} ({c})" for n, c in top3) if top3 else ""
-        excerpt = (
-            f"巨人 SNS リアルタイム {page['title_suffix']} - "
-            f"過去 24h で {len(page_posts)} 件の X 投稿。"
-            f"{('話題: ' + top3_str + '。') if top3_str else ''}"
-            f" 1 日 4 回 (10/13/17/21 JST) 自動更新。"
-        )
+        title = build_seo_title(page["title_suffix"])
+        # (B) OGP / Twitter Card description 用 excerpt。計測断片でなく人間向け要約に固定。
+        excerpt = build_seo_excerpt(page["title_suffix"], page_posts, page_counts)
         pages.append(
             {
                 "title": title,

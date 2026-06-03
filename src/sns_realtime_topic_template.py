@@ -59,6 +59,10 @@ _CSS = """
 .ysn-source-handles { display: flex; flex-wrap: wrap; gap: 8px; }
 .ysn-source-handle { background: #fff; border: 1px solid #ddd; padding: 4px 10px; border-radius: 14px; font-size: 12px; color: #1da1f2; }
 .ysn-source-foot { font-size: 11px; color: #888; margin-top: 8px; }
+.ysn-editor { margin: 18px 0 22px; padding: 16px 18px; background: #fffaf4; border: 1px solid #ffd7b5; border-left: 5px solid #FF6F00; border-radius: 10px; }
+.ysn-editor-title { margin: 0 0 8px; font-size: 16px; font-weight: 800; color: #111; }
+.ysn-editor-lead { margin: 0 0 10px; color: #222; font-size: 14px; line-height: 1.75; }
+.ysn-editor-list { margin: 0; padding-left: 1.25em; color: #333; font-size: 13px; line-height: 1.65; }
 @media (max-width: 540px) {
   .ysn-hero-title { font-size: 22px; }
   .ysn-stats { gap: 12px; }
@@ -231,6 +235,37 @@ def render_sources_footer(handles: List[str], updated_at: str) -> str:
     )
 
 
+def render_editor_summary(summary: Dict) -> str:
+    """SEO / E-E-A-T 用の独自まとめ。
+
+    X 埋め込みだけの一覧に見えないよう、ページ上部に deterministic な編集部要約を置く。
+    LLM は使わず、build 側で作った lead / bullet を HTML 化するだけ。
+    """
+    lead = _html.escape(str(summary.get("lead", "") or ""))
+    bullets = [
+        _html.escape(str(item))
+        for item in (summary.get("bullets") or [])
+        if str(item or "").strip()
+    ][:3]
+    if not lead and not bullets:
+        return ""
+    list_html = ""
+    if bullets:
+        list_html = (
+            '<ul class="ysn-editor-list">'
+            + "".join(f"<li>{item}</li>" for item in bullets)
+            + "</ul>"
+        )
+    lead_html = f'<p class="ysn-editor-lead">{lead}</p>' if lead else ""
+    return (
+        '<section class="ysn-editor">\n'
+        '  <h2 class="ysn-editor-title">ヨシラバー注目ポイント</h2>\n'
+        f"  {lead_html}\n"
+        f"  {list_html}\n"
+        "</section>"
+    )
+
+
 def render_jsonld(
     page_label: str,
     page_url: str,
@@ -271,7 +306,7 @@ def render_jsonld(
         "@type": "CollectionPage",
         "name": f"巨人 SNS リアルタイム {page_label}",
         "description": (
-            f"巨人専門 X 公式アカウントの過去 24 時間投稿を集約 {page_label}。"
+            f"巨人公式・専門メディア・主要スポーツ紙Xの過去 24 時間投稿を集約 {page_label}。"
             " 1 日 4 回 (10/13/17/21 JST) 自動更新。"
         ),
         "url": page_url,
@@ -349,7 +384,7 @@ def render_jsonld(
         "@type": "LiveBlogPosting",
         "headline": f"巨人 SNS リアルタイム {page_label}",
         "description": (
-            f"巨人専門 X 公式アカウントの過去 24 時間投稿を集約 {page_label}。"
+            f"巨人公式・専門メディア・主要スポーツ紙Xの過去 24 時間投稿を集約 {page_label}。"
             " 1 日 4 回 (10/13/17/21 JST) 自動更新する LIVE ブログ。"
         ),
         "url": page_url,
@@ -395,6 +430,7 @@ def render_page_html(
     updated_at_iso: str = "",
     posts_for_listing: Optional[List[Dict]] = None,
     coverage_start_iso: str = "",
+    editor_html: str = "",
     featured_html: str = "",
 ) -> str:
     parts = [_CSS]
@@ -407,6 +443,8 @@ def render_page_html(
         )
     parts.append('<div class="ysn-wrap">')
     parts.append(render_hero(page_label, updated_at, stats))
+    if editor_html:
+        parts.append(editor_html)
     if trend_html:
         parts.append(trend_html)
     if featured_html:
@@ -432,6 +470,7 @@ def render_full_html(
     updated_at_iso: str = "",
     posts_for_listing: Optional[List[Dict]] = None,
     coverage_start_iso: str = "",
+    editor_html: str = "",
     featured_html: str = "",
 ) -> str:
     return render_page_html(
@@ -445,5 +484,6 @@ def render_full_html(
         updated_at_iso=updated_at_iso,
         posts_for_listing=posts_for_listing,
         coverage_start_iso=coverage_start_iso,
+        editor_html=editor_html,
         featured_html=featured_html,
     )

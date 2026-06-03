@@ -226,7 +226,8 @@ def test_build_pages_titles_have_suffix():
     by_key = {p["page_key"]: p for p in pages}
     assert "(一軍)" in by_key["1gun"]["title"]
     assert "(二軍・三軍)" in by_key["farm"]["title"]
-    assert "2026-05-28" in by_key["1gun"]["title"]
+    assert "今日のX話題まとめ" in by_key["1gun"]["title"]
+    assert "2026-05-28" not in by_key["1gun"]["title"]
     assert "17:00" not in by_key["1gun"]["title"]
 
 
@@ -277,6 +278,35 @@ def test_build_pages_day2_shows_badge():
         pages, _ = build_pages(now, prev_counts_by_page=prev)
     by_key = {p["page_key"]: p for p in pages}
     assert "↑+" in by_key["1gun"]["html"]
+
+
+def test_build_pages_adds_editor_summary_and_human_excerpt():
+    now = datetime(2026, 5, 28, 10, 0, tzinfo=JST)
+    fake_posts = [
+        {"url": "https://x.com/u/1", "text": "坂本勇人 ヒット", "handle": "h", "published": (2026, 5, 28, 0, 0, 0, 0, 0, 0)},
+        {"url": "https://x.com/u/2", "text": "坂本勇人 また打った", "handle": "h", "published": (2026, 5, 28, 0, 0, 0, 0, 0, 0)},
+        {"url": "https://x.com/u/3", "text": "岡本和真 本塁打", "handle": "h", "published": (2026, 5, 28, 0, 0, 0, 0, 0, 0)},
+        {"url": "https://x.com/u/4", "text": "岡本和真 打点", "handle": "h", "published": (2026, 5, 28, 0, 0, 0, 0, 0, 0)},
+    ]
+    prev = {"1gun": {"坂本勇人": 0, "岡本和真": 1}, "farm": {}}
+    with patch("sns_realtime_topic.collect_all_posts", return_value=fake_posts):
+        pages, _ = build_pages(now, prev_counts_by_page=prev)
+    one = {p["page_key"]: p for p in pages}["1gun"]
+    assert "ヨシラバー注目ポイント" in one["html"]
+    assert "今日の一軍SNSは坂本勇人、岡本和真を中心に動いています。" in one["html"]
+    assert "X埋め込みは出典確認用" in one["html"]
+    assert "ヨシラバーが整理" in one["excerpt"]
+    assert "投稿/24h" not in one["excerpt"]
+    assert "注目: 坂本勇人、岡本和真。" in one["excerpt"]
+
+
+def test_merge_entry_text_removes_rsshub_duplicate_title_summary():
+    from sns_realtime_topic import _merge_entry_text
+
+    text = _merge_entry_text("坂本勇人が好守", "坂本勇人が好守")
+    assert text == "坂本勇人が好守"
+    text = _merge_entry_text("坂本勇人が好守", "坂本勇人が好守 詳細はこちら")
+    assert text == "坂本勇人が好守 詳細はこちら"
 
 
 # ----- run() -----

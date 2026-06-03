@@ -3635,6 +3635,10 @@ class VideoRadarSourceNarrowingTests(unittest.TestCase):
         # 20:00 = in_game_strong → 3ソースのみ
         self.assertEqual(self._handles_hit(20), ["SponichiGiants", "TokyoGiants", "hochi_giants"])
 
+    def test_lineup_window_also_narrows(self):
+        # 18:00 = lineup 枠(試合ランプ)→ 3ソースのみ(user: 18時から)
+        self.assertEqual(self._handles_hit(18), ["SponichiGiants", "TokyoGiants", "hochi_giants"])
+
     def test_off_game_uses_all_sources(self):
         # 10:00 = 試合外 → 全8ソース
         self.assertEqual(len(self._handles_hit(10)), 8)

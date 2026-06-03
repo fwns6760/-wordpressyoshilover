@@ -1757,11 +1757,16 @@ def build_video_radar_candidates(
     """
     if now is None:
         now = datetime.now(JST)
-    # 試合中はソースを3アカウントに絞る (コスト削減)。 caller が handles を明示した
-    # 場合はそれを優先 (override / test 用)。
-    if handles is None and x_impression_timing_label(now) == _X_IMPRESSION_TIMING_LABELS["in_game_strong"]:
+    # 試合前後の15分毎 dense 発火帯 (スタメン17:15-19:00 + 試合中19:00-21:45) は
+    # ソースを3アカウントに絞る (コスト削減、 user 確定: 18時から試合ランプ)。
+    # caller が handles を明示した場合はそれを優先 (override / test 用)。
+    _narrow_labels = {
+        _X_IMPRESSION_TIMING_LABELS["lineup"],
+        _X_IMPRESSION_TIMING_LABELS["in_game_strong"],
+    }
+    if handles is None and x_impression_timing_label(now) in _narrow_labels:
         handles = _GAME_BUZZ_HANDLES
-        LOG.info("x_buzz in-game: source narrowed to %s", handles)
+        LOG.info("x_buzz dense window: source narrowed to %s", handles)
     try:
         from src import video_radar as _vr
     except Exception as exc:  # noqa: BLE001

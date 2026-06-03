@@ -208,6 +208,98 @@ def parse_player_career(html: str) -> Dict[str, Any]:
     }
 
 
+# ── 468-2: 通算節目の到達点 (年度別行から決定的に計算) ──────────────────────
+# 節目は丸い通算記録のみ。到達した年と「同年終了時点の通算試合(登板)数」を出す。
+# 試合単位の正確な到達点は NPB 公式 career page に無いため、シーズン単位の近似に留める
+# (誇張しない: 表記も「同年終了時 通算N試合」とする)。
+_BAT_MILESTONES: Dict[str, List[int]] = {
+    "安打": [1000, 1500, 2000, 2500, 3000],
+    "本塁打": [100, 200, 300, 400, 500, 600, 700, 800],
+    "打点": [1000, 1500, 2000],
+    "盗塁": [200, 300, 400, 500],
+}
+_PIT_MILESTONES: Dict[str, List[int]] = {
+    "勝利": [100, 150, 200, 250, 300, 400],
+    "セーブ": [100, 150, 200, 250, 300, 350],
+    "三振": [1000, 1500, 2000, 2500, 3000, 4000],
+}
+# stat col -> (見出し語, 単位)
+_MILESTONE_LABEL: Dict[str, str] = {
+    "安打": "安打", "本塁打": "本塁打", "打点": "打点", "盗塁": "盗塁",
+    "勝利": "勝", "セーブ": "セーブ", "三振": "奪三振",
+}
+
+
+def _career_int(s: Any) -> Optional[int]:
+    """career stat 文字列 ('1,234' / '-' / '') を int に。取れなければ None。"""
+    try:
+        v = re.sub(r"[^0-9\-]", "", str(s))
+        return int(v) if v not in ("", "-") else None
+    except (TypeError, ValueError):
+        return None
+
+
+def compute_career_milestones(career: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """年度別行から通算節目の到達点を **決定的に計算** する純粋関数 (468-2)。
+
+    - 投手 (is_pitcher) は 勝利/セーブ/奪三振、 それ以外は 安打/本塁打/打点/盗塁。
+    - 累計は年度別行を年代順に足し上げる。各節目に到達した年と、その時点の
+      通算試合数 (打者=試合 / 投手=登板) を記録する。
+    - **検算**: 年度別の最終累計が total 行と一致しない stat は出さない
+      (出典不一致を黙って表示しない)。total が無い場合は累計をそのまま採用。
+    返り値: [{"stat": col, "label": 見出し語, "milestone": int, "year": str,
+              "cum_games": int, "games_unit": "試合"|"登板"}], 到達順 (古い順)。
+    """
+    if not career:
+        return []
+    is_pitcher = bool(career.get("is_pitcher"))
+    if is_pitcher:
+        table = career.get("pitching") or {}
+        milestones, games_col, unit = _PIT_MILESTONES, "登板", "登板"
+    else:
+        table = career.get("batting") or {}
+        milestones, games_col, unit = _BAT_MILESTONES, "試合", "試合"
+
+    year_rows = list(table.get("years") or [])
+    total = table.get("total") or {}
+    if not year_rows:
+        return []
+    # 年代順 (NPB 公式は既に昇順だが移籍年の二重行に備え stable sort)
+    year_rows = sorted(year_rows, key=lambda r: str(r.get("年度") or ""))
+
+    out: List[Dict[str, Any]] = []
+    for col, thresholds in milestones.items():
+        cum_stat = 0
+        cum_games = 0
+        crossings: List[Dict[str, Any]] = []
+        remaining = sorted(thresholds)
+        for row in year_rows:
+            s = _career_int(row.get(col)) or 0
+            g = _career_int(row.get(games_col)) or 0
+            cum_stat += s
+            cum_games += g
+            year = str(row.get("年度") or "").strip()
+            while remaining and cum_stat >= remaining[0]:
+                th = remaining.pop(0)
+                crossings.append({
+                    "stat": col,
+                    "label": _MILESTONE_LABEL.get(col, col),
+                    "milestone": th,
+                    "year": year,
+                    "cum_games": cum_games,
+                    "games_unit": unit,
+                })
+        # 検算: total が取れていて累計と食い違うなら、この stat は出さない
+        total_val = _career_int(total.get(col)) if total else None
+        if total_val is not None and total_val != cum_stat:
+            continue
+        out.extend(crossings)
+
+    # 到達順 (年 → 節目値) に整列
+    out.sort(key=lambda m: (m["year"], m["milestone"]))
+    return out
+
+
 def _http_get(url: str, timeout: float = 12.0) -> Optional[str]:
     try:
         import vendor.requests as requests  # type: ignore[import-not-found]

@@ -14,6 +14,7 @@ import unittest
 from src.npb_career_scraper import (
     BATTING_COLUMNS,
     PITCHING_COLUMNS,
+    compute_career_milestones,
     parse_giants_roster_ids,
     parse_player_career,
     parse_player_profile,
@@ -101,6 +102,60 @@ class CareerParseTests(unittest.TestCase):
         self.assertEqual(c["profile"], {})
         self.assertIsNone(c["batting"])
         self.assertIsNone(c["pitching"])
+
+
+class CareerMilestoneTests(unittest.TestCase):
+    """468-2: compute_career_milestones の決定的計算 + 検算ガード。"""
+
+    def _bat(self, years, total):
+        return {"is_pitcher": False,
+                "batting": {"years": years, "total": total},
+                "pitching": None}
+
+    def test_batter_cumulative_crossings(self) -> None:
+        years = [
+            {"年度": "2008", "試合": "100", "安打": "800", "本塁打": "40"},
+            {"年度": "2009", "試合": "100", "安打": "800", "本塁打": "40"},
+            {"年度": "2010", "試合": "100", "安打": "500", "本塁打": "30"},
+        ]
+        total = {"安打": "2100", "本塁打": "110", "試合": "300"}
+        ms = compute_career_milestones(self._bat(years, total))
+        hits = {(m["milestone"], m["year"], m["cum_games"]) for m in ms if m["stat"] == "安打"}
+        # 1000安打=2009年(cum1600,試合200)、1500安打=2009年、2000安打=2010年(cum2100,試合300)
+        self.assertIn((1000, "2009", 200), hits)
+        self.assertIn((1500, "2009", 200), hits)
+        self.assertIn((2000, "2010", 300), hits)
+        self.assertNotIn(2500, {m["milestone"] for m in ms if m["stat"] == "安打"})
+        # 100本塁打=2010年(cum110)
+        self.assertIn((100, "2010"), {(m["milestone"], m["year"]) for m in ms if m["stat"] == "本塁打"})
+        # 投手節目は出ない
+        self.assertEqual([m for m in ms if m["games_unit"] == "登板"], [])
+
+    def test_total_mismatch_skips_stat(self) -> None:
+        """年度別累計が total と食い違う stat は出さない (出典不一致を黙って出さない)。"""
+        years = [
+            {"年度": "2008", "試合": "100", "安打": "800"},
+            {"年度": "2009", "試合": "100", "安打": "800"},
+            {"年度": "2010", "試合": "100", "安打": "500"},
+        ]
+        total = {"安打": "9999", "試合": "300"}  # 累計2100と不一致
+        ms = compute_career_milestones(self._bat(years, total))
+        self.assertEqual([m for m in ms if m["stat"] == "安打"], [])
+
+    def test_real_sakamoto_fixture(self) -> None:
+        """実 NPB fixture (坂本勇人) で 通算2000安打=2020年、累計==total を確認。"""
+        car = parse_player_career(_load("npb_career_batter_sakamoto_51955114.html"))
+        ms = compute_career_milestones(car)
+        hit2000 = [m for m in ms if m["stat"] == "安打" and m["milestone"] == 2000]
+        self.assertEqual(len(hit2000), 1)
+        self.assertEqual(hit2000[0]["year"], "2020")  # 記憶でなく出典計算: 2020年到達
+        self.assertEqual(hit2000[0]["games_unit"], "試合")
+        # 安打節目が出ている = 累計と total が一致した (検算通過) ことの担保
+        self.assertTrue(any(m["stat"] == "安打" for m in ms))
+
+    def test_empty_career_no_milestones(self) -> None:
+        self.assertEqual(compute_career_milestones({}), [])
+        self.assertEqual(compute_career_milestones({"is_pitcher": False, "batting": None}), [])
 
 
 if __name__ == "__main__":

@@ -1026,6 +1026,42 @@ def _career_table_html(title: str, stats: dict, accent_cols: tuple) -> str:
     )
 
 
+def _build_career_milestones_html(player: PillarPlayerInfo) -> str:
+    """468-2: 通算節目の到達点 (年度別行から決定的に計算、 到達なしなら空)。
+
+    丸い通算記録 (2000安打 / 500本塁打 / 200勝 等) に到達した年と、 その
+    シーズン終了時点の通算試合数 (投手は登板数) を併記する。 計算は
+    ``compute_career_milestones`` (年度別累計を total 行で検算) に委譲。
+    """
+    from src.npb_career_scraper import compute_career_milestones
+
+    milestones = compute_career_milestones(player.npb_career or {})
+    if not milestones:
+        return ""
+    items = []
+    for m in milestones:
+        label = _esc(str(m.get("label") or ""))
+        ms = _esc(str(m.get("milestone") or ""))
+        year = _esc(str(m.get("year") or ""))
+        cum = _esc(str(m.get("cum_games") or ""))
+        unit = _esc(str(m.get("games_unit") or "試合"))
+        items.append(
+            f'<li style="margin:0 0 8px;padding:0 0 0 4px;">'
+            f'<b style="font-size:15px;">通算{ms}{label}</b>'
+            f'<span style="color:#e25400;font-weight:600;"> — {year}年に到達</span>'
+            f'<span style="color:#888;font-size:12px;">（同年終了時 通算{cum}{unit}）</span>'
+            f'</li>'
+        )
+    return (
+        '<div class="ys-card">'
+        '<h2>通算節目の到達 <span class="ys-tag">マイルストーン</span></h2>'
+        '<p class="ys-note">丸い通算記録に到達した年と、 そのシーズン終了時点の通算試合数。 '
+        '試合単位の正確な到達日は公式記録に無いため、 年単位の到達で示しています。</p>'
+        '<ul style="list-style:none;padding:0;margin:0;">' + "\n".join(items) + '</ul>'
+        '</div>'
+    )
+
+
 def _build_career_history_html(player: PillarPlayerInfo) -> str:
     """467: 年度別成績 + 通算 (NPB 公式 career page、 移籍履歴含む全列網羅)。
 
@@ -1096,6 +1132,7 @@ def render_pillar_html(player: PillarPlayerInfo) -> str:
             _build_pitch_month_split_html(player),
             _build_pitch_interleague_split_html(player),
             _build_sabermetrics_html(player),
+            _build_career_milestones_html(player),
             _build_career_history_html(player),
         ]
     else:
@@ -1113,6 +1150,7 @@ def render_pillar_html(player: PillarPlayerInfo) -> str:
             _build_risp_split_html(player),
             _build_vs_lr_split_html(player),
             _build_sabermetrics_html(player),
+            _build_career_milestones_html(player),
             _build_career_history_html(player),
         ]
     sections = [

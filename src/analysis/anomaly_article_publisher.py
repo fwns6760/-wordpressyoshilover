@@ -613,8 +613,8 @@ def render_zscore_batter_article(
             pass
     metric_label = _human_metric_label(metric_name)
     title_template = f"【巨人データ】{{player}}、{metric_label}{{value}}で{{league}}{{rank}}位（{{scope}}）"
-    why_text = f"リーグ平均より明確に高い数字で、12 球団中の上位群に入っています。"
-    simple = f"リーグ全体で見て上位の {metric_label} を記録、好調と言える数字です。"
+    why_text = f"リーグ平均より明確に高く、12 球団でも上位の数字。"
+    simple = f"セ・リーグでも上位のこの {metric_label}。今の巨人打線で計算できる打者だ。問題はこの数字を続けられるか——本物かどうかはここから。"
     return _render_unified_article(
         conn, player=player, team_code=team_code, metric_name=metric_name,
         scope="last_30d", title_template=title_template,
@@ -637,8 +637,8 @@ def render_zscore_pitcher_article(
             pass
     metric_label = _human_metric_label(metric_name)
     title_template = f"【巨人データ】{{player}}、{metric_label}{{value}}で{{league}}{{rank}}位（{{scope}}）"
-    why_text = f"投手として league 上位群の数字、平均的なローテ投手より明確に良い投球内容です。"
-    simple = f"リーグ全体で見て上位の投手、好投が data で明確です。"
+    why_text = f"リーグ上位の数字。平均的なローテ投手より明確に良い投球内容。"
+    simple = f"セ・リーグ上位のこの内容。今の巨人投手陣で計算できる一人だ。あとはこれを一年通して続けられるか。"
     return _render_unified_article(
         conn, player=player, team_code=team_code, metric_name=metric_name,
         scope="season", title_template=title_template,

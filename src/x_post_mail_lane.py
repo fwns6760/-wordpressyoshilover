@@ -1840,11 +1840,14 @@ def build_video_radar_candidates(
         # ヨシラバー voice を生成。 失敗 / 未設定なら LLM なしの出来事 template に fallback
         # (graceful)。 どちらも 出来事と無関係なシーズン平均は本文に貼らない (矛盾回避)。
         # フェーズ (試合前/中/後) で voice トーンを切り替える (既存 voice の例1/2/3 に対応)。
+        # 470-②: 差別化テイク用に今季 fact を先に計算し、 comment_fn (引用RT生成) に
+        # 渡す。 元投稿が触れていない data 視点を1つ織り込ませる (反応を生む新視点)。
+        fact = _x_buzz_player_fact(db_path, player) if player else ""
         post_text = ""
         if comment_fn:
             try:
                 try:
-                    post_text = (comment_fn(p.get("text", ""), player, phase_hint) or "").strip()
+                    post_text = (comment_fn(p.get("text", ""), player, phase_hint, db_fact=fact) or "").strip()
                 except TypeError:
                     # 旧 2 引数 comment_fn (tests 等) との後方互換
                     post_text = (comment_fn(p.get("text", ""), player) or "").strip()
@@ -1859,7 +1862,6 @@ def build_video_radar_candidates(
                 continue
             # comment_fn 未設定 (key 無し / test) のみ graceful に template fallback。
             post_text = _x_buzz_event_comment(p.get("text", ""), player, phase=phase_label)
-        fact = _x_buzz_player_fact(db_path, player) if player else ""
         # 2026-06-03: ブランディング投稿に「おしゃれ系」ヨシラバー画像を1枚添付 (style B、
         # 選手写真+ブランドパネル、 データなし、 ¥0=PILローカル合成)。 user 確定。
         # env X_POST_BRAND_IMAGE_ENABLED=0 で無効化可。 失敗時は画像なしで続行 (graceful)。

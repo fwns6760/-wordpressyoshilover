@@ -1730,9 +1730,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                     try:
                         from src import x_post_branding_gen as _vr_xbg
 
-                        def vr_comment_fn(post_text, player, phase_hint="", _k=_vr_key, _g=_vr_xbg, _now=now_jst):  # noqa: E731
+                        def vr_comment_fn(post_text, player, phase_hint="", *, db_fact="", _k=_vr_key, _g=_vr_xbg, _now=now_jst):  # noqa: E731
                             # voice は spec の フーガ+缶詰 合成 (_build_system_prompt)。 時間帯トーンは now から自動。
-                            return _g.build_quote_rt_comment(post_text, player, gemini_api_key=_k, now=_now)
+                            # 470-②: db_fact (今季数字) を渡し、 元投稿が触れていない data 視点を1つ織り込む。
+                            return _g.build_quote_rt_comment(post_text, player, gemini_api_key=_k, now=_now, db_fact=db_fact)
                     except Exception as _vr_imp_exc:  # noqa: BLE001
                         LOG.warning("video_radar LLM comment unavailable: %r", _vr_imp_exc)
                         vr_comment_fn = None

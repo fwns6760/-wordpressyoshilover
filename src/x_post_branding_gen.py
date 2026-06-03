@@ -1168,6 +1168,7 @@ def build_quote_rt_comment(
     temperature: float = 0.9,
     now=None,
     subject: str = "X投稿",
+    db_fact: str = "",
 ) -> str:
     """451: X バズ投稿への引用RTコメントを Gemini で生成。
 
@@ -1209,6 +1210,18 @@ def build_quote_rt_comment(
     # 門番 + リトライ: flash-lite が優等生締め/ポエム/スカスカを漏らすので最大2回試し、
     # safety + unverified + voice_quality を全通過した最初の文を返す。 全滅なら "" (caller fallback)。
     last_preview = ""
+    # 470-②: 差別化テイク。 元投稿が触れていない verified data (db_fact) を1つだけ
+    # 織り込ませる (媒体と違う気づき=反応を生む)。 db_fact の数字は verified 扱いで
+    # unverified ゲートを通す。
+    _fact = (db_fact or "").strip()
+    diff_instr = ""
+    if _fact:
+        diff_instr = (
+            f"【使ってよい verified data】{_fact}\n"
+            "↑元投稿が触れていない数字/事実をこの中から1つだけ自然に織り込み、 媒体と違う"
+            "視点・気づきを足す。 これ以外の数字は足さない。"
+        )
+    verified_text = f"{src} {who} {_fact}"
     for attempt in range(2):
         retry_note = "" if attempt == 0 else (
             "※前回は優等生締め/ポエム/中身薄で却下された。 データ+辛口本音で具体的に書き、 "
@@ -1222,6 +1235,7 @@ def build_quote_rt_comment(
             retry_note + f"上記 voice のまま、 次の{subject}に反応するヨシラバーのコメントを書く。",
             f"対象選手: {who or '(不明)'}",
             len_rule,
+            diff_instr,
             "コメント本文のみ出力 (前置き・説明・引用符なし)。",
             f"{subject}: 「{src}」",
             "",
@@ -1240,7 +1254,7 @@ def build_quote_rt_comment(
         last_preview = text[:60]
         if not text or not _gemma_branding_safety_check(text):
             continue
-        if _extract_unverified_numbers(text, f"{src} {who}"):
+        if _extract_unverified_numbers(text, verified_text):
             continue
         if not _voice_quality_ok(text, live=is_live):
             continue

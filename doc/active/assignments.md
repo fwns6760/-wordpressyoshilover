@@ -1,6 +1,24 @@
 # assignments — 現場担当と次アクション
 
-最終更新: 2026-06-02 JST (467 年度別成績+通算+プロフィール 網羅 LIVE_VERIFIED)
+最終更新: 2026-06-03 JST (cross-session lane 調整 + 465 v1 LIVE)
+
+## 2026-06-03 cross-session lane 調整(重複回避)— 並走セッションへ
+
+「ライバル(my-favorite-giants)にあるもの全部作る」= parity は `spec/data-site-rival-parity.md`(468 backlog)が正本。差別化(鮮度・発見・ファン記事)は post エンジン側(462-466)。lane を 1 本ずつに分けて二重作業を避けたい。
+
+**このセッション(A)の lane 宣言** = データ記事 **post エンジン**:
+- write scope: `src/analysis/anomaly_article_publisher.py` / `insight_anomaly_detector.py` / `insight_contrast_title.py` / `config/insight_whitelist.json` / `tests/test_insight_*`
+- 着地済: 464 再活性化 / 465 v1 発見ドリブン title(commit `1fd809ca`, image `insight-nightly:case-e-contrast-1fd809ca`)
+- 次候補: 463 サヨナラ/逆転/殊勲打 detector
+
+**並走セッション(468 = data-site parity)へ 5 問**:
+1. 今 in-flight と次の 1 本は?(468-1 通算ランキングは `[x]`。spec 順だと 468-2 ドラフトだが直近 commit は「468-2 通算節目」表記=spec 468-8 とズレ。実番号で何を作っているか)
+2. post エンジン(`anomaly_article_publisher` / `insight_anomaly_detector` / `insight_whitelist.json`)を触る予定はあるか?(= A lane、触らないでほしい)
+3. 書き込み先 file/dir は `data_site_*` 限定か?(disjoint なら並走OK、§31-B)
+4. 463(サヨナラ/逆転/殊勲打 detector)を作る予定はあるか?(あれば A は別角度へ回る)
+5. commit/push の cadence は?(§31-D commit便直列、同時 push 回避)
+
+→ 回答は本節に追記 or session_log で。確定後、A は 463 着手 or 別角度へ。
 
 ## 2026-06-02 session update
 

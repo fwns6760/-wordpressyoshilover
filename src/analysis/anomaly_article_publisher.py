@@ -501,10 +501,12 @@ def _render_unified_article(
 
     value_str = "-"
     rank_str = "-"
+    rank_num: Any = "-"  # title 用クリーン順位(「4位」)。body は rank_str で「4/80」を維持。
     if player_rank_info:
         v = player_rank_info["value"]
         value_str = f"{v:.3f}" if v is not None else "-"
         rank_str = f"{player_rank_info['rank']}/{player_rank_info['total']}"
+        rank_num = player_rank_info["rank"]
 
     extra_focus = None
     if player_rank_info and not any(r["player"] == player for r in top_rows):
@@ -549,7 +551,7 @@ def _render_unified_article(
     )
     title = contrast or title_template.format(
         player=player, team=team, metric=metric_label,
-        value=value_str, rank=rank_str, scope=scope_label,
+        value=value_str, rank=rank_num, scope=scope_label,
         league=league_label,
     )
     title_check = title_guard.ensure_title_period(title, scope=scope)

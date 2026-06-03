@@ -106,10 +106,15 @@
 2. **`fact-check-morning-report`** = `/fact_check_notify?since=yesterday` を毎時24回叩く誤設定だった → **朝7:05の1回に修正済(DONE 2026-06-03)**。
 3. **publish系(publish-notice / guarded-publish)も今回 scope に含めて触る**(過密集約)。ただし公開・通知パイプラインなので ledger/idempotency 確認の上で慎重に。
 
-### 実装順序(確定後)
-- step1 ✅ fact-check → 朝のみ(DONE)
-- step2: x-post code(試合中3ソース絞り + 空振りskip)→ build → deploy(code先行、でないと15分×全ソースで逆に増える)
-- step3: x-post scheduler 再構成(7時開始 / 試合外2h / 試合中15分 / 試合直後)
-- step4: SNSページ `FIRE_SLOTS`=10,12,15-22 + rss_fetcher トリガ整合
-- step5: giants-weekday-daytime(昼間毎時11回)間引き + giants-realtime重複集約
-- step6: publish-notice / guarded-publish 過密集約(idempotency確認後)
+### 実装順序(進捗)
+- step1 ✅ **DONE** fact-check → 朝7:05のみ(毎時24→1)
+- step2 ✅ **DONE** 試合中3ソース絞り(commit 82f15035、image game3src-82f15035 deploy済、test pass)
+   - ※ 空振りskip は per-fire budget(8)が既に waste を cap するため後回し(follow-up)
+- step3 ✅ **DONE** x-post scheduler 再構成:
+   - `x-post-mail-flush` = `0 7,9,11,13,15,17,18,22`(全ソース・8発火)
+   - `x-post-mail-flush-game-1` = `0,15,30,45 19-21`(試合中15分・narrowing窓と整合・12発火・3ソース)
+   - `x-post-mail-flush-game-2` / `-lineup` = PAUSED(集約)
+   - 合計 35→**20発火/日**(うち12は3ソース)
+- step4 ⏭ SNSページ `FIRE_SLOTS`=10,12,15-22 + rss_fetcher トリガ整合(Gemini不使用=¥増なし)
+- step5 ⏭ giants-weekday-daytime(昼間毎時11)間引き + giants-realtime重複集約
+- step6 ⏭ publish-notice / guarded-publish 過密集約(§11、idempotency確認後)

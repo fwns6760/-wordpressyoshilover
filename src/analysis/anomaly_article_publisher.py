@@ -33,6 +33,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.analysis import insight_anomaly_detector as detector  # noqa: E402
+from src.analysis import insight_contrast_title as contrast_title  # noqa: E402
 from src.analysis import insight_dedup_gate as dedup_gate  # noqa: E402
 from src.analysis import insight_quality_gate as quality_gate  # noqa: E402
 from src.analysis import insight_title_guard as title_guard  # noqa: E402
@@ -533,7 +534,20 @@ def _render_unified_article(
     # 2026-05-15 user 指示「人間にわかりやすいタイトル」適用、title には
     # 日時 prefix を入れない (集計日時は body の 集計期間 row に表記)。
     # 同 title 重複時は wp_client.create_post の reuse 機構に委ねる。
-    title = title_template.format(
+    #
+    # 465: 発見ドリブン (対比) title。選手値が render 時 league mean を明確に
+    # 上回る (ERA 系は下回る) 場合は、フラット rank ではなくその gap を先頭に
+    # 出す。gap が小さい / 数値欠落時は rank f-string に fallback (no-AI、
+    # source 数値の literal 組み立てのみ、LLM 不使用)。
+    contrast = contrast_title.build_contrast_title(
+        player=player,
+        metric_label=metric_label,
+        player_value=player_value_for_cohort,
+        league_mean=(cohort_stats or {}).get("league_mean"),
+        scope_label=scope_label,
+        lower_is_better=not _is_higher_better(metric_name),
+    )
+    title = contrast or title_template.format(
         player=player, team=team, metric=metric_label,
         value=value_str, rank=rank_str, scope=scope_label,
         league=league_label,

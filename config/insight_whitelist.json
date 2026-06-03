@@ -116,11 +116,16 @@
     "case_b_game_event": "{prefix}{player} {event} ({game_date} vs {opponent})",
     "case_c_record_milestone": "{prefix}{player} {achievement} ({achievement_date})",
     "case_d_team_ranking": "{prefix}チーム{metric_ja} {value_or_rank} ({scope_ja})",
+    "case_e_contrast_higher": "{prefix}{player}、{metric_ja}{value}はリーグ平均{mean}の{ratio}倍 {label}（{scope_ja}）",
+    "case_e_contrast_lower": "{prefix}{player}、{metric_ja}{value}はリーグ平均{mean}を{label}（{scope_ja}）",
+    "case_e_note": "465 発見ドリブン対比 title。src/analysis/insight_contrast_title.py が ratio band で label を固定辞書から選び、gap<1.12倍 / 数値欠落時は case_a rank f-string に fallback。LLM 不使用、source 数値 literal のみ。",
     "examples": {
       "last_5_games": "【巨人データ】大城卓三 OPS .912、リーグ4位（直近5試合）",
       "last_10_games": "【巨人データ】岡本和真 本塁打3本、チーム最多（直近10試合）",
       "season": "【巨人データ】山崎伊織 防御率1.80、リーグ3位（今シーズン）",
-      "series": "【巨人データ】巨人 チーム打率.286（阪神3連戦）"
+      "series": "【巨人データ】巨人 チーム打率.286（阪神3連戦）",
+      "case_e_higher": "【巨人データ】平山功太、OPS1.005はリーグ平均0.607の1.7倍 リーグ屈指（直近1ヶ月）",
+      "case_e_lower": "【巨人データ】山崎伊織、防御率1.800はリーグ平均3.500をリーグ屈指の安定感（今シーズン）"
     },
     "constraints": {
       "max_length": 60,

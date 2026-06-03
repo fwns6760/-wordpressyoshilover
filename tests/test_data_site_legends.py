@@ -11,7 +11,7 @@ class LegendsTemplateTests(unittest.TestCase):
              "years": "1958-1974", "npb": {"avg": ".305", "hr": 444},
              "honors": ["永久欠番「3」・ミスタージャイアンツ"]},
             {"display_name": "上原浩治", "slug": "uehara-koji", "type": "pitcher",
-             "years": "1999-2008", "npb": {"wins": 112, "era": "3.01"}, "honors": []},
+             "years": "1999-2008", "npb": {"w": 112, "era": "3.01"}, "honors": ["通算112勝"]},
         ]
 
     def test_render(self) -> None:

@@ -190,7 +190,11 @@ def coach_career_stat(name: str) -> Optional[dict]:
     return load_coach_career_stats().get(_norm_name(name))
 
 
-_OB_LEGENDS_PATH = Path(__file__).resolve().parents[1] / "config" / "ob_legends.json"
+# Tier0 網羅: ob_legends_full.json(手動21名 + Wikipedia自動抽出710名 = 731名)を正本に。
+# ob_legends.json は手動curatedの入力(build script が full へ merge)。full が無ければ curated に fallback。
+_OB_LEGENDS_FULL_PATH = Path(__file__).resolve().parents[1] / "config" / "ob_legends_full.json"
+_OB_LEGENDS_CURATED_PATH = Path(__file__).resolve().parents[1] / "config" / "ob_legends.json"
+_OB_LEGENDS_PATH = _OB_LEGENDS_FULL_PATH if _OB_LEGENDS_FULL_PATH.exists() else _OB_LEGENDS_CURATED_PATH
 _ob_cache: Optional[dict] = None
 
 

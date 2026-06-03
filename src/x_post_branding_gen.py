@@ -35,6 +35,7 @@ from src.x_post_mail_lane import (
     _is_safe_post_text,
     _is_verified_full_giants_member_name,
     _is_verified_full_giants_player_name,
+    _normalize_player_name,
 )
 
 
@@ -1762,6 +1763,8 @@ def build_x_post_from_article_info(
     temperature: float = 0.4,
     persona: Optional[str] = None,
     logger: Optional[_logging.Logger] = None,
+    skip_player_keys: Optional[set] = None,
+    seen_player_keys: Optional[set] = None,
 ) -> Optional[Candidate]:
     """417: queue 経由 article_info (Hochi/Sanspo source) から X-post 候補 1 件を生成.
 
@@ -1826,6 +1829,37 @@ def build_x_post_from_article_info(
                 title[:60],
             )
             return None
+
+    # 1.5 同一選手の重複生成を Gemini 呼び出し前に抑止 (2026-06-03 LLM 費用節約)。
+    #   多媒体が同じ選手を扱うと queue に同一 player 記事が複数入り、 1 件ずつ
+    #   Gemini 生成 → 大半 drop で費用を捨てる (実ログ: 則本昂大 ×5+ 等)。
+    #   - within-run: seen_player_keys で 1 run 1 player 1 生成に絞る
+    #   - cross-run : skip_player_keys (cooldown + window-cap) は個別 player のみ
+    #     適用。 postgame team-wide ("巨人") は試合ごと 1 回なので cap 対象外。
+    player_key = _normalize_player_name(player) if player else ""
+    if player_key:
+        if seen_player_keys is not None and player_key in seen_player_keys:
+            log.info(
+                "article_info_branding_skip reason=player_already_generated_this_run "
+                "player=%s source_url=%s",
+                player,
+                source_url,
+            )
+            return None
+        if (
+            not is_postgame_team_wide
+            and skip_player_keys
+            and player_key in skip_player_keys
+        ):
+            log.info(
+                "article_info_branding_skip reason=player_cooldown_or_cap "
+                "player=%s source_url=%s",
+                player,
+                source_url,
+            )
+            return None
+        if seen_player_keys is not None:
+            seen_player_keys.add(player_key)
 
     # 2. persona 自動選択
     #    - postgame (試合総括) → フーガ voice 強制 (team-wide、 試合中でも fuuga)

@@ -163,3 +163,55 @@ class PostgameTeamWideTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BuildXPostFromArticleInfoPlayerDedupTests(unittest.TestCase):
+    """2026-06-03: 同一選手の重複生成を Gemini 呼び出し前に抑止 (LLM 費用節約)。"""
+
+    def test_skip_player_keys_blocks_before_gemini(self):
+        # cooldown / window-cap 既出 player は生成側 (gemini_api_key 有) でも skip。
+        article = _make_article(title="巨人の戸郷翔征が完封勝利")
+        key = xbg._normalize_player_name("戸郷翔征")
+        with patch.object(
+            xbg, "_build_system_prompt", side_effect=AssertionError("must skip before Gemini")
+        ):
+            out = xbg.build_x_post_from_article_info(
+                article, gemini_api_key="key", skip_player_keys={key}
+            )
+        self.assertIsNone(out)
+
+    def test_seen_player_keys_blocks_within_run_repeat(self):
+        # 同 run で既に生成済みの player は再生成しない。
+        article = _make_article(title="巨人の戸郷翔征が完封勝利")
+        key = xbg._normalize_player_name("戸郷翔征")
+        with patch.object(
+            xbg, "_build_system_prompt", side_effect=AssertionError("must skip before Gemini")
+        ):
+            out = xbg.build_x_post_from_article_info(
+                article, gemini_api_key="key", seen_player_keys={key}
+            )
+        self.assertIsNone(out)
+
+    def test_team_wide_postgame_not_capped_by_skip_keys(self):
+        # postgame team-wide ("巨人") は試合ごと 1 回なので cross-run cap 対象外。
+        # skip_player_keys に "巨人" key が居ても skip しない (within-run seen は別)。
+        article = _make_article(
+            title="巨人が逆転勝ちで連勝", article_subtype="postgame"
+        )
+        team_key = xbg._normalize_player_name("巨人")
+        # _build_system_prompt 到達 = cap で止まらなかった = 期待挙動。
+        # Gemini 自体は呼ばせず prompt 構築段階で確認。
+        reached = {"v": False}
+
+        def _stop(*a, **k):
+            reached["v"] = True
+            raise RuntimeError("stop after cap check")
+
+        with patch.object(xbg, "_build_system_prompt", side_effect=_stop):
+            try:
+                xbg.build_x_post_from_article_info(
+                    article, gemini_api_key="key", skip_player_keys={team_key}
+                )
+            except RuntimeError:
+                pass
+        self.assertTrue(reached["v"], "team-wide postgame must not be skipped by cap")

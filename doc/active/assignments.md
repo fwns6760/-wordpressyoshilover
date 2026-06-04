@@ -5,7 +5,7 @@
 ## 2026-06-04 Phase 2 — /data/record 記録室ハブ(共有部品再利用)+ ⑤ defer
 
 - **/data/record 記録室ハブ LIVE_VERIFIED**(設計§7.3「ライバル最大moat」): `build_record_room`(data_site_query)が共有部品 alltime_ranking を閾値filter。クラブ=名球会2000安打/300本塁打/1000打点/名球会200勝/2000奪三振。OB684+現役、現役★。cluster nav に 🏛記録室 追加。commit `c99689f9` / image `record-room-c99689f` / exec `data-site-publisher-cvcgq`。**page79935 verify**: 記録室h1/名球会2000安打/王貞治868本/金田200勝/坂本★現役/cluster nav 🏛記録室リンク 全✓。test 記録室2+data-site60 pass。
-- **⑤ ホット&コールド = defer**(自律進めず): 検知器 `detect_batter_recent_window_anomaly` は既に live(run_all_detectors)だが記事化経路なし。新規publish角度化は (1)今日のヒーロー(464)と重複 (2)464 curation=user の わかりやすさ判定 に抵触。→ user 判断待ち。
+- **⑤ ホット&コールド = 実装(draft、user受入試験へ)**: user「自律で回して受入試験は後で」を受け、draft安全モードで実装。`hotcold_article.py` が既存 `detect_batter_recent_window_anomaly` を再利用(直近5 vs 過去全試合 打率z-score、再発明なし)。ファンサイトvoiceで **HOT(絶好調)のみ記事化**、COLD非記事化。title「{player} 直近5試合 打率.450、絶好調」。env `DATA_INSIGHT_HOTCOLD=1` gate・draft既定。prod db検証: カナリオ .450(z1.58)。commit `a48bc1a5` / image `hotcold-a48bc1a`(build→env flip)。今日のヒーロー(単一試合)とは別角度(直近トレンド)。受入試験で要否判断可。
 - **§16-B 漏れ修正**(user「ちゃんと直ってる?」指摘): 球団打率タイトル「巨人 4/6 位 0.215」の先頭0未除去を `fmt_stat` で `.215` に。commit `685b63c2` / image `team-avg-fmt-685b63c` deploy + prod db verify。「4/6位」は6球団分母有意で保持(別判断)。
 
 ## 2026-06-04 Phase 1先頭 — ② 節目カウントダウン(現役通算記録接近)

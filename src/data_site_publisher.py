@@ -271,6 +271,8 @@ def _build_pillar_info(player_name: str) -> PillarPlayerInfo | None:
             short_review="",
             related_topic_links=fetch_related_topic_links(player_name, limit=20),
             ob_profile=ob,
+            # OB の年度別フル表 (ベンチマーク由来、 slug 引き)。 無ければ None で安全。
+            npb_career=_ob_yearly_payload(slug),
         )
     roster = load_roster_player(player_name)
     if not roster:
@@ -401,15 +403,29 @@ def _build_pillar_info(player_name: str) -> PillarPlayerInfo | None:
     return info
 
 
-def publish_phase1() -> dict[str, object]:
-    """Phase 1.0 main: 3 Pillar + 1 Cluster upsert."""
+def _name_to_slug(name: str) -> str:
+    """player_name -> URL slug。 OB は ob_profile.slug、 現役は player_slug。 (config のみ、 network 無し)"""
+    ob = ob_legend(name)
+    if ob and ob.get("slug"):
+        return ob["slug"]
+    return player_slug(name)
+
+
+def publish_phase1(only_slugs: set[str] | None = None) -> dict[str, object]:
+    """Phase 1.0 main: 3 Pillar + 1 Cluster upsert.
+
+    only_slugs 指定時は **canary モード**: 指定 slug の pillar ページだけ upsert し、
+    cluster / schedule / leaders / legends / team / ranking / record の hub は触らない。
+    """
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
-    LOG.info("data-site Phase 1.0 publisher start dry_run=%s", _dry_run_enabled())
+    LOG.info("data-site Phase 1.0 publisher start dry_run=%s only=%s", _dry_run_enabled(), sorted(only_slugs) if only_slugs else None)
 
     target_names = load_data_site_target_names()
     if not target_names:
         LOG.error("no data-site target players in roster — abort")
         return {"status": "abort", "reason": "no_target_players"}
+    if only_slugs:
+        target_names = [n for n in target_names if _name_to_slug(n) in only_slugs]
 
     LOG.info("phase1 target players: %s", target_names)
 
@@ -457,7 +473,10 @@ def publish_phase1() -> dict[str, object]:
     # OB・レジェンド: 個別 profile ページを作る (cluster の position/staff 表には入れず、
     # OB 枠 chip リンクに集約)。 roster 不在のため _build_pillar_info が ob_profile で構築。
     ob_entries: list[tuple[str, str]] = []
-    for name in load_ob_names():
+    ob_source = load_ob_names()
+    if only_slugs:
+        ob_source = [n for n in ob_source if _name_to_slug(n) in only_slugs]
+    for name in ob_source:
         info = _build_pillar_info(name)
         if not info:
             continue
@@ -467,6 +486,27 @@ def publish_phase1() -> dict[str, object]:
     if not pillar_infos:
         LOG.error("no eligible pillar infos — abort")
         return {"status": "abort", "reason": "no_pillar_infos"}
+
+    # canary モード: hub を一切触らず、 既存 /data 親の下に対象 pillar だけ upsert して return。
+    if only_slugs:
+        cluster_page_id = _find_page_id_by_slug("data", parent=0) or 0
+        canary_results: list[UpsertResult] = []
+        for info in pillar_infos:
+            result = _upsert_page(
+                slug=info.slug,
+                title=render_pillar_title(info),
+                content_html=render_pillar_html(info),
+                parent=cluster_page_id,
+                featured_media_id=info.featured_media_id,
+                excerpt=render_pillar_excerpt(info),
+            )
+            LOG.info("CANARY pillar upsert slug=%s page_id=%s action=%s", result.slug, result.page_id, result.action)
+            canary_results.append(result)
+        return {
+            "status": "ok", "mode": "canary", "dry_run": _dry_run_enabled(),
+            "pillars": [{"slug": r.slug, "page_id": r.page_id, "action": r.action, "url": r.url} for r in canary_results],
+            "pillar_count": len(canary_results),
+        }
 
     # Cluster upsert (parent=0)。 育成=一覧のみ、 OB=chip リンク (個別ページあり)。
     cluster_html = render_cluster_html(cluster_entries, load_ikusei_entries(), ob_entries,
@@ -622,8 +662,12 @@ def publish_phase1() -> dict[str, object]:
 
 
 def main() -> int:
+    argv = sys.argv[1:]
+    only_slugs: set[str] | None = None
+    if "--only" in argv:
+        only_slugs = {s for s in argv[argv.index("--only") + 1:] if not s.startswith("--")}
     try:
-        summary = publish_phase1()
+        summary = publish_phase1(only_slugs=only_slugs)
     except Exception as exc:  # noqa: BLE001
         LOG.exception("publisher fatal: %r", exc)
         return 1

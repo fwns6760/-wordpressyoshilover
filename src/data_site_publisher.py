@@ -44,6 +44,7 @@ from src.data_site_query import (
     fetch_giants_schedule,
     fetch_team_leaders,
     build_career_leaders,
+    build_alltime_leaders,
     fetch_team_rankings,
     fetch_giants_team_record,
     fetch_giants_upcoming,
@@ -537,15 +538,22 @@ def publish_phase1() -> dict[str, object]:
     except Exception as exc:  # noqa: BLE001
         LOG.warning("build_career_leaders failed (continue without): %r", exc)
         career_leaders = {}
+    # Phase1: 全史(OB684 + 現役)NPB通算ランキング(共有部品 alltime_ranking 由来)。
+    try:
+        alltime_leaders = build_alltime_leaders(_CAREER_CACHE)
+        LOG.info("alltime leaders cats=%d", len(alltime_leaders))
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("build_alltime_leaders failed (continue without): %r", exc)
+        alltime_leaders = {}
     ranking_result = _upsert_page(
         slug="ranking",
         title=render_ranking_title(),
-        content_html=render_ranking_html(leaders, career_leaders),
+        content_html=render_ranking_html(leaders, career_leaders, alltime_leaders),
         parent=cluster_page_id,
         excerpt=render_ranking_excerpt(leaders),
     )
-    LOG.info("ranking upsert slug=ranking page_id=%s action=%s cats=%d career=%d",
-             ranking_result.page_id, ranking_result.action, len(leaders), len(career_leaders))
+    LOG.info("ranking upsert slug=ranking page_id=%s action=%s cats=%d career=%d alltime=%d",
+             ranking_result.page_id, ranking_result.action, len(leaders), len(career_leaders), len(alltime_leaders))
 
     summary = {
         "status": "ok",

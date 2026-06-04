@@ -1264,6 +1264,39 @@ def build_career_leaders(career_cache: dict, top_n: int = 10) -> dict[str, list[
     return {k: v for k, v in leaders.items() if v}
 
 
+def build_alltime_leaders(career_cache: dict, top_n: int = 10) -> dict[str, list[LeaderEntry]]:
+    """全史(OB684 + 現役)NPB通算ランキング top-N。共有部品 alltime_ranking を消費。
+
+    OB は年度別不在で球団限定不可のため NPB通算で揃える(表記も NPB通算)。現役選手は
+    display に ★現役 マーカー。戻り値 {category_label: [LeaderEntry, ...top_n]}。
+    """
+    try:
+        from src.analysis import alltime_ranking as _ar
+    except Exception:  # noqa: BLE001
+        return {}
+    units = {"hr": "本", "hits": "安打", "rbi": "打点", "win": "勝", "so": "奪三振"}
+    try:
+        rankings = _ar.build_rankings(None, career_cache)
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("build_alltime_leaders failed: %r", exc)
+        return {}
+    out: dict[str, list[LeaderEntry]] = {}
+    for key, rows in rankings.items():
+        label = _ar.STAT_SPECS[key]["label"]
+        unit = units.get(key, "")
+        entries = [
+            LeaderEntry(
+                player=r["name"],
+                value=float(r["value"]),
+                display=f"{r['value']}{unit}{' ★現役' if r['is_current'] else ''}",
+            )
+            for r in rows[:top_n]
+        ]
+        if entries:
+            out[label] = entries
+    return out
+
+
 @dataclass
 class GiantsScheduleRow:
     """巨人 1 試合の日程・結果 (data/schedule ページ用、Phase B 452)。"""

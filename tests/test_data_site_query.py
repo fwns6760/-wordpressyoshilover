@@ -616,3 +616,44 @@ class CareerLeadersTests(unittest.TestCase):
         from data_site_query import build_career_leaders
         self.assertEqual(build_career_leaders({}), {})
         self.assertEqual(build_career_leaders(None), {})
+
+
+class AlltimeLeadersTests(unittest.TestCase):
+    """Phase1 build_alltime_leaders: 共有部品(OB+現役)全史ランキングの adapter。"""
+
+    def setUp(self) -> None:
+        from src.analysis import alltime_ranking as ar
+        self._orig = ar.load_ob_stats
+        # 小さな OB(現役が top10 に入るよう値を抑える)。
+        ar.load_ob_stats = lambda: {
+            "王貞治": {"type": "batter", "slug": "oh", "npb": {"hr": 868}},
+            "長嶋茂雄": {"type": "batter", "slug": "nagashima", "npb": {"hr": 444}},
+            "中畑清": {"type": "batter", "slug": "nakahata", "npb": {"hr": 171}},
+            "金田正一": {"type": "pitcher", "slug": "kaneda", "npb": {"w": 400}},
+        }
+        self.cache = {
+            "ids": {"坂本勇人": "1"},
+            "players": {"1": {"is_pitcher": False,
+                              "batting": {"total": {"本塁打": "300", "安打": "2457", "打点": "1065"}}}},
+        }
+
+    def tearDown(self) -> None:
+        from src.analysis import alltime_ranking as ar
+        ar.load_ob_stats = self._orig
+
+    def test_alltime_marks_current_player(self) -> None:
+        from data_site_query import build_alltime_leaders
+        al = build_alltime_leaders(self.cache, top_n=10)
+        self.assertIn("本塁打", al)
+        sakamoto = next(e for e in al["本塁打"] if e.player == "坂本勇人")
+        # 868 > 444 > 300(坂本) > 171 → 坂本は3位、★現役マーカー + 単位「本」
+        self.assertIn("★現役", sakamoto.display)
+        self.assertIn("本", sakamoto.display)
+        self.assertEqual(al["本塁打"][0].player, "王貞治")
+
+    def test_alltime_empty_cache_safe(self) -> None:
+        from data_site_query import build_alltime_leaders
+        al = build_alltime_leaders({})
+        # OB のみでもランキングは出る(現役マーカー無し)
+        self.assertIn("本塁打", al)
+        self.assertFalse(any("★現役" in e.display for e in al["本塁打"]))

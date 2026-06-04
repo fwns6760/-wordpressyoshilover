@@ -175,7 +175,9 @@ def _ranking_block(cat: str, entries: list) -> str:
     )
 
 
-def render_ranking_html(leaders: dict, career_leaders: dict = None) -> str:
+def render_ranking_html(
+    leaders: dict, career_leaders: dict = None, alltime_leaders: dict = None
+) -> str:
     nav = (
         '<nav class="ys-breadcrumb" style="font-size:12px;color:#666;margin:0 0 12px;">'
         f'<a href="{SITE_BASE}/" style="color:#666;">Home</a> › '
@@ -191,15 +193,25 @@ def render_ranking_html(leaders: dict, career_leaders: dict = None) -> str:
         '率は規定到達者のみ。NPB 公式データより毎日更新。</p>'
         f'{career_blocks}'
     ) if career_blocks else ""
+    # Phase1: 全史(歴代 OB + 現役)NPB通算ランキング。共有部品 alltime_ranking 由来。
+    alltime_blocks = "".join(_ranking_block(c, e) for c, e in (alltime_leaders or {}).items() if e)
+    alltime_section = (
+        '<h2 style="font-size:18px;margin:22px 0 4px;padding:8px 12px;background:#1a1a2e;'
+        'border-left:5px solid #e25400;color:#fff;border-radius:4px;">歴代（全史）通算ランキング</h2>'
+        '<p style="font-size:12px;color:#666;margin:0 0 12px;">巨人に在籍した選手の NPB 通算記録を歴代で集計。'
+        'OB レジェンドと現役を横断。<b>★現役</b> は現在の巨人選手。NPB 公式 / 巨人OB 記録より。</p>'
+        f'{alltime_blocks}'
+    ) if alltime_blocks else ""
     return (
         '<div style="font-family:sans-serif;max-width:640px;">'
         f'{nav}'
-        '<h1 style="font-size:20px;margin:0 0 4px;">巨人 選手ランキング 2026（今季・通算）</h1>'
-        '<p style="font-size:13px;color:#666;margin:0 0 14px;">球団内の選手別ランキング。今季成績と現役選手の通算成績。毎日更新。各選手名から詳細データへ。</p>'
+        '<h1 style="font-size:20px;margin:0 0 4px;">巨人 選手ランキング 2026（今季・通算・歴代）</h1>'
+        '<p style="font-size:13px;color:#666;margin:0 0 14px;">球団内の選手別ランキング。今季成績・現役通算・歴代全史。毎日更新。各選手名から詳細データへ。</p>'
         '<h2 style="font-size:18px;margin:6px 0 8px;padding:8px 12px;background:#fff3ea;'
         'border-left:5px solid #e25400;color:#e25400;border-radius:4px;">今季成績ランキング</h2>'
         f'{blocks or "<p>データ準備中</p>"}'
         f'{career_section}'
+        f'{alltime_section}'
         f'<p style="margin-top:16px;"><a href="{CLUSTER_URL}">← 選手データ一覧へ</a></p>'
         '</div>'
     )

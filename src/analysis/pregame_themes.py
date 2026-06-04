@@ -14,9 +14,9 @@ Phase 1 では DB-based (E2 昨日の流れ / E6 相手投手相性) を実装�
 caller が補完 (focused_players / lineup_history / roster_history / fan_voice_snippets
 等を kwarg で渡せる)。
 
-caller (build_gemma_branding_candidate) は build_pregame_themes() を呼び、 返却
+caller (build_gemini_branding_candidate) は build_pregame_themes() を呼び、 返却
 dict を prompt の「今日の注目テーマ」 section に整形して注入する。 試合日 + 試合
-前 (17時以前) のみ使う想定 (Gemma 出力の現在化 hint)。
+前 (17時以前) のみ使う想定 (Gemini Flash Lite 出力の現在化 hint)。
 """
 
 from __future__ import annotations

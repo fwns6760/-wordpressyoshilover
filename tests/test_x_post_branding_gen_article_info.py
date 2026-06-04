@@ -76,21 +76,21 @@ class BuildXPostFromArticleInfoSkipPathTests(unittest.TestCase):
             xbg.build_x_post_from_article_info(article, gemini_api_key="key")
         )
 
-    @patch("src.x_post_branding_gen._gemma_branding_safety_check", return_value=False)
+    @patch("src.x_post_branding_gen._gemini_branding_safety_check", return_value=False)
     @patch("google.genai.Client")
     def test_safety_check_failure_drops_candidate(self, mock_client_cls, _safety):
-        # Gemma が「絶対に勝てる」 等の forbidden pattern を吐いた場合
+        # Gemini Flash Lite が「絶対に勝てる」 等の forbidden pattern を吐いた場合
         mock_response = type("R", (), {"text": "絶対に勝てる、 100% 確実だ"})()
         mock_client_cls.return_value.models.generate_content.return_value = mock_response
         article = _make_article(title="戸郷翔征が完封勝利")
         result = xbg.build_x_post_from_article_info(article, gemini_api_key="key")
         self.assertIsNone(result)
 
-    @patch("src.x_post_branding_gen._gemma_branding_safety_check", return_value=True)
+    @patch("src.x_post_branding_gen._gemini_branding_safety_check", return_value=True)
     @patch("src.x_post_branding_gen._extract_unverified_numbers", return_value=["999"])
     @patch("google.genai.Client")
     def test_unverified_numbers_drops_candidate(self, mock_client_cls, _unverified, _safety):
-        # Gemma が verified_text に存在しない数字 (例: "999連勝") を出力した case
+        # Gemini Flash Lite が verified_text に存在しない数字 (例: "999連勝") を出力した case
         mock_response = type("R", (), {"text": "戸郷翔征の好投で999連勝、 これは凄い"})()
         mock_client_cls.return_value.models.generate_content.return_value = mock_response
         article = _make_article(title="戸郷翔征が好投")
@@ -101,13 +101,15 @@ class BuildXPostFromArticleInfoSkipPathTests(unittest.TestCase):
 class PostgameTeamWideTests(unittest.TestCase):
     """417 user 修正 (2026-05-21): postgame は team-wide / fuuga 強制、 個別 player 不要."""
 
-    @patch("src.x_post_branding_gen._gemma_branding_safety_check", return_value=True)
+    @patch("src.x_post_branding_gen._gemini_branding_safety_check", return_value=True)
     @patch("src.x_post_branding_gen._extract_unverified_numbers", return_value=[])
     @patch("src.x_post_branding_gen.is_giants_game_day", return_value=True)
     @patch("google.genai.Client")
     def test_postgame_subtype_uses_team_wide_player(self, mock_client_cls, _gd, _unv, _safety):
         # postgame subtype → focus_player は 「巨人」 (team-wide)、 個別 player でない
-        mock_response = type("R", (), {"text": "今日は完勝！ 7 連勝でとんでもないことになってる。 噛み締めながら明日も楽しみたい。" * 3})()
+        # 2026-06-04: voice 門番 (_voice_quality_ok) 追加に伴い、 作りポエム調 (！連発)
+        # ではなく、 読みの入った fuuga voice に差し替え (team-wide ロジック検証が本旨)。
+        mock_response = type("R", (), {"text": "今日は投打が噛み合って完勝だったな。先発がしっかりイニングを食って、中盤の効果的な追加点で相手に流れを渡さなかったのが効いた。この勝ち方を続けられれば上位争いは十分見えてくる。"})()
         mock_client_cls.return_value.models.generate_content.return_value = mock_response
 
         article = _make_article(
@@ -120,7 +122,7 @@ class PostgameTeamWideTests(unittest.TestCase):
         self.assertEqual(cand.focus_player, "巨人")
         self.assertIn("巨人", cand.title)
 
-    @patch("src.x_post_branding_gen._gemma_branding_safety_check", return_value=True)
+    @patch("src.x_post_branding_gen._gemini_branding_safety_check", return_value=True)
     @patch("src.x_post_branding_gen._extract_unverified_numbers", return_value=[])
     @patch("src.x_post_branding_gen.is_giants_game_day", return_value=True)
     @patch("google.genai.Client")
@@ -128,7 +130,8 @@ class PostgameTeamWideTests(unittest.TestCase):
         self, mock_client_cls, _gd, _unv, _safety
     ):
         # title に「戸郷翔征」 が居ても postgame は team-wide (= 巨人) で書く
-        mock_response = type("R", (), {"text": "完勝で 7 連勝！ 投打が噛み合った内容。 ピッチャー陣の踏ん張りが効いた " * 3})()
+        # 2026-06-04: voice 門番追加に伴い、 ！連発のポエムから読みの入った fuuga voice へ差し替え。
+        mock_response = type("R", (), {"text": "戸郷翔征が制球良く試合を作って、 打線も序盤から先手を取れた完勝だったな。先発が長いイニングを投げ切ると中継ぎを温存できるのが大きい。この形を続けたいところ。"})()
         mock_client_cls.return_value.models.generate_content.return_value = mock_response
 
         article = _make_article(
@@ -141,7 +144,7 @@ class PostgameTeamWideTests(unittest.TestCase):
         # 個別 player でなく 巨人 が focus_player
         self.assertEqual(cand.focus_player, "巨人")
 
-    @patch("src.x_post_branding_gen._gemma_branding_safety_check", return_value=True)
+    @patch("src.x_post_branding_gen._gemini_branding_safety_check", return_value=True)
     @patch("src.x_post_branding_gen._extract_unverified_numbers", return_value=[])
     @patch("src.x_post_branding_gen.is_giants_game_day", return_value=True)
     @patch("google.genai.Client")

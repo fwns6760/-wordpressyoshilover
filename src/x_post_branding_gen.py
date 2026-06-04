@@ -41,7 +41,7 @@ from src.x_post_mail_lane import (
 
 # Gemini API model id (2026-05-22 swap: gemma-4-31b-it → gemini-3.1-flash-lite、
 # 両方 free tier、 paid 切替禁止 lock 維持)。 変数 / metric 名は履歴互換のため温存。
-_GEMMA_BRANDING_METRIC = "GEMMA_BRANDING"
+_GEMINI_BRANDING_METRIC = "GEMMA_BRANDING"
 
 # per-run LLM 予算 (per-fire 生成上限、 2026-06-03 コスト削減)。
 # 1 fire で全経路 (buzz/reply/引用RT/queue/roundup) 合算の Gemini 生成回数を
@@ -122,11 +122,11 @@ def _append_x_handle_to_post_text(post_text: str, source_url: str) -> str:
     if len(combined) > _X_POST_CHAR_LIMIT:
         return post_text
     return combined
-_GEMMA_BRANDING_MODEL = "gemini-3.1-flash-lite"
+_GEMINI_FLASH_LITE_MODEL = "gemini-3.1-flash-lite"
 
 
 # spec 382 hard rule の追加 gate (既存 ``_FORBIDDEN_POST_TERMS`` の上に積む)
-_GEMMA_BRANDING_FORBIDDEN_PATTERNS = (
+_GEMINI_BRANDING_FORBIDDEN_PATTERNS = (
     _re.compile(r"https?://"),
     _re.compile(r"#\S+"),
     _re.compile(r"ヨシラバー(で|を|に)?整理しました"),
@@ -134,7 +134,7 @@ _GEMMA_BRANDING_FORBIDDEN_PATTERNS = (
     # 414 axis 1 (2026-05-20): \d+位 を一律 drop (user 報告 岸田 28位 hallucination 事例)
     _re.compile(r"\d+位"),
     # 414 axis C3: 打率 / 出塁率 / OPS / 防御率 系 rate 数字を drop
-    # 未検証の rate 数字は spec 382 違反、 Gemma が prompt 破った時の safety net
+    # 未検証の rate 数字は spec 382 違反、 Gemini Flash Lite が prompt 破った時の safety net
     # `.345` (1軍打率風) と `3.456` (OPS 風) 両方カバー、 防御率は別 pattern。
     _re.compile(r"(?<!\d)\.\d{3}"),
     _re.compile(r"\d+\.\d{3}"),
@@ -143,9 +143,9 @@ _GEMMA_BRANDING_FORBIDDEN_PATTERNS = (
 
 # 414 axis D (2026-05-20): 炎上・ズレ防止 6 check。 brand identity =「ポジティブな
 # 巨人ファン account」 維持のため、 強批判 / 断定 / 雑批判 / 監督批判 / 誤字 / 煽り の
-# 6 軸を post-gen 段で drop する。 safety_check で _GEMMA_BRANDING_FORBIDDEN_PATTERNS
+# 6 軸を post-gen 段で drop する。 safety_check で _GEMINI_BRANDING_FORBIDDEN_PATTERNS
 # と一緒に評価される (= 同等 hard rule)。
-_GEMMA_BRANDING_INFLAMMATORY_PATTERNS = (
+_GEMINI_BRANDING_INFLAMMATORY_PATTERNS = (
     # D1: 強批判語 (選手批判が強すぎる)
     _re.compile(r"使えない|戦犯|クビ|最悪|酷い|論外|引退しろ|辞めろ|無能"),
     # D3: 断定語 (事実超え断定、 brand voice の柔らかさ維持)
@@ -155,7 +155,7 @@ _GEMMA_BRANDING_INFLAMMATORY_PATTERNS = (
     # D4: 監督批判の雑な隣接 (監督名 + 強批判語)
     # 「阿部監督 無能」「監督 解任」 のような直接批判
     _re.compile(r"(?:監督|采配|阿部)[^\n]{0,15}(?:無能|解任|更迭|降ろせ|失格|無策)"),
-    # D5: 偽名 / generic player 表現 (Gemma が roster にない名前 / generic を出した時)
+    # D5: 偽名 / generic player 表現 (Gemini Flash Lite が roster にない名前 / generic を出した時)
     # 「打者A」「投手X」 等 placeholder 系を drop
     _re.compile(r"打者[A-Z]|投手[A-Z]|選手[A-Z]|プレイヤー[A-Z]"),
 )
@@ -187,11 +187,22 @@ _SYSTEM_PROMPT_YOSHILOVER = """あなたは「ヨシラバー」という巨人�
 3. **自分の読み・見立てを言う** (なぜそうなったか / これからどうか)
 4. **最後は巨人愛で着地** (擁護・期待。 ただし下の優等生定型 / 上から目線の命令 は禁止)
 
-【最優先 NG = 優等生コメント (今これが多発していて一番ダメ)】:
+【最優先 NG = 優等生コメント / 中身の無い持ち上げ (今これが多発していて一番ダメ)】:
 - 「いいね → ちょっと心配 → 〜してほしいね」 の当たり障りない模範解答にしない
 - 「〜してほしいね」「〜してほしいな」「頼もしいよな」 だけで締める定型を禁止
+- **次の無難ワードで逃げるの禁止 (理由のない持ち上げ = 一番ダメ)**:
+  「別格だよな」「化けると思う」「一気に化ける」「信じてる(よ)」「頼りにしてる」
+  「持ってる選手」「経験値が全て」「本物だ」「新しい風が吹く」
 - 読み・見立てゼロの誰でも書ける感想は出力破棄 (辛口は無くてよいが、 分析・読みは必ず要る)
 そして **情緒だけのポエム (短い感嘆を改行で積むだけ) には絶対にしない** こと。
+
+【不振選手の扱い (重要、 数字を隠した全肯定を禁止)】:
+- 打率や成績が苦しい選手を、 数字をぼかして無条件に褒め称えない
+  (BAD: 打率.074 を「数字こそ苦しいけど経験値の高さが全て」「化けると思う」 と全肯定)
+- 苦しい時は苦しいと認めた上で、 「なぜ今日は良かったか / どこが変われば上向くか」 の
+  具体的な読みを 1 つ入れる (GOOD: 「ここまで打てずに苦しんでた丸佳浩が、 代打の難しい
+  打席で振り切れたのはデカい。 ここから先発で出続けて状態上げてほしいとこ」)
+- 一発の活躍を「やっぱり持ってる」 で締めない。 その活躍を今後にどう繋げるかを書く
 
 【NG = 偉そう・上から目線 (優等生と同じくらいダメ)】:
 - 選手や監督を採点・説教する評論家口調にしない (「〜すべき」「分かってない」「なぜ〜しないのか」)
@@ -502,7 +513,7 @@ def _tavily_search(
 
     Yahoo Japan sport + 報知 に絞って巨人関連の新鮮な記事だけ拾う。
     全 web 検索だと SF Giants (MLB) / NBA / 関係ない海外 sport が混入
-    して Gemma が hallucinate するため domain 限定 (2026-05-20 fix)。
+    して Gemini Flash Lite が hallucinate するため domain 限定 (2026-05-20 fix)。
 
     days=2 で前日+当日のみ。 same_day_only=True にすれば JST 当日 only
     (test 用)、 default は False (朝 fire で前夜試合の記事を拾えるよう
@@ -569,8 +580,8 @@ def _filter_same_day_jst(results: list[dict]) -> list[dict]:
     return kept
 
 
-def _gemma_branding_safety_check(text: str) -> bool:
-    """spec 382 hard rule gate for Gemma branding output.
+def _gemini_branding_safety_check(text: str) -> bool:
+    """spec 382 hard rule gate for Gemini Flash Lite branding output.
 
     True = safe (pass). False = violation (caller drops the candidate)。
     414 axis D: 炎上 / ズレ防止 patterns も同等 hard rule として評価。
@@ -579,11 +590,11 @@ def _gemma_branding_safety_check(text: str) -> bool:
         return False
     if len(text) > X_CHAR_LIMIT:
         return False
-    for pattern in _GEMMA_BRANDING_FORBIDDEN_PATTERNS:
+    for pattern in _GEMINI_BRANDING_FORBIDDEN_PATTERNS:
         if pattern.search(text):
             return False
     # 414 axis D: 炎上系も同 fail 扱い
-    for pattern in _GEMMA_BRANDING_INFLAMMATORY_PATTERNS:
+    for pattern in _GEMINI_BRANDING_INFLAMMATORY_PATTERNS:
         if pattern.search(text):
             return False
     if not _is_safe_post_text(text):
@@ -605,6 +616,17 @@ _VOICE_YUTOUSEI_ENDING = _re.compile(
 _VOICE_POEM_MARKERS = _re.compile(
     r"(胸が熱く|心が震え|魂|涙が|輝き|刻まれ|奇跡|物語が(始|動)|希望を(見|感じ|抱)|"
     r"未来へ|夢を(乗せ|託)|光が|彼方|時は来た)"
+)
+# hopium: 中身 (理由・戦術・読み) の無い無難な持ち上げ。 flash-lite が不振選手を
+# 数字を隠して全肯定する時にこの定型へ逃げる (2026-06-04 朝メール: 丸.074 / 中山.125 を
+# 「別格だよな」「化けると思う」「信じてるよ」)。 文中どこでも 1 個でも出たら門番で弾き、
+# retry で具体的な読み (なぜ / これからどうか) を強制する。 末尾アンカーでは
+# 「信じてるけど、 みんなはどう見てる?」 型が許可問いかけにすり抜けるため非アンカー。
+_VOICE_HOPIUM_MARKERS = _re.compile(
+    r"(信じてる|頼りにしてる|別格(だ|だよな|だな|だわ)?|持ってる選手|"
+    r"化けると思|一気に化け|噛み合え.{0,8}化け|"
+    r"経験値.{0,5}が(全て|すべて)|底力.{0,5}が(全て|すべて)|"
+    r"新しい風が吹く|本物だ(よ|な|よな|わ)|持ってるな)"
 )
 
 
@@ -639,6 +661,8 @@ def _voice_quality_ok(text: str, *, live: bool = False) -> bool:
         return False
     if _VOICE_POEM_MARKERS.search(t):
         return False
+    if _VOICE_HOPIUM_MARKERS.search(t):  # 中身の無い無難な持ち上げ (信じてる/別格/化ける) は常に弾く
+        return False
     if not live:
         if len(t) < 50:  # スカスカ・フィラー (矢野「これは見ておきたい一件」型)
             return False
@@ -651,7 +675,7 @@ def _matched_inflammatory_pattern(text: str) -> Optional[str]:
     """414 axis D + C7 log: text が炎上 pattern に hit した場合、 hit した
     pattern 文字列を返す (drop log に reason として記録するため)。 hit なしは None。
     """
-    for pattern in _GEMMA_BRANDING_INFLAMMATORY_PATTERNS:
+    for pattern in _GEMINI_BRANDING_INFLAMMATORY_PATTERNS:
         if pattern.search(text):
             return pattern.pattern
     return None
@@ -685,14 +709,14 @@ def _extract_unverified_numbers(text: str, verified_text: str) -> list[str]:
 
 
 # 414 axis 6 (2026-05-20): published_date 7日超過 entry を context から drop.
-# 現状 _format_tavily_context は全 entry を Gemma に渡しており、 古い snippet の
-# 「ついに」「これから」 を Gemma が現在化する事故が起きうる。 朝 fire で前日試合
+# 現状 _format_tavily_context は全 entry を Gemini Flash Lite に渡しており、 古い snippet の
+# 「ついに」「これから」 を Gemini Flash Lite が現在化する事故が起きうる。 朝 fire で前日試合
 # 記事は欲しい (1 日前は残す) ので default 7 日 (= 1 週間) に。
 def _recent_published_within_days(results: list[dict], days: int = 7) -> list[dict]:
     """published_date が直近 days 日以内の entry のみを返す.
 
     parse 失敗 / date 不明の entry は **残す** (false-negative 寄り、 caller の
-    Gemma context に注入される、 prompt 制約で 「日付不明は淡々と書く」 と既に指示)。
+    Gemini Flash Lite context に注入される、 prompt 制約で 「日付不明は淡々と書く」 と既に指示)。
     days <= 0 なら same-day-only モード (414 axis 9 と同等)。
     """
     if not results:
@@ -736,7 +760,7 @@ def build_db_fact_line(
     """``insight.db`` から today の試合 / player stat / 直近連勝 を 1 fact line に。
 
     Read-only SELECT only。 DB に該当 record が無ければ各 line を skip、
-    全件無ければ空 string を返す (Gemma 側で「DB fact 注入: なし」 扱い)。
+    全件無ければ空 string を返す (Gemini Flash Lite 側で「DB fact 注入: なし」 扱い)。
 
     formats (改行区切り、 全部 facts のみ、 narrative なし):
         - 今日(YYYY-MM-DD) 巨人 vs OPP: GS-OS WIN/LOSS/DRAW
@@ -1070,7 +1094,7 @@ def build_team_roundup_candidate(
     gemini_api_key: str,
     tavily_api_key: str,
     timeout_seconds: int = 30,
-    model_id: str = _GEMMA_BRANDING_MODEL,
+    model_id: str = _GEMINI_FLASH_LITE_MODEL,
     temperature: float = 0.7,
     logger: Optional[_logging.Logger] = None,
 ) -> Optional[Candidate]:
@@ -1137,7 +1161,7 @@ def build_team_roundup_candidate(
         log.warning("team_roundup_skip reason=gemini_error err=%r", exc)
         return None
     text = _finalize_post_text(text)
-    if not _gemma_branding_safety_check(text):
+    if not _gemini_branding_safety_check(text):
         log.warning(
             "team_roundup_skip reason=safety_check_failed text_preview=%r",
             text[:60],
@@ -1157,7 +1181,7 @@ def build_team_roundup_candidate(
     log.info("team_roundup_candidate_built text_len=%d", len(text))
     return Candidate(
         title=f"Gemini 3.1 Flash Lite 試合後 roundup",
-        metric=_GEMMA_BRANDING_METRIC,
+        metric=_GEMINI_BRANDING_METRIC,
         period_label="試合後 roundup",
         draft_text="\n".join(draft_lines),
         post_text=text,
@@ -1174,7 +1198,7 @@ def build_quote_rt_comment(
     phase_hint: str = "",
     *,
     gemini_api_key: str,
-    model_id: str = _GEMMA_BRANDING_MODEL,
+    model_id: str = _GEMINI_FLASH_LITE_MODEL,
     temperature: float = 0.9,
     now=None,
     subject: str = "X投稿",
@@ -1267,7 +1291,7 @@ def build_quote_rt_comment(
             return ""
         text = _finalize_post_text(text)
         last_preview = text[:60]
-        if not text or not _gemma_branding_safety_check(text):
+        if not text or not _gemini_branding_safety_check(text):
             continue
         if _extract_unverified_numbers(text, verified_text):
             continue
@@ -1289,7 +1313,7 @@ def _extract_published_date_label(raw: object) -> str:
 
     Tavily news topic は RFC 1123 (例: "Tue, 19 May 2026 13:30:00 GMT") を
     返すことが多いが、 ISO 8601 / unparseable も来うる。 parse 失敗時は
-    「日付不明」 とし、 Gemma に古さの注意 hint を与える (hallucination 抑制)。
+    「日付不明」 とし、 Gemini Flash Lite に古さの注意 hint を与える (hallucination 抑制)。
     """
     raw_str = str(raw or "").strip()
     if not raw_str:
@@ -1346,7 +1370,7 @@ def _format_tavily_context(results: list[dict], *, snippet_len: int = 300) -> st
     """411 (2026-05-20): 各 result に `[YYYY-MM-DD] [媒体名] <タイトル> — <抜粋>` 形式で整形.
 
     user 仕様: Tavily の answer は使わず、 URL 本文・媒体名・日付を見る。
-    Gemma に「いつの記事か」「どの媒体か」 を明示し、 古い snippet で現在形を
+    Gemini Flash Lite に「いつの記事か」「どの媒体か」 を明示し、 古い snippet で現在形を
     生成しないよう context で hint。
     """
     lines = []
@@ -1363,7 +1387,7 @@ def _format_tavily_context(results: list[dict], *, snippet_len: int = 300) -> st
     return "\n".join(lines)
 
 
-def build_gemma_branding_candidate(
+def build_gemini_branding_candidate(
     player_name: str,
     *,
     gemini_api_key: str,
@@ -1371,7 +1395,7 @@ def build_gemma_branding_candidate(
     db_fact_line: str = "",
     max_tavily_results: int = 3,
     timeout_seconds: int = 30,
-    model_id: str = _GEMMA_BRANDING_MODEL,
+    model_id: str = _GEMINI_FLASH_LITE_MODEL,
     temperature: float = 0.4,
     logger: Optional[_logging.Logger] = None,
     db_path: str = "",
@@ -1392,16 +1416,16 @@ def build_gemma_branding_candidate(
     - player_name 不正 / 巨人 roster 不一致
     - API key 不足
     - Tavily 失敗 (factual ground 無し → hallucination 抑制のため生成しない)
-    - Gemma 失敗 (rate limit / network 等)
+    - Gemini Flash Lite 失敗 (rate limit / network 等)
     - 空生成 / spec 382 hard rule 違反 (validator drop)
     """
     log = logger or _logging.getLogger("x_post_branding_gen")
     player = str(player_name or "").strip()
     if not player or not gemini_api_key or not tavily_api_key:
-        log.info("gemma_branding_skip reason=missing_input player=%r", player)
+        log.info("gemini_branding_skip reason=missing_input player=%r", player)
         return None
     if not _is_verified_full_giants_member_name(player):
-        log.info("gemma_branding_skip reason=not_verified_giants_member player=%r", player)
+        log.info("gemini_branding_skip reason=not_verified_giants_member player=%r", player)
         return None
 
     # 411 / 414 axis C9: persona 自動選択。 試合日 18-21時 = 缶詰、 他 = フーガ。
@@ -1432,7 +1456,7 @@ def build_gemma_branding_candidate(
     )
     if not results:
         log.warning(
-            "gemma_branding_skip reason=no_tavily_results query=%r player=%s persona=%s same_day_only=%s",
+            "gemini_branding_skip reason=no_tavily_results query=%r player=%s persona=%s same_day_only=%s",
             query,
             player,
             resolved_persona,
@@ -1444,7 +1468,7 @@ def build_gemma_branding_candidate(
     results = _recent_published_within_days(results, days=7)
     if not results:
         log.warning(
-            "gemma_branding_skip reason=tavily_results_too_old query=%r player=%s",
+            "gemini_branding_skip reason=tavily_results_too_old query=%r player=%s",
             query,
             player,
         )
@@ -1452,7 +1476,7 @@ def build_gemma_branding_candidate(
     context = _format_tavily_context(results)
     if not context:
         log.warning(
-            "gemma_branding_skip reason=empty_tavily_context query=%r player=%s",
+            "gemini_branding_skip reason=empty_tavily_context query=%r player=%s",
             query,
             player,
         )
@@ -1522,7 +1546,7 @@ def build_gemma_branding_candidate(
     try:
         from google import genai
         client = genai.Client(api_key=gemini_api_key)
-        _llm_budget_guard("gemma_branding")
+        _llm_budget_guard("gemini_branding")
         response = client.models.generate_content(
             model=model_id,
             contents=prompt,
@@ -1531,7 +1555,7 @@ def build_gemma_branding_candidate(
         text = (getattr(response, "text", None) or "").strip()
     except Exception as exc:  # noqa: BLE001 - silent skip is the fault-tolerance contract
         log.warning(
-            "gemma_branding_skip reason=gemini_error player=%s err=%r",
+            "gemini_branding_skip reason=gemini_error player=%s err=%r",
             player,
             exc,
         )
@@ -1540,11 +1564,11 @@ def build_gemma_branding_candidate(
     text = _finalize_post_text(text)
 
     # 3. spec 382 hard rule + 414 axis D 炎上防止 validator
-    if not _gemma_branding_safety_check(text):
+    if not _gemini_branding_safety_check(text):
         # 414 axis C7 + D: 構造化 drop log (どの pattern が hit したか + 軸名)
         matched_pattern: Optional[str] = None
         matched_axis: str = "C"  # default: forbidden patterns (axis C)
-        for pattern in _GEMMA_BRANDING_FORBIDDEN_PATTERNS:
+        for pattern in _GEMINI_BRANDING_FORBIDDEN_PATTERNS:
             match = pattern.search(text)
             if match:
                 matched_pattern = pattern.pattern
@@ -1559,7 +1583,7 @@ def build_gemma_branding_candidate(
         log.warning(
             _json.dumps(
                 {
-                    "event": "gemma_branding_drop",
+                    "event": "gemini_branding_drop",
                     "reason": "safety_check_failed",
                     "axis": matched_axis,
                     "player": player,
@@ -1582,7 +1606,7 @@ def build_gemma_branding_candidate(
         log.warning(
             _json.dumps(
                 {
-                    "event": "gemma_branding_drop",
+                    "event": "gemini_branding_drop",
                     "reason": "unverified_numbers",
                     "player": player,
                     "persona": resolved_persona,
@@ -1600,7 +1624,7 @@ def build_gemma_branding_candidate(
         log.warning(
             _json.dumps(
                 {
-                    "event": "gemma_branding_drop",
+                    "event": "gemini_branding_drop",
                     "reason": "voice_quality",
                     "player": player,
                     "persona": resolved_persona,
@@ -1631,14 +1655,14 @@ def build_gemma_branding_candidate(
     if db_fact_line:
         draft_lines.extend(["", "【DB fact line】", db_fact_line])
     log.info(
-        "gemma_branding_candidate_built player=%s tavily_results=%d text_len=%d",
+        "gemini_branding_candidate_built player=%s tavily_results=%d text_len=%d",
         player,
         len(results),
         len(text),
     )
     return Candidate(
         title=f"Gemini 3.1 Flash Lite branding｜{player}",
-        metric=_GEMMA_BRANDING_METRIC,
+        metric=_GEMINI_BRANDING_METRIC,
         period_label="LLM 生成",
         draft_text="\n".join(draft_lines),
         post_text=text,
@@ -1651,7 +1675,7 @@ def build_gemma_branding_candidate(
 
 # ----------------------------------------------------------------------------
 # 417: Hochi / Sanspo source 直結 path。 rss_fetcher が classify した article info
-# (queue 経由) を入力に、 Tavily を呼ばずに Gemma 4 で X-post 候補生成。
+# (queue 経由) を入力に、 Tavily を呼ばずに Gemini Flash Lite で X-post 候補生成。
 # 既存 prompt / persona / safety check は全部流用 (§ 0 不可触条件遵守)。
 # ----------------------------------------------------------------------------
 
@@ -1823,19 +1847,19 @@ def build_x_post_from_article_info(
 ) -> Optional[Candidate]:
     """417: queue 経由 article_info (Hochi/Sanspo source) から X-post 候補 1 件を生成.
 
-    既存 `build_gemma_branding_candidate` と同じ prompt / persona / safety_check /
+    既存 `build_gemini_branding_candidate` と同じ prompt / persona / safety_check /
     unverified_numbers gate を全部流用。 違いは「Tavily 検索結果 → article_info の
     title + summary literal」 に source 入れ替えるのみ。
 
     model_id 未指定時は時間帯で自動切替: 試合中 (18:00-21:30 JST) は Gemini
-    3.5 Flash、 それ以外 (朝 / 昼 / 試合後) は Gemma 4。 caller が明示指定すれば
+    3.5 Flash、 それ以外 (朝 / 昼 / 試合後) は Gemini Flash Lite。 caller が明示指定すれば
     auto-select を override。
 
     silent skip 条件 (None 返却):
     - article_info が不正 / title 空
     - title から Giants roster player を 1 件も抽出できない (player_canonical も空)
     - gemini_api_key 不在
-    - Gemma / Gemini 失敗 (network / rate limit / 空生成)
+    - Gemini Flash Lite / Gemini 失敗 (network / rate limit / 空生成)
     - safety_check / unverified_numbers gate hit
     """
     log = logger or _logging.getLogger("x_post_branding_gen")
@@ -1945,7 +1969,7 @@ def build_x_post_from_article_info(
     else:
         resolved_persona = persona
 
-    resolved_model_id = model_id if model_id else _GEMMA_BRANDING_MODEL
+    resolved_model_id = model_id if model_id else _GEMINI_FLASH_LITE_MODEL
 
     # 3. post_type 自動選択 (article_subtype が postgame なら data 寄り、 lineup なら
     # 速報寄り、 等の hint を has_tavily_results=True 相当で発火)
@@ -1968,7 +1992,7 @@ def build_x_post_from_article_info(
 
     # 5. context (Tavily snippet 相当) = article info の literal title + summary のみ。
     # § 8 verified_text hygiene: AI commentary / 生成本文は context に含めない。
-    # rss_fetcher が source から直接 extract した raw 部分だけを Gemma に渡す。
+    # rss_fetcher が source から直接 extract した raw 部分だけを Gemini Flash Lite に渡す。
     context_lines = [
         f"[出典: {source_name or '報知 / サンスポ'}] [subtype: {article_subtype or '不明'}]",
         f"title (literal): {title}",
@@ -2000,7 +2024,7 @@ def build_x_post_from_article_info(
     ])
     prompt = "\n".join(prompt_parts)
 
-    # 6. Gemma 4 generate
+    # 6. Gemini Flash Lite generate
     try:
         from google import genai
 
@@ -2023,10 +2047,10 @@ def build_x_post_from_article_info(
     text = _finalize_post_text(text)
 
     # 7. spec 382 hard rule + 414 axis D 炎上防止 validator (既存 1:1 流用)
-    if not _gemma_branding_safety_check(text):
+    if not _gemini_branding_safety_check(text):
         matched_pattern: Optional[str] = None
         matched_axis: str = "C"
-        for pattern in _GEMMA_BRANDING_FORBIDDEN_PATTERNS:
+        for pattern in _GEMINI_BRANDING_FORBIDDEN_PATTERNS:
             match = pattern.search(text)
             if match:
                 matched_pattern = pattern.pattern
@@ -2058,7 +2082,7 @@ def build_x_post_from_article_info(
 
     # 8. § 8 verified_text hygiene + 414 axis 2: 数値 whitelist。
     # verified_text = article_info の title + summary literal **のみ**。
-    # AI commentary / Gemma 出力は verified_text に **含めない** (二重 hallucination 防止)。
+    # AI commentary / Gemini Flash Lite 出力は verified_text に **含めない** (二重 hallucination 防止)。
     verified_text = " ".join(filter(None, [title, summary]))
     unverified = _extract_unverified_numbers(text, verified_text)
     if unverified:
@@ -2073,6 +2097,29 @@ def build_x_post_from_article_info(
                     "unverified_numbers": unverified[:10],
                     "source_url": source_url,
                     "text_preview": text[:80],
+                },
+                ensure_ascii=False,
+            )
+        )
+        return None
+
+    # 8.5 ヨシラバー voice 品質ゲート (2026-06-04): gemma_branding / quote_rt と同じ門番を
+    # queue 417 経路にも適用。 flash-lite はプロンプトで禁止しても優等生締め / hopium
+    # (信じてる / 別格 / 化ける) / ポエム / スカスカ を漏らすため、 生成後に deterministic
+    # に drop する。 ここは単発生成なので retry はせず drop (queue drain が次記事を試す)。
+    _is_live_hour = 18 <= now_jst.hour <= 21
+    if not _voice_quality_ok(text, live=_is_live_hour):
+        log.warning(
+            _json.dumps(
+                {
+                    "event": "article_info_branding_drop",
+                    "reason": "voice_quality",
+                    "player": player,
+                    "persona": resolved_persona,
+                    "post_type": resolved_post_type,
+                    "source_url": source_url,
+                    "text_preview": text[:80],
+                    "text_len": len(text),
                 },
                 ensure_ascii=False,
             )
@@ -2139,7 +2186,7 @@ def build_x_post_from_article_info(
         succeeded_player_keys.add(player_key)
     return Candidate(
         title=f"X-post branding｜{player} ({resolved_model_id}) [{pattern_label}]",
-        metric=_GEMMA_BRANDING_METRIC,
+        metric=_GEMINI_BRANDING_METRIC,
         period_label="LLM 生成 (queue 417)",
         draft_text="\n".join(draft_lines),
         post_text=final_post_text,

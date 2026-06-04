@@ -1262,7 +1262,7 @@ class ComposeMailTests(unittest.TestCase):
         self.assertNotIn("📮 巨人データXポスト案", mail.text_body)
         self.assertIn("📮 巨人Xポスト案", mail.html_body)
 
-    def test_gemma_branding_mix_uses_news_label(self) -> None:
+    def test_gemini_branding_mix_uses_news_label(self) -> None:
         # 仕様: news 派生候補 (article_info_branding=GEMMA_BRANDING) は
         # 画像なし、 1 件でも混ざれば「巨人Xポスト案」表示。
         ts = datetime(2026, 5, 26, 22, 0, tzinfo=JST)
@@ -2379,6 +2379,9 @@ class XPostMailEntrypointFreshnessTests(unittest.TestCase):
                 "MAIL_BRIDGE_TO": "ops@example.test",
                 "X_POST_MAIL_DEDUP_DISABLED": "1",
                 "X_POST_MAIL_LINEUP_FOCUS_DISABLED": "1",
+                # voice-only filter (2026-06-04) は DB データ候補を落とすため、
+                # この legacy「data+news 合成」テストでは明示 OFF にして旧挙動を検証する。
+                "X_POST_MAIL_VOICE_ONLY": "0",
             },
             clear=False,
         ), patch.object(
@@ -2458,6 +2461,8 @@ class XPostMailEntrypointFreshnessTests(unittest.TestCase):
                 "X_POST_MAIL_DEDUP_DISABLED": "1",
                 "X_POST_MAIL_LINEUP_FOCUS_DISABLED": "1",
                 "X_POST_MAIL_NEWS_PRIORITY_CANDIDATES": "1",
+                # voice-only filter (2026-06-04) を OFF にして旧 data+news 合成を検証。
+                "X_POST_MAIL_VOICE_ONLY": "0",
             },
             clear=False,
         ), patch.object(
@@ -3478,7 +3483,9 @@ class VideoRadarImpressionPolicyTests(unittest.TestCase):
 class ReplyCandidateRuntimeConfigTests(unittest.TestCase):
     """報知リプ候補は費用を増やさない設定を default にする。"""
 
-    def test_reply_candidate_defaults_are_hochi_and_no_llm(self):
+    def test_reply_candidate_defaults_are_hochi_and_llm_on(self):
+        # 2026-06-04 user 方針: リプも flash-lite voice (ヨシラバー風)。
+        # _reply_llm_enabled() の default は ON に変更 (旧: deterministic テンプレ)。
         import os
         from src.tools import run_x_post_mail
         with patch.dict(
@@ -3492,7 +3499,7 @@ class ReplyCandidateRuntimeConfigTests(unittest.TestCase):
         ):
             self.assertEqual(run_x_post_mail._reply_target_handles(), ["hochi_giants"])
             self.assertEqual(run_x_post_mail._reply_candidates_max_per_run(), 3)
-            self.assertFalse(run_x_post_mail._reply_llm_enabled())
+            self.assertTrue(run_x_post_mail._reply_llm_enabled())
 
     def test_reply_candidate_env_overrides(self):
         import os
@@ -3557,7 +3564,7 @@ class BuildPlayerCommentCandidateTests(unittest.TestCase):
         self.assertIsNone(c)
 
 
-class GemmaBrandingPlayerCooldownTests(unittest.TestCase):
+class GeminiBrandingPlayerCooldownTests(unittest.TestCase):
     """LLM 費用節約: 同一選手の過剰生成を cooldown + window cap で抑える。"""
 
     def _cand(self, player: str, fact: str = "") -> Candidate:
@@ -3591,7 +3598,7 @@ class GemmaBrandingPlayerCooldownTests(unittest.TestCase):
 
     def test_pick_skips_player_in_cooldown(self) -> None:
         from src.tools import run_x_post_mail
-        picks = run_x_post_mail._pick_gemma_branding_players(
+        picks = run_x_post_mail._pick_gemini_branding_players(
             [self._cand("坂本勇人"), self._cand("岡本和真")],
             lineup_focus_names=None,
             recent_player_counts=None,
@@ -3605,7 +3612,7 @@ class GemmaBrandingPlayerCooldownTests(unittest.TestCase):
     def test_pick_window_cap_defaults_to_two(self) -> None:
         from src.tools import run_x_post_mail
         # 既出 2 回の選手は default cap(2)で skip、 1 回なら通す。
-        picks = run_x_post_mail._pick_gemma_branding_players(
+        picks = run_x_post_mail._pick_gemini_branding_players(
             [self._cand("坂本勇人"), self._cand("岡本和真")],
             lineup_focus_names=None,
             recent_player_counts={"坂本勇人": 2, "岡本和真": 1},

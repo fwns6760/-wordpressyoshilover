@@ -111,50 +111,50 @@ class TavilySearchTests(unittest.TestCase):
 
 class SafetyCheckTests(unittest.TestCase):
     def test_empty_text_rejected(self) -> None:
-        self.assertFalse(xbg._gemma_branding_safety_check(""))
-        self.assertFalse(xbg._gemma_branding_safety_check("   \n  "))
+        self.assertFalse(xbg._gemini_branding_safety_check(""))
+        self.assertFalse(xbg._gemini_branding_safety_check("   \n  "))
 
     def test_url_rejected(self) -> None:
         self.assertFalse(
-            xbg._gemma_branding_safety_check(
+            xbg._gemini_branding_safety_check(
                 "戸郷投手の話題。 https://example.test/article"
             )
         )
         self.assertFalse(
-            xbg._gemma_branding_safety_check("詳細は http://example.test/")
+            xbg._gemini_branding_safety_check("詳細は http://example.test/")
         )
 
     def test_hashtag_rejected(self) -> None:
         self.assertFalse(
-            xbg._gemma_branding_safety_check("戸郷投手の話題 #巨人 #ジャイアンツ")
+            xbg._gemini_branding_safety_check("戸郷投手の話題 #巨人 #ジャイアンツ")
         )
 
     def test_yoshilover_phrase_rejected(self) -> None:
         self.assertFalse(
-            xbg._gemma_branding_safety_check("戸郷投手をヨシラバーで整理しました")
+            xbg._gemini_branding_safety_check("戸郷投手をヨシラバーで整理しました")
         )
         self.assertFalse(
-            xbg._gemma_branding_safety_check("詳しくはヨシラバーに整理しました")
+            xbg._gemini_branding_safety_check("詳しくはヨシラバーに整理しました")
         )
 
     def test_x_voice_phrase_rejected(self) -> None:
         self.assertFalse(
-            xbg._gemma_branding_safety_check("Xでは戸郷投手が話題")
+            xbg._gemini_branding_safety_check("Xでは戸郷投手が話題")
         )
         self.assertFalse(
-            xbg._gemma_branding_safety_check("X上では多くの声が上がっている")
+            xbg._gemini_branding_safety_check("X上では多くの声が上がっている")
         )
         self.assertFalse(
-            xbg._gemma_branding_safety_check("みんなの声を集めた")
+            xbg._gemini_branding_safety_check("みんなの声を集めた")
         )
 
     def test_over_char_limit_rejected(self) -> None:
         long_text = "あ" * (xbg.X_CHAR_LIMIT + 10)
-        self.assertFalse(xbg._gemma_branding_safety_check(long_text))
+        self.assertFalse(xbg._gemini_branding_safety_check(long_text))
 
     def test_clean_text_accepted(self) -> None:
         self.assertTrue(
-            xbg._gemma_branding_safety_check(
+            xbg._gemini_branding_safety_check(
                 "エースが苦しむ姿を見るのは辛い。けれど、 そこから這い上がるプロセスこそが、 ファンを熱狂させる物語になる。"
             )
         )
@@ -163,21 +163,21 @@ class SafetyCheckTests(unittest.TestCase):
 class BuildCandidateTests(unittest.TestCase):
     def test_missing_keys_skip(self) -> None:
         self.assertIsNone(
-            xbg.build_gemma_branding_candidate(
+            xbg.build_gemini_branding_candidate(
                 "戸郷翔征",
                 gemini_api_key="",
                 tavily_api_key="tvly",
             )
         )
         self.assertIsNone(
-            xbg.build_gemma_branding_candidate(
+            xbg.build_gemini_branding_candidate(
                 "戸郷翔征",
                 gemini_api_key="gem",
                 tavily_api_key="",
             )
         )
         self.assertIsNone(
-            xbg.build_gemma_branding_candidate(
+            xbg.build_gemini_branding_candidate(
                 "",
                 gemini_api_key="gem",
                 tavily_api_key="tvly",
@@ -187,7 +187,7 @@ class BuildCandidateTests(unittest.TestCase):
     def test_non_giants_player_skip(self) -> None:
         # 非巨人 roster の player (例: 大谷翔平) は skip
         with patch.object(xbg, "_is_verified_full_giants_player_name", return_value=False):
-            result = xbg.build_gemma_branding_candidate(
+            result = xbg.build_gemini_branding_candidate(
                 "大谷翔平",
                 gemini_api_key="gem",
                 tavily_api_key="tvly",
@@ -198,7 +198,7 @@ class BuildCandidateTests(unittest.TestCase):
         # Tavily が空返したら factual ground 無し = skip (hallucination 抑制)
         with patch.object(xbg, "_is_verified_full_giants_player_name", return_value=True), \
              patch.object(xbg, "_tavily_search", return_value=[]):
-            result = xbg.build_gemma_branding_candidate(
+            result = xbg.build_gemini_branding_candidate(
                 "戸郷翔征",
                 gemini_api_key="gem",
                 tavily_api_key="tvly",
@@ -221,7 +221,7 @@ class BuildCandidateTests(unittest.TestCase):
             # 実装は ``from google import genai`` を関数内で行うため、
             # google.genai.Client を patch する
             with patch("google.genai.Client", return_value=fake_client):
-                result = xbg.build_gemma_branding_candidate(
+                result = xbg.build_gemini_branding_candidate(
                     "戸郷翔征",
                     gemini_api_key="gem",
                     tavily_api_key="tvly",
@@ -229,7 +229,7 @@ class BuildCandidateTests(unittest.TestCase):
         self.assertIsNone(result)
 
     def test_unsafe_output_skip(self) -> None:
-        # Gemma が URL 含む出力を返したら drop
+        # Gemini Flash Lite が URL 含む出力を返したら drop
         fake_response = MagicMock()
         fake_response.text = "戸郷投手の話 https://example.test/leak"
         fake_client = MagicMock()
@@ -241,7 +241,7 @@ class BuildCandidateTests(unittest.TestCase):
                 return_value=[{"title": "戸郷投手", "content": "復帰"}],
              ), \
              patch("google.genai.Client", return_value=fake_client):
-            result = xbg.build_gemma_branding_candidate(
+            result = xbg.build_gemini_branding_candidate(
                 "戸郷翔征",
                 gemini_api_key="gem",
                 tavily_api_key="tvly",
@@ -266,7 +266,7 @@ class BuildCandidateTests(unittest.TestCase):
                 ],
              ), \
              patch("google.genai.Client", return_value=fake_client):
-            result = xbg.build_gemma_branding_candidate(
+            result = xbg.build_gemini_branding_candidate(
                 "戸郷翔征",
                 gemini_api_key="gem",
                 tavily_api_key="tvly",
@@ -455,7 +455,7 @@ class TavilyWhitelistTests411(unittest.TestCase):
 
 
 class FormatTavilyContextTests411(unittest.TestCase):
-    """411: published_date + 媒体名 を Gemma context に注入."""
+    """411: published_date + 媒体名 を Gemini Flash Lite context に注入."""
 
     def test_includes_published_date_and_source_label(self) -> None:
         results = [
@@ -593,10 +593,10 @@ class HallucinationPreventionAxisCTests414(unittest.TestCase):
 
     # axis C1: \d+位 forbidden
     def test_safety_check_rejects_rank_28(self) -> None:
-        self.assertFalse(xbg._gemma_branding_safety_check("岸田は出塁率28位の数字を残してる"))
+        self.assertFalse(xbg._gemini_branding_safety_check("岸田は出塁率28位の数字を残してる"))
 
     def test_safety_check_rejects_rank_3(self) -> None:
-        self.assertFalse(xbg._gemma_branding_safety_check("打率3位の選手だ"))
+        self.assertFalse(xbg._gemini_branding_safety_check("打率3位の選手だ"))
 
     def test_safety_check_accepts_no_rank(self) -> None:
         # 順位表現なしの 220+ 字の post
@@ -607,14 +607,14 @@ class HallucinationPreventionAxisCTests414(unittest.TestCase):
             "明日からのカードも楽しみで仕方ない 噛み締めましょう "
             "次の中継ぎ陣も整ってきた感じあるし やってる野球が強い"
         )
-        self.assertTrue(xbg._gemma_branding_safety_check(text))
+        self.assertTrue(xbg._gemini_branding_safety_check(text))
 
     # axis C3: rate forbidden
     def test_safety_check_rejects_batting_average(self) -> None:
-        self.assertFalse(xbg._gemma_branding_safety_check("岸田は打率.345を残してる"))
+        self.assertFalse(xbg._gemini_branding_safety_check("岸田は打率.345を残してる"))
 
     def test_safety_check_rejects_era_specific(self) -> None:
-        self.assertFalse(xbg._gemma_branding_safety_check("戸郷の防御率1.85は素晴らしい"))
+        self.assertFalse(xbg._gemini_branding_safety_check("戸郷の防御率1.85は素晴らしい"))
 
     # axis C2: 数値 whitelist
     def test_extract_unverified_numbers_returns_unverified(self) -> None:
@@ -632,9 +632,9 @@ class HallucinationPreventionAxisCTests414(unittest.TestCase):
         self.assertEqual(xbg._extract_unverified_numbers("", "anything"), [])
 
     # axis C5: temperature default
-    def test_build_gemma_branding_candidate_default_temperature(self) -> None:
+    def test_build_gemini_branding_candidate_default_temperature(self) -> None:
         import inspect
-        sig = inspect.signature(xbg.build_gemma_branding_candidate)
+        sig = inspect.signature(xbg.build_gemini_branding_candidate)
         self.assertEqual(sig.parameters["temperature"].default, 0.4)
 
     # axis C6: published_date 7 日超 drop
@@ -733,30 +733,30 @@ class InflammationPreventionAxisDTests414(unittest.TestCase):
 
     # D1: 強批判語
     def test_safety_check_rejects_player_criticism(self) -> None:
-        self.assertFalse(xbg._gemma_branding_safety_check("戸郷は使えない投手だ"))
-        self.assertFalse(xbg._gemma_branding_safety_check("岸田は戦犯"))
-        self.assertFalse(xbg._gemma_branding_safety_check("もう引退しろという声"))
+        self.assertFalse(xbg._gemini_branding_safety_check("戸郷は使えない投手だ"))
+        self.assertFalse(xbg._gemini_branding_safety_check("岸田は戦犯"))
+        self.assertFalse(xbg._gemini_branding_safety_check("もう引退しろという声"))
 
     # D3: 断定語
     def test_safety_check_rejects_absolute_claim(self) -> None:
-        self.assertFalse(xbg._gemma_branding_safety_check("絶対優勝する流れ"))
-        self.assertFalse(xbg._gemma_branding_safety_check("100%勝てる試合"))
-        self.assertFalse(xbg._gemma_branding_safety_check("間違いなく好投する"))
+        self.assertFalse(xbg._gemini_branding_safety_check("絶対優勝する流れ"))
+        self.assertFalse(xbg._gemini_branding_safety_check("100%勝てる試合"))
+        self.assertFalse(xbg._gemini_branding_safety_check("間違いなく好投する"))
 
     # D4: 監督批判の雑な隣接
     def test_safety_check_rejects_manager_harsh_criticism(self) -> None:
-        self.assertFalse(xbg._gemma_branding_safety_check("阿部監督の采配は無能だ"))
-        self.assertFalse(xbg._gemma_branding_safety_check("監督を解任すべき"))
+        self.assertFalse(xbg._gemini_branding_safety_check("阿部監督の采配は無能だ"))
+        self.assertFalse(xbg._gemini_branding_safety_check("監督を解任すべき"))
 
     # D6: 他球団 / 相手ファン煽り
     def test_safety_check_rejects_opponent_taunting(self) -> None:
-        self.assertFalse(xbg._gemma_branding_safety_check("阪神なんて雑魚だ"))
-        self.assertFalse(xbg._gemma_branding_safety_check("中日は三流"))
+        self.assertFalse(xbg._gemini_branding_safety_check("阪神なんて雑魚だ"))
+        self.assertFalse(xbg._gemini_branding_safety_check("中日は三流"))
 
     # D5: 偽名 / generic placeholder
     def test_safety_check_rejects_placeholder_name(self) -> None:
-        self.assertFalse(xbg._gemma_branding_safety_check("打者Aの活躍がすごい"))
-        self.assertFalse(xbg._gemma_branding_safety_check("投手Xに期待"))
+        self.assertFalse(xbg._gemini_branding_safety_check("打者Aの活躍がすごい"))
+        self.assertFalse(xbg._gemini_branding_safety_check("投手Xに期待"))
 
     # 正常系 (D 全 check 通過)
     def test_safety_check_accepts_positive_fan_voice(self) -> None:
@@ -768,7 +768,7 @@ class InflammationPreventionAxisDTests414(unittest.TestCase):
             "明日のカードも楽しみで仕方ない とんでもないチームになりそう "
             "やってる野球が強い ガチで凄い"
         )
-        self.assertTrue(xbg._gemma_branding_safety_check(text))
+        self.assertTrue(xbg._gemini_branding_safety_check(text))
 
     # helper: _matched_inflammatory_pattern
     def test_matched_inflammatory_pattern_returns_pattern_string(self) -> None:

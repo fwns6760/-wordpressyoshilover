@@ -181,9 +181,9 @@ class ReplyCandidatesTests(unittest.TestCase):
         )
         self.assertEqual(len(reps), 1)
         reply = reps[0]["reply"]
-        self.assertTrue(reply.startswith("坂本勇人、"))
+        self.assertTrue(reply.startswith("坂本勇人"))
         self.assertIn("この起用", reply)
-        self.assertIn("意見分かれそう", reply)
+        self.assertIn("固定で見たい", reply)  # 2026-06-04: 空虚な「意見分かれそう」廃止、スタンスのある一言へ
         self.assertNotIn("阿部監督", reply)
         self.assertNotIn("今季打率", reply)  # 起用論点に無関係なDB数字は混ぜない
 

@@ -212,9 +212,31 @@ def _reply_target_handles() -> list[str]:
 
 
 def _reply_llm_enabled() -> bool:
-    """返信文の LLM 生成。 default OFF = 追加費用なしの deterministic reply。"""
+    """返信文の LLM 生成。 2026-06-04 user 方針で default ON (リプもヨシラバー風)。
+
+    旧 deterministic テンプレ (「見どころありますね/意見分かれそう」 の空虚な47字) を
+    廃し、 報知投稿への返信も flash-lite voice で書く。 コストは per-fire LLM budget
+    (X_POST_MAIL_MAX_LLM_PER_RUN) で上限管理。 明示的に切りたい時のみ
+    ENABLE_X_POST_REPLY_LLM=0 で OFF。
+    """
     raw = (os.environ.get("ENABLE_X_POST_REPLY_LLM") or "").strip().lower()
-    return raw in {"1", "true", "yes", "on"}
+    if not raw:
+        return True
+    return raw not in {"0", "false", "no", "off"}
+
+
+def _voice_only_enabled() -> bool:
+    """2026-06-04 user 方針: メールを「ヨシラバー風 voice」候補のみにする (default ON)。
+
+    ON 時、 compose 直前に DB ランキング表 (候補1型) / data_split の生データ枠を
+    出力から落とす (voice metric allowlist で残す)。 voice が 0 件に枯れた便だけ
+    元候補へ fallback して scheduled mail を空にしない。 明示的に旧挙動へ戻す時のみ
+    X_POST_MAIL_VOICE_ONLY=0。
+    """
+    raw = (os.environ.get("X_POST_MAIL_VOICE_ONLY") or "").strip().lower()
+    if not raw:
+        return True
+    return raw not in {"0", "false", "no", "off"}
 
 
 def _video_radar_llm_enabled() -> bool:
@@ -248,18 +270,18 @@ def _make_voiced_comment_fn(now_jst, subject):
     return _fn
 
 
-def _gemma_branding_enabled() -> bool:
-    """392: env flag for Gemma 4 + Tavily REST branding candidate.
+def _gemini_branding_enabled() -> bool:
+    """392: env flag for Gemini Flash Lite + Tavily REST branding candidate.
 
-    Default OFF。 ON 時のみ news_opinion fallback を skip して Gemma 候補
+    Default OFF。 ON 時のみ news_opinion fallback を skip して Gemini Flash Lite 候補
     を mail に append する。 flag OFF では既存挙動完全不変。
     """
     raw = (os.environ.get("X_POST_MAIL_GEMMA_GEN_ENABLED") or "").strip().lower()
     return raw in {"1", "true", "yes", "on"}
 
 
-def _gemma_branding_max_per_run() -> int:
-    """392: Gemma 候補数 / fire の上限 (default 2)。"""
+def _gemini_branding_max_per_run() -> int:
+    """392: Gemini Flash Lite 候補数 / fire の上限 (default 2)。"""
     return _resolve_int_env(
         "X_POST_MAIL_GEMMA_GEN_MAX",
         2,
@@ -267,10 +289,10 @@ def _gemma_branding_max_per_run() -> int:
     )
 
 
-def _gemma_branding_all_mode() -> bool:
-    """2026-05-22 user request: rebrand every data-ranking candidate via Gemma
+def _gemini_branding_all_mode() -> bool:
+    """2026-05-22 user request: rebrand every data-ranking candidate via Gemini Flash Lite
     branding (alternating fuuga / kandume persona) instead of appending a
-    fixed-count of Gemma posts on top. Default OFF — flag-gate so the
+    fixed-count of Gemini Flash Lite posts on top. Default OFF — flag-gate so the
     append-only mode stays the rollback baseline.
     """
     raw = (os.environ.get("X_POST_MAIL_GEMMA_BRANDING_ALL") or "").strip().lower()
@@ -796,12 +818,12 @@ def _candidate_identity(candidate: lane.Candidate) -> str:
     )
 
 
-def _resolve_gemma_api_keys() -> tuple[str, str]:
+def _resolve_gemini_api_keys() -> tuple[str, str]:
     """392: env var から Gemini / Tavily API key を読む。
 
     Cloud Run Job では Secret Manager binding 経由で ``GEMINI_API_KEY`` と
     ``TAVILY_API_KEY`` が env として渡る前提。 未設定なら空文字を返し、
-    caller (Gemma builder) が None 返却で silent skip する。
+    caller (Gemini Flash Lite builder) が None 返却で silent skip する。
     """
     gemini = (
         os.environ.get("GEMINI_API_KEY")
@@ -812,7 +834,7 @@ def _resolve_gemma_api_keys() -> tuple[str, str]:
     return gemini, tavily
 
 
-def _pick_gemma_branding_players(
+def _pick_gemini_branding_players(
     existing_candidates: list[lane.Candidate],
     *,
     lineup_focus_names: list[str] | None,
@@ -820,7 +842,7 @@ def _pick_gemma_branding_players(
     max_count: int,
     cooldown_players: set[str] | None = None,
 ) -> list[tuple[str, str]]:
-    """392: Gemma 生成対象の player を最大 max_count 件選ぶ。
+    """392: Gemini Flash Lite 生成対象の player を最大 max_count 件選ぶ。
 
     優先順位:
         1. lineup focus names (今日のスタメン): まだ既存 candidates に居ない player
@@ -877,14 +899,14 @@ def _pick_gemma_branding_players(
     return picks
 
 
-def _rebrand_candidates_via_gemma(
+def _rebrand_candidates_via_gemini(
     candidates: list[lane.Candidate],
     *,
     lineup_focus_names: list[str] | None,
     db_path: str | None,
     bucket_name: str | None,
 ) -> list[lane.Candidate]:
-    """Replace each candidate's ``post_text`` with a Gemma branding rewrite.
+    """Replace each candidate's ``post_text`` with a Gemini Flash Lite branding rewrite.
 
     2026-05-22 user request: instead of appending a fixed-count of branding
     posts on top of data-ranking posts, rebrand every existing candidate so
@@ -895,12 +917,12 @@ def _rebrand_candidates_via_gemma(
     Behaviour notes:
     - 24h history gate (player overuse skip in the picker) is bypassed —
       the caller has already accepted these candidates via dedup fallback,
-      so Gemma should rewrite them too.
+      so Gemini Flash Lite should rewrite them too.
     - ``focus_player`` / ``title`` / ``draft_text`` / ``signature`` are kept
       from the original candidate; only ``post_text`` and ``char_count``
       are replaced. ``draft_text`` keeps the analytical proof for the mail's
       "根拠データ" disclosure block.
-    - On Gemma / Tavily failure (any of: missing API key, no Tavily results,
+    - On Gemini Flash Lite / Tavily failure (any of: missing API key, no Tavily results,
       validator drop), the original candidate is kept verbatim — the mail
       never drops a line because of a branding retry.
 
@@ -910,10 +932,10 @@ def _rebrand_candidates_via_gemma(
     """
     if _xbg is None or not candidates:
         return candidates
-    gemini_key, tavily_key = _resolve_gemma_api_keys()
+    gemini_key, tavily_key = _resolve_gemini_api_keys()
     if not gemini_key or not tavily_key:
         LOG.warning(
-            "Gemma rebrand skipped: missing API key (gemini=%s tavily=%s) — keeping data-ranking text",
+            "Gemini Flash Lite rebrand skipped: missing API key (gemini=%s tavily=%s) — keeping data-ranking text",
             bool(gemini_key),
             bool(tavily_key),
         )
@@ -1003,7 +1025,7 @@ def _rebrand_candidates_via_gemma(
                 db_fact = ""
         fact = db_fact or (cand.db_fact_line or "")
         try:
-            new_cand = _xbg.build_gemma_branding_candidate(
+            new_cand = _xbg.build_gemini_branding_candidate(
                 player,
                 gemini_api_key=gemini_key,
                 tavily_api_key=tavily_key,
@@ -1020,7 +1042,7 @@ def _rebrand_candidates_via_gemma(
             )
         except Exception as exc:  # noqa: BLE001
             LOG.warning(
-                "rebrand_via_gemma failed player=%s persona=%s err=%r — keep original",
+                "rebrand_via_gemini failed player=%s persona=%s err=%r — keep original",
                 player,
                 persona,
                 exc,
@@ -1037,21 +1059,21 @@ def _rebrand_candidates_via_gemma(
             success_count += 1
         else:
             LOG.info(
-                "rebrand_via_gemma kept original player=%s persona=%s "
-                "(Gemma returned no text — Tavily / safety / API failure)",
+                "rebrand_via_gemini kept original player=%s persona=%s "
+                "(Gemini Flash Lite returned no text — Tavily / safety / API failure)",
                 player,
                 persona,
             )
             rebranded.append(cand)
     LOG.info(
-        "Gemma rebrand: %d/%d candidates rewritten in brand voice (alternating fuuga/kandume)",
+        "Gemini Flash Lite rebrand: %d/%d candidates rewritten in brand voice (alternating fuuga/kandume)",
         success_count,
         len(candidates),
     )
     return rebranded
 
 
-def _build_gemma_branding_candidates(
+def _build_gemini_branding_candidates(
     existing_candidates: list[lane.Candidate],
     *,
     lineup_focus_names: list[str] | None,
@@ -1061,30 +1083,30 @@ def _build_gemma_branding_candidates(
     bucket_name: str | None = None,
     cooldown_players: set[str] | None = None,
 ) -> list[lane.Candidate]:
-    """392: max_count 件まで Gemma branding candidate を生成。
+    """392: max_count 件まで Gemini Flash Lite branding candidate を生成。
 
-    silent skip 設計: 例外 / Tavily 失敗 / Gemma 失敗 / validator drop で
+    silent skip 設計: 例外 / Tavily 失敗 / Gemini Flash Lite 失敗 / validator drop で
     None 返却された分は単に出力 list から除外。 既存 mail は止めない。
 
     db_path が渡された場合、 player ごとに ``build_db_fact_line()`` で
     insight.db の今日試合 / player log / 直近連勝 を fact line に整形し、
-    Gemma 入力 prompt に注入する (RAG hallucination 抑制)。 DB 該当 record
+    Gemini Flash Lite 入力 prompt に注入する (RAG hallucination 抑制)。 DB 該当 record
     が無ければ空 string、 caller fact (lineup pick の補助 fact) を fallback。
     """
     if _xbg is None:
         LOG.info(
-            "Gemma branding skipped: src.x_post_branding_gen import failed at module load"
+            "Gemini Flash Lite branding skipped: src.x_post_branding_gen import failed at module load"
         )
         return []
-    gemini_key, tavily_key = _resolve_gemma_api_keys()
+    gemini_key, tavily_key = _resolve_gemini_api_keys()
     if not gemini_key or not tavily_key:
         LOG.warning(
-            "Gemma branding skipped: missing API key (gemini=%s tavily=%s)",
+            "Gemini Flash Lite branding skipped: missing API key (gemini=%s tavily=%s)",
             bool(gemini_key),
             bool(tavily_key),
         )
         return []
-    players = _pick_gemma_branding_players(
+    players = _pick_gemini_branding_players(
         existing_candidates,
         lineup_focus_names=lineup_focus_names,
         recent_player_counts=recent_player_counts,
@@ -1092,7 +1114,7 @@ def _build_gemma_branding_candidates(
         cooldown_players=cooldown_players,
     )
     if not players:
-        LOG.info("Gemma branding skipped: no eligible players from lineup/candidates")
+        LOG.info("Gemini Flash Lite branding skipped: no eligible players from lineup/candidates")
         return []
     out: list[lane.Candidate] = []
 
@@ -1131,7 +1153,7 @@ def _build_gemma_branding_candidates(
             if rc is not None:
                 out.append(rc)
                 roundup_added = True
-                LOG.info("Gemma roundup candidate appended (postgame win)")
+                LOG.info("Gemini Flash Lite roundup candidate appended (postgame win)")
 
     # roundup が出た時は残り枠 = max_count - 1、 出てない時は max_count 全部 single-player
     remaining = max_count - (1 if roundup_added else 0)
@@ -1224,9 +1246,9 @@ def _build_gemma_branding_candidates(
                 db_fact = ""
         fact = db_fact or lineup_fact
         # 414 axis E wire: focused_players (= 今日のスタメン focus name list) と
-        # fan_voice_snippet を pass、 build_gemma_branding_candidate が
+        # fan_voice_snippet を pass、 build_gemini_branding_candidate が
         # build_pregame_themes に転送して prompt 注入する。
-        cand = _xbg.build_gemma_branding_candidate(
+        cand = _xbg.build_gemini_branding_candidate(
             player,
             gemini_api_key=gemini_key,
             tavily_api_key=tavily_key,
@@ -1363,10 +1385,10 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
 
 
 def _main_on_queue(args: argparse.Namespace, recipients: list[str]) -> int:
-    """417: drain x_post_candidate_queue → Gemma 4 で候補生成 → mail.
+    """417: drain x_post_candidate_queue → Gemini Flash Lite で候補生成 → mail.
 
     queue 0 件なら silent skip (mail を送らない、 return 0)。
-    Gemma 候補生成失敗 (safety_check / unverified) は個別 skip、 1 件でも候補が
+    Gemini Flash Lite 候補生成失敗 (safety_check / unverified) は個別 skip、 1 件でも候補が
     残れば mail compose、 全件 skip なら mail 送らない。
     mail 送信成功時のみ mark_processed (失敗時は次 fire で再 drain)。
     """
@@ -1387,7 +1409,7 @@ def _main_on_queue(args: argparse.Namespace, recipients: list[str]) -> int:
 
     # 417 follow-up (RPM safety): drain max を args.max_candidates に絞る (= 10)。
     # 旧 max_count = max_candidates * 3 (= 30) だと filter で skip された item も
-    # Gemma call は走るため、 1 fire で 30 call → 15 RPM 上限超過 risk。 cap=10 で
+    # Gemini Flash Lite call は走るため、 1 fire で 30 call → 15 RPM 上限超過 risk。 cap=10 で
     # 1 fire 最大 10 call、 ~30 sec、 < 15 RPM 安全圏。
     queue_items = _xpcq.drain(max_count=args.max_candidates)
     if not queue_items:
@@ -1573,7 +1595,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     history_hours = _resolve_int_env(
         "X_POST_MAIL_PLAYER_HISTORY_HOURS", 168, min_value=1
     )
-    gemma_player_cooldown_hours = _resolve_int_env(
+    gemini_player_cooldown_hours = _resolve_int_env(
         "X_POST_MAIL_GEMMA_PLAYER_COOLDOWN_HOURS", 24, min_value=0
     )
     if bucket_name and dedup_disabled not in {"1", "true", "yes"}:
@@ -1599,11 +1621,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                 sum(recent_player_counts.values()),
             )
             cooldown_players = lane._players_within_cooldown(
-                dedup_records, now_jst, gemma_player_cooldown_hours
+                dedup_records, now_jst, gemini_player_cooldown_hours
             )
             LOG.info(
-                "Gemma player cooldown (%dh): %d players blocked from re-generation",
-                gemma_player_cooldown_hours,
+                "Gemini Flash Lite player cooldown (%dh): %d players blocked from re-generation",
+                gemini_player_cooldown_hours,
                 len(cooldown_players),
             )
         except Exception as exc:  # noqa: BLE001
@@ -1732,8 +1754,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
                         def vr_comment_fn(post_text, player, phase_hint="", *, db_fact="", _k=_vr_key, _g=_vr_xbg, _now=now_jst):  # noqa: E731
                             # voice は spec の フーガ+缶詰 合成 (_build_system_prompt)。 時間帯トーンは now から自動。
-                            # 470-②: db_fact (今季数字) を渡し、 元投稿が触れていない data 視点を1つ織り込む。
-                            return _g.build_quote_rt_comment(post_text, player, gemini_api_key=_k, now=_now, db_fact=db_fact)
+                            # 2026-06-04 user 方針「DBは使わない」: db_fact (今季数字) は渡さない。
+                            # 引用RTは元投稿 (Xバズ動画) を素材にしたヨシラバー風の読みのみで書く。
+                            return _g.build_quote_rt_comment(post_text, player, gemini_api_key=_k, now=_now)
                     except Exception as _vr_imp_exc:  # noqa: BLE001
                         LOG.warning("video_radar LLM comment unavailable: %r", _vr_imp_exc)
                         vr_comment_fn = None
@@ -1862,14 +1885,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                     ",".join(target_handles),
                 )
 
-    # 392: flag ON 時は news_opinion fallback (template) を skip し、 Gemma 4
+    # 392: flag ON 時は news_opinion fallback (template) を skip し、 Gemini Flash Lite
     # + Tavily REST で branding candidate を 1-3 件生成して append する。
     # flag OFF (default) では既存挙動を 100% 維持 (rollback 余地)。
-    gemma_enabled = _gemma_branding_enabled()
-    if gemma_enabled and _gemma_branding_all_mode():
-        # 2026-05-22 user request: rebrand every candidate via Gemma (alternating
+    gemini_enabled = _gemini_branding_enabled()
+    if gemini_enabled and _gemini_branding_all_mode():
+        # 2026-05-22 user request: rebrand every candidate via Gemini Flash Lite (alternating
         # fuuga / kandume) so the whole mail comes out in ヨシラバー voice.
-        candidates = _rebrand_candidates_via_gemma(
+        candidates = _rebrand_candidates_via_gemini(
             candidates,
             lineup_focus_names=lineup_focus_names,
             db_path=db_path,
@@ -1877,30 +1900,30 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         news_fallback_enabled = False
         fallback_candidates: list[lane.Candidate] = []
-    elif gemma_enabled:
-        gemma_count = _gemma_branding_max_per_run()
-        if gemma_count > 0:
-            gemma_candidates = _build_gemma_branding_candidates(
+    elif gemini_enabled:
+        gemini_count = _gemini_branding_max_per_run()
+        if gemini_count > 0:
+            gemini_candidates = _build_gemini_branding_candidates(
                 candidates,
                 lineup_focus_names=lineup_focus_names,
                 recent_player_counts=recent_player_counts,
-                max_count=gemma_count,
+                max_count=gemini_count,
                 db_path=db_path,
                 bucket_name=bucket_name or None,
                 cooldown_players=cooldown_players,
             )
-            if gemma_candidates:
+            if gemini_candidates:
                 before = len(candidates)
-                candidates = candidates + gemma_candidates
+                candidates = candidates + gemini_candidates
                 LOG.info(
-                    "Gemma branding appended: data=%d gemma=%d total=%d",
+                    "Gemini Flash Lite branding appended: data=%d gemini=%d total=%d",
                     before,
-                    len(gemma_candidates),
+                    len(gemini_candidates),
                     len(candidates),
                 )
             else:
                 LOG.info(
-                    "Gemma branding produced 0 candidates "
+                    "Gemini Flash Lite branding produced 0 candidates "
                     "(visible skip: Tavily / Gemini errors or validator drops)."
                 )
         # flag ON ルートでは template-based news_opinion fallback を呼ばない
@@ -1910,7 +1933,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         news_fallback_enabled = not _news_fallback_disabled()
         fallback_candidates = []
     news_priority_count = _resolve_news_priority_candidates(args.max_candidates)
-    if not news_fallback_enabled and not gemma_enabled:
+    if not news_fallback_enabled and not gemini_enabled:
         LOG.info("News/opinion fallback disabled by X_POST_MAIL_NEWS_FALLBACK_DISABLED")
     if news_fallback_enabled and news_priority_count:
         fallback_candidates = _fetch_news_opinion_fallback_candidates(
@@ -2092,6 +2115,33 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not candidates:
         LOG.warning("No candidates generated — skip send (insight.db likely sparse).")
         return 0
+
+    # 2026-06-04 user 方針: メールは「ヨシラバー風 voice」のみ。 DB ランキング表 (候補1型) /
+    # data_split (序盤/中盤/終盤・本拠地別の生データ枠) は出力しない。 voice metric の
+    # allowlist で残す。 voice が 0 件に枯れた便だけ、 scheduled mail を空にしないため
+    # 元の候補へ fallback (safety、 log で可視化)。
+    if _voice_only_enabled():
+        _VOICE_ONLY_METRICS = {
+            lane._NEWS_OPINION_METRIC, lane._FAN_VOICE_METRIC, lane._GEMINI_BRANDING_METRIC,
+            lane._HOCHI_REPLY_METRIC, lane._REPLY_CANDIDATE_METRIC, lane._VIDEO_RADAR_METRIC,
+            lane._PLAYER_COMMENT_METRIC, lane._COMMENT_DB_METRIC, "quote_caption",
+        }
+        _before_voice = len(candidates)
+        _voice_candidates = [c for c in candidates if c.metric in _VOICE_ONLY_METRICS]
+        _data_dropped = _before_voice - len(_voice_candidates)
+        if _voice_candidates:
+            if _data_dropped:
+                LOG.info(
+                    "voice-only filter: dropped %d DB-data candidates (ranking/data_split), kept %d voice",
+                    _data_dropped, len(_voice_candidates),
+                )
+            candidates = _voice_candidates
+        elif _data_dropped:
+            LOG.warning(
+                "voice-only filter would empty the mail (%d data candidates, 0 voice); "
+                "keeping data candidates as floor so the scheduled mail still sends.",
+                _before_voice,
+            )
 
     # 2026-05-27 x-impression-plan: final API-free policy gate.
     # Keep the 437 media/share path unchanged; only prune same-mail

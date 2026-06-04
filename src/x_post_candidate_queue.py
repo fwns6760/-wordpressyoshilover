@@ -2,7 +2,7 @@
 
 rss_fetcher が報知 / サンスポ source を classify 完了した時点で `enqueue()` し、
 別 Cloud Run job (`x-post-mail-lane`) が cron `*/30 6-22 * * *` で `drain()`
-→ Gemma 4 で X-post 候補生成 → mail 送信 → `mark_processed()` の流れ。
+→ Gemini Flash Lite で X-post 候補生成 → mail 送信 → `mark_processed()` の流れ。
 
 ストレージは GCS (`gs://<bucket>/x_post_candidate_queue/{queued,processed}/<source_url_hash>.json`)。
 Cloud Run 2 service (yoshilover-fetcher / x-post-mail-lane) が共有するため

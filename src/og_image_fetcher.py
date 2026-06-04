@@ -11,7 +11,7 @@ source article URL から `<meta property="og:image">` または
 - 画像 size 上限: 5MB (X media spec)
 - HTML 取得 size 上限: 1MB (parse 用)
 
-438 Phase 1: x_post_mail_lane の build_gemma_branding_candidate /
+438 Phase 1: x_post_mail_lane の build_gemini_branding_candidate /
 build_x_post_from_article_info から呼ばれる。
 """
 

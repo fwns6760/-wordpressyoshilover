@@ -232,8 +232,8 @@ def _yoshilover_reply_fallback(db_path: str, player: str, events: list, parent_t
     headline = headline_from_events(events).rstrip("！!")
     if any(t in haystack for t in ("起用", "スタメン", "打順", "代打", "守備", "継投", "捕手", "先発", "ローテ")):
         text = (
-            f"{player}、この起用はかなり見どころありますね。\n"
-            "次も同じ形で行くのか、ここは意見分かれそうです。"
+            f"{player}のこの起用、ハマればデカいと思うんよな。\n"
+            "一回きりで終わらせず、ここから固定で見たいとこ。"
         )
     elif any(t in haystack for t in ("若手", "昇格", "一軍", "2軍", "２軍", "二軍", "ファーム", "育成")):
         text = (

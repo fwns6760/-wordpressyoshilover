@@ -72,10 +72,10 @@ async def _generate_one_draft(
     model: str,
     temperature: float,
 ) -> PostDraft:
-    """1 query に対する Gemma 4 生成。 例外時は error フィールドに格納。"""
+    """1 query に対する Gemini Flash Lite 生成。 例外時は error フィールドに格納。"""
 
     try:
-        # Gemini SDK 経由で Gemma 4 を呼ぶ。 tools に MCP session を渡すと
+        # Gemini SDK 経由で Gemini Flash Lite を呼ぶ。 tools に MCP session を渡すと
         # 必要に応じて Tavily 検索を agentic に発火する。
         # (Google AI SDK の MCP integration は experimental、 API 変更可能性あり)
         response = await gemini_client.aio.models.generate_content(
@@ -106,14 +106,14 @@ async def generate_post_drafts(
     npx_command: str = "npx",
     tavily_mcp_package: str = "tavily-mcp@latest",
 ) -> list[PostDraft]:
-    """Tavily MCP stdio embed + Gemma 4 で post 案を生成する。
+    """Tavily MCP stdio embed + Gemini Flash Lite で post 案を生成する。
 
     Tavily MCP は ``npx -y tavily-mcp@latest`` で subprocess 起動 (stdio
     transport)。 Node.js + npm が container に必要 (Phase 2 Dockerfile で
     install)。
 
     パラメータ:
-        gemini_api_key: Gemini API key (Gemma 4 経由用)
+        gemini_api_key: Gemini API key (Gemini Flash Lite 経由用)
         tavily_api_key: Tavily API key (Tavily MCP server 経由)
         queries: 検索 query 群。 None で DEFAULT_QUERIES。
         model: Gemini API model id。 既定は gemini-3.1-flash-lite。

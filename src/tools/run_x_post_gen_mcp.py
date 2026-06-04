@@ -1,4 +1,4 @@
-"""Tavily MCP + Gemma 4 で巨人関連 X 投稿案を生成する CLI runner。
+"""Tavily MCP + Gemini Flash Lite で巨人関連 X 投稿案を生成する CLI runner。
 
 実行例:
     export GEMINI_API_KEY=...
@@ -42,7 +42,7 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Generate X post drafts about the 巨人 using Tavily MCP (stdio) "
-            "+ Gemma 4 via Gemini API free tier."
+            "+ Gemini Flash Lite via Gemini API free tier."
         ),
     )
     parser.add_argument(

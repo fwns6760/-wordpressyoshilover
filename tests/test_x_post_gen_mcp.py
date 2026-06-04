@@ -81,7 +81,7 @@ class DefaultsTests(unittest.TestCase):
         for q in xpg.DEFAULT_QUERIES:
             self.assertIn("巨人", q, f"query must mention 巨人: {q!r}")
 
-    def test_gemma_model_id_is_31b(self) -> None:
+    def test_gemini_model_id_is_31b(self) -> None:
         # 0 ドル制約 + user 指定: 2026-05-22 swap で gemma-4-31b-it →
         # gemini-3.1-flash-lite (両方 free tier、 paid 切替禁止 lock 維持)。
         self.assertEqual(xpg.GEMMA_MODEL_ID, "gemini-3.1-flash-lite")

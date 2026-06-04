@@ -789,20 +789,18 @@ class BuildSystemPromptPersonaTests411(unittest.TestCase):
 
     def test_default_persona_returns_yoshilover_voice(self) -> None:
         prompt = xbg._build_system_prompt(19, "2026-05-20")
-        # 2026-06-01 voice 再設計: フーガ + 缶詰 合成 voice + 作りポエム禁止
-        self.assertIn("フーガ + 缶詰", prompt)
-        self.assertIn("作りポエム", prompt)
+        # 2026-06-04 口調を06-01版へ復元: 短文連投 + 3軸圧縮 の熱心な巨人ファン voice
+        self.assertIn("熱心な巨人ファン", prompt)
+        self.assertIn("短文連投", prompt)
 
     def test_kandume_persona_returns_same_unified_prompt(self) -> None:
         # #95: kandume persona でも unified prompt を返す (alias)。
         prompt = xbg._build_system_prompt(19, "2026-05-20", persona="kandume")
-        # 2 モード設計 (考察 / ライブ) の few-shot が含まれる
-        self.assertIn("考察モード", prompt)
-        self.assertIn("ライブモード", prompt)
+        self.assertIn("短文連投", prompt)
 
     def test_unknown_persona_falls_back_to_yoshilover_voice(self) -> None:
         prompt = xbg._build_system_prompt(19, "2026-05-20", persona="unknown_voice")
-        self.assertIn("フーガ + 缶詰", prompt)
+        self.assertIn("短文連投", prompt)
 
 
 class XImpressionPhase5OfficialHandleTests(unittest.TestCase):

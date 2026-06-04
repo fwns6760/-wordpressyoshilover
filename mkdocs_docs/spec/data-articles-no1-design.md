@@ -208,4 +208,4 @@ insight.db(✅DONE) ──┬─→ ⑤ ホット&コールド                  
   - ⑤ ホット&コールド = **defer**(自律進めず)。検知器 `detect_batter_recent_window_anomaly` は既に live だが記事化経路なし。新規 publish 角度化は 464 curation(user の わかりやすさ判定)+ 今日のヒーローと重複 のため **user 判断待ち**。
   - §16-B 漏れ(球団打率の先頭0 `0.215→.215`)を追修正(user 指摘)。
 - **次 = Phase 3**: ⑥ 現役 vs レジェンド対比(profile/年度別の age 計算精度検証が前提、未検証→慎重)。
-- 既知 gap: 岡本和真 の career cache `total` が空(NPB scrape parse 失敗、ingest 側 fix が follow-up)。④/②/全史/記録室で岡本が出ない要因。
+- ~~既知 gap: 岡本和真 の career cache total が空(parse失敗)~~ → **訂正(source確認済)**: 岡本和真/菅野智之は2026の NPB Giants roster に不在(MLB等)で current cache 非収録が正。両者は ob_legends_full に OB として収録済で全史/記録室にOBとして正常掲載(岡本=全史HR22位248本)。バグではない。② は現役通算のみ対象なので岡本は対象外で正。

@@ -201,6 +201,18 @@ def _run_data_insight_auto_publish(*, db_path: Path) -> tuple[dict[str, Any], di
                     ranking_publish_summary["career_rank_change_error"] = (
                         f"{type(exc).__name__}:{exc}"
                     )
+                # ⑤ ホット&コールド(絶好調打者)。検知器を再利用、HOT のみ記事化。
+                # 新タイプのため env DATA_INSIGHT_HOTCOLD=1 gate + 既定 draft。X は §11。
+                try:
+                    from src.analysis import hotcold_article as hotcold
+                    if hotcold.enabled():
+                        ranking_publish_summary["hotcold"] = (
+                            hotcold.publish_hot_batter_articles(conn, wp)
+                        )
+                except Exception as exc:  # noqa: BLE001
+                    ranking_publish_summary["hotcold_error"] = (
+                        f"{type(exc).__name__}:{exc}"
+                    )
                 # 348 step 3 part 2 D-1: player counting stats ranking
                 # title variation のため multi-scope 投入
                 # (season / last_30d / monthly / weekly)、 step 3 part 1

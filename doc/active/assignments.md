@@ -1,6 +1,19 @@
 # assignments — 現場担当と次アクション
 
-最終更新: 2026-06-03 JST (cross-session lane 調整 + 465 v1 LIVE)
+最終更新: 2026-06-04 JST (データ記事 Phase 0 再開 — §16監査 + ③本番起動 LIVE)
+
+## 2026-06-04 データ記事 Phase 0 再開 LIVE_VERIFIED
+
+設計 `mkdocs_docs/spec/data-articles-no1-design.md`(6/3）の Phase0 を本線再開。
+- **§16監査(read-only)**: 直近30本6軸集計。核心発見 = **6/3 commitの §16-B/C/D/E/F fix群が未deploy**(稼働image `1fd809ca` がfix前、検出崩れは全てfix前公開分=forward-only解決済）。
+- **新規§16 fix 2件** commit `ffe1b091`: `setup/closer`英語token→中継ぎ/セットアップ/抑え、③本文の誇張「記録保持者だ」→「巨人OBだ」(test18 pass)。
+- **③今日は何の日(OB)本番起動**: env `DATA_INSIGHT_OB_ANNIVERSARY=1`(status draft既定維持)。今後60日35日/50本(松井秀喜/張本勲等)、今日6/4は0本、初弾6/7岡崎郁。
+- **deploy**: image `insight-nightly:ob-anniv-s16-ffe1b09`、job update + execute `insight-nightly-x6ctg` SUCCEEDED、error0。1 deployで「③起動 + 未deploy §16 fix群live + 本日2 fix」を集約。
+- **LIVE verify**(新draft): `setup→セットアップ`反映確認(post79846)、dedup機能、AUTO_PUBLISH=0で公開影響ゼロ。
+- 次パス observation: 球団系title「巨人 4/6 位 0.215」(.360/順位N/M が6チーム文脈で未適用、borderline)。
+- handoff: parent `session_logs/2026-06-04_data_articles_phase0_s16_audit_and_ob_anniversary.md`。
+- **user判断境界(未到来)**: ③ draft→publish昇格(6/7初弾draft確認後）/ ③ X投稿解放。
+- **次の本線**: 設計Phase1 = ② 節目カウントダウン → 全史ランキング計算(共有部品)→ ④ランキング変動。
 
 ## 2026-06-03 cross-session lane 調整(重複回避)— 並走セッションへ
 

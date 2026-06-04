@@ -8,9 +8,10 @@
 - `src/analysis/alltime_ranking.py`: OB684 + 現役を横断し本塁打/安打/打点/勝利/奪三振の全史ランキング算出。OBは年度別不在で球団限定不可 → **NPB通算**で揃え正直表記(球団通算と誇張しない)。snapshot を GCS `alltime_rank_snapshot.json` 保存(④の前日比較用、google.cloud.storage=既存ingestと同方式)。
 - `src/analysis/career_rank_change.py`(④): 前回snapshot比較で順位上昇検知(band[10,20,50,100]またぎ or today_rank<=50)。title「NPB通算{label}{value}、歴代{rank}位に浮上({抜いた相手}を抜く)」。初回はbaseline保存のみ記事0。env `DATA_INSIGHT_RANK_CHANGE=1` gate、既定draft、X§11。
 - 実データ検証: 全史HR=王868..坂本300(19位)/丸291(20位)、丸301本シナリオで「丸佳浩 歴代19位に浮上(坂本勇人を抜く)」生成確認。
-- commit `c8c9d727` / test 8 + 関連85 pass / regression 0。image `rank-change-c8c9d72`(build中)→ env flip予定。
+- commit `c8c9d727` / test 8 + 関連85 pass / regression 0。**LIVE_VERIFIED**: image `rank-change-c8c9d72`、env `DATA_INSIGHT_RANK_CHANGE=1`、exec `insight-nightly-vnbcl`、error0、baseline snapshot `alltime_rank_snapshot.json`(15.8KB）GCS保存=初回記事0(正しい挙動)。実順位変化で発火、生成はsim実証済。
 - 既知gap: 岡本和真 career cache total 空(NPB scrape parse失敗、ingest側fix follow-up)。
-- 次: /data/ranking 通算タブ(サイト、data-site-publisher側で共有部品を消費)。
+- **/data/ranking 歴代(全史)タブ LIVE_VERIFIED**(共有部品の2用途目): `build_alltime_leaders`(data_site_query)→ render_ranking_html に3つ目section。OBレジェンド+現役横断、★現役マーカー。commit `4113ee74` / image `data-site-publisher:alltime-rank-4113ee7` / exec `data-site-publisher-plzdl`。page76423 verify: 歴代section/王貞治868本/金田正一/★現役凡例。data-site test 58 pass(画像smoke1 failは cairosvg未導入の既存事象・無関係)。
+- **設計 Phase 1 完了**(②/共有部品/④/site全史タブ)。次=Phase 2: /data/record 記録室ハブ + ⑤ホット&コールド。
 
 ## 2026-06-04 設計Phase 1先頭 — ② 節目カウントダウン(現役通算記録接近)
 

@@ -215,3 +215,63 @@ def render_ranking_html(
         f'<p style="margin-top:16px;"><a href="{CLUSTER_URL}">← 選手データ一覧へ</a></p>'
         '</div>'
     )
+
+
+# ─── 記録室ハブ /data/record(Phase2、共有部品 alltime_ranking 由来)──────────
+def render_record_title() -> str:
+    return "巨人 記録室【名球会・通算2000安打・300本塁打クラブ】歴代の節目到達者 | 巨人データ"
+
+
+def render_record_excerpt(record: dict) -> str:
+    clubs = "・".join(list(record.keys())[:4]) if record else "名球会・通算本塁打クラブ"
+    return (f"読売ジャイアンツに在籍した選手の通算節目クラブ会員一覧（{clubs}）。"
+            "OB レジェンドと現役を横断、NPB 通算で集計。")
+
+
+def _record_block(club: str, members: list) -> str:
+    """記録室のクラブ 1 つ(h2 = クラブ名そのまま)。"""
+    from src.data_site_slug import player_slug  # lazy import (循環回避)
+
+    def _link(name: str) -> str:
+        try:
+            return f"/data/{player_slug(name)}/"
+        except Exception:  # noqa: BLE001
+            return ""
+
+    rows = ""
+    for i, e in enumerate(members):
+        href = _link(e.player)
+        name_html = (f'<a href="{href}" style="flex:1;color:#1a1a1a;text-decoration:none;">{_esc(e.player)}</a>'
+                     if href else f'<span style="flex:1;">{_esc(e.player)}</span>')
+        rows += (
+            '<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-bottom:1px solid #f0f0f0;">'
+            f'<span style="width:24px;color:#e25400;text-align:center;font-weight:700;">{i + 1}</span>'
+            f'{name_html}'
+            f'<span style="color:#c0392b;font-weight:700;">{_esc(e.display)}</span></div>'
+        )
+    return (
+        '<section class="ys-card" style="margin:0 0 16px;">'
+        f'<h2 style="font-size:16px;margin:0 0 6px;padding:6px 10px;background:#1a1a2e;color:#fff;border-radius:4px;">'
+        f'🏛 {_esc(club)}（{len(members)}名）</h2>'
+        f'{rows}</section>'
+    )
+
+
+def render_record_html(record: dict) -> str:
+    nav = (
+        '<nav class="ys-breadcrumb" style="font-size:12px;color:#666;margin:0 0 12px;">'
+        f'<a href="{SITE_BASE}/" style="color:#666;">Home</a> › '
+        f'<a href="{CLUSTER_URL}" style="color:#666;">巨人選手データ</a> › <span>記録室</span></nav>'
+    )
+    blocks = "".join(_record_block(c, m) for c, m in (record or {}).items() if m)
+    return (
+        '<div style="font-family:sans-serif;max-width:640px;">'
+        f'{nav}'
+        '<h1 style="font-size:20px;margin:0 0 4px;">巨人 記録室 — 歴代の節目到達者</h1>'
+        '<p style="font-size:13px;color:#666;margin:0 0 14px;">読売ジャイアンツに在籍した選手の通算記録クラブ。'
+        'OB レジェンドと現役を横断、<b>★現役</b> は現在の巨人選手。NPB 通算（全球団含む）で集計、各選手名から詳細データへ。</p>'
+        f'{blocks or "<p>データ準備中</p>"}'
+        f'<p style="margin-top:16px;"><a href="{CLUSTER_URL}">← 選手データ一覧へ</a> ／ '
+        f'<a href="/data/ranking/">🏆 選手ランキングへ</a></p>'
+        '</div>'
+    )

@@ -626,10 +626,10 @@ class AlltimeLeadersTests(unittest.TestCase):
         self._orig = ar.load_ob_stats
         # 小さな OB(現役が top10 に入るよう値を抑える)。
         ar.load_ob_stats = lambda: {
-            "王貞治": {"type": "batter", "slug": "oh", "npb": {"hr": 868}},
-            "長嶋茂雄": {"type": "batter", "slug": "nagashima", "npb": {"hr": 444}},
-            "中畑清": {"type": "batter", "slug": "nakahata", "npb": {"hr": 171}},
-            "金田正一": {"type": "pitcher", "slug": "kaneda", "npb": {"w": 400}},
+            "王貞治": {"type": "batter", "slug": "oh", "npb": {"hr": 868, "hits": 2786, "rbi": 2170}},
+            "長嶋茂雄": {"type": "batter", "slug": "nagashima", "npb": {"hr": 444, "hits": 2471, "rbi": 1522}},
+            "中畑清": {"type": "batter", "slug": "nakahata", "npb": {"hr": 171, "hits": 1294, "rbi": 705}},
+            "金田正一": {"type": "pitcher", "slug": "kaneda", "npb": {"w": 400, "k": 4490}},
         }
         self.cache = {
             "ids": {"坂本勇人": "1"},
@@ -657,3 +657,30 @@ class AlltimeLeadersTests(unittest.TestCase):
         # OB のみでもランキングは出る(現役マーカー無し)
         self.assertIn("本塁打", al)
         self.assertFalse(any("★現役" in e.display for e in al["本塁打"]))
+
+    def test_record_room_clubs_threshold(self) -> None:
+        from data_site_query import build_record_room
+        rec = build_record_room(self.cache)
+        # 名球会2000安打: 王2786 がメンバー、中畑(1294)は閾値未満で非掲載
+        club = next((m for c, m in rec.items() if "2000安打" in c), None)
+        self.assertIsNotNone(club)
+        names = [e.player for e in club]
+        self.assertIn("王貞治", names)
+        self.assertNotIn("中畑清", names)
+        # 300本塁打クラブに坂本(300, 現役)が ★現役 付きで入る
+        hrclub = next((m for c, m in rec.items() if "300本塁打" in c), None)
+        self.assertIsNotNone(hrclub)
+        sakamoto = next(e for e in hrclub if e.player == "坂本勇人")
+        self.assertIn("★現役", sakamoto.display)
+
+    def test_record_room_empty_clubs_omitted(self) -> None:
+        from data_site_query import build_record_room
+        # OB を 1 人(閾値未満)に絞ると全クラブ空 → 省略
+        from src.analysis import alltime_ranking as ar
+        orig = ar.load_ob_stats
+        ar.load_ob_stats = lambda: {"中畑清": {"type": "batter", "slug": "n", "npb": {"hr": 171, "hits": 1294, "rbi": 705}}}
+        try:
+            rec = build_record_room({})
+            self.assertEqual(rec, {})
+        finally:
+            ar.load_ob_stats = orig

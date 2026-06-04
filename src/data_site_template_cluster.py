@@ -103,6 +103,8 @@ def _build_intro_html() -> str:
         '<a href="/data/ranking/" style="color:#e25400;font-weight:600;text-decoration:none;">🏆 選手ランキング</a>'
         '　/　'
         '<a href="/data/team/" style="color:#e25400;font-weight:600;text-decoration:none;">📊 チーム成績・順位</a>'
+        '　/　'
+        '<a href="/data/record/" style="color:#e25400;font-weight:600;text-decoration:none;">🏛 記録室</a>'
         '</p></section>'
     )
 

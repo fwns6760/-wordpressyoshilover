@@ -45,6 +45,7 @@ from src.data_site_query import (
     fetch_team_leaders,
     build_career_leaders,
     build_alltime_leaders,
+    build_record_room,
     fetch_team_rankings,
     fetch_giants_team_record,
     fetch_giants_upcoming,
@@ -106,6 +107,9 @@ from src.data_site_template_team import (
     render_ranking_html,
     render_ranking_title,
     render_ranking_excerpt,
+    render_record_html,
+    render_record_title,
+    render_record_excerpt,
 )
 from src.data_site_template_pillar import (
     PillarPlayerInfo,
@@ -554,6 +558,23 @@ def publish_phase1() -> dict[str, object]:
     )
     LOG.info("ranking upsert slug=ranking page_id=%s action=%s cats=%d career=%d alltime=%d",
              ranking_result.page_id, ranking_result.action, len(leaders), len(career_leaders), len(alltime_leaders))
+
+    # Phase2: 記録室ハブ /data/record(共有部品 alltime_ranking を閾値 filter)。
+    try:
+        record_room = build_record_room(_CAREER_CACHE)
+        LOG.info("record room clubs=%d", len(record_room))
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("build_record_room failed (continue without): %r", exc)
+        record_room = {}
+    record_result = _upsert_page(
+        slug="record",
+        title=render_record_title(),
+        content_html=render_record_html(record_room),
+        parent=cluster_page_id,
+        excerpt=render_record_excerpt(record_room),
+    )
+    LOG.info("record upsert slug=record page_id=%s action=%s clubs=%d",
+             record_result.page_id, record_result.action, len(record_room))
 
     summary = {
         "status": "ok",

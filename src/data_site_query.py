@@ -1297,6 +1297,50 @@ def build_alltime_leaders(career_cache: dict, top_n: int = 10) -> dict[str, list
     return out
 
 
+# 記録室の「クラブ」定義: (stat_key, 閾値, クラブ名)。閾値以上の在籍者を全員掲載。
+_RECORD_CLUBS: list[tuple[str, int, str]] = [
+    ("hits", 2000, "名球会 — 通算2000安打クラブ"),
+    ("hr", 300, "通算300本塁打クラブ"),
+    ("rbi", 1000, "通算1000打点クラブ"),
+    ("win", 200, "名球会 — 通算200勝クラブ"),
+    ("so", 2000, "通算2000奪三振クラブ"),
+]
+
+
+def build_record_room(career_cache: dict) -> dict[str, list[LeaderEntry]]:
+    """記録室ハブ: 巨人在籍者(OB684 + 現役)の通算節目クラブ会員一覧。
+
+    共有部品 alltime_ranking を閾値 filter。各クラブは閾値以上の全員を値降順で。
+    現役は ★現役 マーカー。NPB通算で集計(球団限定不可のため、表記も NPB通算)。
+    戻り値: {club_label: [LeaderEntry]}(会員 0 のクラブは省略)。
+    """
+    try:
+        from src.analysis import alltime_ranking as _ar
+    except Exception:  # noqa: BLE001
+        return {}
+    units = {"hr": "本", "hits": "安打", "rbi": "打点", "win": "勝", "so": "奪三振"}
+    try:
+        rankings = _ar.build_rankings(None, career_cache)
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("build_record_room failed: %r", exc)
+        return {}
+    out: dict[str, list[LeaderEntry]] = {}
+    for key, threshold, label in _RECORD_CLUBS:
+        unit = units.get(key, "")
+        members = [
+            LeaderEntry(
+                player=r["name"],
+                value=float(r["value"]),
+                display=f"{r['value']}{unit}{' ★現役' if r['is_current'] else ''}",
+            )
+            for r in rankings.get(key, [])
+            if r["value"] >= threshold
+        ]
+        if members:
+            out[label] = members
+    return out
+
+
 @dataclass
 class GiantsScheduleRow:
     """巨人 1 試合の日程・結果 (data/schedule ページ用、Phase B 452)。"""

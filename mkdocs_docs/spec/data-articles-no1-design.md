@@ -203,5 +203,9 @@ insight.db(✅DONE) ──┬─→ ⑤ ホット&コールド                  
   - 全史ランキング計算(共有部品)= `alltime_ranking.py`(OB684+現役、NPB通算、GCS snapshot)。
   - ④ 通算ランキング変動 = LIVE(`career_rank_change.py`、env `DATA_INSIGHT_RANK_CHANGE=1`、draft、baseline 確立)。
   - /data/ranking 歴代(全史)タブ = LIVE(`build_alltime_leaders` + render、共有部品の2用途目、page 76423)。
-- **次 = Phase 2**: /data/record 記録室ハブ + ⑤ ホット&コールド。**Phase 3** = ⑥ 現役 vs レジェンド対比(profile/年度別精度検証が前提)。
-- 既知 gap: 岡本和真 の career cache `total` が空(NPB scrape parse 失敗、ingest 側 fix が follow-up)。④/②/全史で岡本が出ない要因。
+- **Phase 2 部分完了**(2026-06-04):
+  - /data/record 記録室ハブ = LIVE(`build_record_room`、共有部品再利用、名球会/節目クラブ、cluster nav 🏛記録室)。
+  - ⑤ ホット&コールド = **defer**(自律進めず)。検知器 `detect_batter_recent_window_anomaly` は既に live だが記事化経路なし。新規 publish 角度化は 464 curation(user の わかりやすさ判定)+ 今日のヒーローと重複 のため **user 判断待ち**。
+  - §16-B 漏れ(球団打率の先頭0 `0.215→.215`)を追修正(user 指摘)。
+- **次 = Phase 3**: ⑥ 現役 vs レジェンド対比(profile/年度別の age 計算精度検証が前提、未検証→慎重)。
+- 既知 gap: 岡本和真 の career cache `total` が空(NPB scrape parse 失敗、ingest 側 fix が follow-up)。④/②/全史/記録室で岡本が出ない要因。

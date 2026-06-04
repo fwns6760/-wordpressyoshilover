@@ -1,6 +1,14 @@
 # assignments — 現場担当と次アクション
 
-最終更新: 2026-06-04 JST (Phase 0 完了 + Phase 1先頭 ② 節目カウントダウン実装)
+最終更新: 2026-06-04 JST (Phase 0+1 完了 + Phase 2 /data/record 記録室ハブ + §16-B球団打率漏れ修正)
+
+## 2026-06-04 Phase 2 — /data/record 記録室ハブ(共有部品再利用)+ ⑤ defer
+
+- **/data/record 記録室ハブ**(設計§7.3「ライバル最大moat」): `build_record_room`(data_site_query)が共有部品 alltime_ranking を閾値filter。クラブ=名球会2000安打/300本塁打/1000打点/名球会200勝/2000奪三振。OB684+現役、現役★。cluster nav に 🏛記録室 追加。commit `c99689f9` / image `record-room-c99689f`(build中)。実データ: 名球会15名(張本3085/坂本2457★)/200勝6名(金田)等。test 記録室2+data-site60 pass。
+- **⑤ ホット&コールド = defer**(自律進めず): 検知器 `detect_batter_recent_window_anomaly` は既に live(run_all_detectors)だが記事化経路なし。新規publish角度化は (1)今日のヒーロー(464)と重複 (2)464 curation=user の わかりやすさ判定 に抵触。→ user 判断待ち。
+- **§16-B 漏れ修正**(user「ちゃんと直ってる?」指摘): 球団打率タイトル「巨人 4/6 位 0.215」の先頭0未除去を `fmt_stat` で `.215` に。commit `685b63c2` / image `team-avg-fmt-685b63c` deploy + prod db verify。「4/6位」は6球団分母有意で保持(別判断)。
+
+## 2026-06-04 Phase 1先頭 — ② 節目カウントダウン(現役通算記録接近)
 
 ## 2026-06-04 Phase 1 — 全史ランキング計算(共有部品)+ ④ 通算ランキング変動
 

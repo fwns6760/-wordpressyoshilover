@@ -126,6 +126,23 @@ LOG = logging.getLogger("data_site_publisher")
 # 各 _build_pillar_info が name -> payload を引く。 publish をブロックしない (失敗時は空)。
 _CAREER_CACHE: dict = {}
 
+# OB 年度別 (ベンチマーク由来、 config/ob_career_yearly_full.json)。 slug -> npb_career payload。
+# 現役は NPB cache、 引退 OB はこちらで年度別フル表を populate する。
+_OB_YEARLY_CACHE: dict | None = None
+
+
+def _ob_yearly_payload(slug: str) -> dict | None:
+    """OB の npb_career payload (slug 引き)。 無ければ None。 publish をブロックしない。"""
+    global _OB_YEARLY_CACHE
+    if _OB_YEARLY_CACHE is None:
+        path = os.path.join(os.path.dirname(__file__), "..", "config", "ob_career_yearly_full.json")
+        try:
+            with open(path, encoding="utf-8") as fh:
+                _OB_YEARLY_CACHE = _json.load(fh)
+        except Exception:
+            _OB_YEARLY_CACHE = {}
+    return _OB_YEARLY_CACHE.get(slug)
+
 
 @dataclass
 class UpsertResult:
@@ -284,6 +301,10 @@ def _build_pillar_info(player_name: str) -> PillarPlayerInfo | None:
     ]
     # 467: NPB career page 由来の網羅データ (年度別+通算+プロフィール)。 cache 由来、 無ければ None。
     info.npb_career = npb_career_ingest.career_payload_for(_CAREER_CACHE, player_name)
+    # 現役 cache に無い (= 引退 OB) なら、 ベンチマーク由来の年度別フル表で populate。
+    # これで OB ページも「年度ごと」詳細表 (打率/出塁率/長打率/OPS or 防御率/WHIP) を持つ。
+    if not (info.npb_career and (info.npb_career.get("batting") or info.npb_career.get("pitching"))):
+        info.npb_career = _ob_yearly_payload(player_slug(player_name)) or info.npb_career
     # 監督・コーチ は当年 stats を持たない (insight.db join しても空)。 当年 stats query は
     # 全 skip し、 現役時代の通算成績 (config 由来) + profile + 関連記事の page にする。
     if (roster.role or "").strip() in ("manager", "coach"):

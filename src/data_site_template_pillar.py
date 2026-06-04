@@ -1140,6 +1140,9 @@ def render_pillar_html(player: PillarPlayerInfo) -> str:
         stats_sections = [
             _build_ob_html(player),
             _build_ob_milestones_html(player),
+            # OB も年度別フル表を出す (npb_career を benchmark 由来で populate)。
+            # ベンチマーク同等の「年度ごと」詳細。 データが無ければ空文字で安全。
+            _build_career_history_html(player),
         ]
     elif _is_staff(player):
         stats_sections = [

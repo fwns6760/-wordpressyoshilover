@@ -27,6 +27,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.analysis import insight_atbats_parser  # noqa: E402
+from src.analysis.insight_contrast_title import fmt_stat  # noqa: E402
 from src.analysis import insight_dedup_gate as dedup_gate  # noqa: E402
 from src.analysis import insight_quality_gate as quality_gate  # noqa: E402
 from src.analysis import insight_title_guard as title_guard  # noqa: E402
@@ -322,7 +323,8 @@ def render_team_metric_article(
     giants_rank = sorted_rows.index(giants_row) + 1
     giants_value = giants_row["value"]
     if isinstance(giants_value, float):
-        giants_val_str = f"{giants_value:.3f}"
+        # §16-B 統一: 打率(AVG)は先頭0を落として .215、防御率(ERA)は 2.340 据え置き。
+        giants_val_str = fmt_stat(giants_value, metric)
     else:
         giants_val_str = str(giants_value)
     rank_phrase = f"{giants_rank}/6 位"

@@ -2,6 +2,16 @@
 
 最終更新: 2026-06-04 JST (Phase 0 完了 + Phase 1先頭 ② 節目カウントダウン実装)
 
+## 2026-06-04 Phase 1 — 全史ランキング計算(共有部品)+ ④ 通算ランキング変動
+
+設計 §7.2「1度作って2用途」の共有部品 + ④記事。
+- `src/analysis/alltime_ranking.py`: OB684 + 現役を横断し本塁打/安打/打点/勝利/奪三振の全史ランキング算出。OBは年度別不在で球団限定不可 → **NPB通算**で揃え正直表記(球団通算と誇張しない)。snapshot を GCS `alltime_rank_snapshot.json` 保存(④の前日比較用、google.cloud.storage=既存ingestと同方式)。
+- `src/analysis/career_rank_change.py`(④): 前回snapshot比較で順位上昇検知(band[10,20,50,100]またぎ or today_rank<=50)。title「NPB通算{label}{value}、歴代{rank}位に浮上({抜いた相手}を抜く)」。初回はbaseline保存のみ記事0。env `DATA_INSIGHT_RANK_CHANGE=1` gate、既定draft、X§11。
+- 実データ検証: 全史HR=王868..坂本300(19位)/丸291(20位)、丸301本シナリオで「丸佳浩 歴代19位に浮上(坂本勇人を抜く)」生成確認。
+- commit `c8c9d727` / test 8 + 関連85 pass / regression 0。image `rank-change-c8c9d72`(build中)→ env flip予定。
+- 既知gap: 岡本和真 career cache total 空(NPB scrape parse失敗、ingest側fix follow-up)。
+- 次: /data/ranking 通算タブ(サイト、data-site-publisher側で共有部品を消費)。
+
 ## 2026-06-04 設計Phase 1先頭 — ② 節目カウントダウン(現役通算記録接近)
 
 設計 `data-articles-no1-design.md` §2②。現役の通算記録が節目に接近したら記事化。

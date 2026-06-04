@@ -11,6 +11,8 @@
 
 ⑥ 現役vsレジェンド対比(同年齢時点の通算比較)は **OB の年度別データが必須**だが、`ob_legends_full` は career総計のみ(years は文字列、年度別なし)。→ 684 OB の年度別 scrape が前提。fact精度critical(age計算誤り=致命的NG)+ 大scope(684 scrape)= quick loopでなくデータ基盤案件。設計も「年度別精度検証してから」と gate。**user 判断(着手するか/scope)待ちで停止**。
 **設計 data-articles-no1 は ⑥(データブロック)を除き全項目 LIVE 完走。**
+
+→ **作業タスク化済**: `doc/waiting/471-DATA-ARTICLE-legend-comparison-data-prereq.md`(status=BLOCKED_USER)。README board・仕様 §10 に着手手順(案A PoC=21名検証→684拡張→⑥実装)記載。次の判断=案A PoC に GO するか。
 - **§16-B 漏れ修正**(user「ちゃんと直ってる?」指摘): 球団打率タイトル「巨人 4/6 位 0.215」の先頭0未除去を `fmt_stat` で `.215` に。commit `685b63c2` / image `team-avg-fmt-685b63c` deploy + prod db verify。「4/6位」は6球団分母有意で保持(別判断)。
 
 ## 2026-06-04 Phase 1先頭 — ② 節目カウントダウン(現役通算記録接近)

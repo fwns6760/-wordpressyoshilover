@@ -189,6 +189,18 @@ def _run_data_insight_auto_publish(*, db_path: Path) -> tuple[dict[str, Any], di
                     ranking_publish_summary["career_milestone_error"] = (
                         f"{type(exc).__name__}:{exc}"
                     )
+                # ④ 通算ランキング変動(全史 NPB通算で順位上昇)。新タイプのため env
+                # flag gate(DATA_INSIGHT_RANK_CHANGE=1)+ 既定 draft。X 解放は §11。
+                try:
+                    from src.analysis import career_rank_change as rank_chg
+                    if rank_chg.enabled():
+                        ranking_publish_summary["career_rank_change"] = (
+                            rank_chg.run_and_publish(wp)
+                        )
+                except Exception as exc:  # noqa: BLE001
+                    ranking_publish_summary["career_rank_change_error"] = (
+                        f"{type(exc).__name__}:{exc}"
+                    )
                 # 348 step 3 part 2 D-1: player counting stats ranking
                 # title variation のため multi-scope 投入
                 # (season / last_30d / monthly / weekly)、 step 3 part 1

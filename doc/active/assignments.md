@@ -9,8 +9,8 @@
 - dedup: titleに残り数を含めtitle再利用で「残り変化時のみ再掲」自然成立。env `DATA_INSIGHT_CAREER_MILESTONE=1` gate(default OFF)+ 既定draft。X解放§11。
 - insight_nightly に③直後で配線。prod cache検証: **丸佳浩 本塁打291→300(あと9)/盗塁188→200(あと12)** が現候補。
 - commit `e2992366` / test 8 + 関連99 pass / regression 0。
-- deploy: image `career-ms-e299236`(build進行中)→ job update + env flip 予定。
-- 次: Phase1続き = 全史ランキング計算(共有部品）→ /data/ranking通算タブ + ④ランキング変動。
+- **deploy LIVE_VERIFIED**: image `career-ms-e299236`、env `DATA_INSIGHT_CAREER_MILESTONE=1`、exec `insight-nightly-gqp2g`。draft `79867`(丸291本→300あと9）/`79868`(丸188盗→200あと12）生成、丸の顔写真eyecatch、error0、draft(公開影響ゼロ)。
+- 次: Phase1続き = 全史ランキング計算(共有部品）→ /data/ranking通算タブ + ④ランキング変動(1部品2用途)。
 
 ## 2026-06-04 データ記事 Phase 0 再開 LIVE_VERIFIED
 

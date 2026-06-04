@@ -205,7 +205,8 @@ insight.db(✅DONE) ──┬─→ ⑤ ホット&コールド                  
   - /data/ranking 歴代(全史)タブ = LIVE(`build_alltime_leaders` + render、共有部品の2用途目、page 76423)。
 - **Phase 2 部分完了**(2026-06-04):
   - /data/record 記録室ハブ = LIVE(`build_record_room`、共有部品再利用、名球会/節目クラブ、cluster nav 🏛記録室)。
-  - ⑤ ホット&コールド = **defer**(自律進めず)。検知器 `detect_batter_recent_window_anomaly` は既に live だが記事化経路なし。新規 publish 角度化は 464 curation(user の わかりやすさ判定)+ 今日のヒーローと重複 のため **user 判断待ち**。
+  - ⑤ ホット&コールド = **LIVE**(`hotcold_article.py`、検知器 `detect_batter_recent_window_anomaly` 再利用、HOT のみ、env `DATA_INSIGHT_HOTCOLD=1`、draft)。draft `79938`「カナリオ 直近5試合 打率.450、絶好調」。受入試験で要否判断。
   - §16-B 漏れ(球団打率の先頭0 `0.215→.215`)を追修正(user 指摘)。
-- **次 = Phase 3**: ⑥ 現役 vs レジェンド対比(profile/年度別の age 計算精度検証が前提、未検証→慎重)。
+- **Phase 3 ⑥ = データブロック(停止)**: 現役vsレジェンド対比は OB の年度別データ必須だが ob_legends_full は career総計のみ(年度別なし)。684 OB 年度別 scrape が前提、fact精度critical + 大scope → **user 判断(着手/scope)待ち**。
+- **設計サマリ: ⑥(データブロック)を除く全項目が LIVE。** ③②④⑤ は draft、/data/ranking歴代タブ・/data/record記録室は公開、共有部品 alltime_ranking が3用途を回収。
 - ~~既知 gap: 岡本和真 の career cache total が空(parse失敗)~~ → **訂正(source確認済)**: 岡本和真/菅野智之は2026の NPB Giants roster に不在(MLB等)で current cache 非収録が正。両者は ob_legends_full に OB として収録済で全史/記録室にOBとして正常掲載(岡本=全史HR22位248本)。バグではない。② は現役通算のみ対象なので岡本は対象外で正。

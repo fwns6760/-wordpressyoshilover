@@ -15,20 +15,21 @@ class LegendsTemplateTests(unittest.TestCase):
         ]
 
     def test_render(self) -> None:
+        # 刷新: 50音×通算成績テーブル名鑑 (featured カード / 名球会見出しは廃止)。
         html = render_legends_html(self._entries())
         self.assertIn("長嶋茂雄", html)
-        self.assertIn("444本", html)
-        self.assertIn("/data/nagashima-shigeo/", html)
-        self.assertIn("永久欠番", html)
-        self.assertIn("112勝", html)  # 投手は勝/防御率
-        self.assertIn("OB・レジェンド", html)
+        self.assertIn("/data/nagashima-shigeo/", html)  # 名前→個別ページ
+        self.assertIn("50音で探す", html)                # 五十音ジャンプナビ
+        self.assertIn("歴代在籍選手", html)               # 新見出し
+        self.assertNotIn("名球会", html)                  # 名球会の特別枠は廃止
+        self.assertIn("OPS", html)                        # 打者テーブルの deep 列
 
     def test_title_excerpt(self) -> None:
         self.assertIn("OB", render_legends_title())
         self.assertIn("2名", render_legends_excerpt(self._entries()))
 
     def test_empty_safe(self) -> None:
-        self.assertIn("OB・レジェンド", render_legends_html([]))
+        self.assertIn("歴代在籍選手", render_legends_html([]))
 
 
 if __name__ == "__main__":

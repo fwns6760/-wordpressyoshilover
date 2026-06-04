@@ -329,23 +329,24 @@ def _build_ikusei_table_html(ikusei_entries: list[tuple[str, str]]) -> str:
 
 
 def _build_ob_table_html(ob_entries: list[tuple[str, str]]) -> str:
-    """OB・レジェンド 一覧 (氏名 chip リンク、 個別 profile ページへ)。"""
+    """OB・レジェンド: トップに全名を並べず、 50音 名鑑 (/data/legends/) への導線カードにする。
+
+    686名を /data に直貼りすると一覧性が崩れる (見づらい) ため、 トップは「歴代在籍選手名鑑」
+    への入口に集約し、 ブラウズ・通算成績は 50音 名鑑側へ誘導する。
+    """
     if not ob_entries:
         return ""
-    chips = "\n".join(
-        f'<a href="/data/{_esc(slug)}/" '
-        'style="display:inline-block;margin:4px 8px 4px 0;padding:8px 14px;background:#fff3e0;'
-        'border:1px solid #ffcc80;border-radius:18px;color:#e65100;text-decoration:none;font-size:14px;font-weight:600;">'
-        f'{_esc(name)}</a>'
-        for slug, name in ob_entries
-    )
+    n = len(ob_entries)
     return (
         '<section class="ys-cluster-ob-table" '
         'style="background:#fff;border:1px solid #eee;padding:14px;margin:0 0 20px;border-radius:4px;">'
-        f'<h2 style="font-size:16px;margin:0 0 6px;">OB・レジェンド ({len(ob_entries)} 名)</h2>'
-        '<p style="font-size:12px;color:#666;margin:0 0 10px;">読売ジャイアンツを代表する歴代の名選手。 '
-        '現役時代の通算成績・代表実績・関連記事をまとめています (メジャー移籍選手はMLB実績も)。</p>'
-        f'<div>{chips}</div>'
+        f'<h2 style="font-size:16px;margin:0 0 6px;">歴代在籍選手名鑑 ({n} 名)</h2>'
+        '<p style="font-size:12px;color:#666;margin:0 0 12px;">読売ジャイアンツ歴代の名選手を50音で一覧。 '
+        '打者は打率・出塁率・OPS、 投手は防御率・WHIP まで通算成績を掲載しています。</p>'
+        '<a href="/data/legends/" '
+        'style="display:block;text-align:center;padding:14px;background:#e65100;color:#fff;'
+        'border-radius:6px;text-decoration:none;font-size:15px;font-weight:700;">'
+        f'🎖 歴代在籍選手 通算成績名鑑(50音)で {n} 名を見る →</a>'
         '</section>'
     )
 

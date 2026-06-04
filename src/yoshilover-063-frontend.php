@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Yoshilover 063 Frontend (topic hub / SNS reactions / Phase 1 noindex)
  * Description: 062 contract §2 §3 §5 の front impl。topic hub / SNS block / noindex を基盤に、トップ速報帯・記事下回遊束・右カラム rail・上部密集ナビ・人気記事導線まで含めて SWELL front を高密度化する。既存 SWELL コメント欄は触らない。
- * Version: 0.20.2
+ * Version: 0.21.0
  * Author: yoshilover
  */
 
@@ -6002,3 +6002,110 @@ function yoshilover_063_render_this_day_in_history( $atts ) {
     return $html;
 }
 add_shortcode( 'yoshi_this_day_in_history', 'yoshilover_063_render_this_day_in_history' );
+
+/* ------------------------------------------------------------
+ * データサイト専用 sitemap (/data-sitemap.xml)
+ *
+ *    /data/ ハブ (page id 73526) 配下の全公開ページだけを列挙する
+ *    独立 sitemap。SEO SIMPLE PACK の page-sitemap.xml は post_type=page
+ *    を URL パスで絞れないため、データサイト No.1 の coverage を Search
+ *    Console で単独追跡できるよう専用 sitemap を出す。
+ *
+ *    - rewrite flush に依存しないよう init で REQUEST_URI を直接 intercept
+ *    - get_pages(child_of) で全子孫 (選手 / ranking / team / record /
+ *      legends とその下位) を深さに関係なく取得
+ *    - 1 時間 transient cache (crawler 専用 endpoint、毎回再構築不要)
+ * ---------------------------------------------------------- */
+
+if ( ! defined( 'YOSHILOVER_063_DATA_HUB_PAGE_ID' ) ) {
+    define( 'YOSHILOVER_063_DATA_HUB_PAGE_ID', 73526 );
+}
+
+add_action( 'init', 'yoshilover_063_data_sitemap_route' );
+
+/**
+ * /data-sitemap.xml を intercept して専用 sitemap を返す。
+ */
+function yoshilover_063_data_sitemap_route() {
+    if ( empty( $_SERVER['REQUEST_URI'] ) ) {
+        return;
+    }
+    $path = wp_parse_url( wp_unslash( $_SERVER['REQUEST_URI'] ), PHP_URL_PATH );
+    if ( '/data-sitemap.xml' !== $path && '/data-sitemap.xml/' !== $path ) {
+        return;
+    }
+
+    $xml = get_transient( 'yoshilover_063_data_sitemap_xml' );
+    if ( false === $xml ) {
+        $xml = yoshilover_063_build_data_sitemap_xml();
+        set_transient( 'yoshilover_063_data_sitemap_xml', $xml, HOUR_IN_SECONDS );
+    }
+
+    if ( ! headers_sent() ) {
+        header( 'Content-Type: application/xml; charset=UTF-8' );
+        header( 'X-Robots-Tag: noindex' ); // sitemap 自体は index 不要
+    }
+    echo $xml; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- 各 URL は esc_url 済み
+    exit;
+}
+
+/**
+ * /data 配下の公開ページから sitemap XML 文字列を構築する。
+ *
+ * @return string
+ */
+function yoshilover_063_build_data_sitemap_xml() {
+    $hub_id = (int) YOSHILOVER_063_DATA_HUB_PAGE_ID;
+
+    $children = get_pages(
+        array(
+            'child_of'    => $hub_id,
+            'post_status' => 'publish',
+            'sort_column' => 'menu_order, post_title',
+        )
+    );
+
+    $ids = array( $hub_id ); // ハブ自身も含める
+    if ( is_array( $children ) ) {
+        foreach ( $children as $child ) {
+            $ids[] = (int) $child->ID;
+        }
+    }
+
+    $out  = '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
+    $out .= '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' . "\n";
+
+    foreach ( $ids as $pid ) {
+        if ( 'publish' !== get_post_status( $pid ) ) {
+            continue;
+        }
+        $loc = get_permalink( $pid );
+        if ( ! $loc ) {
+            continue;
+        }
+        $lastmod = get_post_modified_time( 'c', true, $pid );
+        $out    .= "  <url>\n";
+        $out    .= '    <loc>' . esc_url( $loc ) . "</loc>\n";
+        if ( $lastmod ) {
+            $out .= '    <lastmod>' . esc_html( $lastmod ) . "</lastmod>\n";
+        }
+        $out .= "  </url>\n";
+    }
+
+    $out .= '</urlset>' . "\n";
+
+    return $out;
+}
+
+/**
+ * /data 配下のページが保存されたら sitemap cache を捨てる。
+ *
+ * @param int $post_id 保存された post ID。
+ */
+function yoshilover_063_flush_data_sitemap_cache( $post_id ) {
+    if ( 'page' !== get_post_type( $post_id ) ) {
+        return;
+    }
+    delete_transient( 'yoshilover_063_data_sitemap_xml' );
+}
+add_action( 'save_post', 'yoshilover_063_flush_data_sitemap_cache' );

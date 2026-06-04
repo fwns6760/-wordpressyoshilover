@@ -257,7 +257,10 @@ def _build_pillar_info(player_name: str) -> PillarPlayerInfo | None:
     """1 player の Pillar 用 info をまとめ作る。 roster 未一致は None."""
     # OB・レジェンドは roster に居ない (退団/引退済)。 config 由来の profile で構築し、
     # live stats query は行わない (関連記事 + 写真のみ取得)。
-    ob = ob_legend(player_name)
+    # 現役roster(現役選手・監督・コーチ)に在籍する名前は OB 扱いしない。
+    # 退団した過去選手が現コーチを兼ねる場合 (内海哲也=投手コーチ 等)、 OB として
+    # 解決すると監督・コーチ表から消え、 position 表へ誤混入するため現役を優先。
+    ob = ob_legend(player_name) if not load_roster_player(player_name) else None
     if ob:
         slug = ob.get("slug") or player_slug(player_name)
         return PillarPlayerInfo(

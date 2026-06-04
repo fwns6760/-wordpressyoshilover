@@ -219,9 +219,35 @@ def load_ob_legends() -> dict:
     return _ob_cache
 
 
+_current_roster_names_cache: Optional[set] = None
+
+
+def _current_roster_names() -> set:
+    """現役roster (現役選手・監督・コーチ) の正規化名 set。 OB 名鑑から除外する用。"""
+    global _current_roster_names_cache
+    if _current_roster_names_cache is not None:
+        return _current_roster_names_cache
+    names = set()
+    if _ROSTER_PATH.exists():
+        try:
+            for row in _json.loads(_ROSTER_PATH.read_text(encoding="utf-8")):
+                n = _norm_name(str(row.get("name", "") or ""))
+                if n:
+                    names.add(n)
+        except Exception as exc:  # noqa: BLE001
+            LOG.warning("roster parse error (current names): %r", exc)
+    _current_roster_names_cache = names
+    return names
+
+
 def load_ob_names() -> list[str]:
-    """OB の表示名 list (config order)。 個別ページ対象。"""
-    return list(load_ob_legends().get("order") or [])
+    """OB の表示名 list (config order)。 個別ページ対象。
+
+    現役roster (現役選手・監督・コーチ) に在籍する名前は除外する。 退団選手が現コーチを
+    兼ねる場合 (内海哲也 等) を OB として二重掲載せず、 現役側 (監督・コーチ表) で扱う。
+    """
+    cur = _current_roster_names()
+    return [n for n in (load_ob_legends().get("order") or []) if _norm_name(n) not in cur]
 
 
 def ob_legend(name: str) -> Optional[dict]:

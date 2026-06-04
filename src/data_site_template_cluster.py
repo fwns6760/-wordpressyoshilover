@@ -147,8 +147,9 @@ def _group_of(p: ClusterPlayerEntry) -> str:
     pos = (p.position or "").strip()
     if pos in ("投手", "捕手", "内野手", "外野手"):
         return pos
-    # 旧 "打者" 等の汎用値や空は内野手扱いに寄せる (production では position_group が必ず入る)
-    return "内野手"
+    # 支配下ポジション区分が定まらない (コーチ/OB/退団等) は position 表に入れない。
+    # 旧実装は「内野手に寄せる」既定で、 コーチ・退団投手が内野手一覧へ誤混入していた。
+    return ""
 
 
 def _build_batter_group_table_html(players: list[ClusterPlayerEntry], group: str, css: str) -> str:

@@ -2694,13 +2694,15 @@ def apply_x_impression_policy(
             player_key
             and player_key in seen_players
             and candidate.metric not in {
-                _VIDEO_RADAR_METRIC,
                 _HOCHI_REPLY_METRIC,
                 _REPLY_CANDIDATE_METRIC,
             }
         ):
-            # 動画候補 (451) は別 content type。 同選手のデータ候補が居ても落とさず
-            # 確実にメールへ届ける。 報知リプも同様に返信欄用の別用途として残す。
+            # 2026-06-04 user 決定:「引用RT＋記事を1選手1件に。リプは残す」。
+            # 旧 exemption から video_radar (引用RT) を外し、 引用RT と記事voice
+            # (GEMMA_BRANDING) を同選手で 1 件に。 append 順で高シグナルな動画引用RT が
+            # 先に来るので、 同選手では動画が優先的に残る。 報知リプ (HOCHI/REPLY) は
+            # 返信欄用の別アクションなので exempt のまま残す。
             reason = "dedup_player_in_mail"
 
         if reason:
@@ -2718,7 +2720,8 @@ def apply_x_impression_policy(
         if image_hash:
             seen_image_hashes.add(image_hash)
         if player_key and candidate.metric not in {
-            _VIDEO_RADAR_METRIC,
+            # 引用RT (video_radar) と記事voice は seen_players に登録 = 同選手で 1 件に。
+            # 報知リプだけは登録せず exempt のまま (返信欄用の別アクションとして残す)。
             _HOCHI_REPLY_METRIC,
             _REPLY_CANDIDATE_METRIC,
         }:

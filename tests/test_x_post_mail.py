@@ -3437,12 +3437,12 @@ class BuildQuoteRtCommentTests(unittest.TestCase):
 class VideoRadarImpressionPolicyTests(unittest.TestCase):
     """451: 動画候補は同選手のデータ候補が居ても落とさず確実に届ける。"""
 
-    def test_video_survives_player_dedup_against_data_candidate(self):
-        from src.x_post_mail_lane import Candidate, apply_x_impression_policy, _VIDEO_RADAR_METRIC
-        data_c = Candidate(
-            title="坂本勇人 OPS", metric="OPS", period_label="今シーズン",
-            draft_text="x", char_count=10, signature="ops|sakamoto",
-            post_text="坂本勇人 OPS .900", focus_player="坂本勇人",
+    def test_video_preferred_over_article_for_same_player(self):
+        # 2026-06-04 user 決定:「引用RT＋記事を1選手1件に。引用RT優先」。
+        # 同選手の引用RT(video) と記事voice(GEMINI_BRANDING) は 1 件に絞り、
+        # append 順で先に来る引用RT が残り、 同選手の記事は dedup される。
+        from src.x_post_mail_lane import (
+            Candidate, apply_x_impression_policy, _VIDEO_RADAR_METRIC, _GEMINI_BRANDING_METRIC,
         )
         video_c = Candidate(
             title="(動画) 名場面回顧｜巨人公式｜坂本", metric=_VIDEO_RADAR_METRIC,
@@ -3450,11 +3450,18 @@ class VideoRadarImpressionPolicyTests(unittest.TestCase):
             signature="video_radar|VID1", post_text="坂本勇人 名場面 ▶ url",
             focus_player="坂本勇人",
         )
-        kept, dropped = apply_x_impression_policy([data_c, video_c])
+        article_c = Candidate(
+            title="X-post branding｜坂本勇人", metric=_GEMINI_BRANDING_METRIC,
+            period_label="記事voice", draft_text="x", char_count=10,
+            signature="gemini|sakamoto", post_text="坂本勇人の一打は痺れたな。",
+            focus_player="坂本勇人",
+        )
+        kept, dropped = apply_x_impression_policy([video_c, article_c])
         kept_sigs = {c.signature for c in kept}
-        self.assertIn("ops|sakamoto", kept_sigs)
-        self.assertIn("video_radar|VID1", kept_sigs)  # 同選手でも動画は残る
-        self.assertEqual(dropped, [])
+        self.assertIn("video_radar|VID1", kept_sigs)       # 引用RT が優先で残る
+        self.assertNotIn("gemini|sakamoto", kept_sigs)     # 同選手の記事は 1 件に絞られ落ちる
+        self.assertEqual(len(dropped), 1)
+        self.assertEqual(dropped[0][1], "dedup_player_in_mail")
 
     def test_hochi_reply_survives_player_dedup_against_data_candidate(self):
         from src.x_post_mail_lane import Candidate, apply_x_impression_policy, _HOCHI_REPLY_METRIC

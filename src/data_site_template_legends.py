@@ -105,12 +105,13 @@ def _kata_to_hira(ch: str) -> str:
 
 
 def _gyo_of(kana: str) -> str:
-    """かな/カナ先頭 → 個別音ラベル (清音に正規化)。 該当しなければ『他』。"""
-    if not kana:
-        return "他"
-    head = _kata_to_hira(kana[0])
-    head = _KANA_BASE.get(head, head)
-    return head if head in _KANA_ORDER else "他"
+    """かな/カナ → 個別音ラベル (清音に正規化)。 先頭の英字・初期名 (W. 等) はスキップして
+    最初のカナで判定 (助っ人 'W.クロマティ'→く)。 該当しなければ『他』。"""
+    for ch in kana or "":
+        head = _KANA_BASE.get(_kata_to_hira(ch), _kata_to_hira(ch))
+        if head in _KANA_ORDER:
+            return head
+    return "他"
 
 
 def _legend_card(e: dict) -> str:
@@ -192,8 +193,12 @@ def render_legends_html(entries: list) -> str:
     entries = [e for e in entries if e]
 
     def _index_key(e: dict) -> str:
-        # kana → 補完 → display_name (カタカナ助っ人も _gyo_of がカナ→かな変換)。
-        return e.get("kana") or _KANA_FALLBACK.get(e.get("display_name", ""), "") or e.get("display_name", "")
+        # 実際に 50音 が取れる文字列を優先。 roster kana が助っ人ではローマ字
+        # ('WARREN CROMARTIE') のことがあるため、 取れなければ display_name (W.クロマティ→く)。
+        for s in (e.get("kana"), _KANA_FALLBACK.get(e.get("display_name", ""), ""), e.get("display_name", "")):
+            if s and _gyo_of(s) != "他":
+                return s
+        return e.get("display_name", "")
 
     # 全選手を個別音で索引化 (駒田=こ / クロマティ=く / 篠塚=し で正確に着地。 行単位でなく音単位)。
     groups: dict[str, list] = {}

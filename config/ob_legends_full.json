@@ -1,6 +1,6 @@
 {
   "_source": "21名=手動精密curation(温存) + その他=ja.wikipedia 通算成績 自動抽出(21名 ground truth で 100% 一致検証済)",
-  "_note": "Tier0 網羅。key=正規化名。honors は手動21名のみ。自動分は npb 通算stat + slug + years。",
+  "_note": "Tier0 網羅。key=正規化名。honors は手動21名のみ。自動分は npb 通算stat + slug + years。 / 助っ人含む benchmark 網羅を augment (augment_ob_legends_foreign)",
   "order": [
     "長嶋茂雄",
     "王貞治",
@@ -685,7 +685,201 @@
     "渡辺秀武",
     "渡辺政仁",
     "渡部弘",
-    "和田恋"
+    "和田恋",
+    "A.ポレダ",
+    "A.アブレイユ",
+    "A.ウォーカー",
+    "A.バーンサイド",
+    "A.カステヤーノス",
+    "A.ゲレーロ",
+    "A.ラミレス",
+    "A.サンチェス",
+    "A.カミネロ",
+    "A.リベラ",
+    "B.ガルベス",
+    "B.ガリクソン",
+    "B.バニスター",
+    "B.シコースキー",
+    "B.コーリー",
+    "C.トーレス",
+    "C.マギー",
+    "C.ケアリー",
+    "C.レイサム",
+    "C.セドン",
+    "C.ビヤヌエバ",
+    "C.ライト",
+    "C.モンテス",
+    "C.ベイリー",
+    "D.ホリンズ",
+    "D.グラッデン",
+    "D.ミセリ",
+    "ダニエル M.",
+    "D.メイ",
+    "D.ジョンソン",
+    "デビット&thinsp;P.",
+    "D.ホールトン",
+    "DENNY.ゴンザレス",
+    "DICKY.ゴンザレス",
+    "D.マルティネス",
+    "エドガー&thinsp;G.",
+    "E.アルフォンゾ",
+    "E.デセンス",
+    "E.ヒルマン",
+    "E.テームズ",
+    "E.ウレーニャ",
+    "F.クレスポ",
+    "F.セペダ",
+    "G.キャプラー",
+    "ギャレット&thinsp;J.",
+    "G.グローバー",
+    "G.ラス",
+    "G.トマソン",
+    "G.アリアス",
+    "G.パーラ",
+    "GG",
+    "G.ポランコ",
+    "H.アルモンテ",
+    "H.クルーズ",
+    "H.デラクルーズ",
+    "H.メンドーサ",
+    "H.コトー",
+    "I.クロール",
+    "I.モタ",
+    "J.ハウエル",
+    "J.リンド",
+    "J.マント",
+    "J.パウエル(ＪＰ)",
+    "J.バーフィールド",
+    "J.ジョーンズ",
+    "J.ディロン",
+    "J.ボウカー",
+    "J.パセラ",
+    "J.シピン",
+    "J.ワズディン",
+    "J.アルバラデホ",
+    "J.マルティネス",
+    "J.A.ガルシア",
+    "J.デラクルーズ",
+    "J.ロペス",
+    "ホセ&thinsp;P.",
+    "J.フィールズ",
+    "J.フランシスコ",
+    "J.サンタナ",
+    "J.スモーク",
+    "J.B.ミアディッチ",
+    "K.カムストック",
+    "L.アンダーソン",
+    "L.ロメロ",
+    "L.ブリンソン",
+    "L.モスビー",
+    "L.クルーズ",
+    "L.ゴンザレス",
+    "L.サンチェ",
+    "ルイス&thinsp;S.",
+    "M.アコスタ",
+    "M.ソリマン",
+    "M.クルーン",
+    "M.ダンカン",
+    "マリオ&thinsp;B.",
+    "M.アンドリース",
+    "M.ランデル",
+    "M.シューメーカー",
+    "M.ブラントリー",
+    "M.ブラウン",
+    "M.マイコラス",
+    "N.ディプラン",
+    "P.カステヤーノ",
+    "P.ブラッドリー",
+    "R.スミス",
+    "R.ラモス",
+    "R.クルーガー",
+    "R.ペタジーニ",
+    "R.ペドラザ",
+    "R.オドーア",
+    "R.ホワイト",
+    "R.デラロサ",
+    "R.ライアル",
+    "R.クック",
+    "S.アダメス",
+    "S.ハイネマン",
+    "S.マシソン",
+    "S.マレン",
+    "S.グライシンガー",
+    "S.マック",
+    "T.ヤングマン",
+    "T.ビエイラ",
+    "T.ローズ",
+    "T.ビーディ",
+    "V.スタルヒン(須田 博)",
+    "W.クロマティ",
+    "W.オビスポ",
+    "Y.ロペス",
+    "Y.メンデス",
+    "Y.ペレス",
+    "Z.ウィーラー",
+    "青山 誠",
+    "阿部 剣友",
+    "荒井 颯太",
+    "荒川 厳",
+    "石川 厚",
+    "伊藤 海斗",
+    "太田 龍",
+    "岡本 大翔",
+    "萩野 一雄",
+    "柿澤 貴裕",
+    "笠井 駿",
+    "笠島 尚樹",
+    "加藤 廉",
+    "川相 拓也",
+    "川嵜 陽仁",
+    "北之園 隆生",
+    "黒田 響生",
+    "小山 翔平",
+    "鈴木 実",
+    "高橋 明",
+    "髙橋(高橋) 洸",
+    "高山 竜太朗",
+    "巽 大介",
+    "田中 大輝",
+    "田中 優大",
+    "谷口 紀念治",
+    "田村 幹雄",
+    "遠山 隆男",
+    "中村 国雄",
+    "中村 常寿",
+    "中村 稔",
+    "長原 孝治",
+    "那須 静雄",
+    "奈良木 陸",
+    "成瀬 功亮",
+    "西山 正已",
+    "野草 義輝",
+    "野口 勝治",
+    "萩原 哲",
+    "橋本 篤郎",
+    "比嘉 賢伸",
+    "平井 快青",
+    "広畑 塁",
+    "福嶋 知春",
+    "藤田 宗一",
+    "藤原 利美",
+    "保科 広一",
+    "MICHEAL(M・中村)",
+    "前田 研輝",
+    "松井 義弥",
+    "松岡 光雄",
+    "松崎 啄也",
+    "宮國 涼丞",
+    "森 昌彦(祇晶)",
+    "八島 米雄",
+    "矢島 陽平",
+    "八浪 彬雄",
+    "八幡 英男",
+    "山﨑 友輔",
+    "山下 亜文",
+    "山田 幸造",
+    "與那原 大剛",
+    "渡部 久二男"
   ],
   "stats": {
     "長嶋茂雄": {
@@ -11387,6 +11581,2773 @@
       "years": "2013-2019",
       "teams": "読売ジャイアンツ",
       "kana": "わだ れん"
+    },
+    "A.ポレダ": {
+      "slug": "poreda",
+      "type": "pitcher",
+      "years": "2015-2016",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 69,
+        "w": 12,
+        "era": "3.36",
+        "k": 153
+      },
+      "kana": "AARON POREDA",
+      "display_name": "A.ポレダ"
+    },
+    "A.アブレイユ": {
+      "slug": "abreu",
+      "type": "batter",
+      "years": "2016-2016",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 7,
+        "avg": ".250",
+        "hits": 4,
+        "hr": 0,
+        "rbi": 4
+      },
+      "kana": "ABNER ABREU",
+      "display_name": "A.アブレイユ"
+    },
+    "A.ウォーカー": {
+      "slug": "walker",
+      "type": "batter",
+      "years": "2022-2023",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 201,
+        "avg": ".258",
+        "hits": 152,
+        "hr": 30,
+        "rbi": 75
+      },
+      "kana": "ADAM WALKER",
+      "display_name": "A.ウォーカー"
+    },
+    "A.バーンサイド": {
+      "slug": "burnside",
+      "type": "pitcher",
+      "years": "2008-2009",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 54,
+        "w": 21,
+        "era": "4.47",
+        "k": 176
+      },
+      "kana": "ADRIAN BURNSIDE",
+      "display_name": "A.バーンサイド"
+    },
+    "A.カステヤーノス": {
+      "slug": "castellanos",
+      "type": "batter",
+      "years": "2015-2015",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 30,
+        "avg": ".148",
+        "hits": 9,
+        "hr": 2,
+        "rbi": 5
+      },
+      "kana": "ALEX CASTELLANOS",
+      "display_name": "A.カステヤーノス"
+    },
+    "A.ゲレーロ": {
+      "slug": "guerrero",
+      "type": "batter",
+      "years": "2018-2019",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 1037,
+        "avg": ".283",
+        "hits": 908,
+        "hr": 184,
+        "rbi": 623
+      },
+      "kana": "ALEX GUERRERO",
+      "display_name": "A.ゲレーロ"
+    },
+    "A.ラミレス": {
+      "slug": "ramirez",
+      "type": "batter",
+      "years": "2008-2011",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 1879,
+        "avg": ".299",
+        "hits": 2103,
+        "hr": 392,
+        "rbi": 1320
+      },
+      "kana": "ALEX RAMIREZ",
+      "display_name": "A.ラミレス"
+    },
+    "A.サンチェス": {
+      "slug": "sanchez20",
+      "type": "pitcher",
+      "years": "2020-2021",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 94,
+        "w": 39,
+        "era": "3.85",
+        "k": 395
+      },
+      "kana": "ANGEL SANCHEZ",
+      "display_name": "A.サンチェス"
+    },
+    "A.カミネロ": {
+      "slug": "caminero",
+      "type": "pitcher",
+      "years": "2017-2018",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 226,
+        "w": 11,
+        "era": "3.61",
+        "k": 227
+      },
+      "kana": "ARQUIMEDES CAMINERO",
+      "display_name": "A.カミネロ"
+    },
+    "A.リベラ": {
+      "slug": "rivera",
+      "type": "batter",
+      "years": "1939-1940",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 76,
+        "avg": ".268",
+        "hits": 69,
+        "hr": 6,
+        "rbi": 42
+      },
+      "kana": "ATILANO RIVERA",
+      "display_name": "A.リベラ"
+    },
+    "B.ガルベス": {
+      "slug": "galvez",
+      "type": "pitcher",
+      "years": "1996-2000",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 179,
+        "w": 82,
+        "era": "3.01",
+        "k": 742
+      },
+      "kana": "BALVINO GALVEZ",
+      "display_name": "B.ガルベス"
+    },
+    "B.ガリクソン": {
+      "slug": "gullickson",
+      "type": "pitcher",
+      "years": "1988-1989",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 439,
+        "w": 183,
+        "era": "3.86",
+        "k": 1510
+      },
+      "kana": "BILL GULLICKSON",
+      "display_name": "B.ガリクソン"
+    },
+    "B.バニスター": {
+      "slug": "bannister",
+      "type": "pitcher",
+      "years": "2011-2011",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 117,
+        "w": 37,
+        "era": "5.08",
+        "k": 384
+      },
+      "kana": "BRIAN BANNISTER",
+      "display_name": "B.バニスター"
+    },
+    "B.シコースキー": {
+      "slug": "sikorski",
+      "type": "pitcher",
+      "years": "2004-2005",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 478,
+        "w": 41,
+        "era": "3.34",
+        "k": 668
+      },
+      "kana": "BRIAN SIKORSKI",
+      "display_name": "B.シコースキー"
+    },
+    "B.コーリー": {
+      "slug": "corey",
+      "type": "pitcher",
+      "years": "2004-2004",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 156,
+        "w": 15,
+        "era": "4.80",
+        "k": 167
+      },
+      "kana": "BRYAN COREY",
+      "display_name": "B.コーリー"
+    },
+    "C.トーレス": {
+      "slug": "torres",
+      "type": "pitcher",
+      "years": "2011-2011",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 368,
+        "w": 31,
+        "era": "4.20",
+        "k": 466
+      },
+      "kana": "CARLOS TORRES",
+      "display_name": "C.トーレス"
+    },
+    "C.マギー": {
+      "slug": "mcgehee",
+      "type": "batter",
+      "years": "2017-2018",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 1265,
+        "avg": ".272",
+        "hits": 1178,
+        "hr": 134,
+        "rbi": 634
+      },
+      "kana": "CASEY McGEHEE",
+      "display_name": "C.マギー"
+    },
+    "C.ケアリー": {
+      "slug": "cary",
+      "type": "pitcher",
+      "years": "1992-1992",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 153,
+        "w": 17,
+        "era": "4.10",
+        "k": 357
+      },
+      "kana": "CHARLES CARY",
+      "display_name": "C.ケアリー"
+    },
+    "C.レイサム": {
+      "slug": "latham",
+      "type": "batter",
+      "years": "2003-2004",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 170,
+        "avg": ".209",
+        "hits": 72,
+        "hr": 10,
+        "rbi": 36
+      },
+      "kana": "CHRIS LATHAM",
+      "display_name": "C.レイサム"
+    },
+    "C.セドン": {
+      "slug": "seddon",
+      "type": "pitcher",
+      "years": "2014-2014",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 126,
+        "w": 38,
+        "era": "4.37",
+        "k": 460
+      },
+      "kana": "CHRIS SEDDON",
+      "display_name": "C.セドン"
+    },
+    "C.ビヤヌエバ": {
+      "slug": "villanueva",
+      "type": "batter",
+      "years": "2019-2019",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 249,
+        "avg": ".234",
+        "hits": 176,
+        "hr": 36,
+        "rbi": 96
+      },
+      "kana": "CHRISTIAN VILLANUEVA",
+      "display_name": "C.ビヤヌエバ"
+    },
+    "C.ライト": {
+      "slug": "wright",
+      "type": "pitcher",
+      "years": "1976-1978",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 388,
+        "w": 122,
+        "era": "3.58",
+        "k": 809
+      },
+      "kana": "CLYDE WRIGHT",
+      "display_name": "C.ライト"
+    },
+    "C.モンテス": {
+      "slug": "montes",
+      "type": "batter",
+      "years": "2024-2024",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 64,
+        "avg": ".254",
+        "hits": 48,
+        "hr": 2,
+        "rbi": 17
+      },
+      "kana": "COCO MONTES",
+      "display_name": "C.モンテス"
+    },
+    "C.ベイリー": {
+      "slug": "bailey",
+      "type": "pitcher",
+      "years": "2003-2003",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 202,
+        "w": 10,
+        "era": "4.08",
+        "k": 182
+      },
+      "kana": "CORY BAILEY",
+      "display_name": "C.ベイリー"
+    },
+    "D.ホリンズ": {
+      "slug": "hollins",
+      "type": "batter",
+      "years": "2007-2007",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 380,
+        "avg": ".247",
+        "hits": 267,
+        "hr": 40,
+        "rbi": 131
+      },
+      "kana": "DAMON HOLLINS",
+      "display_name": "D.ホリンズ"
+    },
+    "D.グラッデン": {
+      "slug": "gladden",
+      "type": "batter",
+      "years": "1994-1994",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 1295,
+        "avg": ".270",
+        "hits": 1315,
+        "hr": 89,
+        "rbi": 483
+      },
+      "kana": "DAN GLADDEN",
+      "display_name": "D.グラッデン"
+    },
+    "D.ミセリ": {
+      "slug": "miceli",
+      "type": "pitcher",
+      "years": "2005-2005",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 635,
+        "w": 42,
+        "era": "4.56",
+        "k": 635
+      },
+      "kana": "DAN MICELI",
+      "display_name": "D.ミセリ"
+    },
+    "ダニエルM.": {
+      "slug": "daniel",
+      "type": "pitcher",
+      "years": "2021-2022",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 76,
+        "w": 12,
+        "era": "3.41",
+        "k": 190
+      },
+      "kana": "DANIEL MISSAKI",
+      "display_name": "ダニエル M."
+    },
+    "D.メイ": {
+      "slug": "may",
+      "type": "pitcher",
+      "years": "2000-2001",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 250,
+        "w": 58,
+        "era": "4.48",
+        "k": 954
+      },
+      "kana": "DARRELL MAY",
+      "display_name": "D.メイ"
+    },
+    "D.ジョンソン": {
+      "slug": "johnson",
+      "type": "batter",
+      "years": "1975-1976",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 1634,
+        "avg": ".259",
+        "hits": 1411,
+        "hr": 175,
+        "rbi": 721
+      },
+      "kana": "DAVEY JOHNSON",
+      "display_name": "D.ジョンソン"
+    },
+    "デビット&thinsp;P.": {
+      "slug": "david",
+      "type": "pitcher",
+      "years": "1997-1997",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 63,
+        "w": 6,
+        "era": "2.74",
+        "k": 65
+      },
+      "kana": "DAVID PAVLAS",
+      "display_name": "デビット&thinsp;P."
+    },
+    "D.ホールトン": {
+      "slug": "houlton",
+      "type": "pitcher",
+      "years": "2012-2013",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 208,
+        "w": 74,
+        "era": "3.62",
+        "k": 782
+      },
+      "kana": "DENNIS HOULTON",
+      "display_name": "D.ホールトン"
+    },
+    "DENNY.ゴンザレス": {
+      "slug": "gonzalez",
+      "type": "batter",
+      "years": "1991-1992",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 139,
+        "avg": ".220",
+        "hits": 85,
+        "hr": 13,
+        "rbi": 45
+      },
+      "kana": "DENNY GONZALEZ",
+      "display_name": "DENNY.ゴンザレス"
+    },
+    "DICKY.ゴンザレス": {
+      "slug": "gonzalez09",
+      "type": "pitcher",
+      "years": "2009-2012",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 163,
+        "w": 48,
+        "era": "3.68",
+        "k": 550
+      },
+      "kana": "DICKY GONZALEZ",
+      "display_name": "DICKY.ゴンザレス"
+    },
+    "D.マルティネス": {
+      "slug": "martinez",
+      "type": "batter",
+      "years": "1999-2001",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 553,
+        "avg": ".295",
+        "hits": 506,
+        "hr": 106,
+        "rbi": 356
+      },
+      "kana": "DOMINGO MARTINEZ",
+      "display_name": "D.マルティネス"
+    },
+    "エドガー&thinsp;G.": {
+      "slug": "gonzalez10",
+      "type": "batter",
+      "years": "2010-2012",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 350,
+        "avg": ".254",
+        "hits": 239,
+        "hr": 27,
+        "rbi": 114
+      },
+      "kana": "EDGAR GONZALEZ",
+      "display_name": "エドガー&thinsp;G."
+    },
+    "E.アルフォンゾ": {
+      "slug": "alfonzo",
+      "type": "batter",
+      "years": "2009-2009",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 1527,
+        "avg": ".283",
+        "hits": 1538,
+        "hr": 148,
+        "rbi": 748
+      },
+      "kana": "EDGARDO ALFONZO",
+      "display_name": "E.アルフォンゾ"
+    },
+    "E.デセンス": {
+      "slug": "dessens",
+      "type": "pitcher",
+      "years": "1999-1999",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 449,
+        "w": 52,
+        "era": "4.43",
+        "k": 699
+      },
+      "kana": "ELMER DESSENS",
+      "display_name": "E.デセンス"
+    },
+    "E.ヒルマン": {
+      "slug": "hillman",
+      "type": "pitcher",
+      "years": "1997-1998",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 108,
+        "w": 30,
+        "era": "3.43",
+        "k": 339
+      },
+      "kana": "ERIC HILLMAN",
+      "display_name": "E.ヒルマン"
+    },
+    "E.テームズ": {
+      "slug": "thames",
+      "type": "batter",
+      "years": "2021-2021",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 996,
+        "avg": ".287",
+        "hits": 923,
+        "hr": 220,
+        "rbi": 617
+      },
+      "kana": "ERIC THAMES",
+      "display_name": "E.テームズ"
+    },
+    "E.ウレーニャ": {
+      "slug": "urena",
+      "type": "batter",
+      "years": "2020-2024",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 22,
+        "avg": ".100",
+        "hits": 3,
+        "hr": 0,
+        "rbi": 0
+      },
+      "kana": "ESTAMY URENA",
+      "display_name": "E.ウレーニャ"
+    },
+    "F.クレスポ": {
+      "slug": "crespo",
+      "type": "batter",
+      "years": "2002-2002",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 286,
+        "avg": ".235",
+        "hits": 114,
+        "hr": 12,
+        "rbi": 75
+      },
+      "kana": "FELIPE CRESPO",
+      "display_name": "F.クレスポ"
+    },
+    "F.セペダ": {
+      "slug": "cepeda",
+      "type": "batter",
+      "years": "2014-2015",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 1491,
+        "avg": ".324",
+        "hits": 1602,
+        "hr": 238,
+        "rbi": 927
+      },
+      "kana": "FREDERICH CEPEDA",
+      "display_name": "F.セペダ"
+    },
+    "G.キャプラー": {
+      "slug": "kapler",
+      "type": "batter",
+      "years": "2005-2005",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 1142,
+        "avg": ".264",
+        "hits": 816,
+        "hr": 85,
+        "rbi": 392
+      },
+      "kana": "GABE KAPLER",
+      "display_name": "G.キャプラー"
+    },
+    "ギャレット&thinsp;J.": {
+      "slug": "garrett",
+      "type": "batter",
+      "years": "2016-2017",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 1034,
+        "avg": ".252",
+        "hits": 843,
+        "hr": 146,
+        "rbi": 468
+      },
+      "kana": "GARRETT JONES",
+      "display_name": "ギャレット&thinsp;J."
+    },
+    "G.グローバー": {
+      "slug": "glover",
+      "type": "pitcher",
+      "years": "2006-2006",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 349,
+        "w": 56,
+        "era": "4.65",
+        "k": 669
+      },
+      "kana": "GARY GLOVER",
+      "display_name": "G.グローバー"
+    },
+    "G.ラス": {
+      "slug": "rath",
+      "type": "pitcher",
+      "years": "2003-2003",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 163,
+        "w": 61,
+        "era": "3.91",
+        "k": 616
+      },
+      "kana": "GARY RATH",
+      "display_name": "G.ラス"
+    },
+    "G.トマソン": {
+      "slug": "thomasson",
+      "type": "batter",
+      "years": "1981-1982",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 1067,
+        "avg": ".249",
+        "hits": 710,
+        "hr": 81,
+        "rbi": 349
+      },
+      "kana": "GARY THOMASSON",
+      "display_name": "G.トマソン"
+    },
+    "G.アリアス": {
+      "slug": "arias",
+      "type": "batter",
+      "years": "2006-2006",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 812,
+        "avg": ".255",
+        "hits": 726,
+        "hr": 175,
+        "rbi": 491
+      },
+      "kana": "GEORGE ARIAS",
+      "display_name": "G.アリアス"
+    },
+    "G.パーラ": {
+      "slug": "para",
+      "type": "batter",
+      "years": "2020-2020",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 1566,
+        "avg": ".275",
+        "hits": 1374,
+        "hr": 94,
+        "rbi": 545
+      },
+      "kana": "GERARDO PARRA",
+      "display_name": "G.パーラ"
+    },
+    "GG": {
+      "slug": "gonzalez07",
+      "type": "pitcher",
+      "years": "2007-2007",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 136,
+        "w": 31,
+        "era": "4.99",
+        "k": 371
+      },
+      "kana": "GEREMI GONZALEZ",
+      "display_name": "GG"
+    },
+    "G.ポランコ": {
+      "slug": "polanco",
+      "type": "batter",
+      "years": "2022-2022",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 1243,
+        "avg": ".240",
+        "hits": 1038,
+        "hr": 174,
+        "rbi": 568
+      },
+      "kana": "GREGORY POLANCO",
+      "display_name": "G.ポランコ"
+    },
+    "H.アルモンテ": {
+      "slug": "almonte",
+      "type": "pitcher",
+      "years": "2001-2002",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 81,
+        "w": 1,
+        "era": "4.88",
+        "k": 63
+      },
+      "kana": "HECTOR ALMONTE",
+      "display_name": "H.アルモンテ"
+    },
+    "H.クルーズ": {
+      "slug": "cruz",
+      "type": "batter",
+      "years": "1983-1983",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 682,
+        "avg": ".226",
+        "hits": 392,
+        "hr": 43,
+        "rbi": 217
+      },
+      "kana": "HECTOR CRUZ",
+      "display_name": "H.クルーズ"
+    },
+    "H.デラクルーズ": {
+      "slug": "delacruz-hector",
+      "type": "batter",
+      "years": "1991-1991",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 251,
+        "avg": ".267",
+        "hits": 211,
+        "hr": 24,
+        "rbi": 97
+      },
+      "kana": "HECTOR De La CRUZ",
+      "display_name": "H.デラクルーズ"
+    },
+    "H.メンドーサ": {
+      "slug": "mendoza",
+      "type": "pitcher",
+      "years": "2014-2016",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 59,
+        "w": 8,
+        "era": "2.95",
+        "k": 110
+      },
+      "kana": "HECTOR MENDOZA",
+      "display_name": "H.メンドーサ"
+    },
+    "H.コトー": {
+      "slug": "cotto",
+      "type": "batter",
+      "years": "1994-1994",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 991,
+        "avg": ".260",
+        "hits": 665,
+        "hr": 62,
+        "rbi": 262
+      },
+      "kana": "HENRY COTTO",
+      "display_name": "H.コトー"
+    },
+    "I.クロール": {
+      "slug": "krol",
+      "type": "pitcher",
+      "years": "2022-2022",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 264,
+        "w": 9,
+        "era": "4.43",
+        "k": 211
+      },
+      "kana": "IAN KROL",
+      "display_name": "I.クロール"
+    },
+    "I.モタ": {
+      "slug": "mota",
+      "type": "batter",
+      "years": "2019-2020",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 9,
+        "avg": ".222",
+        "hits": 2,
+        "hr": 1,
+        "rbi": 4
+      },
+      "kana": "ISRAEL MOTA",
+      "display_name": "I.モタ"
+    },
+    "J.ハウエル": {
+      "slug": "howell",
+      "type": "batter",
+      "years": "1995-1995",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 1346,
+        "avg": ".257",
+        "hits": 1029,
+        "hr": 208,
+        "rbi": 609
+      },
+      "kana": "JACK HOWELL",
+      "display_name": "J.ハウエル"
+    },
+    "J.リンド": {
+      "slug": "lind",
+      "type": "batter",
+      "years": "1977-1977",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 91,
+        "avg": ".221",
+        "hits": 52,
+        "hr": 9,
+        "rbi": 24
+      },
+      "kana": "JACK LIND",
+      "display_name": "J.リンド"
+    },
+    "J.マント": {
+      "slug": "manto",
+      "type": "batter",
+      "years": "1996-1996",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 299,
+        "avg": ".226",
+        "hits": 167,
+        "hr": 31,
+        "rbi": 98
+      },
+      "kana": "JEFF MANTO",
+      "display_name": "J.マント"
+    },
+    "J.パウエル(ＪＰ)": {
+      "slug": "powell",
+      "type": "pitcher",
+      "years": "2006-2007",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 208,
+        "w": 74,
+        "era": "4.19",
+        "k": 935
+      },
+      "kana": "JEREMY POWELL",
+      "display_name": "J.パウエル(ＪＰ)"
+    },
+    "J.バーフィールド": {
+      "slug": "barfield",
+      "type": "batter",
+      "years": "1993-1993",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 1532,
+        "avg": ".253",
+        "hits": 1293,
+        "hr": 267,
+        "rbi": 769
+      },
+      "kana": "JESSE BARFIELD",
+      "display_name": "J.バーフィールド"
+    },
+    "J.ジョーンズ": {
+      "slug": "jones",
+      "type": "pitcher",
+      "years": "1994-1995",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 173,
+        "w": 52,
+        "era": "4.38",
+        "k": 427
+      },
+      "kana": "JIMMY JONES",
+      "display_name": "J.ジョーンズ"
+    },
+    "J.ディロン": {
+      "slug": "dillon",
+      "type": "batter",
+      "years": "2006-2006",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 168,
+        "avg": ".243",
+        "hits": 74,
+        "hr": 5,
+        "rbi": 26
+      },
+      "kana": "JOE DILLON",
+      "display_name": "J.ディロン"
+    },
+    "J.ボウカー": {
+      "slug": "bowker",
+      "type": "batter",
+      "years": "2012-2013",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 479,
+        "avg": ".236",
+        "hits": 293,
+        "hr": 41,
+        "rbi": 151
+      },
+      "kana": "JOHN BOWKER",
+      "display_name": "J.ボウカー"
+    },
+    "J.パセラ": {
+      "slug": "pacella",
+      "type": "pitcher",
+      "years": "1987-1987",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 74,
+        "w": 4,
+        "era": "5.73",
+        "k": 116
+      },
+      "kana": "JOHN PACELLA",
+      "display_name": "J.パセラ"
+    },
+    "J.シピン": {
+      "slug": "sipin",
+      "type": "batter",
+      "years": "1978-1980",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 1104,
+        "avg": ".293",
+        "hits": 1175,
+        "hr": 220,
+        "rbi": 634
+      },
+      "kana": "JOHN SIPIN",
+      "display_name": "J.シピン"
+    },
+    "J.ワズディン": {
+      "slug": "wasdin",
+      "type": "pitcher",
+      "years": "2002-2002",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 352,
+        "w": 42,
+        "era": "5.25",
+        "k": 582
+      },
+      "kana": "JOHN WASDIN",
+      "display_name": "J.ワズディン"
+    },
+    "J.アルバラデホ": {
+      "slug": "albaladejo",
+      "type": "pitcher",
+      "years": "2011-2011",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 112,
+        "w": 8,
+        "era": "3.59",
+        "k": 100
+      },
+      "kana": "JONATHAN ALBALADEJO",
+      "display_name": "J.アルバラデホ"
+    },
+    "J.マルティネス": {
+      "slug": "martinez17",
+      "type": "batter",
+      "years": "2017-2019",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 25,
+        "avg": ".174",
+        "hits": 12,
+        "hr": 2,
+        "rbi": 6
+      },
+      "kana": "JORGE MARTINEZ",
+      "display_name": "J.マルティネス"
+    },
+    "J.A.ガルシア": {
+      "slug": "garcia",
+      "type": "batter",
+      "years": "2016-2016",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 898,
+        "avg": ".256",
+        "hits": 820,
+        "hr": 150,
+        "rbi": 523
+      },
+      "kana": "JOSE A GARCIA",
+      "display_name": "J.A.ガルシア"
+    },
+    "J.デラクルーズ": {
+      "slug": "delacruz-jose",
+      "type": "batter",
+      "years": "2021-2023",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 0
+      },
+      "kana": "JOSE De La CRUZ",
+      "display_name": "J.デラクルーズ"
+    },
+    "J.ロペス": {
+      "slug": "lopez",
+      "type": "batter",
+      "years": "2013-2014",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 2029,
+        "avg": ".268",
+        "hits": 2006,
+        "hr": 290,
+        "rbi": 1068
+      },
+      "kana": "JOSE LOPEZ",
+      "display_name": "J.ロペス"
+    },
+    "ホセ&thinsp;P.": {
+      "slug": "jose",
+      "type": "pitcher",
+      "years": "1999-1999",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 217,
+        "w": 28,
+        "era": "4.57",
+        "k": 313
+      },
+      "kana": "JOSE PARRA",
+      "display_name": "ホセ&thinsp;P."
+    },
+    "J.フィールズ": {
+      "slug": "fields",
+      "type": "batter",
+      "years": "2011-2011",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 257,
+        "avg": ".230",
+        "hits": 189,
+        "hr": 36,
+        "rbi": 116
+      },
+      "kana": "JOSH FIELDS",
+      "display_name": "J.フィールズ"
+    },
+    "J.フランシスコ": {
+      "slug": "francisco",
+      "type": "batter",
+      "years": "2015-2015",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 409,
+        "avg": ".235",
+        "hits": 238,
+        "hr": 48,
+        "rbi": 153
+      },
+      "kana": "JUAN FRANCISCO",
+      "display_name": "J.フランシスコ"
+    },
+    "J.サンタナ": {
+      "slug": "santana",
+      "type": "pitcher",
+      "years": "2003-2004",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 234,
+        "w": 19,
+        "era": "5.28",
+        "k": 329
+      },
+      "kana": "JULIO SANTANA",
+      "display_name": "J.サンタナ"
+    },
+    "J.スモーク": {
+      "slug": "smoak",
+      "type": "batter",
+      "years": "2021-2021",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 1320,
+        "avg": ".230",
+        "hits": 982,
+        "hr": 203,
+        "rbi": 584
+      },
+      "kana": "JUSTIN SMOAK",
+      "display_name": "J.スモーク"
+    },
+    "J.B.ミアディッチ": {
+      "slug": "miadich",
+      "type": "pitcher",
+      "years": "2005-2005",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 27,
+        "w": 0,
+        "era": "7.02",
+        "k": 43
+      },
+      "kana": "J・B MIADICH",
+      "display_name": "J.B.ミアディッチ"
+    },
+    "K.カムストック": {
+      "slug": "comstock",
+      "type": "pitcher",
+      "years": "1985-1986",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 168,
+        "w": 18,
+        "era": "4.25",
+        "k": 236
+      },
+      "kana": "KEITH COMSTOCK",
+      "display_name": "K.カムストック"
+    },
+    "L.アンダーソン": {
+      "slug": "anderson",
+      "type": "batter",
+      "years": "2014-2016",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 959,
+        "avg": ".322",
+        "hits": 1099,
+        "hr": 107,
+        "rbi": 555
+      },
+      "kana": "LESLIE ANDERSON",
+      "display_name": "L.アンダーソン"
+    },
+    "L.ロメロ": {
+      "slug": "romero",
+      "type": "pitcher",
+      "years": "2009-2012",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 51,
+        "w": 2,
+        "era": "3.10",
+        "k": 48
+      },
+      "kana": "LEVI ROMERO",
+      "display_name": "L.ロメロ"
+    },
+    "L.ブリンソン": {
+      "slug": "brinson",
+      "type": "batter",
+      "years": "2023-2023",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 445,
+        "avg": ".208",
+        "hits": 282,
+        "hr": 39,
+        "rbi": 144
+      },
+      "kana": "LEWIS BRINSON",
+      "display_name": "L.ブリンソン"
+    },
+    "L.モスビー": {
+      "slug": "moseby",
+      "type": "batter",
+      "years": "1992-1993",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 1721,
+        "avg": ".259",
+        "hits": 1628,
+        "hr": 198,
+        "rbi": 821
+      },
+      "kana": "LLOYD MOSEBY",
+      "display_name": "L.モスビー"
+    },
+    "L.クルーズ": {
+      "slug": "cruz16",
+      "type": "batter",
+      "years": "2016-2017",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 557,
+        "avg": ".241",
+        "hits": 465,
+        "hr": 50,
+        "rbi": 233
+      },
+      "kana": "LUIS CRUZ",
+      "display_name": "L.クルーズ"
+    },
+    "L.ゴンザレス": {
+      "slug": "gonzalez08",
+      "type": "batter",
+      "years": "2007-2008",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 348,
+        "avg": ".283",
+        "hits": 301,
+        "hr": 28,
+        "rbi": 127
+      },
+      "kana": "LUIS GONZALEZ",
+      "display_name": "L.ゴンザレス"
+    },
+    "L.サンチェ": {
+      "slug": "sanchez",
+      "type": "pitcher",
+      "years": "1986-1987",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 270,
+        "w": 32,
+        "era": "3.51",
+        "k": 275
+      },
+      "kana": "LUIS SANCHEZ",
+      "display_name": "L.サンチェ"
+    },
+    "ルイス&thinsp;S.": {
+      "slug": "luis",
+      "type": "batter",
+      "years": "1997-1997",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 686,
+        "avg": ".332",
+        "hits": 840,
+        "hr": 114,
+        "rbi": 493
+      },
+      "kana": "LUIS SANTOS",
+      "display_name": "ルイス&thinsp;S."
+    },
+    "M.アコスタ": {
+      "slug": "acosta",
+      "type": "pitcher",
+      "years": "2013-2013",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 247,
+        "w": 14,
+        "era": "4.07",
+        "k": 231
+      },
+      "kana": "MANNY ACOSTA",
+      "display_name": "M.アコスタ"
+    },
+    "M.ソリマン": {
+      "slug": "soliman",
+      "type": "batter",
+      "years": "2016-2017",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 13
+      },
+      "kana": "MANUEL SOLIMAN",
+      "display_name": "M.ソリマン"
+    },
+    "M.クルーン": {
+      "slug": "kroon",
+      "type": "pitcher",
+      "years": "2008-2010",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 330,
+        "w": 14,
+        "era": "3.09",
+        "k": 440
+      },
+      "kana": "MARC KROON",
+      "display_name": "M.クルーン"
+    },
+    "M.ダンカン": {
+      "slug": "duncan",
+      "type": "batter",
+      "years": "1998-1998",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 1342,
+        "avg": ".265",
+        "hits": 1295,
+        "hr": 97,
+        "rbi": 525
+      },
+      "kana": "MARIANO DUNCAN",
+      "display_name": "M.ダンカン"
+    },
+    "マリオ&thinsp;B.": {
+      "slug": "mario",
+      "type": "pitcher",
+      "years": "1996-1996",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 89,
+        "w": 7,
+        "era": "3.64",
+        "k": 147
+      },
+      "kana": "MARIO BRITO",
+      "display_name": "マリオ&thinsp;B."
+    },
+    "M.アンドリース": {
+      "slug": "andriese",
+      "type": "pitcher",
+      "years": "2022-2022",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 226,
+        "w": 28,
+        "era": "4.65",
+        "k": 499
+      },
+      "kana": "MATT ANDRIESE",
+      "display_name": "M.アンドリース"
+    },
+    "M.ランデル": {
+      "slug": "randel",
+      "type": "pitcher",
+      "years": "2003-2004",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 144,
+        "w": 53,
+        "era": "3.58",
+        "k": 515
+      },
+      "kana": "MATT RANDEL",
+      "display_name": "M.ランデル"
+    },
+    "M.シューメーカー": {
+      "slug": "shoemaker",
+      "type": "pitcher",
+      "years": "2022-2022",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 146,
+        "w": 50,
+        "era": "4.24",
+        "k": 645
+      },
+      "kana": "MATT SHOEMAKER",
+      "display_name": "M.シューメーカー"
+    },
+    "M.ブラントリー": {
+      "slug": "brantley",
+      "type": "batter",
+      "years": "1993-1993",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 315,
+        "avg": ".256",
+        "hits": 303,
+        "hr": 0,
+        "rbi": 129
+      },
+      "kana": "MICKEY BRANTLY",
+      "display_name": "M.ブラントリー"
+    },
+    "M.ブラウン": {
+      "slug": "brown",
+      "type": "batter",
+      "years": "1990-1990",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 385,
+        "avg": ".268",
+        "hits": 303,
+        "hr": 30,
+        "rbi": 142
+      },
+      "kana": "MIKE BROWN",
+      "display_name": "M.ブラウン"
+    },
+    "M.マイコラス": {
+      "slug": "mikolas",
+      "type": "pitcher",
+      "years": "2015-2017",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 303,
+        "w": 103,
+        "era": "3.72",
+        "k": 1273
+      },
+      "kana": "MILES MIKOLAS",
+      "display_name": "M.マイコラス"
+    },
+    "N.ディプラン": {
+      "slug": "diplan",
+      "type": "pitcher",
+      "years": "2020-2020",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 2,
+        "w": 0,
+        "era": "19.29",
+        "k": 2
+      },
+      "kana": "NATTINO DIPLAN",
+      "display_name": "N.ディプラン"
+    },
+    "P.カステヤーノ": {
+      "slug": "castellano",
+      "type": "batter",
+      "years": "1997-1997",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 115,
+        "avg": ".181",
+        "hits": 39,
+        "hr": 7,
+        "rbi": 32
+      },
+      "kana": "PEDRO CASTELLANO",
+      "display_name": "P.カステヤーノ"
+    },
+    "P.ブラッドリー": {
+      "slug": "bradley",
+      "type": "batter",
+      "years": "1991-1991",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 1143,
+        "avg": ".286",
+        "hits": 1182,
+        "hr": 99,
+        "rbi": 446
+      },
+      "kana": "PHIL BRADLEY",
+      "display_name": "P.ブラッドリー"
+    },
+    "R.スミス": {
+      "slug": "smith",
+      "type": "batter",
+      "years": "1983-1984",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 2173,
+        "avg": ".286",
+        "hits": 2154,
+        "hr": 359,
+        "rbi": 1214
+      },
+      "kana": "REGGIE SMITH",
+      "display_name": "R.スミス"
+    },
+    "R.ラモス": {
+      "slug": "ramos",
+      "type": "pitcher",
+      "years": "2019-2020",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 78,
+        "w": 11,
+        "era": "2.85",
+        "k": 129
+      },
+      "kana": "REIMIN RAMOS",
+      "display_name": "R.ラモス"
+    },
+    "R.クルーガー": {
+      "slug": "kreuger",
+      "type": "pitcher",
+      "years": "1979-1979",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 35,
+        "w": 4,
+        "era": "4.30",
+        "k": 36
+      },
+      "kana": "RICK KREUGER",
+      "display_name": "R.クルーガー"
+    },
+    "R.ペタジーニ": {
+      "slug": "petagine",
+      "type": "batter",
+      "years": "2003-2004",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 1262,
+        "avg": ".308",
+        "hits": 1169,
+        "hr": 278,
+        "rbi": 824
+      },
+      "kana": "ROBERTO PETAGINE",
+      "display_name": "R.ペタジーニ"
+    },
+    "R.ペドラザ": {
+      "slug": "pedraza",
+      "type": "pitcher",
+      "years": "2003-2003",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 194,
+        "w": 12,
+        "era": "2.99",
+        "k": 126
+      },
+      "kana": "RODNEY PEDRAZA",
+      "display_name": "R.ペドラザ"
+    },
+    "R.オドーア": {
+      "slug": "odor",
+      "type": "batter",
+      "years": "2024-2024",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 1154,
+        "avg": ".230",
+        "hits": 930,
+        "hr": 178,
+        "rbi": 568
+      },
+      "kana": "ROUGNED ODOR",
+      "display_name": "R.オドーア"
+    },
+    "R.ホワイト": {
+      "slug": "white",
+      "type": "batter",
+      "years": "1980-1982",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 2243,
+        "avg": ".273",
+        "hits": 2151,
+        "hr": 214,
+        "rbi": 930
+      },
+      "kana": "ROY WHITE",
+      "display_name": "R.ホワイト"
+    },
+    "R.デラロサ": {
+      "slug": "delarosa",
+      "type": "pitcher",
+      "years": "2019-2022",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 235,
+        "w": 30,
+        "era": "3.62",
+        "k": 474
+      },
+      "kana": "RUBBY De La ROSA",
+      "display_name": "R.デラロサ"
+    },
+    "R.ライアル": {
+      "slug": "ryal",
+      "type": "batter",
+      "years": "2011-2011",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 167,
+        "avg": ".246",
+        "hits": 89,
+        "hr": 6,
+        "rbi": 24
+      },
+      "kana": "RUSTY RYAL",
+      "display_name": "R.ライアル"
+    },
+    "R.クック": {
+      "slug": "cook",
+      "type": "pitcher",
+      "years": "2019-2019",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 249,
+        "w": 15,
+        "era": "3.65",
+        "k": 242
+      },
+      "kana": "RYAN COOK",
+      "display_name": "R.クック"
+    },
+    "S.アダメス": {
+      "slug": "adames",
+      "type": "pitcher",
+      "years": "2016-2019",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 39,
+        "w": 0,
+        "era": "4.57",
+        "k": 23
+      },
+      "kana": "SAMUEL ADAMES",
+      "display_name": "S.アダメス"
+    },
+    "S.ハイネマン": {
+      "slug": "heineman",
+      "type": "batter",
+      "years": "2021-2021",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 78,
+        "avg": ".170",
+        "hits": 31,
+        "hr": 5,
+        "rbi": 19
+      },
+      "kana": "SCOTT HEINEMAN",
+      "display_name": "S.ハイネマン"
+    },
+    "S.マシソン": {
+      "slug": "mathieson",
+      "type": "pitcher",
+      "years": "2012-2019",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 436,
+        "w": 28,
+        "era": "2.86",
+        "k": 526
+      },
+      "kana": "SCOTT MATHIESON",
+      "display_name": "S.マシソン"
+    },
+    "S.マレン": {
+      "slug": "mullen",
+      "type": "pitcher",
+      "years": "2005-2005",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 125,
+        "w": 17,
+        "era": "5.15",
+        "k": 202
+      },
+      "kana": "SCOTT MULLEN",
+      "display_name": "S.マレン"
+    },
+    "S.グライシンガー": {
+      "slug": "greisinger",
+      "type": "pitcher",
+      "years": "2008-2011",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 224,
+        "w": 94,
+        "era": "3.57",
+        "k": 970
+      },
+      "kana": "SETH GREISINGER",
+      "display_name": "S.グライシンガー"
+    },
+    "S.マック": {
+      "slug": "mack",
+      "type": "batter",
+      "years": "1995-1996",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 1170,
+        "avg": ".295",
+        "hits": 1126,
+        "hr": 122,
+        "rbi": 525
+      },
+      "kana": "SHANE MACK",
+      "display_name": "S.マック"
+    },
+    "T.ヤングマン": {
+      "slug": "jungmann",
+      "type": "pitcher",
+      "years": "2018-2019",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 44,
+        "w": 15,
+        "era": "4.65",
+        "k": 179
+      },
+      "kana": "TAYLOR JUNGMANN",
+      "display_name": "T.ヤングマン"
+    },
+    "T.ビエイラ": {
+      "slug": "vieira",
+      "type": "pitcher",
+      "years": "2020-2022",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 145,
+        "w": 2,
+        "era": "4.56",
+        "k": 166
+      },
+      "kana": "THYAGO VIEIRA",
+      "display_name": "T.ビエイラ"
+    },
+    "T.ローズ": {
+      "slug": "rhodes",
+      "type": "batter",
+      "years": "2004-2005",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 1899,
+        "avg": ".280",
+        "hits": 1924,
+        "hr": 477,
+        "rbi": 1313
+      },
+      "kana": "TUFFY RHODES",
+      "display_name": "T.ローズ"
+    },
+    "T.ビーディ": {
+      "slug": "beede",
+      "type": "batter",
+      "years": "2023-2023",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 102,
+        "avg": ".106",
+        "hits": 5,
+        "hr": 0,
+        "rbi": 3
+      },
+      "kana": "TYLER BEEDE",
+      "display_name": "T.ビーディ"
+    },
+    "V.スタルヒン(須田博)": {
+      "slug": "starffin",
+      "type": "pitcher",
+      "years": "1934-1944",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 586,
+        "w": 303,
+        "era": "2.09",
+        "k": 1960
+      },
+      "kana": "VICTOR STARFFIN／すた ひろし",
+      "display_name": "V.スタルヒン(須田 博)"
+    },
+    "W.クロマティ": {
+      "slug": "cromartie",
+      "type": "batter",
+      "years": "1984-1990",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 1886,
+        "avg": ".298",
+        "hits": 2055,
+        "hr": 232,
+        "rbi": 949
+      },
+      "kana": "WARREN CROMARTIE",
+      "display_name": "W.クロマティ"
+    },
+    "W.オビスポ": {
+      "slug": "obispo",
+      "type": "pitcher",
+      "years": "2007-2010",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 32,
+        "w": 8,
+        "era": "4.13",
+        "k": 71
+      },
+      "kana": "WIRFIN OBISPO",
+      "display_name": "W.オビスポ"
+    },
+    "Y.ロペス": {
+      "slug": "lopez23",
+      "type": "pitcher",
+      "years": "2023-2023",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 176,
+        "w": 18,
+        "era": "3.97",
+        "k": 211
+      },
+      "kana": "YOAN LOPEZ",
+      "display_name": "Y.ロペス"
+    },
+    "Y.メンデス": {
+      "slug": "mendez",
+      "type": "pitcher",
+      "years": "2023-2024",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 60,
+        "w": 18,
+        "era": "3.67",
+        "k": 206
+      },
+      "kana": "YOHANDER MENDEZ",
+      "display_name": "Y.メンデス"
+    },
+    "Y.ペレス": {
+      "slug": "perez",
+      "type": "pitcher",
+      "years": "1992-1992",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 340,
+        "w": 14,
+        "era": "4.49",
+        "k": 265
+      },
+      "kana": "YORKIS PEREZ",
+      "display_name": "Y.ペレス"
+    },
+    "Z.ウィーラー": {
+      "slug": "wheeler",
+      "type": "batter",
+      "years": "2020-2022",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 874,
+        "avg": ".261",
+        "hits": 751,
+        "hr": 137,
+        "rbi": 447
+      },
+      "kana": "ZELOUS WHEELER",
+      "display_name": "Z.ウィーラー"
+    },
+    "青山誠": {
+      "slug": "aoyama-makoto",
+      "type": "batter",
+      "years": "2013-2018",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 84,
+        "avg": ".242",
+        "hits": 44,
+        "hr": 4,
+        "rbi": 23
+      },
+      "kana": "あおやま まこと",
+      "display_name": "青山 誠"
+    },
+    "阿部剣友": {
+      "slug": "abe-kenyu",
+      "type": "pitcher",
+      "years": "2020-2023",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 0
+      },
+      "kana": "あべ けんゆう",
+      "display_name": "阿部 剣友"
+    },
+    "荒井颯太": {
+      "slug": "arai-sota",
+      "type": "batter",
+      "years": "2017-2020",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 9,
+        "avg": ".250",
+        "hits": 2,
+        "hr": 0,
+        "rbi": 0
+      },
+      "kana": "あらい そうた",
+      "display_name": "荒井 颯太"
+    },
+    "荒川厳": {
+      "slug": "arakawa-iwao",
+      "type": "pitcher",
+      "years": "1966-1971",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 38,
+        "w": 1,
+        "era": "4.45",
+        "k": 26
+      },
+      "kana": "あらかわ いわお",
+      "display_name": "荒川 厳"
+    },
+    "石川厚": {
+      "slug": "ishikawa-atsushi",
+      "type": "pitcher",
+      "years": "1977-1979",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 2,
+        "w": 1,
+        "era": "3.18",
+        "k": 0
+      },
+      "kana": "いしかわ あつし",
+      "display_name": "石川 厚"
+    },
+    "伊藤海斗": {
+      "slug": "itoh-kaito",
+      "type": "batter",
+      "years": "2019-2022",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 0
+      },
+      "kana": "いとう かいと",
+      "display_name": "伊藤 海斗"
+    },
+    "太田龍": {
+      "slug": "ota-ryu",
+      "type": "pitcher",
+      "years": "2019-2023",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 0
+      },
+      "kana": "おおた りゅう",
+      "display_name": "太田 龍"
+    },
+    "岡本大翔": {
+      "slug": "okamoto-hiroto",
+      "type": "batter",
+      "years": "2020-2024",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 28,
+        "avg": ".159",
+        "hits": 11,
+        "hr": 1,
+        "rbi": 5
+      },
+      "kana": "おかもと ひろと",
+      "display_name": "岡本 大翔"
+    },
+    "萩野一雄": {
+      "slug": "ogino-kazuo",
+      "type": "pitcher",
+      "years": "1960-1961",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 1,
+        "w": 0,
+        "era": "9.00",
+        "k": 0
+      },
+      "kana": "おぎの かずを",
+      "display_name": "萩野 一雄"
+    },
+    "柿澤貴裕": {
+      "slug": "kakizawa-takahiro",
+      "type": "batter",
+      "years": "2017-2018",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 0
+      },
+      "kana": "かきざわ たかひろ",
+      "display_name": "柿澤 貴裕"
+    },
+    "笠井駿": {
+      "slug": "kasai-shun",
+      "type": "batter",
+      "years": "2017-2020",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 23,
+        "avg": ".088",
+        "hits": 3,
+        "hr": 0,
+        "rbi": 0
+      },
+      "kana": "かさい しゅん",
+      "display_name": "笠井 駿"
+    },
+    "笠島尚樹": {
+      "slug": "kasashima-naoki",
+      "type": "pitcher",
+      "years": "2020-2024",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 47,
+        "w": 3,
+        "era": "4.42",
+        "k": 89
+      },
+      "kana": "かさしま なおき",
+      "display_name": "笠島 尚樹"
+    },
+    "加藤廉": {
+      "slug": "katoh-ren",
+      "type": "batter",
+      "years": "2020-2024",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 131,
+        "avg": ".226",
+        "hits": 72,
+        "hr": 3,
+        "rbi": 23
+      },
+      "kana": "かとう れん",
+      "display_name": "加藤 廉"
+    },
+    "川相拓也": {
+      "slug": "kawai-takuya",
+      "type": "batter",
+      "years": "2014-2017",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 64,
+        "avg": ".196",
+        "hits": 11,
+        "hr": 0,
+        "rbi": 2
+      },
+      "kana": "かわい たくや",
+      "display_name": "川相 拓也"
+    },
+    "川嵜陽仁": {
+      "slug": "kawasaki-haruto",
+      "type": "pitcher",
+      "years": "2021-2024",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 7,
+        "w": 0,
+        "era": "9.49",
+        "k": 9
+      },
+      "kana": "かわさき はると",
+      "display_name": "川嵜 陽仁"
+    },
+    "北之園隆生": {
+      "slug": "kitanosono-ryusei",
+      "type": "batter",
+      "years": "2013-2016",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 25,
+        "avg": ".200",
+        "hits": 6,
+        "hr": 0,
+        "rbi": 0
+      },
+      "kana": "きたのその りゅうせい",
+      "display_name": "北之園 隆生"
+    },
+    "黒田響生": {
+      "slug": "kuroda-hibiki",
+      "type": "batter",
+      "years": "2018-2022",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 48,
+        "avg": ".172",
+        "hits": 17,
+        "hr": 1,
+        "rbi": 10
+      },
+      "kana": "くろだ ひびき",
+      "display_name": "黒田 響生"
+    },
+    "小山翔平": {
+      "slug": "koyama-shohei",
+      "type": "batter",
+      "years": "2017-2020",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 14,
+        "avg": ".222",
+        "hits": 2,
+        "hr": 1,
+        "rbi": 1
+      },
+      "kana": "こやま しょうへい",
+      "display_name": "小山 翔平"
+    },
+    "鈴木実": {
+      "slug": "suzuki-minoru",
+      "type": "pitcher",
+      "years": "1953-1954",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 16,
+        "w": 1,
+        "era": "1.89",
+        "k": 11
+      },
+      "kana": "すずき みのる",
+      "display_name": "鈴木 実"
+    },
+    "高橋明": {
+      "slug": "takahashi-akira",
+      "type": "pitcher",
+      "years": "1961-1970",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 311,
+        "w": 71,
+        "era": "3.43",
+        "k": 543
+      },
+      "kana": "たかはし あきら",
+      "display_name": "高橋 明"
+    },
+    "髙橋(高橋)洸": {
+      "slug": "takahashi-koh",
+      "type": "batter",
+      "years": "2011-2017",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 0
+      },
+      "kana": "たかはし こう",
+      "display_name": "髙橋(高橋) 洸"
+    },
+    "高山竜太朗": {
+      "slug": "takayama-ryutaro",
+      "type": "batter",
+      "years": "2016-2020",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 62,
+        "avg": ".157",
+        "hits": 16,
+        "hr": 4,
+        "rbi": 17
+      },
+      "kana": "たかやま りゅうたろう",
+      "display_name": "高山 竜太朗"
+    },
+    "巽大介": {
+      "slug": "tatsumi-daisuke",
+      "type": "pitcher",
+      "years": "2015-2020",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 0
+      },
+      "kana": "たつみ だいすけ",
+      "display_name": "巽 大介"
+    },
+    "田中大輝": {
+      "slug": "tanaka-daiki",
+      "type": "pitcher",
+      "years": "2014-2018",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 3,
+        "w": 0,
+        "era": "0.00",
+        "k": 3
+      },
+      "kana": "たなか だいき",
+      "display_name": "田中 大輝"
+    },
+    "田中優大": {
+      "slug": "tanaka-yudai",
+      "type": "pitcher",
+      "years": "2017-2021",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 23,
+        "w": 0,
+        "era": "3.63",
+        "k": 25
+      },
+      "kana": "たなか ゆうだい",
+      "display_name": "田中 優大"
+    },
+    "谷口紀念治": {
+      "slug": "taniguchi-kineji",
+      "type": "batter",
+      "years": "1946-1946",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 6,
+        "avg": ".308",
+        "hits": 4,
+        "hr": 0,
+        "rbi": 1
+      },
+      "kana": "たにぐち きねじ",
+      "display_name": "谷口 紀念治"
+    },
+    "田村幹雄": {
+      "slug": "tamura-mikio",
+      "type": "pitcher",
+      "years": "1943-1944",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 2,
+        "w": 0,
+        "era": "10.00",
+        "k": 5
+      },
+      "kana": "たむら みきお",
+      "display_name": "田村 幹雄"
+    },
+    "遠山隆男": {
+      "slug": "tohyama-takao",
+      "type": "batter",
+      "years": "1943-1943",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 2,
+        "avg": ".000",
+        "hits": 0,
+        "hr": 0,
+        "rbi": 0
+      },
+      "kana": "とおやま たかお",
+      "display_name": "遠山 隆男"
+    },
+    "中村国雄": {
+      "slug": "nakamura-kunio",
+      "type": "batter",
+      "years": "1950-1952",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 3,
+        "avg": ".333",
+        "hits": 1,
+        "hr": 0,
+        "rbi": 0
+      },
+      "kana": "なかむら くにお",
+      "display_name": "中村 国雄"
+    },
+    "中村常寿": {
+      "slug": "nakamura-tsunetoshi",
+      "type": "pitcher",
+      "years": "1959-1961",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 17,
+        "w": 1,
+        "era": "4.75",
+        "k": 27
+      },
+      "kana": "なかむら つねとし",
+      "display_name": "中村 常寿"
+    },
+    "中村稔": {
+      "slug": "nakamura-minoru",
+      "type": "pitcher",
+      "years": "1957-1969",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 352,
+        "w": 72,
+        "era": "2.76",
+        "k": 649
+      },
+      "kana": "なかむら みのる",
+      "display_name": "中村 稔"
+    },
+    "長原孝治": {
+      "slug": "nagahara-koji",
+      "type": "pitcher",
+      "years": "1947-1947",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 3,
+        "w": 0,
+        "era": "9.00",
+        "k": 3
+      },
+      "kana": "ながはら こうじ",
+      "display_name": "長原 孝治"
+    },
+    "那須静雄": {
+      "slug": "nasu-shizuo",
+      "type": "batter",
+      "years": "1961-1961",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 2,
+        "avg": ".000",
+        "hits": 0,
+        "hr": 0,
+        "rbi": 0
+      },
+      "kana": "なす しずお",
+      "display_name": "那須 静雄"
+    },
+    "奈良木陸": {
+      "slug": "naraki-riku",
+      "type": "pitcher",
+      "years": "2020-2023",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 0
+      },
+      "kana": "ならき りく",
+      "display_name": "奈良木 陸"
+    },
+    "成瀬功亮": {
+      "slug": "naruse-kosuke",
+      "type": "pitcher",
+      "years": "2010-2018",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 47,
+        "w": 2,
+        "era": "3.31",
+        "k": 28
+      },
+      "kana": "なるせ こうすけ",
+      "display_name": "成瀬 功亮"
+    },
+    "西山正已": {
+      "slug": "nishiyama-masami",
+      "type": "batter",
+      "years": "1960-1963",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 27,
+        "avg": ".261",
+        "hits": 6,
+        "hr": 0,
+        "rbi": 1
+      },
+      "kana": "にしやま まさみ",
+      "display_name": "西山 正已"
+    },
+    "野草義輝": {
+      "slug": "nogusa-yoshiteru",
+      "type": "pitcher",
+      "years": "1949-1949",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 1,
+        "w": 0,
+        "era": "18.00",
+        "k": 0
+      },
+      "kana": "のぐさ よしてる",
+      "display_name": "野草 義輝"
+    },
+    "野口勝治": {
+      "slug": "noguchi-katsuharu",
+      "type": "pitcher",
+      "years": "1968-1968",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 1,
+        "w": 0,
+        "era": "4.50",
+        "k": 0
+      },
+      "kana": "のぐち かつはる",
+      "display_name": "野口 勝治"
+    },
+    "萩原哲": {
+      "slug": "hagiwara-tetsu",
+      "type": "batter",
+      "years": "2020-2024",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 0
+      },
+      "kana": "はぎわら てつ",
+      "display_name": "萩原 哲"
+    },
+    "橋本篤郎": {
+      "slug": "hashimoto-atsuro",
+      "type": "pitcher",
+      "years": "2015-2020",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 5,
+        "w": 0,
+        "era": "2.79",
+        "k": 7
+      },
+      "kana": "はしもと あつろう",
+      "display_name": "橋本 篤郎"
+    },
+    "比嘉賢伸": {
+      "slug": "higa-kenshin",
+      "type": "batter",
+      "years": "2017-2020",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 13,
+        "avg": ".143",
+        "hits": 2,
+        "hr": 0,
+        "rbi": 2
+      },
+      "kana": "ひが けんしん",
+      "display_name": "比嘉 賢伸"
+    },
+    "平井快青": {
+      "slug": "hirai-kaisei",
+      "type": "pitcher",
+      "years": "2018-2021",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 6,
+        "w": 0,
+        "era": "9.64",
+        "k": 4
+      },
+      "kana": "ひらい かいせい",
+      "display_name": "平井 快青"
+    },
+    "広畑塁": {
+      "slug": "hirohata-rui",
+      "type": "batter",
+      "years": "2017-2020",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 21,
+        "avg": ".053",
+        "hits": 1,
+        "hr": 0,
+        "rbi": 0
+      },
+      "kana": "ひろはた るい",
+      "display_name": "広畑 塁"
+    },
+    "福嶋知春": {
+      "slug": "fukushima-tomoharu",
+      "type": "batter",
+      "years": "1972-1983",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 157,
+        "avg": ".229",
+        "hits": 43,
+        "hr": 2,
+        "rbi": 9
+      },
+      "kana": "ふくしま ともはる",
+      "display_name": "福嶋 知春"
+    },
+    "藤田宗一": {
+      "slug": "fujita-soichi",
+      "type": "pitcher",
+      "years": "2008-2010",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 600,
+        "w": 19,
+        "era": "3.89",
+        "k": 366
+      },
+      "kana": "ふじた そういち",
+      "display_name": "藤田 宗一"
+    },
+    "藤原利美": {
+      "slug": "fujiwara-toshimi",
+      "type": "batter",
+      "years": "1948-1952",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 1,
+        "avg": ".000",
+        "hits": 0,
+        "hr": 0,
+        "rbi": 0
+      },
+      "kana": "ふじわら としみ",
+      "display_name": "藤原 利美"
+    },
+    "保科広一": {
+      "slug": "hoshina-koichi",
+      "type": "batter",
+      "years": "2020-2023",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 63,
+        "avg": ".244",
+        "hits": 41,
+        "hr": 1,
+        "rbi": 18
+      },
+      "kana": "ほしな こういち",
+      "display_name": "保科 広一"
+    },
+    "MICHEAL(M・中村)": {
+      "slug": "micheal",
+      "type": "pitcher",
+      "years": "2009-2011",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 319,
+        "w": 14,
+        "era": "2.79",
+        "k": 332
+      },
+      "kana": "まいける なかむら",
+      "display_name": "MICHEAL(M・中村)"
+    },
+    "前田研輝": {
+      "slug": "maeda-kenki",
+      "type": "batter",
+      "years": "2020-2024",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 33,
+        "avg": ".220",
+        "hits": 13,
+        "hr": 1,
+        "rbi": 4
+      },
+      "kana": "まえだ けんき",
+      "display_name": "前田 研輝"
+    },
+    "松井義弥": {
+      "slug": "matsui-yoshiya",
+      "type": "batter",
+      "years": "2018-2021",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 0
+      },
+      "kana": "まつい よしや",
+      "display_name": "松井 義弥"
+    },
+    "松岡光雄": {
+      "slug": "matsuoka-mitsuo",
+      "type": "pitcher",
+      "years": "1954-1954",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 7,
+        "w": 0,
+        "era": "4.30",
+        "k": 8
+      },
+      "kana": "まつおか みつお",
+      "display_name": "松岡 光雄"
+    },
+    "松崎啄也": {
+      "slug": "matsuzaki-takuya",
+      "type": "batter",
+      "years": "2015-2017",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 0
+      },
+      "kana": "まつざき たくや",
+      "display_name": "松崎 啄也"
+    },
+    "宮國涼丞": {
+      "slug": "miyaguni-ryosuke",
+      "type": "pitcher",
+      "years": "2010-2021",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 227,
+        "w": 22,
+        "era": "3.93",
+        "k": 291
+      },
+      "kana": "みやぐに りょうすけ",
+      "display_name": "宮國 涼丞"
+    },
+    "森昌彦(祇晶)": {
+      "slug": "mori-masahiko",
+      "type": "batter",
+      "years": "1955-1974",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 1884,
+        "avg": ".236",
+        "hits": 1341,
+        "hr": 81,
+        "rbi": 582
+      },
+      "kana": "もり まさひこ(まさあき)",
+      "display_name": "森 昌彦(祇晶)"
+    },
+    "八島米雄": {
+      "slug": "yashima-yoneo",
+      "type": "pitcher",
+      "years": "1948-1948",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 15,
+        "w": 2,
+        "era": "2.43",
+        "k": 12
+      },
+      "kana": "やしま よねお",
+      "display_name": "八島 米雄"
+    },
+    "矢島陽平": {
+      "slug": "yajima-yohei",
+      "type": "pitcher",
+      "years": "2015-2017",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 6,
+        "w": 0,
+        "era": "7.88",
+        "k": 3
+      },
+      "kana": "やじま ようへい",
+      "display_name": "矢島 陽平"
+    },
+    "八浪彬雄": {
+      "slug": "yatsunami-akio",
+      "type": "pitcher",
+      "years": "1953-1954",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 5,
+        "w": 0,
+        "era": "6.35",
+        "k": 4
+      },
+      "kana": "やつなみ あきお",
+      "display_name": "八浪 彬雄"
+    },
+    "八幡英男": {
+      "slug": "yahata-hideo",
+      "type": "batter",
+      "years": "1961-1965",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 4,
+        "avg": ".000",
+        "hits": 0,
+        "hr": 0,
+        "rbi": 0
+      },
+      "kana": "やはた ひでお",
+      "display_name": "八幡 英男"
+    },
+    "山﨑友輔": {
+      "slug": "yamasaki-yusuke",
+      "type": "pitcher",
+      "years": "2020-2024",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 39,
+        "w": 4,
+        "era": "4.94",
+        "k": 48
+      },
+      "kana": "やまさき ゆうすけ",
+      "display_name": "山﨑 友輔"
+    },
+    "山下亜文": {
+      "slug": "yamashita-amon",
+      "type": "pitcher",
+      "years": "2019-2019",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 5,
+        "w": 0,
+        "era": "4.15",
+        "k": 1
+      },
+      "kana": "やました あもん",
+      "display_name": "山下 亜文"
+    },
+    "山田幸造": {
+      "slug": "yamada-kozo",
+      "type": "pitcher",
+      "years": "1954-1958",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 5,
+        "w": 0,
+        "era": "2.70",
+        "k": 8
+      },
+      "kana": "やまだ こうぞう",
+      "display_name": "山田 幸造"
+    },
+    "與那原大剛": {
+      "slug": "yonahara-hirotaka",
+      "type": "pitcher",
+      "years": "2015-2022",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 0
+      },
+      "kana": "よなはら ひろたか",
+      "display_name": "與那原 大剛"
+    },
+    "渡部久二男": {
+      "slug": "watanabe-kunio",
+      "type": "batter",
+      "years": "1953-1955",
+      "teams": "読売ジャイアンツ",
+      "npb": {
+        "games": 1,
+        "avg": ".000",
+        "hits": 0,
+        "hr": 0,
+        "rbi": 0
+      },
+      "kana": "わたなべ くにお",
+      "display_name": "渡部 久二男"
     }
   }
 }

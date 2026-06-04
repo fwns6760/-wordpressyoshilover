@@ -177,6 +177,18 @@ def _run_data_insight_auto_publish(*, db_path: Path) -> tuple[dict[str, Any], di
                     ranking_publish_summary["ob_anniversary_error"] = (
                         f"{type(exc).__name__}:{exc}"
                     )
+                # ② 節目カウントダウン(現役の通算記録接近)。新タイプのため env
+                # flag gate(DATA_INSIGHT_CAREER_MILESTONE=1)+ 既定 draft。X 解放は §11。
+                try:
+                    from src.analysis import career_milestone as career_ms
+                    if career_ms.enabled():
+                        ranking_publish_summary["career_milestone"] = (
+                            career_ms.publish_approaching_milestone_articles(wp)
+                        )
+                except Exception as exc:  # noqa: BLE001
+                    ranking_publish_summary["career_milestone_error"] = (
+                        f"{type(exc).__name__}:{exc}"
+                    )
                 # 348 step 3 part 2 D-1: player counting stats ranking
                 # title variation のため multi-scope 投入
                 # (season / last_30d / monthly / weekly)、 step 3 part 1

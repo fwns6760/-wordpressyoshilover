@@ -210,3 +210,45 @@ insight.db(✅DONE) ──┬─→ ⑤ ホット&コールド                  
 - **Phase 3 ⑥ = データブロック(停止)**: 現役vsレジェンド対比は OB の年度別データ必須だが ob_legends_full は career総計のみ(年度別なし)。684 OB 年度別 scrape が前提、fact精度critical + 大scope → **user 判断(着手/scope)待ち**。
 - **設計サマリ: ⑥(データブロック)を除く全項目が LIVE。** ③②④⑤ は draft、/data/ranking歴代タブ・/data/record記録室は公開、共有部品 alltime_ranking が3用途を回収。
 - ~~既知 gap: 岡本和真 の career cache total が空(parse失敗)~~ → **訂正(source確認済)**: 岡本和真/菅野智之は2026の NPB Giants roster に不在(MLB等)で current cache 非収録が正。両者は ob_legends_full に OB として収録済で全史/記録室にOBとして正常掲載(岡本=全史HR22位248本)。バグではない。② は現役通算のみ対象なので岡本は対象外で正。
+
+## 10. ⑥ 現役 vs レジェンド対比 — データブロック解除の仕様(着手前提)
+
+> status: BLOCKED(データ不足)/ 着手は user 判断(scope・fact精度コミット)待ち。
+> ⑥ は事実誤認が致命的 NG(CLAUDE.md §18)。「同年齢時点の通算」を出すには
+> **両者の年度別累計**が必要。現データで満たせない前提を以下に明記する。
+
+### 10.1 必要データ vs 現状(2026-06-04 実測)
+
+| 必要なもの | 現役(現 Giants) | OB(レジェンド) |
+|---|---|---|
+| 年度別成績(year-by-year) | ✅ あり(`npb_career.json`, 467) | ❌ **無し**(`ob_legends_full` は career総計のみ、`years` は `"1959-1980"` の文字列) |
+| 生年月日(age 計算用) | ✅ あり(career profile) | △ 628/684(**56 名欠損** → 対象外) |
+| npb_id(NPB公式 scrape 鍵) | ✅ roster から解決 | ❌ **無し**(OB entry に npb_id 列なし) |
+
+→ **ブロッカーは OB 側の年度別データ**。これが無いと「松井の27歳時点 通算本塁打」が出せない。
+
+### 10.2 取得方針(2案、source 実測ベース)
+
+- **案A(推奨): Wikipedia 年度別表**。OB の通算stat は既に ja.wikipedia から自動抽出済
+  (`_source`)。同じ player 記事の「年度別成績」表を追加 parse すれば年度別が取れる
+  見込み。npb_id 不要。**要 PoC**: 21 名 ground-truth で年度別累計→総計が `npb` 総計と
+  一致するか検証(467 と同じ「累計=total 検算」を OB に適用)。
+- **案B: NPB 公式 career**。`npb_career_scraper.parse_player_career` が年度別を parse 済
+  (467 で現役に使用)だが、OB の **npb_id 解決手段が無い**(roster 非掲載)。名前→id の
+  NPB 選手検索を別途実装要 = コスト高。案A 不成立時のみ。
+
+### 10.3 fact 精度ゲート(publish 前必須)
+
+1. age = 当該年シーズン − 生年(生年月日 birth 必須、欠損OB は対象外)。
+2. 「同年齢時点 通算」= その age 以下の年度別を累計。**累計→通算total の検算**を通った
+   OB のみ対象(467 の検算ロジック踏襲、不一致は黙って出さない)。
+3. 比較は **同一指標・同一 age 定義**で。「超えた/迫った」は両者の age時点累計が確定した
+   ペアのみ。1 件でも不確かなら draft 落とし(LLM 補完禁止)。
+
+### 10.4 scope / 受入条件
+
+- データ作業: OB **684 名の年度別 scrape + 別 GCS object**(例 `ob_career_yearly.json`)、
+  日次1回 ingest(467 の `npb_career_ingest` パターン踏襲、publish 非ブロック)。
+- 記事: 既存 ② / alltime_ranking と同様 env gate + 既定 draft、title case F。
+- 受入: ground-truth 21 名で年度別累計が一致、age 時点比較が手検証と一致した上で draft 化。
+- 着手判断ポイント: 案A PoC(21名検証)に GO するか。PoC 成功なら 684 拡張 → ⑥ 実装へ。

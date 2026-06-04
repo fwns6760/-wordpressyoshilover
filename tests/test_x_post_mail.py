@@ -3418,9 +3418,17 @@ class BuildQuoteRtCommentTests(unittest.TestCase):
 
     def test_returns_comment_post_api(self):
         from src import x_post_branding_gen as xbg
-        with self._patch_genai("坂本勇人、サヨナラ最高だ！しびれた。"):
-            out = xbg.build_quote_rt_comment("坂本勇人 サヨナラ", "坂本勇人", gemini_api_key="k")
-        self.assertEqual(out, "坂本勇人、サヨナラ最高だ！しびれた。")  # log NameError 回帰防止
+        from datetime import datetime, timezone, timedelta
+        # 2026-06-04 B: voice 門番が「数字 1 個 + 一定長」 必須になったため、 元投稿に出る
+        # 数字 (9 回) を使った verified な comment で検証。 試合中帯 (live) を now 固定。
+        jst = timezone(timedelta(hours=9))
+        live_now = datetime(2026, 6, 4, 19, 0, tzinfo=jst)
+        comment = "坂本勇人、9回裏のサヨナラ打しびれたわ。あの場面でよく振り切った、これぞ主将。"
+        with self._patch_genai(comment):
+            out = xbg.build_quote_rt_comment(
+                "坂本勇人 9回裏にサヨナラ打", "坂本勇人", gemini_api_key="k", now=live_now,
+            )
+        self.assertEqual(out, comment)  # log NameError 回帰防止
 
     def test_hallucinated_number_rejected(self):
         from src import x_post_branding_gen as xbg

@@ -250,9 +250,11 @@ class BuildCandidateTests(unittest.TestCase):
 
     def test_clean_output_returns_candidate(self) -> None:
         fake_response = MagicMock()
+        # 2026-06-04 B: voice 門番が数字 1 個必須になったため、 数字 + 読み + 本音の voice に更新。
+        # 数字 9 は db_fact_line (登板回数 9) に出るので unverified_numbers ゲートも通る。
         fake_response.text = (
-            "エースが苦しむ姿を見るのは辛い。 けれど、 そこから這い上がる"
-            "プロセスこそが、 ファンを熱狂させる物語になる。"
+            "エースが苦しむ姿を見るのは辛いわ。 今季9登板、 苦しみながらも"
+            "粘って試合を作る投球は本物。 次は打線が援護して楽にさせたい。"
         )
         fake_client = MagicMock()
         fake_client.models.generate_content.return_value = fake_response
@@ -878,10 +880,26 @@ class VoiceQualityGateTests(unittest.TestCase):
         self.assertTrue(xbg._voice_quality_ok(t))
 
     def test_live_mode_allows_short_exclamation(self):
-        # 試合中の缶詰ライブは短文 + 連呼絶叫が正 → live=True で通す
-        self.assertTrue(xbg._voice_quality_ok("泉口友汰！！！最後に美味しいとこ持ってったなあ。これはデカい！", live=True))
-        # 同じ文でも考察モード (live=False) は感嘆乱用で弾く
-        self.assertFalse(xbg._voice_quality_ok("泉口友汰！！！最後に美味しいとこ持ってったなあ。これはデカい！", live=False))
+        # 試合中の缶詰ライブは短文 + 連呼絶叫が正 → live=True で通す。
+        # 2026-06-04 B: 全時間帯で数字 1 個必須になったため、 数字ありの短文で検証。
+        self.assertTrue(xbg._voice_quality_ok("泉口友汰！！！9回の効果的な2点タイムリーで勝ち越し、これはデカいわ！", live=True))
+        # 同じ文でも考察モード (live=False) は短すぎ (スカスカ) で弾く
+        self.assertFalse(xbg._voice_quality_ok("泉口友汰！！！9回の効果的な2点タイムリーで勝ち越し、これはデカいわ！", live=False))
+
+    def test_rejects_no_number_even_live(self):
+        # 2026-06-04 B: 数字ゼロの post は live でも「褒めるだけ・中身なし」 として弾く (観測: 候補1)。
+        self.assertFalse(
+            xbg._voice_quality_ok("キャベッジのソロホームランで同点！打った瞬間入ると思った、とんでもないパワーだわ。", live=True)
+        )
+
+    def test_rejects_passive_yutousei_endings(self):
+        # 2026-06-04 B: 観測事故の優等生締めを弾く (待ちたいね / 期待して待ってるよ)。
+        self.assertFalse(
+            xbg._voice_quality_ok("田中将大の投球、6回テンポ良く0封。このまま打線の援護を待ちたいね。")
+        )
+        self.assertFalse(
+            xbg._voice_quality_ok("浅野翔吾の3号ソロは大きい。一軍の経験を2軍で結果に繋げてる姿、期待して待ってるよ。")
+        )
 
 
 class EndingStyleRotationTests(unittest.TestCase):

@@ -1,6 +1,16 @@
 # assignments — 現場担当と次アクション
 
-最終更新: 2026-06-04 JST (データ記事 Phase 0 再開 — §16監査 + ③本番起動 LIVE)
+最終更新: 2026-06-04 JST (Phase 0 完了 + Phase 1先頭 ② 節目カウントダウン実装)
+
+## 2026-06-04 設計Phase 1先頭 — ② 節目カウントダウン(現役通算記録接近)
+
+設計 `data-articles-no1-design.md` §2②。現役の通算記録が節目に接近したら記事化。
+- `src/analysis/career_milestone.py` 新規: npb_career cache(467）の通算total read(scrape不要・publish非ブロック）→ 次節目まで残り<=window(打者30/投手10）かつ>0を抽出。title case C「通算{value}{unit}、{milestone}{unit}まであと{n}」。
+- dedup: titleに残り数を含めtitle再利用で「残り変化時のみ再掲」自然成立。env `DATA_INSIGHT_CAREER_MILESTONE=1` gate(default OFF)+ 既定draft。X解放§11。
+- insight_nightly に③直後で配線。prod cache検証: **丸佳浩 本塁打291→300(あと9)/盗塁188→200(あと12)** が現候補。
+- commit `e2992366` / test 8 + 関連99 pass / regression 0。
+- deploy: image `career-ms-e299236`(build進行中)→ job update + env flip 予定。
+- 次: Phase1続き = 全史ランキング計算(共有部品）→ /data/ranking通算タブ + ④ランキング変動。
 
 ## 2026-06-04 データ記事 Phase 0 再開 LIVE_VERIFIED
 

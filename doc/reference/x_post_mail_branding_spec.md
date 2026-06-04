@@ -4,6 +4,52 @@ date: 2026-05-20
 scope: x-post-mail-lane の post 候補生成 全体仕様
 status: spec draft (一部未実装 = TODO 明示)
 
+---
+
+## 0. 2026-06-04 変更 (user 方針: ヨシラバー風 voice 主軸化) — 以下が正、 下の本文と矛盾する箇所はこちらを優先
+
+実装 commit: `d06f0773` (+ voice 門番追い込み)。 全経路 `gemini-3.1-flash-lite` 維持 (free tier)、
+per-fire LLM 上限 `X_POST_MAIL_MAX_LLM_PER_RUN` (既定 8) でコスト管理。
+
+1. **voice-only 出力 (`X_POST_MAIL_VOICE_ONLY`, 既定 ON, `=0` で旧挙動 rollback)**:
+   compose 直前に、 メールへ出すのを **ヨシラバー風 voice 候補のみ** に絞る。
+   - 残す (voice metric allowlist): `GEMINI_BRANDING` (gemma branding / roundup / queue417 記事voice) /
+     `x_buzz_post` (引用RT) / `HOCHI_REPLY` `reply_candidate` (リプ) / `NEWS_OPINION` / `FAN_VOICE` /
+     `PLAYER_COMMENT` / `COMMENT_DB` / `quote_caption`
+   - **落とす**: DB ランキング表 (§3.1 の data ranking、 metric=stat名) / data_split (`inning/venue_split_surprise`)
+   - voice が 0 件に枯れた便だけ、 scheduled mail を空にしないため元候補へ fallback
+   - → §3.1 data ranking は「内部の選手 seed / 候補母集団」 としては残るが、 **生の順位表は mail に出さない**
+
+2. **リプ (報知リプ) も flash-lite voice (`ENABLE_X_POST_REPLY_LLM` 既定 ON)**:
+   旧 deterministic テンプレ (「見どころありますね/意見分かれそう」 の空虚な47字) を廃止。
+   報知投稿への返信も `build_quote_rt_comment` で voice 生成。 LLM 失敗時の fallback も空テンプレを廃しスタンスのある一言へ。
+
+3. **DB stat 注入の縮小 (Option A)**: 引用RT (`build_quote_rt_comment` 経由の video_radar) には
+   今季数字 (`db_fact`) を**渡さない** = 元投稿/記事だけを素材に書く。
+   gemma branding は anti-hallucination のため検証済み `db_fact_line` 1 個のみ grounding に残す。
+   - **副作用注意**: DB 数字を切ると flash-lite が今季成績を捏造する (例: .074 の選手を「高い出塁率を維持」)。
+     → prompt に **「DB 数字が無い時は今季の調子・成績水準を断定しない、 目の前の出来事だけ語る」** を hard rule 化。
+
+4. **voice 品質門番 (`_voice_quality_ok`) の強化 + 適用範囲拡大**:
+   - 優等生締め (`_VOICE_YUTOUSEI_ENDING`) / ポエム (`_VOICE_POEM_MARKERS`) に加え、
+     **hopium 定型 (`_VOICE_HOPIUM_MARKERS`)** を**文中どこでも**弾く:
+     `信じてる / 頼りにしてる / 別格(だよな) / 持ってる選手 / 持っているとしか言いようがない /
+      化けると思う / 経験値が全て / 本物だ / 新しい風が吹く`、
+     応援団の掛け声締め `繋いでいこう / 盛り上げていこう / 応援していこう / 頑張っていこう`
+   - **不振選手ガード (prompt)**: 数字を隠した全肯定を禁止、 不振は不振と認めた上で具体的な読みを 1 つ
+   - **queue 417 (記事起点 = prod 主 voice 供給) にも門番を適用** (従来は safety + 未検証数字のみで hopium 素通りだった抜けを修正)
+
+5. **命名**: 紛らわしい `gemma_*` 識別子を `gemini_*` へ rename (実体は `gemini-3.1-flash-lite`、
+   旧 `gemma-4-31b-it` は 2026-05-22 swap 済)。
+   ただし **prod env 名 (`X_POST_MAIL_GEMMA_*`, `GEMMA_BRANDING_GEMINI_API_KEY`, `GEMMA_MODEL_ID`) と
+   dedup 署名値 `"GEMMA_BRANDING"` は互換のため据え置き** (prod 設定 / dedup 履歴を壊さない)。
+
+prod env 実態 (x-post-mail-lane job): `X_POST_MAIL_GEMMA_GEN_ENABLED=0` (専用 gemma append OFF、
+voice 供給は queue417 + video_radar + reply) / `ENABLE_X_POST_VIDEO_RADAR=1` / `ENABLE_X_POST_VIDEO_RADAR_LLM=1` /
+`ENABLE_X_POST_REPLY_CANDIDATES=1`。
+
+---
+
 ## 1. 目的
 
 user が 1 日数回受け取る mail に **巨人 X 投稿案** を並べる。user は mail を見て、気に入った案を 1-3 件選んで自分で X 投稿する。

@@ -109,8 +109,7 @@ class PostgameTeamWideTests(unittest.TestCase):
         # postgame subtype → focus_player は 「巨人」 (team-wide)、 個別 player でない
         # 2026-06-04: voice 門番 (_voice_quality_ok) 追加に伴い、 作りポエム調 (！連発)
         # ではなく、 読みの入った fuuga voice に差し替え (team-wide ロジック検証が本旨)。
-        # 2026-06-04 B: voice 門番が数字 1 個必須になったため、 数字入りの fuuga voice に更新。
-        mock_response = type("R", (), {"text": "今日は投打が噛み合って7連勝だな。先発が6回をしっかり投げ切って、中盤の効果的な追加点で相手に流れを渡さなかったのが効いた。この勝ち方を続けられれば上位争いは十分見えてくる。"})()
+        mock_response = type("R", (), {"text": "今日は投打が噛み合って完勝だったな。先発がしっかりイニングを食って、中盤の効果的な追加点で相手に流れを渡さなかったのが効いた。この勝ち方を続けられれば上位争いは十分見えてくる。"})()
         mock_client_cls.return_value.models.generate_content.return_value = mock_response
 
         article = _make_article(
@@ -132,8 +131,7 @@ class PostgameTeamWideTests(unittest.TestCase):
     ):
         # title に「戸郷翔征」 が居ても postgame は team-wide (= 巨人) で書く
         # 2026-06-04: voice 門番追加に伴い、 ！連発のポエムから読みの入った fuuga voice へ差し替え。
-        # 2026-06-04 B: voice 門番が数字 1 個必須になったため、 数字入りの fuuga voice に更新。
-        mock_response = type("R", (), {"text": "戸郷翔征が7回を制球良く試合を作って、 打線も序盤から先手を取れた完勝だな。先発が長いイニングを投げ切ると中継ぎを温存できるのが大きい。この形を続けたいところ。"})()
+        mock_response = type("R", (), {"text": "戸郷翔征が制球良く試合を作って、 打線も序盤から先手を取れた完勝だったな。先発が長いイニングを投げ切ると中継ぎを温存できるのが大きい。この形を続けたいところ。"})()
         mock_client_cls.return_value.models.generate_content.return_value = mock_response
 
         article = _make_article(

@@ -1990,9 +1990,9 @@ def publish_batter_vs_lr_split_draft(
 # starter (start_inning=1) は本 publisher で扱わない (既存 starter ranking 経路で対応)。
 
 _INNING_ROLES: dict[int, str] = {
-    7: "7回登板 (setup)",
-    8: "8回登板 (setup)",
-    9: "9回登板 (closer)",
+    7: "7回登板 (中継ぎ)",
+    8: "8回登板 (セットアップ)",
+    9: "9回登板 (抑え)",
 }
 
 

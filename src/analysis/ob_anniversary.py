@@ -137,7 +137,7 @@ def build_birthday_article(name: str, entry: dict, today: dt.date) -> Optional[d
 ## ひとこと
 
 本日{today.month}月{today.day}日は、読売ジャイアンツOB **{name}**({years})の誕生日。満{age}歳。
-現役時代は {_career_line(entry)} を残した巨人の{'投の' if entry.get('type') == 'pitcher' else '打の'}記録保持者だ。
+現役時代は {_career_line(entry)} を残した巨人OBだ。
 
 ## 通算成績
 

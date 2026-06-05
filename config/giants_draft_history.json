@@ -1,0 +1,43 @@
+{
+  "_schema": {
+    "note": "巨人ドラフト史データ正本。出典=NPB公式ドラフト会議結果 / Wikipedia『Template:読売ジャイアンツ{年}ドラフト指名選手』および年度別ドラフト会議ページ。守備位置・所属はドラフト指名時のもの。事実のみ。推測で埋めない(空欄は順次整備)。",
+    "source": "https://ja.wikipedia.org/wiki/Category:読売ジャイアンツのドラフト指名選手テンプレート",
+    "benchmark": "https://www.my-favorite-giants.net/giants_data/draft/lot.htm",
+    "fields": {
+      "draft_picks": "支配下ドラフト指名。year(西暦int) / round(巡目str 例:1位) / name / pos(守備位置) / from(所属) / competed(1位抽選の有無bool) / note",
+      "ikusei_picks": "育成ドラフト指名。year / round(例:育成1位) / name / pos / from / note",
+      "non_draft": "ドラフト外入団。year / name / pos / from / note",
+      "lottery": "指名競合・外れ1位一覧(ベンチ lot.htm 相当)。year / round / name / pos / from / competitors(競合球団list) / result(○/×) / miss_name(外れ指名選手) / miss_pos / miss_from / note",
+      "scouts": "現役スカウト名簿。name / title(役職) / area(担当) / note",
+      "ob_scouts": "OBスカウト名簿。name / ob_career(現役時の所属/実績) / title / area / note",
+      "contract_changes": "契約変更選手一覧(支配下↔育成 等)。year / name / change(変更内容) / note"
+    },
+    "completeness": {
+      "target_years": "1965-2024",
+      "status": "BACKFILL_IN_PROGRESS",
+      "filled_years_draft_picks": [2024],
+      "publish_gate": "全年代(1965-2024)整備完了まで本番非公開。ENABLE_DATA_SITE_DRAFT で点灯。"
+    }
+  },
+  "updated": "2026-06-05",
+  "draft_picks": [
+    {"year": 2024, "round": "1位", "name": "石塚裕惺", "pos": "", "from": "", "competed": false, "note": ""},
+    {"year": 2024, "round": "2位", "name": "浦田俊輔", "pos": "", "from": "", "competed": false, "note": ""},
+    {"year": 2024, "round": "3位", "name": "荒巻悠", "pos": "", "from": "", "competed": false, "note": ""},
+    {"year": 2024, "round": "4位", "name": "石田充冴", "pos": "", "from": "", "competed": false, "note": ""},
+    {"year": 2024, "round": "5位", "name": "宮原駿介", "pos": "", "from": "", "competed": false, "note": ""}
+  ],
+  "ikusei_picks": [
+    {"year": 2024, "round": "育成1位", "name": "坂本達也", "pos": "", "from": "", "note": ""},
+    {"year": 2024, "round": "育成2位", "name": "堀江正太郎", "pos": "", "from": "", "note": ""},
+    {"year": 2024, "round": "育成3位", "name": "鈴木圭晋", "pos": "", "from": "", "note": ""},
+    {"year": 2024, "round": "育成4位", "name": "吹田志道", "pos": "", "from": "", "note": ""},
+    {"year": 2024, "round": "育成5位", "name": "西川歩", "pos": "", "from": "", "note": ""},
+    {"year": 2024, "round": "育成6位", "name": "竹下徠空", "pos": "", "from": "", "note": ""}
+  ],
+  "non_draft": [],
+  "lottery": [],
+  "scouts": [],
+  "ob_scouts": [],
+  "contract_changes": []
+}

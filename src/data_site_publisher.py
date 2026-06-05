@@ -95,6 +95,12 @@ from src.data_site_template_leaders import (
     render_leaders_title,
     render_leaders_excerpt,
 )
+from src.data_site_template_draft import (
+    load_draft_data,
+    render_draft_html,
+    render_draft_title,
+    render_draft_excerpt,
+)
 from src.data_site_template_legends import (
     render_legends_html,
     render_legends_title,
@@ -154,6 +160,15 @@ class UpsertResult:
 
 def _dry_run_enabled() -> bool:
     return str(os.environ.get("DATA_SITE_DRY_RUN", "")).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _draft_page_enabled() -> bool:
+    """巨人ドラフト史ページ /data/draft の本番公開ゲート。
+
+    全年代（1965-2024）のデータ整備が完了するまで本番公開しない（user 確定 2026-06-05）。
+    既定 OFF。データ完成後に ENABLE_DATA_SITE_DRAFT=1 で点灯。
+    """
+    return str(os.environ.get("ENABLE_DATA_SITE_DRAFT", "")).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _wp_creds() -> tuple[str, HTTPBasicAuth]:
@@ -639,6 +654,23 @@ def publish_phase1(only_slugs: set[str] | None = None) -> dict[str, object]:
     )
     LOG.info("record upsert slug=record page_id=%s action=%s clubs=%d",
              record_result.page_id, record_result.action, len(record_room))
+
+    # draft ページ upsert（巨人ドラフト史 hub、user 指定 2026-06-05）— parent=cluster → /data/draft/
+    # 全年代整備完了まで本番非公開: ENABLE_DATA_SITE_DRAFT=1 のときだけ upsert。
+    if _draft_page_enabled():
+        draft_data = load_draft_data()
+        draft_result = _upsert_page(
+            slug="draft",
+            title=render_draft_title(),
+            content_html=render_draft_html(draft_data),
+            parent=cluster_page_id,
+            excerpt=render_draft_excerpt(draft_data),
+        )
+        LOG.info("draft upsert slug=draft page_id=%s action=%s picks=%d",
+                 draft_result.page_id, draft_result.action,
+                 len(draft_data.get("draft_picks") or []))
+    else:
+        LOG.info("draft page gated OFF (ENABLE_DATA_SITE_DRAFT not set) — skip upsert")
 
     summary = {
         "status": "ok",

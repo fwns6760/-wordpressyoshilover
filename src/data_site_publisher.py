@@ -101,6 +101,12 @@ from src.data_site_template_draft import (
     render_draft_title,
     render_draft_excerpt,
 )
+from src.data_site_template_fa import (
+    load_fa_data,
+    render_fa_html,
+    render_fa_title,
+    render_fa_excerpt,
+)
 from src.data_site_template_legends import (
     render_legends_html,
     render_legends_title,
@@ -671,6 +677,20 @@ def publish_phase1(only_slugs: set[str] | None = None) -> dict[str, object]:
                  len(draft_data.get("draft_picks") or []))
     else:
         LOG.info("draft page gated OFF (ENABLE_DATA_SITE_DRAFT not set) — skip upsert")
+
+    # FA ページ upsert（FA獲得選手 + FA有資格選手、user 指定 2026-06-05）— parent=cluster → /data/fa/
+    fa_data = load_fa_data()
+    fa_result = _upsert_page(
+        slug="fa",
+        title=render_fa_title(),
+        content_html=render_fa_html(fa_data),
+        parent=cluster_page_id,
+        excerpt=render_fa_excerpt(fa_data),
+    )
+    LOG.info("fa upsert slug=fa page_id=%s action=%s acq=%d elig=%d",
+             fa_result.page_id, fa_result.action,
+             len(fa_data.get("fa_acquisitions") or []),
+             len(fa_data.get("fa_eligible") or []))
 
     summary = {
         "status": "ok",

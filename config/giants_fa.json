@@ -1,0 +1,862 @@
+{
+  "_schema": {
+    "note": "巨人FAデータ正本。出典=公開資料の事実テーブルのみ抽出。HTML/文章はコピーしない。FA有資格選手は出典の最新スナップショット（asof 年を併記）。",
+    "source": "https://www.my-favorite-giants.net/giants_data/player/fa.htm / fa-right.htm",
+    "generator": "src/tools/scrape_giants_fa.py"
+  },
+  "updated": "2026-06-05",
+  "fa_eligible_asof": "2024",
+  "fa_acquisitions": [
+    {
+      "fa_year": "1993年",
+      "join_year": "1994年",
+      "name": "落合博満",
+      "pos": "内野手",
+      "prev_team": "中日",
+      "period": "3年",
+      "titles": ""
+    },
+    {
+      "fa_year": "1994年",
+      "join_year": "1995年",
+      "name": "川口和久",
+      "pos": "投手",
+      "prev_team": "広島",
+      "period": "4年",
+      "titles": ""
+    },
+    {
+      "fa_year": "1994年",
+      "join_year": "1995年",
+      "name": "広沢克己(克・広澤克実)",
+      "pos": "内野手",
+      "prev_team": "ヤクルト",
+      "period": "5年",
+      "titles": ""
+    },
+    {
+      "fa_year": "1995年",
+      "join_year": "1996年",
+      "name": "河野博文",
+      "pos": "投手",
+      "prev_team": "日本ハム",
+      "period": "4年",
+      "titles": "最優秀中継ぎ(1996)"
+    },
+    {
+      "fa_year": "1996年",
+      "join_year": "1997年",
+      "name": "清原和博",
+      "pos": "内野手",
+      "prev_team": "西武",
+      "period": "9年",
+      "titles": ""
+    },
+    {
+      "fa_year": "1999年",
+      "join_year": "2000年",
+      "name": "工藤公康",
+      "pos": "投手",
+      "prev_team": "福岡ダイエー",
+      "period": "7年",
+      "titles": ""
+    },
+    {
+      "fa_year": "1999年",
+      "join_year": "2000年",
+      "name": "江藤智",
+      "pos": "内野手",
+      "prev_team": "広島",
+      "period": "6年",
+      "titles": ""
+    },
+    {
+      "fa_year": "2001年",
+      "join_year": "2002年",
+      "name": "前田幸長",
+      "pos": "投手",
+      "prev_team": "中日",
+      "period": "6年",
+      "titles": ""
+    },
+    {
+      "fa_year": "2005年",
+      "join_year": "2006年",
+      "name": "野口茂樹",
+      "pos": "投手",
+      "prev_team": "中日",
+      "period": "3年",
+      "titles": ""
+    },
+    {
+      "fa_year": "2005年",
+      "join_year": "2006年",
+      "name": "豊田清",
+      "pos": "投手",
+      "prev_team": "西武",
+      "period": "5年",
+      "titles": ""
+    },
+    {
+      "fa_year": "2006年",
+      "join_year": "2007年",
+      "name": "小笠原道大",
+      "pos": "内野手",
+      "prev_team": "北海道日本ハム",
+      "period": "7年",
+      "titles": "MVP(2007)"
+    },
+    {
+      "fa_year": "2006年",
+      "join_year": "2007年",
+      "name": "門倉健",
+      "pos": "投手",
+      "prev_team": "横浜",
+      "period": "2年",
+      "titles": ""
+    },
+    {
+      "fa_year": "2009年",
+      "join_year": "2010年",
+      "name": "藤井秀悟",
+      "pos": "投手",
+      "prev_team": "北海道日本ハム",
+      "period": "2年",
+      "titles": ""
+    },
+    {
+      "fa_year": "2011年",
+      "join_year": "2012年",
+      "name": "村田修一",
+      "pos": "内野手",
+      "prev_team": "横浜",
+      "period": "6年",
+      "titles": ""
+    },
+    {
+      "fa_year": "2011年",
+      "join_year": "2012年",
+      "name": "杉内俊哉",
+      "pos": "投手",
+      "prev_team": "福岡ソフトバンク",
+      "period": "7年",
+      "titles": "最多奪三振(2012)"
+    },
+    {
+      "fa_year": "2013年",
+      "join_year": "2014年",
+      "name": "大竹寛",
+      "pos": "投手",
+      "prev_team": "広島",
+      "period": "8年",
+      "titles": ""
+    },
+    {
+      "fa_year": "2013年",
+      "join_year": "2014年",
+      "name": "片岡治大",
+      "pos": "内野手",
+      "prev_team": "埼玉西武",
+      "period": "4年",
+      "titles": ""
+    },
+    {
+      "fa_year": "2014年",
+      "join_year": "2015年",
+      "name": "相川亮二",
+      "pos": "捕手",
+      "prev_team": "東京ヤクルト",
+      "period": "3年",
+      "titles": ""
+    },
+    {
+      "fa_year": "2014年",
+      "join_year": "2015年",
+      "name": "金城龍彦",
+      "pos": "外野手",
+      "prev_team": "横浜DeNA",
+      "period": "1年",
+      "titles": ""
+    },
+    {
+      "fa_year": "2015年",
+      "join_year": "2016年",
+      "name": "脇谷亮太",
+      "pos": "内野手",
+      "prev_team": "埼玉西武",
+      "period": "3年*",
+      "titles": ""
+    },
+    {
+      "fa_year": "2016年",
+      "join_year": "2017年",
+      "name": "森福允彦",
+      "pos": "投手",
+      "prev_team": "福岡ソフトバンク",
+      "period": "3年",
+      "titles": ""
+    },
+    {
+      "fa_year": "2016年",
+      "join_year": "2017年",
+      "name": "山口俊",
+      "pos": "投手",
+      "prev_team": "横浜DeNA",
+      "period": "3年**",
+      "titles": "最多勝利(2019) 最多奪三振(2019)勝率第1位(2019)"
+    },
+    {
+      "fa_year": "2016年",
+      "join_year": "2017年",
+      "name": "陽岱鋼",
+      "pos": "外野手",
+      "prev_team": "北海道日本ハム",
+      "period": "5年",
+      "titles": ""
+    },
+    {
+      "fa_year": "2017年",
+      "join_year": "2018年",
+      "name": "野上亮磨",
+      "pos": "投手",
+      "prev_team": "埼玉西武",
+      "period": "4年",
+      "titles": ""
+    },
+    {
+      "fa_year": "2018年",
+      "join_year": "2019年",
+      "name": "炭谷銀仁朗",
+      "pos": "捕手",
+      "prev_team": "埼玉西武",
+      "period": "3年",
+      "titles": ""
+    },
+    {
+      "fa_year": "2018年",
+      "join_year": "2019年",
+      "name": "丸佳浩",
+      "pos": "外野手",
+      "prev_team": "広島",
+      "period": "7年（在籍中）",
+      "titles": ""
+    },
+    {
+      "fa_year": "2020年",
+      "join_year": "2021年",
+      "name": "梶谷隆幸",
+      "pos": "外野手",
+      "prev_team": "横浜DeNA",
+      "period": "4年",
+      "titles": ""
+    },
+    {
+      "fa_year": "2020年",
+      "join_year": "2021年",
+      "name": "井納翔一",
+      "pos": "投手",
+      "prev_team": "横浜DeNA",
+      "period": "2年",
+      "titles": ""
+    },
+    {
+      "fa_year": "2024年",
+      "join_year": "2025年",
+      "name": "甲斐拓也",
+      "pos": "捕手",
+      "prev_team": "福岡ソフトバンク",
+      "period": "1年（在籍中）",
+      "titles": ""
+    },
+    {
+      "fa_year": "2025年",
+      "join_year": "2026年",
+      "name": "松本剛",
+      "pos": "外野手",
+      "prev_team": "北海道日本ハム",
+      "period": "在籍中",
+      "titles": ""
+    },
+    {
+      "fa_year": "2025年",
+      "join_year": "2026年",
+      "name": "則本昂大",
+      "pos": "投手",
+      "prev_team": "東北楽天",
+      "period": "在籍中",
+      "titles": ""
+    }
+  ],
+  "fa_eligible": [
+    {
+      "group": "投手",
+      "back_no": "15",
+      "name": "(翁田)大勢",
+      "age": "25",
+      "tenure_years": "3",
+      "right_type": "※",
+      "status": "",
+      "note": ""
+    },
+    {
+      "group": "投手",
+      "back_no": "18",
+      "name": "菅野智之",
+      "age": "35",
+      "tenure_years": "12",
+      "right_type": "※",
+      "status": "取得中",
+      "note": ""
+    },
+    {
+      "group": "投手",
+      "back_no": "19",
+      "name": "山﨑伊織",
+      "age": "26",
+      "tenure_years": "4",
+      "right_type": "※",
+      "status": "",
+      "note": ""
+    },
+    {
+      "group": "投手",
+      "back_no": "20",
+      "name": "戸郷翔征",
+      "age": "24",
+      "tenure_years": "6",
+      "right_type": "",
+      "status": "",
+      "note": ""
+    },
+    {
+      "group": "投手",
+      "back_no": "26",
+      "name": "今村信貴",
+      "age": "30",
+      "tenure_years": "13",
+      "right_type": "",
+      "status": "",
+      "note": ""
+    },
+    {
+      "group": "投手",
+      "back_no": "28",
+      "name": "高橋礼",
+      "age": "29",
+      "tenure_years": "7",
+      "right_type": "※",
+      "status": "",
+      "note": ""
+    },
+    {
+      "group": "投手",
+      "back_no": "29",
+      "name": "F.グリフィン",
+      "age": "29",
+      "tenure_years": "2",
+      "right_type": "",
+      "status": "",
+      "note": ""
+    },
+    {
+      "group": "投手",
+      "back_no": "30",
+      "name": "近藤大亮",
+      "age": "33",
+      "tenure_years": "9",
+      "right_type": "※",
+      "status": "",
+      "note": ""
+    },
+    {
+      "group": "投手",
+      "back_no": "31",
+      "name": "赤星優志",
+      "age": "25",
+      "tenure_years": "3",
+      "right_type": "※",
+      "status": "",
+      "note": ""
+    },
+    {
+      "group": "投手",
+      "back_no": "32",
+      "name": "鈴木康平(K-鈴木)",
+      "age": "30",
+      "tenure_years": "7",
+      "right_type": "※",
+      "status": "",
+      "note": ""
+    },
+    {
+      "group": "投手",
+      "back_no": "33",
+      "name": "K.ケラー",
+      "age": "31",
+      "tenure_years": "3",
+      "right_type": "",
+      "status": "",
+      "note": ""
+    },
+    {
+      "group": "投手",
+      "back_no": "36",
+      "name": "馬場皐輔",
+      "age": "29",
+      "tenure_years": "7",
+      "right_type": "※",
+      "status": "",
+      "note": ""
+    },
+    {
+      "group": "投手",
+      "back_no": "41",
+      "name": "中川皓太",
+      "age": "30",
+      "tenure_years": "9",
+      "right_type": "※",
+      "status": "",
+      "note": ""
+    },
+    {
+      "group": "投手",
+      "back_no": "45",
+      "name": "畠世周",
+      "age": "30",
+      "tenure_years": "8",
+      "right_type": "※",
+      "status": "",
+      "note": ""
+    },
+    {
+      "group": "投手",
+      "back_no": "48",
+      "name": "田中千晴",
+      "age": "24",
+      "tenure_years": "2",
+      "right_type": "※",
+      "status": "",
+      "note": ""
+    },
+    {
+      "group": "投手",
+      "back_no": "49",
+      "name": "A.バルドナード",
+      "age": "31",
+      "tenure_years": "2",
+      "right_type": "",
+      "status": "",
+      "note": ""
+    },
+    {
+      "group": "投手",
+      "back_no": "53",
+      "name": "高梨雄平",
+      "age": "32",
+      "tenure_years": "8",
+      "right_type": "※",
+      "status": "",
+      "note": "※2024年国内限定取得可能"
+    },
+    {
+      "group": "投手",
+      "back_no": "54",
+      "name": "直江大輔",
+      "age": "24",
+      "tenure_years": "6",
+      "right_type": "",
+      "status": "",
+      "note": ""
+    },
+    {
+      "group": "投手",
+      "back_no": "56",
+      "name": "石田隼都",
+      "age": "21",
+      "tenure_years": "3",
+      "right_type": "",
+      "status": "",
+      "note": ""
+    },
+    {
+      "group": "投手",
+      "back_no": "57",
+      "name": "髙橋優貴",
+      "age": "27",
+      "tenure_years": "6",
+      "right_type": "※",
+      "status": "",
+      "note": ""
+    },
+    {
+      "group": "投手",
+      "back_no": "58",
+      "name": "船迫大雅",
+      "age": "28",
+      "tenure_years": "2",
+      "right_type": "※",
+      "status": "",
+      "note": ""
+    },
+    {
+      "group": "投手",
+      "back_no": "62",
+      "name": "横川凱",
+      "age": "24",
+      "tenure_years": "6",
+      "right_type": "",
+      "status": "",
+      "note": ""
+    },
+    {
+      "group": "投手",
+      "back_no": "63",
+      "name": "泉圭輔",
+      "age": "27",
+      "tenure_years": "6",
+      "right_type": "※",
+      "status": "",
+      "note": ""
+    },
+    {
+      "group": "投手",
+      "back_no": "64",
+      "name": "大江竜聖",
+      "age": "25",
+      "tenure_years": "8",
+      "right_type": "",
+      "status": "",
+      "note": ""
+    },
+    {
+      "group": "投手",
+      "back_no": "65",
+      "name": "Y.メンデス",
+      "age": "29",
+      "tenure_years": "2",
+      "right_type": "",
+      "status": "",
+      "note": ""
+    },
+    {
+      "group": "投手",
+      "back_no": "66",
+      "name": "平内龍太",
+      "age": "26",
+      "tenure_years": "4",
+      "right_type": "※",
+      "status": "",
+      "note": ""
+    },
+    {
+      "group": "投手",
+      "back_no": "68",
+      "name": "代木大和",
+      "age": "21",
+      "tenure_years": "3",
+      "right_type": "",
+      "status": "",
+      "note": ""
+    },
+    {
+      "group": "投手",
+      "back_no": "90",
+      "name": "山田龍聖",
+      "age": "24",
+      "tenure_years": "3",
+      "right_type": "※",
+      "status": "",
+      "note": ""
+    },
+    {
+      "group": "投手",
+      "back_no": "91",
+      "name": "堀田賢慎",
+      "age": "23",
+      "tenure_years": "5",
+      "right_type": "",
+      "status": "",
+      "note": ""
+    },
+    {
+      "group": "投手",
+      "back_no": "93",
+      "name": "松井颯",
+      "age": "24",
+      "tenure_years": "2",
+      "right_type": "※",
+      "status": "",
+      "note": ""
+    },
+    {
+      "group": "投手",
+      "back_no": "96",
+      "name": "菊地大稀",
+      "age": "25",
+      "tenure_years": "3",
+      "right_type": "※",
+      "status": "",
+      "note": ""
+    },
+    {
+      "group": "投手",
+      "back_no": "97",
+      "name": "井上温大",
+      "age": "23",
+      "tenure_years": "5",
+      "right_type": "",
+      "status": "",
+      "note": ""
+    },
+    {
+      "group": "捕手",
+      "back_no": "22",
+      "name": "小林誠司",
+      "age": "35",
+      "tenure_years": "11",
+      "right_type": "※",
+      "status": "取得中",
+      "note": ""
+    },
+    {
+      "group": "捕手",
+      "back_no": "24",
+      "name": "大城卓三",
+      "age": "31",
+      "tenure_years": "7",
+      "right_type": "※",
+      "status": "",
+      "note": "※2024年国内限定取得可能"
+    },
+    {
+      "group": "捕手",
+      "back_no": "38",
+      "name": "岸田行倫",
+      "age": "28",
+      "tenure_years": "7",
+      "right_type": "※",
+      "status": "",
+      "note": ""
+    },
+    {
+      "group": "捕手",
+      "back_no": "67",
+      "name": "山瀬慎之助",
+      "age": "23",
+      "tenure_years": "5",
+      "right_type": "",
+      "status": "",
+      "note": ""
+    },
+    {
+      "group": "捕手",
+      "back_no": "94",
+      "name": "喜多隆介",
+      "age": "26",
+      "tenure_years": "4",
+      "right_type": "※",
+      "status": "",
+      "note": ""
+    },
+    {
+      "group": "内野手",
+      "back_no": "00",
+      "name": "湯浅大",
+      "age": "24",
+      "tenure_years": "7",
+      "right_type": "",
+      "status": "",
+      "note": ""
+    },
+    {
+      "group": "内野手",
+      "back_no": "0",
+      "name": "増田大輝",
+      "age": "31",
+      "tenure_years": "9",
+      "right_type": "※",
+      "status": "",
+      "note": ""
+    },
+    {
+      "group": "内野手",
+      "back_no": "2",
+      "name": "吉川尚輝",
+      "age": "29",
+      "tenure_years": "8",
+      "right_type": "※",
+      "status": "",
+      "note": ""
+    },
+    {
+      "group": "内野手",
+      "back_no": "5",
+      "name": "門脇誠",
+      "age": "23",
+      "tenure_years": "2",
+      "right_type": "※",
+      "status": "",
+      "note": ""
+    },
+    {
+      "group": "内野手",
+      "back_no": "6",
+      "name": "坂本勇人",
+      "age": "36",
+      "tenure_years": "18",
+      "right_type": "",
+      "status": "取得中",
+      "note": ""
+    },
+    {
+      "group": "内野手",
+      "back_no": "25",
+      "name": "岡本和真",
+      "age": "28",
+      "tenure_years": "10",
+      "right_type": "",
+      "status": "",
+      "note": ""
+    },
+    {
+      "group": "内野手",
+      "back_no": "37",
+      "name": "若林晃弘",
+      "age": "31",
+      "tenure_years": "7",
+      "right_type": "※",
+      "status": "",
+      "note": ""
+    },
+    {
+      "group": "内野手",
+      "back_no": "40",
+      "name": "中山礼都",
+      "age": "22",
+      "tenure_years": "4",
+      "right_type": "",
+      "status": "",
+      "note": ""
+    },
+    {
+      "group": "内野手",
+      "back_no": "55",
+      "name": "秋広優人",
+      "age": "22",
+      "tenure_years": "4",
+      "right_type": "",
+      "status": "",
+      "note": ""
+    },
+    {
+      "group": "内野手",
+      "back_no": "60",
+      "name": "菊田拡和",
+      "age": "23",
+      "tenure_years": "5",
+      "right_type": "",
+      "status": "",
+      "note": ""
+    },
+    {
+      "group": "内野手",
+      "back_no": "61",
+      "name": "増田陸",
+      "age": "24",
+      "tenure_years": "6",
+      "right_type": "",
+      "status": "",
+      "note": ""
+    },
+    {
+      "group": "外野手",
+      "back_no": "7",
+      "name": "長野久義",
+      "age": "40",
+      "tenure_years": "15",
+      "right_type": "※",
+      "status": "取得中",
+      "note": ""
+    },
+    {
+      "group": "外野手",
+      "back_no": "8",
+      "name": "丸佳浩",
+      "age": "35",
+      "tenure_years": "17",
+      "right_type": "",
+      "status": "取得中",
+      "note": ""
+    },
+    {
+      "group": "外野手",
+      "back_no": "12",
+      "name": "萩尾匡也",
+      "age": "24",
+      "tenure_years": "2",
+      "right_type": "※",
+      "status": "",
+      "note": ""
+    },
+    {
+      "group": "外野手",
+      "back_no": "13",
+      "name": "梶谷隆幸",
+      "age": "36",
+      "tenure_years": "18",
+      "right_type": "",
+      "status": "",
+      "note": ""
+    },
+    {
+      "group": "外野手",
+      "back_no": "38",
+      "name": "岡田悠希",
+      "age": "24",
+      "tenure_years": "3",
+      "right_type": "※",
+      "status": "",
+      "note": ""
+    },
+    {
+      "group": "外野手",
+      "back_no": "43",
+      "name": "重信慎之介",
+      "age": "31",
+      "tenure_years": "9",
+      "right_type": "※",
+      "status": "",
+      "note": "※2024年国内限定取得可能"
+    },
+    {
+      "group": "外野手",
+      "back_no": "50",
+      "name": "オコエ瑠偉",
+      "age": "27",
+      "tenure_years": "9",
+      "right_type": "",
+      "status": "",
+      "note": ""
+    },
+    {
+      "group": "外野手",
+      "back_no": "51",
+      "name": "浅野翔吾",
+      "age": "20",
+      "tenure_years": "2",
+      "right_type": "",
+      "status": "",
+      "note": ""
+    },
+    {
+      "group": "外野手",
+      "back_no": "59",
+      "name": "松原聖弥",
+      "age": "29",
+      "tenure_years": "8",
+      "right_type": "※",
+      "status": "",
+      "note": ""
+    }
+  ]
+}

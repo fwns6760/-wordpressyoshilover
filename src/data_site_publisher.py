@@ -113,6 +113,7 @@ from src.data_site_template_trade import (
     render_trade_title,
     render_trade_excerpt,
 )
+from src.data_site_farm_stats import giants_farm_map
 from src.data_site_template_legends import (
     render_legends_html,
     render_legends_title,
@@ -337,6 +338,14 @@ def _build_pillar_info(player_name: str) -> PillarPlayerInfo | None:
     # これで OB ページも「年度ごと」詳細表 (打率/出塁率/長打率/OPS or 防御率/WHIP) を持つ。
     if not (info.npb_career and (info.npb_career.get("batting") or info.npb_career.get("pitching"))):
         info.npb_career = _ob_yearly_payload(player_slug(player_name)) or info.npb_career
+    # 二軍（ファーム）今季成績を NPB 公式から付与（無ければ None で安全）。
+    try:
+        _frec = giants_farm_map().get(player_name.replace(" ", "").replace("　", ""))
+        if _frec:
+            info.farm_batting = _frec.get("batting")
+            info.farm_pitching = _frec.get("pitching")
+    except Exception as _farm_exc:  # noqa: BLE001
+        LOG.warning("farm stats attach failed player=%s: %r", player_name, _farm_exc)
     # 監督・コーチ は当年 stats を持たない (insight.db join しても空)。 当年 stats query は
     # 全 skip し、 現役時代の通算成績 (config 由来) + profile + 関連記事の page にする。
     if (roster.role or "").strip() in ("manager", "coach"):

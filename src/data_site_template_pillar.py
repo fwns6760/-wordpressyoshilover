@@ -97,6 +97,9 @@ class PillarPlayerInfo:
     pitch_whip: Optional[float] = None
     pitch_k_per_9: Optional[float] = None
     pitch_bb_per_9: Optional[float] = None
+    # 二軍（ファーム）今季成績 (NPB公式 idb1_g/idp1_g 由来)。 無ければ None。
+    farm_batting: Optional[dict] = None
+    farm_pitching: Optional[dict] = None
     has_pitching_stats: bool = False
     recent_pitching_games: list[tuple[str, str, str, float, int, int, int, int]] = field(default_factory=list)
     # recent_pitching_games = [(date, opp, result_mark, ip, h, k, bb, er), ...]
@@ -229,7 +232,7 @@ def _build_season_stats_html(player: PillarPlayerInfo) -> str:
     if not player.has_stats or player.season_games == 0:
         return (
             '<div class="ys-card">'
-            '<h2>今シーズン 通算 (打撃)</h2>'
+            '<h2>今シーズン 一軍成績 (打撃)</h2>'
             '<p class="ys-note">'
             f'{_esc(player.name)}選手の今シーズン 一軍出場記録は、 現時点で集計対象となる box score 上に確認できていません。'
             ' 出場が記録され次第、 毎朝 6:00 + 試合後 17:30 / 23:00 JST に自動反映されます。'
@@ -256,7 +259,7 @@ def _build_season_stats_html(player: PillarPlayerInfo) -> str:
     )
     return (
         '<div class="ys-card">'
-        '<h2>今シーズン 通算 (打撃) <span class="ys-tag">NPB順位</span></h2>'
+        '<h2>今シーズン 一軍成績 (打撃) <span class="ys-tag">NPB順位</span></h2>'
         + hero + badges_html +
         '<p class="ys-foot">※ NPB 全12球団 box score 集計 / 毎朝 6:00 JST 更新。 '
         '順位は NPB 内 (打率は規定到達者中)。</p>'
@@ -494,7 +497,7 @@ def _build_pitching_season_html(player: PillarPlayerInfo) -> str:
         return (
             '<section class="ys-pillar-pitch-season" '
             'style="background:#fff;border:1px solid #eee;padding:14px;margin:0 0 16px;border-radius:4px;">'
-            '<h2 style="font-size:16px;margin:0 0 10px;">今シーズン 通算 (投手)</h2>'
+            '<h2 style="font-size:16px;margin:0 0 10px;">今シーズン 一軍成績 (投手)</h2>'
             '<p style="font-size:13px;color:#888;margin:0;">'
             f'{_esc(player.name)}投手の今シーズン 一軍登板記録は、 現時点で集計対象となる box score 上に確認できていません。'
             ' 登板が記録され次第、 毎朝 6:00 + 試合後 17:30 / 23:00 JST に自動反映されます。'
@@ -504,7 +507,7 @@ def _build_pitching_season_html(player: PillarPlayerInfo) -> str:
     return (
         '<section class="ys-pillar-pitch-season" '
         'style="background:#fff;border:1px solid #eee;padding:14px;margin:0 0 16px;border-radius:4px;">'
-        '<h2 style="font-size:16px;margin:0 0 10px;">今シーズン 通算 (投手)</h2>'
+        '<h2 style="font-size:16px;margin:0 0 10px;">今シーズン 一軍成績 (投手)</h2>'
         '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
         '<thead><tr style="background:#fafafa;text-align:center;">'
         '<th style="padding:8px 4px;">登板</th>'
@@ -535,6 +538,49 @@ def _build_pitching_season_html(player: PillarPlayerInfo) -> str:
         '<p style="font-size:11px;color:#999;margin:8px 0 0;">'
         '※ insight.db 集計 (NPB official box score 由来)、 毎朝 6:00 + 試合後 17:30 / 23:00 JST 更新'
         '</p></section>'
+    )
+
+
+_FARM_PIT_ORDER = [("登板", "登板"), ("勝", "勝"), ("敗", "敗"), ("S", "S"),
+                   ("H", "H"), ("投球回", "投球回"), ("奪三", "奪三振"), ("防御率", "防御率")]
+_FARM_BAT_ORDER = [("試合", "試合"), ("打席", "打席"), ("打数", "打数"), ("安打", "安打"),
+                   ("本", "本"), ("打点", "打点"), ("盗塁", "盗塁"), ("打率", "打率")]
+
+
+def _farm_mini_table(rec: dict, order) -> str:
+    cols = [(lab, rec[k]) for k, lab in order if k in rec and rec.get(k) not in (None, "")]
+    if not cols:
+        return ""
+    ths = "".join(f'<th style="padding:7px 4px;">{_esc(lab)}</th>' for lab, _ in cols)
+    tds = "".join(f'<td style="padding:7px 4px;">{_esc(v)}</td>' for _, v in cols)
+    return ('<table style="width:100%;border-collapse:collapse;font-size:13px;margin:0 0 8px;">'
+            f'<thead><tr style="background:#f1f8e9;text-align:center;color:#33691e;">{ths}</tr></thead>'
+            f'<tbody><tr style="text-align:center;">{tds}</tr></tbody></table>')
+
+
+def _build_farm_stats_html(player: PillarPlayerInfo) -> str:
+    """二軍（ファーム）今季成績ブロック。 一軍と別集計であることを明示し、 わかりやすく区別表示。"""
+    fp = player.farm_pitching or {}
+    fb = player.farm_batting or {}
+    pit_tbl = _farm_mini_table(fp, _FARM_PIT_ORDER) if fp else ""
+    bat_tbl = _farm_mini_table(fb, _FARM_BAT_ORDER) if fb else ""
+    if not pit_tbl and not bat_tbl:
+        return ""
+    parts = []
+    if pit_tbl:
+        parts.append('<div style="font-size:12px;color:#33691e;font-weight:700;margin:6px 0 2px;">投手成績</div>' + pit_tbl)
+    if bat_tbl:
+        parts.append('<div style="font-size:12px;color:#33691e;font-weight:700;margin:6px 0 2px;">打撃成績</div>' + bat_tbl)
+    return (
+        '<section style="background:#f9fbe7;border:1px solid #dce775;border-left:4px solid #7cb342;'
+        'padding:14px;margin:0 0 16px;border-radius:4px;">'
+        '<h2 style="font-size:16px;margin:0 0 4px;color:#33691e;">🌱 二軍（ファーム）今シーズン成績</h2>'
+        '<p style="font-size:12px;color:#689f38;margin:0 0 10px;line-height:1.6;">'
+        'イースタン・リーグでの今季成績です。<strong>一軍とは別集計</strong>のため、'
+        '上の「一軍成績」と分けて掲載しています。</p>'
+        + "".join(parts)
+        + '<p style="font-size:11px;color:#999;margin:8px 0 0;">※ NPB公式 ファーム個人成績より</p>'
+        '</section>'
     )
 
 
@@ -1152,6 +1198,7 @@ def render_pillar_html(player: PillarPlayerInfo) -> str:
     elif _is_pitcher(player):
         stats_sections = [
             _build_pitching_season_html(player),
+            _build_farm_stats_html(player),
             _build_pitching_recent_html(player),
             _build_pitch_opponent_split_html(player),
             _build_pitch_venue_split_html(player),
@@ -1165,6 +1212,7 @@ def render_pillar_html(player: PillarPlayerInfo) -> str:
     else:
         stats_sections = [
             _build_season_stats_html(player),
+            _build_farm_stats_html(player),
             _build_streak_html(player),
             _build_recent_games_html(player),
             _build_lineup_slot_html(player),

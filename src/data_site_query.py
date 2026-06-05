@@ -745,7 +745,7 @@ def fetch_batting_stats_season(player_canonical: str) -> Optional[BattingStatsSe
                        COALESCE(SUM(R), 0) as r,
                        COALESCE(SUM(SB), 0) as sb
                 FROM batting_logs
-                WHERE REPLACE(player_canonical,' ','') = REPLACE(?,' ','')
+                WHERE REPLACE(player_canonical,' ','') = REPLACE(?,' ','') AND team_name = '巨人'
                 """,
                 (player_canonical,),
             )
@@ -781,7 +781,7 @@ def fetch_recent_games(player_canonical: str, limit: int = 5) -> list[BattingGam
                        COALESCE(b.SB, 0)
                 FROM batting_logs b
                 JOIN games g ON b.game_id = g.game_id
-                WHERE REPLACE(b.player_canonical,' ','') = REPLACE(?,' ','')
+                WHERE REPLACE(b.player_canonical,' ','') = REPLACE(?,' ','') AND b.team_name = '巨人'
                 ORDER BY g.game_date DESC
                 LIMIT ?
                 """,
@@ -824,7 +824,7 @@ def fetch_lineup_slot_stats(player_canonical: str) -> list[LineupSlotStat]:
                        COALESCE(SUM(H), 0) as h,
                        COALESCE(SUM(RBI), 0) as rbi
                 FROM batting_logs
-                WHERE REPLACE(player_canonical,' ','') = REPLACE(?,' ','') AND slot_order IS NOT NULL AND slot_order > 0
+                WHERE REPLACE(player_canonical,' ','') = REPLACE(?,' ','') AND team_name = '巨人' AND slot_order IS NOT NULL AND slot_order > 0
                 GROUP BY slot_order
                 ORDER BY slot_order
                 """,
@@ -867,7 +867,7 @@ def fetch_opponent_split_stats(player_canonical: str) -> list[OpponentSplitStat]
                        COALESCE(SUM(b.RBI), 0) as rbi
                 FROM batting_logs b
                 JOIN games g ON b.game_id = g.game_id
-                WHERE REPLACE(b.player_canonical,' ','') = REPLACE(?,' ','')
+                WHERE REPLACE(b.player_canonical,' ','') = REPLACE(?,' ','') AND b.team_name = '巨人'
                   AND g.opponent IS NOT NULL AND g.opponent <> ''
                 GROUP BY g.opponent
                 ORDER BY g.opponent
@@ -919,7 +919,7 @@ def _fetch_player_game_rows(player_canonical: str) -> list[tuple]:
                 """
                 SELECT b.game_id, g.game_date, COALESCE(b.AB,0), COALESCE(b.H,0)
                 FROM batting_logs b JOIN games g ON b.game_id = g.game_id
-                WHERE REPLACE(b.player_canonical,' ','') = REPLACE(?,' ','')
+                WHERE REPLACE(b.player_canonical,' ','') = REPLACE(?,' ','') AND b.team_name = '巨人'
                   AND g.game_date IS NOT NULL
                 """,
                 (player_canonical,),
@@ -1458,7 +1458,7 @@ def fetch_venue_split_stats(player_canonical: str) -> list[VenueSplitStat]:
                 SELECT game_id,
                        COALESCE(AB, 0), COALESCE(H, 0), COALESCE(RBI, 0)
                 FROM batting_logs
-                WHERE REPLACE(player_canonical,' ','') = REPLACE(?,' ','')
+                WHERE REPLACE(player_canonical,' ','') = REPLACE(?,' ','') AND team_name = '巨人'
                 """,
                 (player_canonical,),
             )
@@ -1591,7 +1591,7 @@ def fetch_inning_split_stats(player_canonical: str) -> list[InningSplitStat]:
             cur.execute(
                 """
                 SELECT atbats_json FROM batting_logs
-                WHERE REPLACE(player_canonical,' ','') = REPLACE(?,' ','')
+                WHERE REPLACE(player_canonical,' ','') = REPLACE(?,' ','') AND team_name = '巨人'
                   AND atbats_json IS NOT NULL AND atbats_json NOT IN ('', '[]', 'null')
                 """,
                 (player_canonical,),
@@ -1667,7 +1667,7 @@ def fetch_hit_streak(player_canonical: str) -> StreakInfo:
                 """
                 SELECT b.H FROM batting_logs b
                 JOIN games g ON b.game_id = g.game_id
-                WHERE REPLACE(b.player_canonical,' ','') = REPLACE(?,' ','')
+                WHERE REPLACE(b.player_canonical,' ','') = REPLACE(?,' ','') AND b.team_name = '巨人'
                 ORDER BY g.game_date DESC, b.game_id DESC
                 """,
                 (player_canonical,),
@@ -1697,7 +1697,7 @@ def fetch_contribution_streak(player_canonical: str) -> StreakInfo:
                 SELECT (COALESCE(b.R, 0) + COALESCE(b.RBI, 0)) as contrib
                 FROM batting_logs b
                 JOIN games g ON b.game_id = g.game_id
-                WHERE REPLACE(b.player_canonical,' ','') = REPLACE(?,' ','')
+                WHERE REPLACE(b.player_canonical,' ','') = REPLACE(?,' ','') AND b.team_name = '巨人'
                 ORDER BY g.game_date DESC, b.game_id DESC
                 """,
                 (player_canonical,),
@@ -1731,7 +1731,7 @@ def fetch_pitching_stats_season(player_canonical: str) -> Optional[PitchingStats
                        COALESCE(SUM(ER), 0) as er,
                        COALESCE(SUM(pitches), 0) as p
                 FROM pitching_logs
-                WHERE REPLACE(player_canonical,' ','') = REPLACE(?,' ','')
+                WHERE REPLACE(player_canonical,' ','') = REPLACE(?,' ','') AND team_name = '巨人'
                 """,
                 (player_canonical,),
             )
@@ -1797,7 +1797,7 @@ def fetch_recent_pitching_games(player_canonical: str, limit: int = 5) -> list[P
                        COALESCE(p.pitches, 0)
                 FROM pitching_logs p
                 JOIN games g ON p.game_id = g.game_id
-                WHERE REPLACE(p.player_canonical,' ','') = REPLACE(?,' ','')
+                WHERE REPLACE(p.player_canonical,' ','') = REPLACE(?,' ','') AND p.team_name = '巨人'
                 ORDER BY g.game_date DESC
                 LIMIT ?
                 """,
@@ -1845,7 +1845,7 @@ def fetch_pitcher_opponent_split_stats(player_canonical: str) -> list[tuple]:
                        COALESCE(SUM(p.ER), 0) as er
                 FROM pitching_logs p
                 JOIN games g ON p.game_id = g.game_id
-                WHERE REPLACE(p.player_canonical,' ','') = REPLACE(?,' ','')
+                WHERE REPLACE(p.player_canonical,' ','') = REPLACE(?,' ','') AND p.team_name = '巨人'
                   AND g.opponent IS NOT NULL AND g.opponent <> ''
                 GROUP BY g.opponent
                 ORDER BY g.opponent
@@ -1877,7 +1877,7 @@ def _fetch_pitcher_game_rows(player_canonical: str) -> list[tuple]:
                 """
                 SELECT p.game_id, g.game_date, COALESCE(p.IP,0.0), COALESCE(p.K,0), COALESCE(p.ER,0)
                 FROM pitching_logs p JOIN games g ON p.game_id = g.game_id
-                WHERE REPLACE(p.player_canonical,' ','') = REPLACE(?,' ','')
+                WHERE REPLACE(p.player_canonical,' ','') = REPLACE(?,' ','') AND p.team_name = '巨人'
                   AND g.game_date IS NOT NULL
                 """,
                 (player_canonical,),

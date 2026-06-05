@@ -76,7 +76,7 @@ class FetchInningSplitStatsTests(unittest.TestCase):
         self.tmp.close()
         conn = sqlite3.connect(self.tmp.name)
         conn.execute(
-            "CREATE TABLE batting_logs (player_canonical TEXT, atbats_json TEXT)"
+            "CREATE TABLE batting_logs (player_canonical TEXT, atbats_json TEXT, team_name TEXT)"
         )
         # 2 試合分。 序盤(idx0-2) 中盤(idx3-5) 終盤(idx6-8)。
         games = [
@@ -87,8 +87,8 @@ class FetchInningSplitStatsTests(unittest.TestCase):
         ]
         for g in games:
             conn.execute(
-                "INSERT INTO batting_logs VALUES (?, ?)",
-                ("吉川尚輝", json.dumps(g, ensure_ascii=False)),
+                "INSERT INTO batting_logs VALUES (?, ?, ?)",
+                ("吉川尚輝", json.dumps(g, ensure_ascii=False), "巨人"),
             )
         conn.commit()
         conn.close()
@@ -129,7 +129,7 @@ class DateBasedSplitTests(unittest.TestCase):
         conn = sqlite3.connect(self.tmp.name)
         conn.executescript(
             "CREATE TABLE advanced_metric_snapshots(player_canonical TEXT, team_code TEXT);"
-            "CREATE TABLE batting_logs(game_id TEXT, player_canonical TEXT, AB INT, H INT);"
+            "CREATE TABLE batting_logs(game_id TEXT, player_canonical TEXT, AB INT, H INT, team_name TEXT);"
             "CREATE TABLE games(game_id TEXT, game_date TEXT);"
         )
         # 2026-05-29(金) vs f=交流戦 / 2026-05-22(金) vs t=リーグ戦 / 2026-04-05(日)
@@ -140,7 +140,7 @@ class DateBasedSplitTests(unittest.TestCase):
         ]
         for gid, gd, ab, h in rows:
             conn.execute("INSERT INTO games VALUES(?,?)", (gid, gd))
-            conn.execute("INSERT INTO batting_logs VALUES(?,?,?,?)", (gid, "岸田 行倫", ab, h))
+            conn.execute("INSERT INTO batting_logs VALUES(?,?,?,?,?)", (gid, "岸田 行倫", ab, h, "巨人"))
         conn.commit(); conn.close()
         self._prev = os.environ.get("INSIGHT_DB_PATH")
         os.environ["INSIGHT_DB_PATH"] = self.tmp.name
@@ -189,7 +189,7 @@ class PitcherOpponentSplitTests(unittest.TestCase):
         conn = sqlite3.connect(self.tmp.name)
         conn.executescript(
             "CREATE TABLE pitching_logs(game_id TEXT, player_canonical TEXT, IP REAL, "
-            "K INT, BB INT, H_allowed INT, HR_allowed INT, ER INT, pitches INT, result_mark TEXT);"
+            "K INT, BB INT, H_allowed INT, HR_allowed INT, ER INT, pitches INT, result_mark TEXT, team_name TEXT);"
             "CREATE TABLE games(game_id TEXT, opponent TEXT, game_date TEXT);"
         )
         # vs 阪神 2登板 (IP 6.0+5.0=11.0, K 9, ER 3) / vs 中日 1登板 (IP 7.0, ER 0)
@@ -204,8 +204,8 @@ class PitcherOpponentSplitTests(unittest.TestCase):
                          (gid, opp, gid.split(":")[0]))
             conn.execute(
                 "INSERT INTO pitching_logs(game_id,player_canonical,IP,K,BB,H_allowed,"
-                "HR_allowed,ER,pitches,result_mark) VALUES(?,?,?,?,?,?,?,?,?,?)",
-                (gid, "戸郷 翔征", ip, k, 0, 0, 0, er, 0, ""),
+                "HR_allowed,ER,pitches,result_mark,team_name) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                (gid, "戸郷 翔征", ip, k, 0, 0, 0, er, 0, "", "巨人"),
             )
         conn.commit(); conn.close()
         self._prev = os.environ.get("INSIGHT_DB_PATH")

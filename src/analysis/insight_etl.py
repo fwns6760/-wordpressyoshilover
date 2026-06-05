@@ -102,6 +102,11 @@ def _load_roster_aliases() -> dict[str, str]:
         return {}
     out: dict[str, str] = {}
     surname_buckets: dict[str, list[str]] = {}
+    # NPB 公式 box score は同姓選手がいると「姓+名の頭1文字」で表記する
+    # (例: 坂本勇人/坂本達也 → "坂本勇" / 田中将大/田中瑛斗 → "田中将")。
+    # 姓・名を分離できる spaced alias ("坂本 勇人") から abbrev を induce し、
+    # 一意な時だけ登録する。曖昧な場合は登録しない。
+    abbrev_buckets: dict[str, set[str]] = {}
     for row in roster:
         canon = (row.get("name") or "").strip()
         if not canon:
@@ -111,11 +116,17 @@ def _load_roster_aliases() -> dict[str, str]:
             a = (alias or "").strip()
             if a:
                 out.setdefault(a, canon)
+            parts = (alias or "").lstrip("*＊").split()
+            if len(parts) == 2 and parts[0] and parts[1]:
+                abbrev_buckets.setdefault(parts[0] + parts[1][0], set()).add(canon)
         if row.get("active") and len(canon) >= 2:
             surname_buckets.setdefault(canon[:2], []).append(canon)
     for surname, cands in surname_buckets.items():
         if len(cands) == 1:
             out.setdefault(surname, cands[0])
+    for abbrev, cands in abbrev_buckets.items():
+        if len(cands) == 1:
+            out.setdefault(abbrev, next(iter(cands)))
     return out
 
 
@@ -929,6 +940,10 @@ def _load_team_aware_aliases() -> dict[str, dict[str, str]]:
         return {}
     by_team: dict[str, dict[str, str]] = {}
     surname_buckets: dict[str, dict[str, list[str]]] = {}
+    # NPB 公式 box score は同姓選手がいると「姓+名の頭1文字」表記になる
+    # (例: 坂本勇人/坂本達也 → "坂本勇"/"坂本達")。 spaced alias ("坂本 勇人")
+    # から abbrev を induce し、 team 内で一意な時だけ登録する。
+    abbrev_buckets: dict[str, dict[str, set[str]]] = {}
     for row in roster:
         team_code = (row.get("team_code") or "").strip()
         canon = (row.get("name") or "").strip()
@@ -940,6 +955,10 @@ def _load_team_aware_aliases() -> dict[str, dict[str, str]]:
             a = (alias or "").strip()
             if a:
                 team_dict.setdefault(a, canon)
+            parts = (alias or "").replace("　", " ").lstrip("*＊").split()
+            if len(parts) == 2 and parts[0] and parts[1]:
+                abbrev = parts[0] + parts[1][0]
+                abbrev_buckets.setdefault(team_code, {}).setdefault(abbrev, set()).add(canon)
         if row.get("active") and len(canon) >= 2:
             surname_buckets.setdefault(team_code, {}).setdefault(canon[:2], []).append(canon)
     for team_code, buckets in surname_buckets.items():
@@ -947,6 +966,11 @@ def _load_team_aware_aliases() -> dict[str, dict[str, str]]:
         for surname, cands in buckets.items():
             if len(cands) == 1:
                 team_dict.setdefault(surname, cands[0])
+    for team_code, buckets in abbrev_buckets.items():
+        team_dict = by_team.setdefault(team_code, {})
+        for abbrev, cands in buckets.items():
+            if len(cands) == 1:
+                team_dict.setdefault(abbrev, next(iter(cands)))
     return by_team
 
 

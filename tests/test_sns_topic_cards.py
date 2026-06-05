@@ -220,5 +220,82 @@ class ReplyCandidatesTests(unittest.TestCase):
         self.assertIn("text=", u)
 
 
+class FanReplyTests(unittest.TestCase):
+    """2026-06-05: ファンアカ (フーガ/缶詰) のカジュアル反応文を require_event=False で拾う。"""
+
+    # 缶詰/フーガ風: 選手名はあるが媒体見出し語 (_EVENT_WORDS) が無い反応文。
+    _FAN_FEED = (
+        "<rss><channel>"
+        "<item><title>坂本勇人！！！今日も繋いだ！これは強い</title>"
+        "<link>https://x.com/kandume92/status/99001</link></item>"
+        "</channel></rss>"
+    )
+
+    def _db(self):
+        fd, path = tempfile.mkstemp(suffix=".db"); os.close(fd)
+        conn = sqlite3.connect(path)
+        conn.execute("CREATE TABLE batting_logs (game_id TEXT, team_name TEXT, player_canonical TEXT, AB INT, H INT, RBI INT)")
+        conn.execute("CREATE TABLE pitching_logs (game_id TEXT, team_name TEXT, player_canonical TEXT, result_mark TEXT, K INT, IP REAL, ER INT)")
+        conn.execute("INSERT INTO batting_logs VALUES ('g1','巨人','坂本勇人',100,25,10)")
+        conn.commit(); conn.close()
+        self.addCleanup(lambda: os.path.exists(path) and os.remove(path))
+        return path
+
+    def test_event_gate_drops_casual_fan_post_by_default(self):
+        # require_event=True (default): 出来事語が無いファン反応文は弾かれる。
+        kws = tc.extract_rss_keywords(
+            detect_player_fn=lambda t: "坂本勇人" if "坂本" in t else "",
+            fetch_fn=lambda u: self._FAN_FEED, handles=["kandume92"],
+        )
+        self.assertEqual(len(kws), 0)
+
+    def test_require_event_false_picks_casual_fan_post(self):
+        # require_event=False: 選手検出のみで拾う (ファンアカ用)。
+        kws = tc.extract_rss_keywords(
+            detect_player_fn=lambda t: "坂本勇人" if "坂本" in t else "",
+            fetch_fn=lambda u: self._FAN_FEED, handles=["kandume92"],
+            require_event=False,
+        )
+        self.assertEqual(len(kws), 1)
+        self.assertEqual(kws[0]["player"], "坂本勇人")
+        self.assertEqual(kws[0]["events"], [])  # 出来事語なしでも通る
+
+    def test_fan_reply_uses_voice_and_skips_on_empty(self):
+        # comment_fn (voice) があればそれを使う。 巨人選手検出 + _is_giants で関連性担保。
+        reps = tc.build_reply_candidates(
+            self._db(), fetch_fn=lambda u: self._FAN_FEED, max_replies=2,
+            detect_player_fn=lambda t: "坂本勇人" if "坂本" in t else "",
+            comment_fn=lambda parent, player: "坂本勇人ここで繋ぐのがデカい。下位打線の圧が違うわ。",
+            handles=["kandume92"], require_event=False, skip_on_empty_comment=True,
+        )
+        self.assertEqual(len(reps), 1)
+        self.assertEqual(reps[0]["tweet_id"], "99001")
+        self.assertIn("下位打線の圧", reps[0]["reply"])
+
+    def test_fan_reply_skips_when_voice_empty(self):
+        # skip_on_empty_comment=True: voice が空 (門番落ち) なら deterministic fallback を使わずスキップ。
+        reps = tc.build_reply_candidates(
+            self._db(), fetch_fn=lambda u: self._FAN_FEED, max_replies=2,
+            detect_player_fn=lambda t: "坂本勇人" if "坂本" in t else "",
+            comment_fn=lambda parent, player: "",
+            handles=["kandume92"], require_event=False, skip_on_empty_comment=True,
+        )
+        self.assertEqual(len(reps), 0)
+
+    def test_fan_reply_excludes_non_giants_player(self):
+        # フーガの他球団ポスト想定: 巨人選手でなければ _is_giants で除外。
+        feed = (
+            "<rss><channel><item><title>牧すげえ 楽天同点</title>"
+            "<link>https://x.com/EH87EazmV9D2eSw/status/99002</link></item></channel></rss>"
+        )
+        reps = tc.build_reply_candidates(
+            self._db(), fetch_fn=lambda u: feed, max_replies=2,
+            detect_player_fn=lambda t: "牧秀悟" if "牧" in t else "",
+            comment_fn=lambda parent, player: "なんか言う",
+            handles=["EH87EazmV9D2eSw"], require_event=False, skip_on_empty_comment=True,
+        )
+        self.assertEqual(len(reps), 0)
+
+
 if __name__ == "__main__":
     unittest.main()

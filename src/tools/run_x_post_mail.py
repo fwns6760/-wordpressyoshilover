@@ -211,6 +211,32 @@ def _reply_target_handles() -> list[str]:
     return handles or ["hochi_giants"]
 
 
+def _fan_reply_enabled() -> bool:
+    """ファンアカ (フーガ/缶詰) 投稿へのリプ候補をメールに出すか (default OFF)。
+
+    2026-06-05 user GO: 巨人系ファンアカの試合反応に value-add リプ (同調でなく数字/逆角度を
+    1個足す) を mail で届け、 user が手動リプ。 自動投稿はしない。 LLM コストは既存の
+    per-fire budget (X_POST_MAIL_MAX_LLM_PER_RUN、 報知リプ等と共有=天井を上げない)。
+    """
+    raw = (os.environ.get("ENABLE_X_POST_FAN_REPLY") or "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _fan_reply_max_per_run() -> int:
+    """ファンリプ候補数 / fire の上限。 少量 試験運用なので default 2。"""
+    return _resolve_int_env("X_POST_FAN_REPLY_MAX", 2, min_value=0)
+
+
+def _fan_reply_target_handles() -> list[str]:
+    """ファンリプの対象 X handle。 default = フーガ + 缶詰 (2026-06-05 user 指定)。"""
+    raw = (
+        os.environ.get("X_POST_FAN_REPLY_TARGET_HANDLES")
+        or "EH87EazmV9D2eSw,kandume92"
+    ).strip()
+    handles = [h.strip().lstrip("@") for h in raw.split(",") if h.strip()]
+    return handles or ["EH87EazmV9D2eSw", "kandume92"]
+
+
 def _reply_llm_enabled() -> bool:
     """返信文の LLM 生成。 2026-06-04 user 方針で default ON (リプもヨシラバー風)。
 
@@ -1883,6 +1909,80 @@ def main(argv: Sequence[str] | None = None) -> int:
                     len(rep_cands),
                     len(candidates),
                     ",".join(target_handles),
+                )
+
+    # 2026-06-05 user GO: ファンアカ (フーガ @EH87EazmV9D2eSw / 缶詰 @kandume92) の試合反応への
+    # value-add リプ候補。 既存リプ機構 (build_reply_candidates) を流用し、 ファンのカジュアル
+    # 反応文を拾うため require_event=False。 空虚な同調を送らないよう skip_on_empty_comment=True
+    # (LLM voice が門番落ちした投稿はスキップ)。 巨人選手検出 + _is_giants で巨人関連のみ
+    # (フーガの広島/楽天ポストは除外)。 自動投稿はしない (mail 候補まで)。 LLM は per-fire budget
+    # (X_POST_MAIL_MAX_LLM_PER_RUN) を報知リプ等と共有=天井を上げない。 default OFF (flag gated)。
+    if _fan_reply_enabled() and db_path:
+        fan_max = _fan_reply_max_per_run()
+        if fan_max > 0:
+            fan_comment_fn = None
+            _fan_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GEMMA_BRANDING_GEMINI_API_KEY") or ""
+            if _fan_key:
+                try:
+                    from src import x_post_branding_gen as _fan_xbg
+
+                    def fan_comment_fn(parent_text, player, _k=_fan_key, _g=_fan_xbg, _now=now_jst):  # noqa: E731
+                        # ファン投稿への value-add リプ (同調でなく数字/逆角度を1個足す)。 subject で
+                        # 「ファン投稿への反応」と枠付け。 元ネタに無い数字は門番 (_extract_unverified_numbers) で弾く。
+                        return _g.build_quote_rt_comment(
+                            parent_text, player, gemini_api_key=_k, now=_now, subject="巨人ファンの投稿",
+                        )
+                except Exception as _fan_imp_exc:  # noqa: BLE001
+                    LOG.warning("fan_reply LLM comment unavailable: %r", _fan_imp_exc)
+                    fan_comment_fn = None
+            fan_handles = _fan_reply_target_handles()
+            try:
+                from src import sns_topic_cards as _tc3
+                fan_reps = _tc3.build_reply_candidates(
+                    db_path,
+                    max_replies=fan_max,
+                    comment_fn=fan_comment_fn,
+                    handles=fan_handles,
+                    require_event=False,
+                    skip_on_empty_comment=True,
+                )
+            except Exception as _fan_exc:  # noqa: BLE001
+                LOG.warning("fan_reply build failed: %r", _fan_exc)
+                fan_reps = []
+            fan_cands = []
+            for r in fan_reps:
+                handle = str(r.get("handle") or "").strip().lstrip("@")
+                sig = f"fan_reply|{handle or 'unknown'}|{r['tweet_id']}"
+                if dedup_set is not None and sig in dedup_set:
+                    continue
+                draft = (
+                    f"返信先(ファンリプ候補): {r['url']}\n"
+                    f"対象handle: @{handle or 'unknown'}\n"
+                    f"リプ文: {r['reply']}\n\n"
+                    "※ ボタンで返信画面が開く(リプ文入り)→ 投稿。"
+                    "巨人系ファンアカの試合反応に value-add リプ=客層に露出。自動投稿はしない。"
+                )
+                fan_cands.append(lane.Candidate(
+                    title=f"💬 ファンリプ候補: @{handle or 'unknown'} {r['player']} {r['headline']}",
+                    metric=lane._REPLY_CANDIDATE_METRIC,
+                    period_label="ファンリプ候補",
+                    draft_text=draft,
+                    char_count=len(r["reply"]),
+                    signature=sig,
+                    post_text=r["reply"],
+                    focus_player=r["player"],
+                    reply_to_id=r["tweet_id"],
+                    why_now="ファンアカの試合反応に返信=客層に露出",
+                    source_material_type="reply_candidate",
+                    reason_tags=("reply:fan", "manual_only"),
+                ))
+            if fan_cands:
+                before = len(candidates)
+                candidates = candidates + fan_cands
+                extra_policy_slots += len(fan_cands)
+                LOG.info(
+                    "fan_reply appended: base=%d fan=%d total=%d handles=%s",
+                    before, len(fan_cands), len(candidates), ",".join(fan_handles),
                 )
 
     # 392: flag ON 時は news_opinion fallback (template) を skip し、 Gemini Flash Lite

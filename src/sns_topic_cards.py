@@ -36,8 +36,15 @@ def extract_rss_keywords(
     fetch_fn: Optional[Callable[[str], str]] = None,
     handles: Optional[list[str]] = None,
     limit: int = 15,
+    require_event: bool = True,
 ) -> list[dict]:
-    """RSS(巨人系X)から {player, events, title} を抽出。 選手 + 出来事語の両方ある投稿のみ。"""
+    """RSS(巨人系X)から {player, events, title} を抽出。 選手 + 出来事語の両方ある投稿のみ。
+
+    ``require_event=False`` のとき、 出来事語ゲートを外し **巨人選手を含む投稿は全部** 拾う
+    (default True で既存挙動=媒体見出し向け不変)。 ファンアカ (フーガ/缶詰) の反応文は
+    「泉口！！！復活の一打！！！」 のように媒体見出し語を持たないため、 リプ候補化には
+    選手検出のみで通す (巨人関連性は detect_player_fn + 後段 ``_is_giants`` で担保)。
+    """
     fetch = fetch_fn or _vr._default_fetch
     handles = handles or _MEDIA_HANDLES
     out: list[dict] = []
@@ -58,7 +65,7 @@ def extract_rss_keywords(
             if not player:
                 continue
             events = [e for e in _EVENT_WORDS if e in title]
-            if not events:
+            if require_event and not events:
                 continue
             key = (player, tuple(events))
             if key in seen:
@@ -283,6 +290,8 @@ def build_reply_candidates(
     detect_player_fn: Optional[Callable[[str], str]] = None,
     comment_fn: Optional[Callable[[str, str], str]] = None,
     handles: Optional[list[str]] = None,
+    require_event: bool = True,
+    skip_on_empty_comment: bool = False,
 ) -> list[dict]:
     """大手巨人アカ投稿への『リプライ候補』。 ヨシラバーボイスのリプ文 + 大手投稿URL/tweet_id。
 
@@ -293,6 +302,10 @@ def build_reply_candidates(
     親ツイートに「データ気づき + 辛口読み」を足したヨシラバーボイスのリプ文を生成し、
     いいねで上位に浮かせる。 comment_fn 無し / 生成失敗時は deterministic なヨシラバー風
     短文 reply へ fallback。
+
+    ``require_event=False``: 出来事語ゲートを外す (ファンアカ フーガ/缶詰 のカジュアル反応文用)。
+    ``skip_on_empty_comment=True``: comment_fn (LLM voice) が空/門番落ちした投稿は
+    deterministic テンプレ fallback を使わず候補ごとスキップ (空虚な同調リプを送らない)。
     Returns [{player, reply, url, tweet_id, headline}]。
     """
     import re as _re2
@@ -307,6 +320,7 @@ def build_reply_candidates(
         detect_player_fn=detect_player_fn,
         fetch_fn=fetch_fn,
         handles=handles,
+        require_event=require_event,
     )
     out: list[dict] = []
     used: set[str] = set()
@@ -327,7 +341,7 @@ def build_reply_candidates(
                 reply = (comment_fn(title, player) or "").strip()
             except Exception:  # noqa: BLE001
                 reply = ""
-        if not reply:
+        if not reply and not skip_on_empty_comment:
             reply = _yoshilover_reply_fallback(db_path, player, events, title)
         if not reply:
             continue

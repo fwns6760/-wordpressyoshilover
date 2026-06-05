@@ -14,6 +14,8 @@ import html as _html
 import json as _json
 import os as _os
 
+from src.data_site_internal_link import linkify, roster_moves_nav, breadcrumb_jsonld
+
 SITE_BASE = "https://yoshilover.com"
 CLUSTER_URL = "https://yoshilover.com/data/"
 
@@ -42,7 +44,7 @@ def _players_html(players) -> str:
         return "—"
     out = []
     for p in players:
-        nm = _esc(p.get("name"))
+        nm = linkify(p.get("name"))
         pos = _esc(p.get("pos"))
         out.append(f'<strong>{nm}</strong>'
                    + (f'<span style="color:#999;font-size:11px;">（{pos}）</span>' if pos else ""))
@@ -157,9 +159,11 @@ def render_trade_html(data: dict | None = None) -> str:
                        _render_all(data.get("transactions_all") or []),
                        len(data.get("transactions_all") or [])),
     ]
-    return ('<div style="font-family:sans-serif;max-width:860px;">'
+    return (breadcrumb_jsonld("巨人 トレード・移籍", "trade")
+            + '<div style="font-family:sans-serif;max-width:860px;">'
             f'{nav}'
-            '<h1 style="font-size:20px;margin:0 0 4px;">巨人 トレード・移籍データベース</h1>'
+            + roster_moves_nav("trade")
+            + '<h1 style="font-size:20px;margin:0 0 4px;">巨人 トレード・移籍データベース</h1>'
             '<p style="font-size:13px;color:#666;margin:0 0 12px;">'
             '読売ジャイアンツの歴代トレードと、FA移籍・自由契約・戦力外・現役ドラフトを含む入退団の動きを'
             '巨人専用に1ページでまとめます。</p>'

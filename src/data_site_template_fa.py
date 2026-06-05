@@ -15,6 +15,8 @@ import html as _html
 import json as _json
 import os as _os
 
+from src.data_site_internal_link import linkify, roster_moves_nav, breadcrumb_jsonld
+
 SITE_BASE = "https://yoshilover.com"
 CLUSTER_URL = "https://yoshilover.com/data/"
 
@@ -79,7 +81,7 @@ def _render_acquisitions(entries) -> str:
     entries = sorted(entries, key=_yr, reverse=True)
     rows = [[
         _cell(e.get("fa_year")),
-        f'<strong>{_esc(e.get("name"))}</strong>',
+        f'<strong>{linkify(e.get("name"))}</strong>',
         _cell(e.get("pos")),
         _cell(e.get("prev_team")),
         _cell(e.get("join_year")),
@@ -102,7 +104,7 @@ def _render_eligible(entries, asof: str) -> str:
     for g in order:
         rows = [[
             _cell(e.get("back_no")),
-            f'<strong>{_esc(e.get("name"))}</strong>',
+            f'<strong>{linkify(e.get("name"))}</strong>',
             _cell(e.get("age")),
             _cell(e.get("tenure_years")),
             _cell(e.get("right_type")),
@@ -126,7 +128,7 @@ def _render_topics(data) -> str:
         return int(m.group(0)) if m else 0
     latest = sorted(acq, key=_yr, reverse=True)[:5]
     items = "".join(f'<li style="margin:0 0 4px;">{_esc(e.get("fa_year"))} '
-                    f'<strong>{_esc(e.get("name"))}</strong>'
+                    f'<strong>{linkify(e.get("name"))}</strong>'
                     f'（前所属: {_esc(e.get("prev_team"))}）</li>' for e in latest)
     return ('<section style="background:#fff8e1;border-left:3px solid #f57f17;'
             'padding:12px 16px;border-radius:4px;margin:0 0 18px;">'
@@ -170,9 +172,11 @@ def render_fa_html(data: dict | None = None) -> str:
                        _render_eligible(data.get("fa_eligible") or [], asof),
                        len(data.get("fa_eligible") or [])),
     ]
-    return ('<div style="font-family:sans-serif;max-width:820px;">'
+    return (breadcrumb_jsonld("巨人 FA選手", "fa")
+            + '<div style="font-family:sans-serif;max-width:820px;">'
             f'{nav}'
-            '<h1 style="font-size:20px;margin:0 0 4px;">巨人 FA選手データベース</h1>'
+            + roster_moves_nav("fa")
+            + '<h1 style="font-size:20px;margin:0 0 4px;">巨人 FA選手データベース</h1>'
             '<p style="font-size:13px;color:#666;margin:0 0 12px;">'
             '読売ジャイアンツが歴代FAで獲得した選手と、FA有資格選手を巨人専用に1ページでまとめます。</p>'
             f'{src_note}{_render_topics(data)}{jump}' + "".join(sections)

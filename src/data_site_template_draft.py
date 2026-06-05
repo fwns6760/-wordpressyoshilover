@@ -22,6 +22,8 @@ import html as _html
 import json as _json
 import os as _os
 
+from src.data_site_internal_link import linkify, roster_moves_nav, breadcrumb_jsonld
+
 SITE_BASE = "https://yoshilover.com"
 CLUSTER_URL = "https://yoshilover.com/data/"
 
@@ -119,7 +121,7 @@ def _render_draft_picks(entries: list[dict]) -> str:
             mark = ' <span style="color:#e25400;font-size:11px;">（抽選）</span>' if e.get("competed") else ""
             rows.append([
                 _esc(e.get("round")) + mark,
-                f'<strong>{_esc(e.get("name"))}</strong>',
+                f'<strong>{linkify(e.get("name"))}</strong>',
                 _cell(e.get("pos")),
                 _cell(e.get("from")),
                 _cell(e.get("note")),
@@ -141,7 +143,7 @@ def _render_ikusei(entries: list[dict]) -> str:
         items = sorted(items, key=lambda e: _round_sort_key(e.get("round", "")))
         rows = [[
             _esc(e.get("round")),
-            f'<strong>{_esc(e.get("name"))}</strong>',
+            f'<strong>{linkify(e.get("name"))}</strong>',
             _cell(e.get("pos")),
             _cell(e.get("from")),
             _cell(e.get("note")),
@@ -163,7 +165,7 @@ def _render_non_draft(entries: list[dict]) -> str:
         for e in items:
             rows.append([
                 str(year),
-                f'<strong>{_esc(e.get("name"))}</strong>',
+                f'<strong>{linkify(e.get("name"))}</strong>',
                 _cell(e.get("pos")),
                 _cell(e.get("from")),
                 _cell(e.get("note")),
@@ -188,13 +190,13 @@ def _render_lottery(entries: list[dict]) -> str:
                         else f'<span style="color:#c62828;font-weight:700;">×</span>' if result == "×"
                         else "—")
             miss = e.get("miss_name")
-            miss_html = (f'{_esc(miss)}<span style="color:#999;font-size:11px;">'
+            miss_html = (f'{linkify(miss)}<span style="color:#999;font-size:11px;">'
                          f'（{_cell(e.get("miss_pos"))}・{_cell(e.get("miss_from"))}）</span>'
                          if miss else "—")
             rows.append([
                 str(year),
                 _esc(e.get("round")),
-                f'<strong>{_esc(e.get("name"))}</strong>',
+                f'<strong>{linkify(e.get("name"))}</strong>',
                 _cell(e.get("pos")),
                 comp_txt,
                 res_html,
@@ -212,7 +214,7 @@ def _render_scouts(entries: list[dict]) -> str:
     if not entries:
         return _todo_box("現役スカウト名簿を整備中です。")
     rows = [[
-        f'<strong>{_esc(e.get("name"))}</strong>',
+        f'<strong>{linkify(e.get("name"))}</strong>',
         _cell(e.get("title")),
         _cell(e.get("area")),
         _cell(e.get("note")),
@@ -226,7 +228,7 @@ def _render_ob_scouts(entries: list[dict]) -> str:
     if not entries:
         return _todo_box("OBスカウト名簿（元巨人選手のスカウト）を整備中です。")
     rows = [[
-        f'<strong>{_esc(e.get("name"))}</strong>',
+        f'<strong>{linkify(e.get("name"))}</strong>',
         _cell(e.get("ob_career")),
         _cell(e.get("title")),
         _cell(e.get("area")),
@@ -245,7 +247,7 @@ def _render_contract_changes(entries: list[dict]) -> str:
         for e in items:
             rows.append([
                 _cell(e.get("date") or year),
-                f'<strong>{_esc(e.get("name"))}</strong>',
+                f'<strong>{linkify(e.get("name"))}</strong>',
                 _cell(e.get("change")),
                 _cell(e.get("note")),
             ])
@@ -263,7 +265,7 @@ def _render_topics(data: dict) -> str:
     firsts = sorted(firsts, key=lambda e: int(e.get("year", 0)), reverse=True)[:5]
     items = "".join(
         f'<li style="margin:0 0 4px;">{_esc(e.get("year"))}年 1位 '
-        f'<strong>{_esc(e.get("name"))}</strong>'
+        f'<strong>{linkify(e.get("name"))}</strong>'
         f'{("（抽選）" if e.get("competed") else "")}</li>'
         for e in firsts
     )
@@ -355,9 +357,11 @@ def render_draft_html(data: dict | None = None) -> str:
     ]
 
     return (
-        '<div style="font-family:sans-serif;max-width:820px;">'
+        breadcrumb_jsonld("巨人 歴代ドラフト", "draft")
+        + '<div style="font-family:sans-serif;max-width:820px;">'
         f'{nav}'
-        '<h1 style="font-size:20px;margin:0 0 4px;">巨人 歴代ドラフト指名選手データベース</h1>'
+        + roster_moves_nav("draft")
+        + '<h1 style="font-size:20px;margin:0 0 4px;">巨人 歴代ドラフト指名選手データベース</h1>'
         '<p style="font-size:13px;color:#666;margin:0 0 12px;">'
         '読売ジャイアンツの歴代ドラフト指名（支配下・育成・ドラフト外）、指名競合と外れ1位、'
         'スカウト名簿、契約変更までを巨人専用に1ページでまとめます。1965〜2024年を順次整備中。</p>'

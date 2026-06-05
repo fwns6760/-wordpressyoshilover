@@ -5,15 +5,17 @@ NPB 公式: https://npb.jp/bis/{year}/stats/idb1_g.html（打）/ idp1_g.html（
 
 giants_farm_map() -> { 正規化名: {"batting": {stat:val}, "pitching": {stat:val}} }
 ネットワーク失敗時は空 dict（選手ページは二軍ブロックを出さないだけ）。
+
+依存は stdlib のみ（本番ジョブ image に bs4 は無いため html.parser を使う）。
 """
 
 from __future__ import annotations
 
 import logging
 import re
+from html.parser import HTMLParser
 
 import requests
-from bs4 import BeautifulSoup
 
 LOG = logging.getLogger(__name__)
 
@@ -34,6 +36,40 @@ _CACHE: dict | None = None
 _CACHE_YEAR: int | None = None
 
 
+class _TableExtractor(HTMLParser):
+    """stdlib のみで <table> 群を [rows[cells]] として抽出（ネスト対応）。"""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.tables: list[list[list[str]]] = []
+        self._stack: list[dict] = []
+        self._cell: list | None = None
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "table":
+            self._stack.append({"rows": [], "row": None})
+        elif tag == "tr" and self._stack:
+            self._stack[-1]["row"] = []
+        elif tag in ("td", "th") and self._stack and self._stack[-1]["row"] is not None:
+            self._cell = []
+
+    def handle_data(self, data):
+        if self._cell is not None:
+            self._cell.append(data)
+
+    def handle_endtag(self, tag):
+        if tag in ("td", "th") and self._cell is not None and self._stack:
+            txt = " ".join("".join(self._cell).split())
+            if self._stack[-1]["row"] is not None:
+                self._stack[-1]["row"].append(txt)
+            self._cell = None
+        elif tag == "tr" and self._stack and self._stack[-1]["row"] is not None:
+            self._stack[-1]["rows"].append(self._stack[-1]["row"])
+            self._stack[-1]["row"] = None
+        elif tag == "table" and self._stack:
+            self.tables.append(self._stack.pop()["rows"])
+
+
 def _norm(name: str) -> str:
     return _WS.sub("", _LEAD.sub("", name or "").strip())
 
@@ -47,17 +83,18 @@ def _fetch_table(url: str):
     r = requests.get(url, headers=_UA, timeout=15)
     if r.status_code != 200:
         return [], []
-    r.encoding = r.apparent_encoding
-    soup = BeautifulSoup(r.text, "html.parser")
-    tables = soup.find_all("table")
-    if not tables:
+    try:
+        html = r.content.decode("utf-8")
+    except UnicodeDecodeError:
+        html = r.text
+    parser = _TableExtractor()
+    parser.feed(html)
+    if not parser.tables:
         return [], []
-    big = max(tables, key=lambda t: len(t.find_all("tr")))
-    rows = [[c.get_text(" ", strip=True) for c in tr.find_all(["td", "th"])]
-            for tr in big.find_all("tr")]
-    if not rows:
+    big = max(parser.tables, key=len)
+    if not big:
         return [], []
-    return rows[0], rows[1:]
+    return big[0], big[1:]
 
 
 def _parse(url: str, cols) -> dict:

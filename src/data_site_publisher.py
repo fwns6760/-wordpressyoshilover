@@ -107,6 +107,12 @@ from src.data_site_template_fa import (
     render_fa_title,
     render_fa_excerpt,
 )
+from src.data_site_template_trade import (
+    load_trade_data,
+    render_trade_html,
+    render_trade_title,
+    render_trade_excerpt,
+)
 from src.data_site_template_legends import (
     render_legends_html,
     render_legends_title,
@@ -691,6 +697,20 @@ def publish_phase1(only_slugs: set[str] | None = None) -> dict[str, object]:
              fa_result.page_id, fa_result.action,
              len(fa_data.get("fa_acquisitions") or []),
              len(fa_data.get("fa_eligible") or []))
+
+    # trade ページ upsert（トレード/入退団、user 指定 2026-06-05）— parent=cluster → /data/trade/
+    trade_data = load_trade_data()
+    trade_result = _upsert_page(
+        slug="trade",
+        title=render_trade_title(),
+        content_html=render_trade_html(trade_data),
+        parent=cluster_page_id,
+        excerpt=render_trade_excerpt(trade_data),
+    )
+    LOG.info("trade upsert slug=trade page_id=%s action=%s exchange=%d all=%d",
+             trade_result.page_id, trade_result.action,
+             len(trade_data.get("trades_exchange") or []),
+             len(trade_data.get("transactions_all") or []))
 
     summary = {
         "status": "ok",

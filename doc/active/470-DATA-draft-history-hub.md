@@ -1,6 +1,8 @@
 # 470-DATA 巨人ドラフト史ページ /data/draft
 
-- status: IN_FLIGHT（枠組み LIVE・本番公開ゲート OFF）
+- status: GOING_LIVE（全7セクション scrape 完了・本番公開へ。user 2026-06-05「スクレイピングOK・しっかりHPに作って」）
+- scrape 結果: 指名403 / 育成122 / 外73 / 競合46 / スカウト16 / OB26 / 契約変更83。draft 年代 1965-2025。「準備中」0。
+- scraper: `src/tools/scrape_giants_draft.py`（再実行で config を更新）
 - owner: Claude
 - created: 2026-06-05
 - benchmark: https://www.my-favorite-giants.net/giants_data/draft/lot.htm

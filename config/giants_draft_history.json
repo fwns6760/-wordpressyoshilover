@@ -1,43 +1,6745 @@
 {
   "_schema": {
-    "note": "巨人ドラフト史データ正本。出典=NPB公式ドラフト会議結果 / Wikipedia『Template:読売ジャイアンツ{年}ドラフト指名選手』および年度別ドラフト会議ページ。守備位置・所属はドラフト指名時のもの。事実のみ。推測で埋めない(空欄は順次整備)。",
-    "source": "https://ja.wikipedia.org/wiki/Category:読売ジャイアンツのドラフト指名選手テンプレート",
+    "note": "巨人ドラフト史データ正本。出典=NPB公式ドラフト会議結果ほか公開資料。守備位置・所属はドラフト指名時のもの。事実のみ。HTML/文章はコピーせず事実テーブルのみ抽出。",
+    "source": "https://www.my-favorite-giants.net/giants_data/draft/ ほか公開資料",
     "benchmark": "https://www.my-favorite-giants.net/giants_data/draft/lot.htm",
-    "fields": {
-      "draft_picks": "支配下ドラフト指名。year(西暦int) / round(巡目str 例:1位) / name / pos(守備位置) / from(所属) / competed(1位抽選の有無bool) / note",
-      "ikusei_picks": "育成ドラフト指名。year / round(例:育成1位) / name / pos / from / note",
-      "non_draft": "ドラフト外入団。year / name / pos / from / note",
-      "lottery": "指名競合・外れ1位一覧(ベンチ lot.htm 相当)。year / round / name / pos / from / competitors(競合球団list) / result(○/×) / miss_name(外れ指名選手) / miss_pos / miss_from / note",
-      "scouts": "現役スカウト名簿。name / title(役職) / area(担当) / note",
-      "ob_scouts": "OBスカウト名簿。name / ob_career(現役時の所属/実績) / title / area / note",
-      "contract_changes": "契約変更選手一覧(支配下↔育成 等)。year / name / change(変更内容) / note"
-    },
-    "completeness": {
-      "target_years": "1965-2024",
-      "status": "BACKFILL_IN_PROGRESS",
-      "filled_years_draft_picks": [2024],
-      "publish_gate": "全年代(1965-2024)整備完了まで本番非公開。ENABLE_DATA_SITE_DRAFT で点灯。"
-    }
+    "generator": "src/tools/scrape_giants_draft.py"
   },
   "updated": "2026-06-05",
   "draft_picks": [
-    {"year": 2024, "round": "1位", "name": "石塚裕惺", "pos": "", "from": "", "competed": false, "note": ""},
-    {"year": 2024, "round": "2位", "name": "浦田俊輔", "pos": "", "from": "", "competed": false, "note": ""},
-    {"year": 2024, "round": "3位", "name": "荒巻悠", "pos": "", "from": "", "competed": false, "note": ""},
-    {"year": 2024, "round": "4位", "name": "石田充冴", "pos": "", "from": "", "competed": false, "note": ""},
-    {"year": 2024, "round": "5位", "name": "宮原駿介", "pos": "", "from": "", "competed": false, "note": ""}
+    {
+      "year": 2025,
+      "round": "1位",
+      "name": "竹丸和幸",
+      "pos": "投手",
+      "from": "鷺宮製作所",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 2025,
+      "round": "2位",
+      "name": "田和廉",
+      "pos": "投手",
+      "from": "早稲田大",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 2025,
+      "round": "3位",
+      "name": "山城京平",
+      "pos": "投手",
+      "from": "亜細亜大",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 2025,
+      "round": "4位",
+      "name": "皆川岳飛",
+      "pos": "外野手",
+      "from": "中央大",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 2025,
+      "round": "5位",
+      "name": "小濱佑斗",
+      "pos": "内野手",
+      "from": "沖縄電力",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 2025,
+      "round": "6位",
+      "name": "藤井健翔",
+      "pos": "内野手",
+      "from": "浦和学院高",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 2024,
+      "round": "1位",
+      "name": "石塚裕惺",
+      "pos": "内野手",
+      "from": "花咲徳栄高",
+      "competed": true,
+      "note": ""
+    },
+    {
+      "year": 2024,
+      "round": "2位",
+      "name": "浦田俊輔",
+      "pos": "内野手",
+      "from": "九州産業大",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 2024,
+      "round": "3位",
+      "name": "荒巻悠",
+      "pos": "内野手",
+      "from": "上武大",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 2024,
+      "round": "4位",
+      "name": "石田充冴",
+      "pos": "投手",
+      "from": "北星学園大附高",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 2024,
+      "round": "5位",
+      "name": "宮原駿介",
+      "pos": "投手",
+      "from": "東海大静岡キャンパス",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 2023,
+      "round": "1位",
+      "name": "西舘勇陽",
+      "pos": "投手",
+      "from": "中央大",
+      "competed": true,
+      "note": ""
+    },
+    {
+      "year": 2023,
+      "round": "2位",
+      "name": "森田駿哉",
+      "pos": "投手",
+      "from": "Honda鈴鹿",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 2023,
+      "round": "3位",
+      "name": "佐々木俊輔",
+      "pos": "外野手",
+      "from": "日立製作所",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 2023,
+      "round": "4位",
+      "name": "泉口友汰",
+      "pos": "内野手",
+      "from": "NTT西日本",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 2023,
+      "round": "5位",
+      "name": "又木鉄平",
+      "pos": "投手",
+      "from": "日本生命",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 2022,
+      "round": "1位",
+      "name": "浅野翔吾",
+      "pos": "外野手",
+      "from": "高松商業高",
+      "competed": true,
+      "note": ""
+    },
+    {
+      "year": 2022,
+      "round": "2位",
+      "name": "萩尾匡也",
+      "pos": "外野手",
+      "from": "慶應義塾大",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 2022,
+      "round": "3位",
+      "name": "田中千晴",
+      "pos": "投手",
+      "from": "國學院大",
+      "competed": false,
+      "note": "→東北楽天(2026-)"
+    },
+    {
+      "year": 2022,
+      "round": "4位",
+      "name": "門脇誠",
+      "pos": "内野手",
+      "from": "創価大",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 2022,
+      "round": "5位",
+      "name": "船迫大雅",
+      "pos": "投手",
+      "from": "西濃運輸",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 2021,
+      "round": "1位",
+      "name": "(翁田)大勢",
+      "pos": "投手",
+      "from": "関西国際大",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 2021,
+      "round": "2位",
+      "name": "山田龍聖",
+      "pos": "投手",
+      "from": "JR東日本",
+      "competed": false,
+      "note": "［育成登録・2025］"
+    },
+    {
+      "year": 2021,
+      "round": "3位",
+      "name": "赤星優志",
+      "pos": "投手",
+      "from": "日本大",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 2021,
+      "round": "4位",
+      "name": "石田隼都",
+      "pos": "投手",
+      "from": "東海大相模高",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 2021,
+      "round": "5位",
+      "name": "岡田悠希",
+      "pos": "外野手",
+      "from": "法政大",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 2021,
+      "round": "6位",
+      "name": "代木大和",
+      "pos": "投手",
+      "from": "明徳義塾高",
+      "competed": false,
+      "note": "［育成登録・2025-］"
+    },
+    {
+      "year": 2021,
+      "round": "7位",
+      "name": "花田侑樹",
+      "pos": "投手",
+      "from": "広島新庄高",
+      "competed": false,
+      "note": "［育成登録・2023-］"
+    },
+    {
+      "year": 2020,
+      "round": "1位",
+      "name": "平内龍太",
+      "pos": "投手",
+      "from": "亜細亜大",
+      "competed": false,
+      "note": "［育成登録・2023-2023/5］"
+    },
+    {
+      "year": 2020,
+      "round": "2位",
+      "name": "山﨑伊織",
+      "pos": "投手",
+      "from": "東海大",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 2020,
+      "round": "3位",
+      "name": "中山礼都",
+      "pos": "内野手",
+      "from": "中京大中京高",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 2020,
+      "round": "4位",
+      "name": "伊藤優輔",
+      "pos": "投手",
+      "from": "三菱パワー",
+      "competed": false,
+      "note": "［育成登録・2022-2024/7］→福岡ソフトバンク(2025-)"
+    },
+    {
+      "year": 2020,
+      "round": "5位",
+      "name": "秋広優人",
+      "pos": "内野手",
+      "from": "二松学舎大附高",
+      "competed": false,
+      "note": "→福岡ソフトバンク(2025/5-)"
+    },
+    {
+      "year": 2020,
+      "round": "6位",
+      "name": "山本一輝",
+      "pos": "投手",
+      "from": "中京大",
+      "competed": false,
+      "note": "2023［育成登録・2023］"
+    },
+    {
+      "year": 2020,
+      "round": "7位",
+      "name": "萩原哲",
+      "pos": "捕手",
+      "from": "創価大",
+      "competed": false,
+      "note": "2024［育成登録・2023-2024］"
+    },
+    {
+      "year": 2019,
+      "round": "1位",
+      "name": "堀田賢慎",
+      "pos": "投手",
+      "from": "青森山田高",
+      "competed": false,
+      "note": "［育成登録・2021-2022/3］"
+    },
+    {
+      "year": 2019,
+      "round": "2位",
+      "name": "太田龍",
+      "pos": "投手",
+      "from": "JR東日本",
+      "competed": false,
+      "note": "2023［育成登録・2023］"
+    },
+    {
+      "year": 2019,
+      "round": "3位",
+      "name": "菊田拡和",
+      "pos": "内野手",
+      "from": "常総学院高",
+      "competed": false,
+      "note": "2024"
+    },
+    {
+      "year": 2019,
+      "round": "4位",
+      "name": "井上温大",
+      "pos": "投手",
+      "from": "前橋商業高",
+      "competed": false,
+      "note": "［育成登録・2022-2022/7］"
+    },
+    {
+      "year": 2019,
+      "round": "5位",
+      "name": "山瀬慎之助",
+      "pos": "捕手",
+      "from": "星稜高",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 2019,
+      "round": "6位",
+      "name": "伊藤海斗",
+      "pos": "外野手",
+      "from": "酒田南高",
+      "competed": false,
+      "note": "2022［育成登録・2022］"
+    },
+    {
+      "year": 2018,
+      "round": "1位",
+      "name": "髙橋優貴",
+      "pos": "投手",
+      "from": "八戸学院大",
+      "competed": false,
+      "note": "2024［育成登録・2023］"
+    },
+    {
+      "year": 2018,
+      "round": "2位",
+      "name": "増田陸",
+      "pos": "内野手",
+      "from": "明秀学園日立高",
+      "competed": false,
+      "note": "［育成登録・2022-2022/3］"
+    },
+    {
+      "year": 2018,
+      "round": "3位",
+      "name": "直江大輔",
+      "pos": "投手",
+      "from": "松商学園高",
+      "competed": false,
+      "note": "2025［育成登録・2021/2025］"
+    },
+    {
+      "year": 2018,
+      "round": "4位",
+      "name": "横川凱",
+      "pos": "投手",
+      "from": "大阪桐蔭高",
+      "competed": false,
+      "note": "［育成登録・2022-2022/4、2023-2023/3］"
+    },
+    {
+      "year": 2018,
+      "round": "5位",
+      "name": "松井義弥",
+      "pos": "内野手",
+      "from": "折尾愛真高",
+      "competed": false,
+      "note": "2021"
+    },
+    {
+      "year": 2018,
+      "round": "6位",
+      "name": "戸郷翔征",
+      "pos": "投手",
+      "from": "聖心ウルスラ学園高",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 2017,
+      "round": "1位",
+      "name": "鍬原拓也",
+      "pos": "投手",
+      "from": "中央大",
+      "competed": false,
+      "note": "［育成登録・2021-2021/8、2022-2022/3］→福岡ソフトバンク(2024[育成登録])"
+    },
+    {
+      "year": 2017,
+      "round": "2位",
+      "name": "岸田行倫",
+      "pos": "捕手",
+      "from": "大阪ガス",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 2017,
+      "round": "3位",
+      "name": "大城卓三",
+      "pos": "捕手",
+      "from": "NTT西日本",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 2017,
+      "round": "4位",
+      "name": "北村拓己",
+      "pos": "内野手",
+      "from": "亜細亜大",
+      "competed": false,
+      "note": "→東京ヤクルト(2024-2025)"
+    },
+    {
+      "year": 2017,
+      "round": "5位",
+      "name": "田中俊太",
+      "pos": "内野手",
+      "from": "日立製作所",
+      "competed": false,
+      "note": "→横浜DeNA(2021-2023)"
+    },
+    {
+      "year": 2017,
+      "round": "6位",
+      "name": "若林晃弘",
+      "pos": "内野手",
+      "from": "JX-ENEOS",
+      "competed": false,
+      "note": "→北海道日本ハム(2024-2025)"
+    },
+    {
+      "year": 2017,
+      "round": "7位",
+      "name": "村上海斗",
+      "pos": "外野手",
+      "from": "奈良学園大",
+      "competed": false,
+      "note": "2020"
+    },
+    {
+      "year": 2017,
+      "round": "8位",
+      "name": "湯浅大",
+      "pos": "内野手",
+      "from": "高崎健康福祉大高崎高",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 2016,
+      "round": "1位",
+      "name": "吉川尚輝",
+      "pos": "内野手",
+      "from": "中京学院大",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 2016,
+      "round": "2位",
+      "name": "畠世周",
+      "pos": "投手",
+      "from": "近畿大",
+      "competed": false,
+      "note": "→阪神(2025-)"
+    },
+    {
+      "year": 2016,
+      "round": "3位",
+      "name": "谷岡竜平",
+      "pos": "投手",
+      "from": "東芝",
+      "competed": false,
+      "note": "2023［育成登録・2020-2023］"
+    },
+    {
+      "year": 2016,
+      "round": "4位",
+      "name": "池田駿",
+      "pos": "投手",
+      "from": "ヤマハ",
+      "competed": false,
+      "note": "→東北楽天(2020/6-2021)"
+    },
+    {
+      "year": 2016,
+      "round": "5位",
+      "name": "髙田萌生",
+      "pos": "投手",
+      "from": "創志学園高",
+      "competed": false,
+      "note": "→東北楽天(2020/7-2023)"
+    },
+    {
+      "year": 2016,
+      "round": "6位",
+      "name": "大江竜聖",
+      "pos": "投手",
+      "from": "二松學舍大附高",
+      "competed": false,
+      "note": "→福岡ソフトバンク(2025/5-)"
+    },
+    {
+      "year": 2016,
+      "round": "7位",
+      "name": "廖任磊",
+      "pos": "投手",
+      "from": "岡山共生高卒",
+      "competed": false,
+      "note": "→埼玉西武(2019)"
+    },
+    {
+      "year": 2015,
+      "round": "1位",
+      "name": "桜井俊貴",
+      "pos": "投手",
+      "from": "立命館大",
+      "competed": false,
+      "note": "2022"
+    },
+    {
+      "year": 2015,
+      "round": "2位",
+      "name": "重信慎之介",
+      "pos": "外野手",
+      "from": "早稲田大",
+      "competed": false,
+      "note": "2025"
+    },
+    {
+      "year": 2015,
+      "round": "3位",
+      "name": "與那原大剛",
+      "pos": "投手",
+      "from": "普天間高",
+      "competed": false,
+      "note": "2022［育成登録・2019-］"
+    },
+    {
+      "year": 2015,
+      "round": "4位",
+      "name": "宇佐見真吾",
+      "pos": "捕手",
+      "from": "城西国際大",
+      "competed": false,
+      "note": "→北海道日本ハム(2019/6-)→中日(2023/6-)"
+    },
+    {
+      "year": 2015,
+      "round": "5位",
+      "name": "山本泰寛",
+      "pos": "内野手",
+      "from": "慶應義塾大",
+      "competed": false,
+      "note": "→阪神(2021-2023)→中日(2024-)"
+    },
+    {
+      "year": 2015,
+      "round": "6位",
+      "name": "巽大介",
+      "pos": "投手",
+      "from": "岩倉高",
+      "competed": false,
+      "note": "2020［育成登録・2018-］"
+    },
+    {
+      "year": 2015,
+      "round": "7位",
+      "name": "中川皓太",
+      "pos": "投手",
+      "from": "東海大",
+      "competed": false,
+      "note": "［育成登録・2023-2023/5］"
+    },
+    {
+      "year": 2015,
+      "round": "8位",
+      "name": "松崎啄也",
+      "pos": "内野手",
+      "from": "日本製紙石巻",
+      "competed": false,
+      "note": "2017"
+    },
+    {
+      "year": 2014,
+      "round": "1位",
+      "name": "岡本和真",
+      "pos": "内野手",
+      "from": "智辯学園高",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 2014,
+      "round": "2位",
+      "name": "戸根千明",
+      "pos": "投手",
+      "from": "日本大",
+      "competed": false,
+      "note": "→広島(2023-2024)"
+    },
+    {
+      "year": 2014,
+      "round": "3位",
+      "name": "高木勇人",
+      "pos": "投手",
+      "from": "三菱重工名古屋",
+      "competed": false,
+      "note": "→埼玉西武(2018-2019)"
+    },
+    {
+      "year": 2014,
+      "round": "4位",
+      "name": "田中大輝",
+      "pos": "投手",
+      "from": "國學院大",
+      "competed": false,
+      "note": "2018［育成登録・2016-］"
+    },
+    {
+      "year": 2013,
+      "round": "1位",
+      "name": "小林誠司",
+      "pos": "捕手",
+      "from": "日本生命",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 2013,
+      "round": "2位",
+      "name": "和田恋",
+      "pos": "内野手",
+      "from": "高知高",
+      "competed": false,
+      "note": "→東北楽天(2019/7-2023)"
+    },
+    {
+      "year": 2013,
+      "round": "3位",
+      "name": "田口麗斗",
+      "pos": "投手",
+      "from": "広島新庄高",
+      "competed": false,
+      "note": "→東京ヤクルト(2021/3-)"
+    },
+    {
+      "year": 2013,
+      "round": "4位",
+      "name": "奥村展征",
+      "pos": "内野手",
+      "from": "日本大山形高",
+      "competed": false,
+      "note": "→東京ヤクルト(2015-2023)"
+    },
+    {
+      "year": 2013,
+      "round": "5位",
+      "name": "平良拳太郎",
+      "pos": "投手",
+      "from": "北山高",
+      "competed": false,
+      "note": "→横浜DeNA(2017-)"
+    },
+    {
+      "year": 2012,
+      "round": "1位",
+      "name": "菅野智之",
+      "pos": "投手",
+      "from": "東海大",
+      "competed": false,
+      "note": "2024／＊2025-年MLB"
+    },
+    {
+      "year": 2012,
+      "round": "2位",
+      "name": "大累進",
+      "pos": "内野手",
+      "from": "道都大",
+      "competed": false,
+      "note": "→北海道日本ハム(2016/4-2018)"
+    },
+    {
+      "year": 2012,
+      "round": "3位",
+      "name": "辻東倫",
+      "pos": "内野手",
+      "from": "菰野高",
+      "competed": false,
+      "note": "2018"
+    },
+    {
+      "year": 2012,
+      "round": "4位",
+      "name": "公文克彦",
+      "pos": "投手",
+      "from": "大阪ガス",
+      "competed": false,
+      "note": "→北海道日本ハム(2017-2021)→埼玉西武(2021-2023)"
+    },
+    {
+      "year": 2012,
+      "round": "5位",
+      "name": "坂口真規",
+      "pos": "内野手",
+      "from": "東海大",
+      "competed": false,
+      "note": "2017［育成登録・2016-2017］"
+    },
+    {
+      "year": 2011,
+      "round": "1位",
+      "name": "松本竜也",
+      "pos": "投手",
+      "from": "英明高",
+      "competed": true,
+      "note": "2015"
+    },
+    {
+      "year": 2011,
+      "round": "2位",
+      "name": "今村信貴",
+      "pos": "投手",
+      "from": "太成学院大高",
+      "competed": false,
+      "note": "2025"
+    },
+    {
+      "year": 2011,
+      "round": "3位",
+      "name": "一岡竜司",
+      "pos": "投手",
+      "from": "沖データコンピュータ教育学院",
+      "competed": false,
+      "note": "→広島(2014-2023)"
+    },
+    {
+      "year": 2011,
+      "round": "4位",
+      "name": "高木京介",
+      "pos": "投手",
+      "from": "國學院大",
+      "competed": false,
+      "note": "2016/3／2017/3復帰－2023［育成登録・2017、2021、2023］"
+    },
+    {
+      "year": 2011,
+      "round": "5位",
+      "name": "高橋洸",
+      "pos": "内野手",
+      "from": "日本文理高",
+      "competed": false,
+      "note": "2017［育成登録・2014-2017］"
+    },
+    {
+      "year": 2011,
+      "round": "6位",
+      "name": "江柄子裕樹",
+      "pos": "投手",
+      "from": "東芝",
+      "competed": false,
+      "note": "2017"
+    },
+    {
+      "year": 2011,
+      "round": "7位",
+      "name": "田原誠次",
+      "pos": "投手",
+      "from": "三菱自動車倉敷オーシャンズ",
+      "competed": false,
+      "note": "2020"
+    },
+    {
+      "year": 2010,
+      "round": "1位",
+      "name": "澤村拓一",
+      "pos": "投手",
+      "from": "中央大",
+      "competed": false,
+      "note": "→千葉ロッテ(2020/9-2020・2023-2025)／＊2021-2022年MLB"
+    },
+    {
+      "year": 2010,
+      "round": "2位",
+      "name": "宮國椋丞",
+      "pos": "投手",
+      "from": "糸満高",
+      "competed": false,
+      "note": "→横浜DeNA（2021-2023[育成登録・2021-2021/8]）"
+    },
+    {
+      "year": 2010,
+      "round": "3位",
+      "name": "田中太一",
+      "pos": "投手",
+      "from": "大分工業高",
+      "competed": false,
+      "note": "2016［育成登録・2015-2016］"
+    },
+    {
+      "year": 2010,
+      "round": "4位",
+      "name": "小山雄輝",
+      "pos": "投手",
+      "from": "天理大",
+      "competed": false,
+      "note": "→東北楽天(2017-2018)"
+    },
+    {
+      "year": 2009,
+      "round": "1位",
+      "name": "長野久義",
+      "pos": "外野手",
+      "from": "ホンダ",
+      "competed": false,
+      "note": "→広島(2019-2022)"
+    },
+    {
+      "year": 2009,
+      "round": "2位",
+      "name": "鬼屋敷正人",
+      "pos": "捕手",
+      "from": "近畿大工業高専",
+      "competed": false,
+      "note": "2017"
+    },
+    {
+      "year": 2009,
+      "round": "3位",
+      "name": "土本恭平",
+      "pos": "投手",
+      "from": "JR東海",
+      "competed": false,
+      "note": "2012［育成登録・2012］"
+    },
+    {
+      "year": 2009,
+      "round": "4位",
+      "name": "市川友也",
+      "pos": "捕手",
+      "from": "鷺宮製作所",
+      "competed": false,
+      "note": "→北海道日本ハム(2014-2018)→福岡ソフトバンク(2018-2019)"
+    },
+    {
+      "year": 2009,
+      "round": "5位",
+      "name": "小野淳平",
+      "pos": "投手",
+      "from": "日本文理大",
+      "competed": false,
+      "note": "→広島(2013/4-2017)"
+    },
+    {
+      "year": 2008,
+      "round": "1位",
+      "name": "大田泰示",
+      "pos": "内野手",
+      "from": "東海大相模高",
+      "competed": true,
+      "note": "→北海道日本ハム(2017-)→横浜DeNA(2022-2024)"
+    },
+    {
+      "year": 2008,
+      "round": "2位",
+      "name": "宮本武文",
+      "pos": "投手",
+      "from": "倉敷高",
+      "competed": false,
+      "note": "2012［育成登録・2011-2012］"
+    },
+    {
+      "year": 2008,
+      "round": "3位",
+      "name": "齋藤圭祐",
+      "pos": "投手",
+      "from": "千葉経済大附高",
+      "competed": false,
+      "note": "2012［育成登録・2012］"
+    },
+    {
+      "year": 2008,
+      "round": "4位",
+      "name": "橋本到",
+      "pos": "外野手",
+      "from": "仙台育英高",
+      "competed": false,
+      "note": "→東北楽天(2019)"
+    },
+    {
+      "year": 2008,
+      "round": "5位",
+      "name": "笠原将生",
+      "pos": "投手",
+      "from": "福岡工業大城東高",
+      "competed": false,
+      "note": "2015"
+    },
+    {
+      "year": 2008,
+      "round": "6位",
+      "name": "仲澤広基",
+      "pos": "内野手",
+      "from": "国際武道大",
+      "competed": false,
+      "note": "→東北楽天(2013-2014)"
+    },
+    {
+      "year": 2007,
+      "round": "US 1位",
+      "name": "村田透",
+      "pos": "投手",
+      "from": "大阪体育大",
+      "competed": false,
+      "note": "2010／→北海道日本ハム(2017-2021)／＊2015年MLB"
+    },
+    {
+      "year": 2007,
+      "round": "US 3位",
+      "name": "古川祐樹",
+      "pos": "投手",
+      "from": "明治大",
+      "competed": false,
+      "note": "2012［育成登録・2012］"
+    },
+    {
+      "year": 2007,
+      "round": "US 4位",
+      "name": "加治前竜一",
+      "pos": "外野手",
+      "from": "東海大",
+      "competed": false,
+      "note": "2014"
+    },
+    {
+      "year": 2007,
+      "round": "H 1位",
+      "name": "藤村大介",
+      "pos": "内野手",
+      "from": "熊本工業高",
+      "competed": false,
+      "note": "2017"
+    },
+    {
+      "year": 2007,
+      "round": "H 3位",
+      "name": "中井大介",
+      "pos": "外野手",
+      "from": "宇治山田商業高",
+      "competed": false,
+      "note": "→DeNA(2019-2021)"
+    },
+    {
+      "year": 2007,
+      "round": "H 4位",
+      "name": "竹嶋祐貴",
+      "pos": "投手",
+      "from": "滑川高",
+      "competed": false,
+      "note": "2010［育成登録・2010］"
+    },
+    {
+      "year": 2006,
+      "round": "US 1位",
+      "name": "金刃憲人",
+      "pos": "投手",
+      "from": "立命館大",
+      "competed": false,
+      "note": "→東北楽天(2013-2017)"
+    },
+    {
+      "year": 2006,
+      "round": "US 3位",
+      "name": "上野貴久",
+      "pos": "投手",
+      "from": "NTT東日本",
+      "competed": false,
+      "note": "2011"
+    },
+    {
+      "year": 2006,
+      "round": "US 4位",
+      "name": "円谷英俊",
+      "pos": "内野手",
+      "from": "青山学院大",
+      "competed": false,
+      "note": "2012［育成登録・2012］"
+    },
+    {
+      "year": 2006,
+      "round": "US 5位",
+      "name": "深沢和帆",
+      "pos": "投手",
+      "from": "四国IL・香川",
+      "competed": false,
+      "note": "2008"
+    },
+    {
+      "year": 2006,
+      "round": "US 6位",
+      "name": "寺内崇幸",
+      "pos": "内野手",
+      "from": "JR東日本",
+      "competed": false,
+      "note": "2018"
+    },
+    {
+      "year": 2006,
+      "round": "US 7位",
+      "name": "深町亮介",
+      "pos": "投手",
+      "from": "中京大",
+      "competed": false,
+      "note": "2008"
+    },
+    {
+      "year": 2006,
+      "round": "H 1位",
+      "name": "坂本勇人",
+      "pos": "内野手",
+      "from": "光星学院高",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 2006,
+      "round": "H 3位",
+      "name": "田中大二郎",
+      "pos": "内野手",
+      "from": "東海大相模高",
+      "competed": false,
+      "note": "2012"
+    },
+    {
+      "year": 2006,
+      "round": "H 4位",
+      "name": "伊集院峰弘",
+      "pos": "捕手",
+      "from": "鹿児島実業高",
+      "competed": false,
+      "note": "2012［育成登録・2010-2012］"
+    },
+    {
+      "year": 2005,
+      "round": "US 1位",
+      "name": "福田聡志",
+      "pos": "投手",
+      "from": "東北福祉大",
+      "competed": false,
+      "note": "2015"
+    },
+    {
+      "year": 2005,
+      "round": "US 3位",
+      "name": "栂野雅史",
+      "pos": "投手",
+      "from": "新日本石油",
+      "competed": false,
+      "note": "→東北楽天(2010/7-2011)"
+    },
+    {
+      "year": 2005,
+      "round": "US 4位",
+      "name": "越智大祐",
+      "pos": "投手",
+      "from": "早稲田大",
+      "competed": false,
+      "note": "2014"
+    },
+    {
+      "year": 2005,
+      "round": "US 5位",
+      "name": "脇谷亮太",
+      "pos": "内野手",
+      "from": "NTT西日本",
+      "competed": false,
+      "note": "2018［育成登録・2012］／→埼玉西武(2014-2015)→巨人(2016-2018)"
+    },
+    {
+      "year": 2005,
+      "round": "US 6位",
+      "name": "深田拓也",
+      "pos": "投手",
+      "from": "中京大",
+      "competed": false,
+      "note": "2010"
+    },
+    {
+      "year": 2005,
+      "round": "US 7位",
+      "name": "会田有志",
+      "pos": "投手",
+      "from": "中央大",
+      "competed": false,
+      "note": "2009"
+    },
+    {
+      "year": 2005,
+      "round": "US 8位",
+      "name": "梅田浩",
+      "pos": "外野手",
+      "from": "創価大",
+      "competed": false,
+      "note": "2008"
+    },
+    {
+      "year": 2005,
+      "round": "H 1位",
+      "name": "辻内崇伸",
+      "pos": "投手",
+      "from": "大阪桐蔭高",
+      "competed": true,
+      "note": "2013"
+    },
+    {
+      "year": 2005,
+      "round": "H 3位",
+      "name": "加登脇卓真",
+      "pos": "投手",
+      "from": "北照高",
+      "competed": false,
+      "note": "2008"
+    },
+    {
+      "year": 2005,
+      "round": "H 4位",
+      "name": "福井優也",
+      "pos": "投手",
+      "from": "済美高",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 2004,
+      "round": "1位",
+      "name": "野間口貴彦",
+      "pos": "投手",
+      "from": "シダックス",
+      "competed": false,
+      "note": "2015［育成登録・2014］"
+    },
+    {
+      "year": 2004,
+      "round": "1位",
+      "name": "三木均",
+      "pos": "投手",
+      "from": "八戸大",
+      "competed": false,
+      "note": "2008［育成登録・2008］"
+    },
+    {
+      "year": 2004,
+      "round": "4位",
+      "name": "亀井義行",
+      "pos": "外野手",
+      "from": "中央大",
+      "competed": false,
+      "note": "2021"
+    },
+    {
+      "year": 2004,
+      "round": "5位",
+      "name": "木村正太",
+      "pos": "投手",
+      "from": "一関第一高",
+      "competed": false,
+      "note": "2011［育成登録・2011］"
+    },
+    {
+      "year": 2004,
+      "round": "6位",
+      "name": "星孝典",
+      "pos": "捕手",
+      "from": "東北学院大",
+      "competed": false,
+      "note": "→埼玉西武(2011-2016)"
+    },
+    {
+      "year": 2004,
+      "round": "7位",
+      "name": "東野峻",
+      "pos": "投手",
+      "from": "鉾田第一高",
+      "competed": false,
+      "note": "→オリックス(2013-)→横浜DeNA(2015)"
+    },
+    {
+      "year": 2003,
+      "round": "1位",
+      "name": "内海哲也",
+      "pos": "投手",
+      "from": "東京ガス",
+      "competed": false,
+      "note": "→埼玉西武(2019-2022)"
+    },
+    {
+      "year": 2003,
+      "round": "2位",
+      "name": "西村健太朗",
+      "pos": "投手",
+      "from": "広陵高",
+      "competed": false,
+      "note": "2018"
+    },
+    {
+      "year": 2003,
+      "round": "4位",
+      "name": "平岡政樹",
+      "pos": "投手",
+      "from": "徳島商業高",
+      "competed": false,
+      "note": "2006［育成登録・2006］"
+    },
+    {
+      "year": 2003,
+      "round": "5位",
+      "name": "岩舘学",
+      "pos": "内野手",
+      "from": "東洋大",
+      "competed": false,
+      "note": "→北海道日本ハム(2010-2013)"
+    },
+    {
+      "year": 2003,
+      "round": "6位",
+      "name": "山本賢寿",
+      "pos": "投手",
+      "from": "帝京大",
+      "competed": false,
+      "note": "2005"
+    },
+    {
+      "year": 2003,
+      "round": "7位",
+      "name": "佐藤弘祐",
+      "pos": "捕手",
+      "from": "東北高",
+      "competed": false,
+      "note": "2009［育成登録・2007-2009］"
+    },
+    {
+      "year": 2003,
+      "round": "8位",
+      "name": "南和彰",
+      "pos": "投手",
+      "from": "福井工業大",
+      "competed": false,
+      "note": "2006"
+    },
+    {
+      "year": 2002,
+      "round": "1位",
+      "name": "木佐貫洋",
+      "pos": "投手",
+      "from": "亜細亜大",
+      "competed": false,
+      "note": "→オリックス(2010-)→北海道日本ハム(2013-2015)"
+    },
+    {
+      "year": 2002,
+      "round": "1位",
+      "name": "久保裕也",
+      "pos": "投手",
+      "from": "東海大",
+      "competed": false,
+      "note": "→横浜DeNA(2016)→東北楽天(2017-2020)"
+    },
+    {
+      "year": 2002,
+      "round": "4位",
+      "name": "長田昌浩",
+      "pos": "内野手",
+      "from": "東海大望洋高",
+      "competed": false,
+      "note": "→オリックス(2007-2010)"
+    },
+    {
+      "year": 2002,
+      "round": "5位",
+      "name": "山本光将",
+      "pos": "外野手",
+      "from": "熊本工業高",
+      "competed": false,
+      "note": "2008［育成登録・2007-2008］"
+    },
+    {
+      "year": 2002,
+      "round": "6位",
+      "name": "矢野謙次",
+      "pos": "外野手",
+      "from": "國學院大",
+      "competed": false,
+      "note": "→北海道日本ハム(2015/6-2018)"
+    },
+    {
+      "year": 2002,
+      "round": "7位",
+      "name": "入野久彦",
+      "pos": "捕手",
+      "from": "福岡大",
+      "competed": false,
+      "note": "→東北楽天(2005)"
+    },
+    {
+      "year": 2002,
+      "round": "8位",
+      "name": "横川雄介",
+      "pos": "捕手",
+      "from": "都立日野高",
+      "competed": false,
+      "note": "2006［育成登録・2006］"
+    },
+    {
+      "year": 2001,
+      "round": "1位",
+      "name": "真田裕貴",
+      "pos": "投手",
+      "from": "姫路工業高",
+      "competed": false,
+      "note": "→横浜(2008/6-2011)→巨人（2012）→東京ヤクルト(2014)"
+    },
+    {
+      "year": 2001,
+      "round": "3位",
+      "name": "鴨志田貴司",
+      "pos": "投手",
+      "from": "水戸短期大附高",
+      "competed": false,
+      "note": "→オリックス(2007-2013)"
+    },
+    {
+      "year": 2001,
+      "round": "4位",
+      "name": "石川雅実",
+      "pos": "投手",
+      "from": "JR東日本",
+      "competed": false,
+      "note": "2003"
+    },
+    {
+      "year": 2001,
+      "round": "5位",
+      "name": "十川雄二",
+      "pos": "投手",
+      "from": "池田高",
+      "competed": false,
+      "note": "2006／＊2004年から野手登録"
+    },
+    {
+      "year": 2001,
+      "round": "6位",
+      "name": "大須賀允",
+      "pos": "内野手",
+      "from": "東北福祉大",
+      "competed": false,
+      "note": "→広島(2007-2008)"
+    },
+    {
+      "year": 2001,
+      "round": "7位",
+      "name": "林昌範",
+      "pos": "投手",
+      "from": "市立船橋高",
+      "competed": false,
+      "note": "→北海道日本ハム(2009-)→横浜DeNA(2012-2017)"
+    },
+    {
+      "year": 2000,
+      "round": "1位",
+      "name": "阿部慎之助",
+      "pos": "捕手",
+      "from": "中央大",
+      "competed": false,
+      "note": "2019"
+    },
+    {
+      "year": 2000,
+      "round": "2位",
+      "name": "上野裕平",
+      "pos": "投手",
+      "from": "立教大",
+      "competed": false,
+      "note": "2004"
+    },
+    {
+      "year": 2000,
+      "round": "3位",
+      "name": "三浦貴",
+      "pos": "投手",
+      "from": "東洋大",
+      "competed": false,
+      "note": "→埼玉西武(2008-2009)／＊2003年から野手登録"
+    },
+    {
+      "year": 2000,
+      "round": "4位",
+      "name": "根市寛貴",
+      "pos": "投手",
+      "from": "光星学院高",
+      "competed": false,
+      "note": "→近鉄(2004)→東北楽天(2005-2006)"
+    },
+    {
+      "year": 2000,
+      "round": "5位",
+      "name": "川本大輔",
+      "pos": "投手",
+      "from": "広陵高",
+      "competed": false,
+      "note": "2004"
+    },
+    {
+      "year": 2000,
+      "round": "6位",
+      "name": "山下浩宜",
+      "pos": "内野手",
+      "from": "九州共立大八幡西高",
+      "competed": false,
+      "note": "2003"
+    },
+    {
+      "year": 2000,
+      "round": "7位",
+      "name": "小野剛",
+      "pos": "投手",
+      "from": "武蔵大",
+      "competed": false,
+      "note": "2002／西武（2004-2006）"
+    },
+    {
+      "year": 2000,
+      "round": "8位",
+      "name": "李景一",
+      "pos": "捕手",
+      "from": "敦賀気比高",
+      "competed": false,
+      "note": "2004"
+    },
+    {
+      "year": 1999,
+      "round": "1位",
+      "name": "高橋尚成",
+      "pos": "投手",
+      "from": "東芝",
+      "competed": false,
+      "note": "2009／→横浜DeNA(2014-2015)／＊2010-2013年MLB"
+    },
+    {
+      "year": 1999,
+      "round": "2位",
+      "name": "谷浩弥",
+      "pos": "投手",
+      "from": "田村コピー",
+      "competed": false,
+      "note": "→ロッテ(2004)"
+    },
+    {
+      "year": 1999,
+      "round": "3位",
+      "name": "佐藤宏志",
+      "pos": "投手",
+      "from": "亜細亜大",
+      "competed": false,
+      "note": "→東北楽天(2007-2008)"
+    },
+    {
+      "year": 1999,
+      "round": "4位",
+      "name": "内薗直樹",
+      "pos": "投手",
+      "from": "三菱重工長崎",
+      "competed": false,
+      "note": "→西武(2002-2004)"
+    },
+    {
+      "year": 1999,
+      "round": "5位",
+      "name": "條辺剛",
+      "pos": "投手",
+      "from": "阿南工業高",
+      "competed": false,
+      "note": "2005"
+    },
+    {
+      "year": 1999,
+      "round": "6位",
+      "name": "十川孝富",
+      "pos": "内野手",
+      "from": "大阪商業大",
+      "competed": false,
+      "note": "2007"
+    },
+    {
+      "year": 1999,
+      "round": "7位",
+      "name": "宮崎一彰",
+      "pos": "内野手",
+      "from": "法政大卒",
+      "competed": false,
+      "note": "→西武(2004-2006)"
+    },
+    {
+      "year": 1998,
+      "round": "1位",
+      "name": "上原浩治",
+      "pos": "投手",
+      "from": "大阪体育大",
+      "competed": false,
+      "note": "2018／（2009～2017年MLB）→巨人(2018-2019)"
+    },
+    {
+      "year": 1998,
+      "round": "2位",
+      "name": "二岡智宏",
+      "pos": "内野手",
+      "from": "近畿大",
+      "competed": false,
+      "note": "→北海道日本ハム(2009-2013)"
+    },
+    {
+      "year": 1998,
+      "round": "3位",
+      "name": "加藤健",
+      "pos": "捕手",
+      "from": "新発田農業高",
+      "competed": false,
+      "note": "2016"
+    },
+    {
+      "year": 1998,
+      "round": "4位",
+      "name": "安原政俊",
+      "pos": "投手",
+      "from": "中央学院高",
+      "competed": false,
+      "note": "2002"
+    },
+    {
+      "year": 1998,
+      "round": "5位",
+      "name": "酒井純也",
+      "pos": "投手",
+      "from": "矢上高",
+      "competed": false,
+      "note": "2007"
+    },
+    {
+      "year": 1998,
+      "round": "6位",
+      "name": "玉峰伸典",
+      "pos": "投手",
+      "from": "王子製紙春日井",
+      "competed": false,
+      "note": "→近鉄(2001/6-2002)"
+    },
+    {
+      "year": 1998,
+      "round": "7位",
+      "name": "進藤実",
+      "pos": "投手",
+      "from": "NTT東北",
+      "competed": false,
+      "note": "2001"
+    },
+    {
+      "year": 1998,
+      "round": "8位",
+      "name": "高野忍",
+      "pos": "外野手",
+      "from": "中山製鋼",
+      "competed": false,
+      "note": "2003"
+    },
+    {
+      "year": 1997,
+      "round": "1位",
+      "name": "高橋由伸",
+      "pos": "外野手",
+      "from": "慶應義塾大",
+      "competed": false,
+      "note": "2015"
+    },
+    {
+      "year": 1997,
+      "round": "2位",
+      "name": "川中基嗣",
+      "pos": "内野手",
+      "from": "日本通運",
+      "competed": false,
+      "note": "2007"
+    },
+    {
+      "year": 1997,
+      "round": "3位",
+      "name": "山田真介",
+      "pos": "投手",
+      "from": "上宮高",
+      "competed": false,
+      "note": "→広島(2006/6-2007)→阪神(2007-2008)／＊野手登録"
+    },
+    {
+      "year": 1997,
+      "round": "4位",
+      "name": "小田幸平",
+      "pos": "捕手",
+      "from": "三菱重工神戸",
+      "competed": false,
+      "note": "→中日（2006-2014）"
+    },
+    {
+      "year": 1997,
+      "round": "5位",
+      "name": "田中健太郎",
+      "pos": "投手",
+      "from": "松商学園高",
+      "competed": false,
+      "note": "2002／＊野手登録"
+    },
+    {
+      "year": 1997,
+      "round": "6位",
+      "name": "中村善之",
+      "pos": "投手",
+      "from": "新日鉄八幡",
+      "competed": false,
+      "note": "2000"
+    },
+    {
+      "year": 1997,
+      "round": "7位",
+      "name": "吉村将生",
+      "pos": "内野手",
+      "from": "東海大四高",
+      "competed": false,
+      "note": "2001"
+    },
+    {
+      "year": 1997,
+      "round": "8位",
+      "name": "平松一宏",
+      "pos": "投手",
+      "from": "JR西日本",
+      "competed": false,
+      "note": "→中日(2002-2005)"
+    },
+    {
+      "year": 1996,
+      "round": "1位",
+      "name": "入来祐作",
+      "pos": "投手",
+      "from": "本田技研",
+      "competed": false,
+      "note": "→日本ハム(2004-2005)→横浜（2008）"
+    },
+    {
+      "year": 1996,
+      "round": "2位",
+      "name": "小野仁",
+      "pos": "投手",
+      "from": "日本石油",
+      "competed": false,
+      "note": "→近鉄(2003)"
+    },
+    {
+      "year": 1996,
+      "round": "3位",
+      "name": "三澤興一",
+      "pos": "投手",
+      "from": "早稲田大",
+      "competed": false,
+      "note": "→近鉄(2001/6-)→巨人(2004)→ヤクルト（2005-）→中日（2007）"
+    },
+    {
+      "year": 1996,
+      "round": "4位",
+      "name": "鈴木尚広",
+      "pos": "内野手",
+      "from": "相馬高",
+      "competed": false,
+      "note": "2016"
+    },
+    {
+      "year": 1996,
+      "round": "5位",
+      "name": "宇野雅美",
+      "pos": "投手",
+      "from": "京都花園高",
+      "competed": false,
+      "note": "→広島(1999)ヤクルト（2005-2007）"
+    },
+    {
+      "year": 1996,
+      "round": "6位",
+      "name": "堀田一郎",
+      "pos": "外野手",
+      "from": "中央大",
+      "competed": false,
+      "note": "2006"
+    },
+    {
+      "year": 1995,
+      "round": "1位",
+      "name": "原俊介",
+      "pos": "捕手",
+      "from": "東海大相模高",
+      "competed": true,
+      "note": "2006"
+    },
+    {
+      "year": 1995,
+      "round": "2位",
+      "name": "仁志敏久",
+      "pos": "内野手",
+      "from": "日本生命",
+      "competed": false,
+      "note": "→横浜（2007-2009）"
+    },
+    {
+      "year": 1995,
+      "round": "3位",
+      "name": "清水隆行",
+      "pos": "外野手",
+      "from": "東洋大",
+      "competed": false,
+      "note": "→埼玉西武（2009）"
+    },
+    {
+      "year": 1995,
+      "round": "4位",
+      "name": "大場豊千",
+      "pos": "投手",
+      "from": "大宮高",
+      "competed": false,
+      "note": "2001／＊1999-2001年は野手登録"
+    },
+    {
+      "year": 1995,
+      "round": "5位",
+      "name": "大野倫",
+      "pos": "外野手",
+      "from": "九州共立大",
+      "competed": false,
+      "note": "→ダイエー(2001-2002)"
+    },
+    {
+      "year": 1995,
+      "round": "6位",
+      "name": "小林聡",
+      "pos": "投手",
+      "from": "水戸農業高",
+      "competed": false,
+      "note": "1999"
+    },
+    {
+      "year": 1994,
+      "round": "1位",
+      "name": "河原純一",
+      "pos": "投手",
+      "from": "駒澤大",
+      "competed": false,
+      "note": "→西武(2005-2007)・中日（2009-2011）"
+    },
+    {
+      "year": 1994,
+      "round": "2位",
+      "name": "織田淳哉",
+      "pos": "投手",
+      "from": "早稲田大",
+      "competed": false,
+      "note": "1999／＊1996-1997年は捕手登録"
+    },
+    {
+      "year": 1994,
+      "round": "3位",
+      "name": "福井敬治",
+      "pos": "投手",
+      "from": "智辯学園高",
+      "competed": false,
+      "note": "→広島（2005-2006）／＊野手登録"
+    },
+    {
+      "year": 1994,
+      "round": "4位",
+      "name": "斉藤宜之",
+      "pos": "外野手",
+      "from": "横浜高",
+      "competed": false,
+      "note": "→東京ヤクルト（2008-2009）"
+    },
+    {
+      "year": 1994,
+      "round": "5位",
+      "name": "高村良嘉",
+      "pos": "内野手",
+      "from": "新日鉄光",
+      "competed": false,
+      "note": "1998"
+    },
+    {
+      "year": 1993,
+      "round": "1位",
+      "name": "三野勝大",
+      "pos": "投手",
+      "from": "東北福祉大",
+      "competed": false,
+      "note": "→横浜(2000-2001)"
+    },
+    {
+      "year": 1993,
+      "round": "2位",
+      "name": "柳沢裕一",
+      "pos": "捕手",
+      "from": "明治大",
+      "competed": false,
+      "note": "→オリックス(1999/6-)→中日(2001-2006)"
+    },
+    {
+      "year": 1993,
+      "round": "3位",
+      "name": "岡島秀樹",
+      "pos": "投手",
+      "from": "東山高",
+      "competed": false,
+      "note": "→日本ハム（2006）→福岡ソフトバンク（2012･2014）→横浜DeNA（2015）／＊2007-2011/2013年MLB"
+    },
+    {
+      "year": 1993,
+      "round": "4位",
+      "name": "大畑裕勝",
+      "pos": "内野手",
+      "from": "柳川高",
+      "competed": false,
+      "note": "1996"
+    },
+    {
+      "year": 1993,
+      "round": "5位",
+      "name": "佐藤誠",
+      "pos": "投手",
+      "from": "駒澤大岩見沢高",
+      "competed": false,
+      "note": "→ダイエー・福岡ソフトバンク(2001-2010)"
+    },
+    {
+      "year": 1992,
+      "round": "1位",
+      "name": "松井秀喜",
+      "pos": "内野手",
+      "from": "星稜高",
+      "competed": true,
+      "note": "2002（2003-2012年MLB）"
+    },
+    {
+      "year": 1992,
+      "round": "2位",
+      "name": "門奈哲寛",
+      "pos": "投手",
+      "from": "日本大",
+      "competed": false,
+      "note": "1999"
+    },
+    {
+      "year": 1992,
+      "round": "3位",
+      "name": "西山一宇",
+      "pos": "投手",
+      "from": "NTT四国",
+      "competed": false,
+      "note": "2003"
+    },
+    {
+      "year": 1992,
+      "round": "4位",
+      "name": "木村龍治",
+      "pos": "投手",
+      "from": "青山学院大",
+      "competed": false,
+      "note": "2004"
+    },
+    {
+      "year": 1992,
+      "round": "5位",
+      "name": "村田善則",
+      "pos": "捕手",
+      "from": "佐世保実業高",
+      "competed": false,
+      "note": "2008"
+    },
+    {
+      "year": 1991,
+      "round": "1位",
+      "name": "谷口功一",
+      "pos": "投手",
+      "from": "天理高",
+      "competed": false,
+      "note": "→西武(1998)→近鉄(1999)"
+    },
+    {
+      "year": 1991,
+      "round": "2位",
+      "name": "小原沢重頼",
+      "pos": "投手",
+      "from": "城西大",
+      "competed": false,
+      "note": "→ロッテ(1998)"
+    },
+    {
+      "year": 1991,
+      "round": "3位",
+      "name": "松岡正樹",
+      "pos": "捕手",
+      "from": "平安高",
+      "competed": true,
+      "note": "1995"
+    },
+    {
+      "year": 1991,
+      "round": "4位",
+      "name": "伊藤博康",
+      "pos": "外野手",
+      "from": "東北福祉大",
+      "competed": false,
+      "note": "→ダイエー(1996-1997)"
+    },
+    {
+      "year": 1991,
+      "round": "5位",
+      "name": "三好正晴",
+      "pos": "投手",
+      "from": "川口工業高",
+      "competed": false,
+      "note": "1993"
+    },
+    {
+      "year": 1991,
+      "round": "6位",
+      "name": "羽根川竜",
+      "pos": "投手",
+      "from": "東北高",
+      "competed": false,
+      "note": "→ロッテ(1997-1998)"
+    },
+    {
+      "year": 1990,
+      "round": "1位",
+      "name": "元木大介",
+      "pos": "内野手",
+      "from": "上宮高卒",
+      "competed": false,
+      "note": "2005"
+    },
+    {
+      "year": 1990,
+      "round": "2位",
+      "name": "吉原孝介",
+      "pos": "捕手",
+      "from": "川崎製鉄水島",
+      "competed": false,
+      "note": "→中日(1999-)→オリックス(2001-2006)"
+    },
+    {
+      "year": 1990,
+      "round": "3位",
+      "name": "藤崎靖彦",
+      "pos": "外野手",
+      "from": "新日鉄八幡",
+      "competed": false,
+      "note": "1992"
+    },
+    {
+      "year": 1990,
+      "round": "4位",
+      "name": "阿部茂樹",
+      "pos": "捕手",
+      "from": "秋田高",
+      "competed": false,
+      "note": "→ヤクルト(1998-2001)"
+    },
+    {
+      "year": 1990,
+      "round": "5位",
+      "name": "原正俊",
+      "pos": "投手",
+      "from": "日本大二高",
+      "competed": false,
+      "note": "1992"
+    },
+    {
+      "year": 1990,
+      "round": "6位",
+      "name": "内田大孝",
+      "pos": "内野手",
+      "from": "佐賀学園高",
+      "competed": false,
+      "note": "1993"
+    },
+    {
+      "year": 1989,
+      "round": "1位",
+      "name": "大森剛",
+      "pos": "内野手",
+      "from": "慶應義塾大",
+      "competed": false,
+      "note": "→近鉄(1998/5-1999)"
+    },
+    {
+      "year": 1989,
+      "round": "2位",
+      "name": "川辺忠義",
+      "pos": "投手",
+      "from": "川崎製鉄千葉",
+      "competed": false,
+      "note": "→日本ハム(1996-1997)"
+    },
+    {
+      "year": 1989,
+      "round": "3位",
+      "name": "吉岡雄二",
+      "pos": "投手",
+      "from": "帝京高",
+      "competed": true,
+      "note": "→近鉄(1997-)→東北楽天（2005-2008）／＊野手登録"
+    },
+    {
+      "year": 1989,
+      "round": "4位",
+      "name": "佐久間浩一",
+      "pos": "外野手",
+      "from": "東海大",
+      "competed": false,
+      "note": "1993／日本ハム（1996-1997）"
+    },
+    {
+      "year": 1989,
+      "round": "5位",
+      "name": "鈴木望",
+      "pos": "内野手",
+      "from": "駒澤大",
+      "competed": false,
+      "note": "→日本ハム(1996-1998)"
+    },
+    {
+      "year": 1989,
+      "round": "6位",
+      "name": "浅野智治",
+      "pos": "投手",
+      "from": "岡山南高",
+      "competed": false,
+      "note": "→近鉄(1998)"
+    },
+    {
+      "year": 1988,
+      "round": "1位",
+      "name": "吉田修司",
+      "pos": "投手",
+      "from": "北海道拓殖銀行",
+      "competed": false,
+      "note": "→ダイエー・福岡ソフトバンク(1994/6-)→オリックス(2007)"
+    },
+    {
+      "year": 1988,
+      "round": "2位",
+      "name": "松谷竜二郎",
+      "pos": "投手",
+      "from": "大阪ガス",
+      "competed": false,
+      "note": "→近鉄(1995-1997)"
+    },
+    {
+      "year": 1988,
+      "round": "3位",
+      "name": "佐川潔",
+      "pos": "投手",
+      "from": "金足農業高",
+      "competed": false,
+      "note": "→オリックス(1993)→日本ハム(1994-1995)"
+    },
+    {
+      "year": 1988,
+      "round": "4位",
+      "name": "四條稔",
+      "pos": "内野手",
+      "from": "三菱自動車川崎",
+      "competed": false,
+      "note": "→オリックス(1995/4-)→横浜(1999)"
+    },
+    {
+      "year": 1988,
+      "round": "5位",
+      "name": "前田隆",
+      "pos": "内野手",
+      "from": "三菱自動車水島",
+      "competed": false,
+      "note": "1997"
+    },
+    {
+      "year": 1988,
+      "round": "6位",
+      "name": "高梨芳昌",
+      "pos": "内野手",
+      "from": "札幌第一高",
+      "competed": false,
+      "note": "1991"
+    },
+    {
+      "year": 1987,
+      "round": "1位",
+      "name": "橋本清",
+      "pos": "投手",
+      "from": "PL学園高",
+      "competed": false,
+      "note": "→ダイエー(2001)"
+    },
+    {
+      "year": 1987,
+      "round": "2位",
+      "name": "後藤孝次",
+      "pos": "内野手",
+      "from": "中京高",
+      "competed": false,
+      "note": "2005"
+    },
+    {
+      "year": 1987,
+      "round": "3位",
+      "name": "磯貝公伸",
+      "pos": "投手",
+      "from": "宮崎南高",
+      "competed": false,
+      "note": "1990"
+    },
+    {
+      "year": 1987,
+      "round": "4位",
+      "name": "小沢浩一",
+      "pos": "内野手",
+      "from": "三菱自動車水島",
+      "competed": false,
+      "note": "1994"
+    },
+    {
+      "year": 1987,
+      "round": "5位",
+      "name": "益田明典",
+      "pos": "投手",
+      "from": "愛知学院大",
+      "competed": false,
+      "note": "1991"
+    },
+    {
+      "year": 1987,
+      "round": "6位",
+      "name": "杉山直樹",
+      "pos": "捕手",
+      "from": "沼津学園高",
+      "competed": false,
+      "note": "2000"
+    },
+    {
+      "year": 1986,
+      "round": "1位",
+      "name": "木田優夫",
+      "pos": "投手",
+      "from": "日本大明誠高",
+      "competed": false,
+      "note": "→オリックス(1998･2000-2001)→東京ヤクルト（2006-）→北海道日本ハム（2010-2012）／＊1999・2003～2005年はMLB"
+    },
+    {
+      "year": 1986,
+      "round": "2位",
+      "name": "水沢薫",
+      "pos": "投手",
+      "from": "河合楽器",
+      "competed": false,
+      "note": "1992"
+    },
+    {
+      "year": 1986,
+      "round": "3位",
+      "name": "高田誠",
+      "pos": "捕手",
+      "from": "法政大",
+      "competed": false,
+      "note": "→オリックス(1992-1998)"
+    },
+    {
+      "year": 1986,
+      "round": "4位",
+      "name": "樽見金典",
+      "pos": "投手",
+      "from": "柳川高",
+      "competed": false,
+      "note": "1989"
+    },
+    {
+      "year": 1986,
+      "round": "5位",
+      "name": "勝呂博憲",
+      "pos": "内野手",
+      "from": "日本通運",
+      "competed": false,
+      "note": "1987年オフ入団／→オリックス(1992-)→近鉄(1997-1999)"
+    },
+    {
+      "year": 1986,
+      "round": "6位",
+      "name": "緒方耕一",
+      "pos": "内野手",
+      "from": "熊本工業高",
+      "competed": false,
+      "note": "1998"
+    },
+    {
+      "year": 1985,
+      "round": "1位",
+      "name": "桑田真澄",
+      "pos": "投手",
+      "from": "PL学園高",
+      "competed": false,
+      "note": "2006（2007年MLB）"
+    },
+    {
+      "year": 1985,
+      "round": "2位",
+      "name": "広田浩章",
+      "pos": "投手",
+      "from": "NTT中国",
+      "competed": false,
+      "note": "→ダイエー(1995-)→ヤクルト(1997-)→近鉄(2000)"
+    },
+    {
+      "year": 1985,
+      "round": "3位",
+      "name": "渡辺政仁",
+      "pos": "投手",
+      "from": "北陽高",
+      "competed": false,
+      "note": "2000／＊1994年まで投手登録・出場なし"
+    },
+    {
+      "year": 1985,
+      "round": "4位",
+      "name": "本原正治",
+      "pos": "投手",
+      "from": "広陵高",
+      "competed": false,
+      "note": "→ダイエー(1990/6-)→広島(1994)"
+    },
+    {
+      "year": 1985,
+      "round": "5位",
+      "name": "福王昭仁",
+      "pos": "内野手",
+      "from": "明治大",
+      "competed": false,
+      "note": "1999"
+    },
+    {
+      "year": 1985,
+      "round": "6位",
+      "name": "杉浦守",
+      "pos": "外野手",
+      "from": "愛知工業大名電高",
+      "competed": false,
+      "note": "1991"
+    },
+    {
+      "year": 1984,
+      "round": "1位",
+      "name": "上田和明",
+      "pos": "内野手",
+      "from": "慶應義塾大",
+      "competed": false,
+      "note": "1993"
+    },
+    {
+      "year": 1984,
+      "round": "2位",
+      "name": "藤岡寛生",
+      "pos": "内野手",
+      "from": "三田学園高",
+      "competed": false,
+      "note": "→日本ハム(1993-1995)"
+    },
+    {
+      "year": 1984,
+      "round": "3位",
+      "name": "宮本和知",
+      "pos": "投手",
+      "from": "川崎製鉄水島",
+      "competed": false,
+      "note": "1997"
+    },
+    {
+      "year": 1984,
+      "round": "4位",
+      "name": "佐藤洋",
+      "pos": "捕手",
+      "from": "電電東北",
+      "competed": false,
+      "note": "1994"
+    },
+    {
+      "year": 1984,
+      "round": "5位",
+      "name": "井上真二",
+      "pos": "外野手",
+      "from": "熊本工業高",
+      "competed": false,
+      "note": "1998"
+    },
+    {
+      "year": 1984,
+      "round": "6位",
+      "name": "藤本健治",
+      "pos": "内野手",
+      "from": "東海大相模高",
+      "competed": false,
+      "note": "1993"
+    },
+    {
+      "year": 1983,
+      "round": "1位",
+      "name": "水野雄仁",
+      "pos": "投手",
+      "from": "池田高",
+      "competed": false,
+      "note": "1996"
+    },
+    {
+      "year": 1983,
+      "round": "2位",
+      "name": "香田勲男",
+      "pos": "投手",
+      "from": "佐世保工業高",
+      "competed": false,
+      "note": "→近鉄(1995-2001)"
+    },
+    {
+      "year": 1983,
+      "round": "3位",
+      "name": "林哲雄",
+      "pos": "内野手",
+      "from": "岐阜第一高",
+      "competed": false,
+      "note": "1987"
+    },
+    {
+      "year": 1983,
+      "round": "4位",
+      "name": "加茂川重治",
+      "pos": "投手",
+      "from": "茨城東高",
+      "competed": false,
+      "note": "→中日(1989)→大洋(1990-1991)"
+    },
+    {
+      "year": 1983,
+      "round": "5位",
+      "name": "福島敬光",
+      "pos": "内野手",
+      "from": "荒尾高",
+      "competed": false,
+      "note": "1985"
+    },
+    {
+      "year": 1983,
+      "round": "6位",
+      "name": "上福元勤",
+      "pos": "内野手",
+      "from": "早稲田実業高",
+      "competed": false,
+      "note": "1986"
+    },
+    {
+      "year": 1982,
+      "round": "1位",
+      "name": "斎藤雅樹",
+      "pos": "投手",
+      "from": "市立川口高",
+      "competed": false,
+      "note": "2001"
+    },
+    {
+      "year": 1982,
+      "round": "2位",
+      "name": "岡本光",
+      "pos": "投手",
+      "from": "松下電器",
+      "competed": true,
+      "note": "→西武(1989-1990)"
+    },
+    {
+      "year": 1982,
+      "round": "3位",
+      "name": "石井雅博",
+      "pos": "外野手",
+      "from": "明治大",
+      "competed": false,
+      "note": "→阪神(1991)"
+    },
+    {
+      "year": 1982,
+      "round": "4位",
+      "name": "川相昌弘",
+      "pos": "投手",
+      "from": "岡山南高",
+      "competed": true,
+      "note": "→中日(2004-2006)／＊野手登録"
+    },
+    {
+      "year": 1982,
+      "round": "5位",
+      "name": "中島浩人",
+      "pos": "投手",
+      "from": "日本鋼管",
+      "competed": false,
+      "note": "1983年オフ入団／1987"
+    },
+    {
+      "year": 1982,
+      "round": "6位",
+      "name": "藤本茂喜",
+      "pos": "内野手",
+      "from": "明徳高",
+      "competed": false,
+      "note": "1989"
+    },
+    {
+      "year": 1981,
+      "round": "1位",
+      "name": "槙原寛己",
+      "pos": "投手",
+      "from": "大府高",
+      "competed": false,
+      "note": "2001"
+    },
+    {
+      "year": 1981,
+      "round": "2位",
+      "name": "山本幸二",
+      "pos": "捕手",
+      "from": "名古屋電気高",
+      "competed": false,
+      "note": "1991"
+    },
+    {
+      "year": 1981,
+      "round": "3位",
+      "name": "吉村禎章",
+      "pos": "内野手",
+      "from": "PL学園高",
+      "competed": false,
+      "note": "1998"
+    },
+    {
+      "year": 1981,
+      "round": "4位",
+      "name": "橋本敬司",
+      "pos": "投手",
+      "from": "富士重工",
+      "competed": false,
+      "note": "1982年オフ入団／→南海(1987-)・ダイエー(1989-1990)"
+    },
+    {
+      "year": 1981,
+      "round": "5位",
+      "name": "村田真一",
+      "pos": "捕手",
+      "from": "滝川高",
+      "competed": false,
+      "note": "2001"
+    },
+    {
+      "year": 1981,
+      "round": "6位",
+      "name": "仁村薫",
+      "pos": "投手",
+      "from": "早稲田大",
+      "competed": false,
+      "note": "→中日(1988-1990)／＊野手登録"
+    },
+    {
+      "year": 1980,
+      "round": "1位",
+      "name": "原辰徳",
+      "pos": "内野手",
+      "from": "東海大",
+      "competed": false,
+      "note": "1995"
+    },
+    {
+      "year": 1980,
+      "round": "2位",
+      "name": "駒田徳広",
+      "pos": "投手",
+      "from": "桜井商業高",
+      "competed": false,
+      "note": "→横浜(1994-2000)／＊野手登録"
+    },
+    {
+      "year": 1980,
+      "round": "3位",
+      "name": "小原正行",
+      "pos": "投手",
+      "from": "臼杵商業高",
+      "competed": false,
+      "note": "1985"
+    },
+    {
+      "year": 1980,
+      "round": "4位",
+      "name": "瀬戸山満年",
+      "pos": "捕手",
+      "from": "中京高",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 1979,
+      "round": "1位",
+      "name": "林泰宏",
+      "pos": "投手",
+      "from": "市立尼崎高",
+      "competed": false,
+      "note": "→近鉄(1984)→大洋(1985)"
+    },
+    {
+      "year": 1979,
+      "round": "2位",
+      "name": "山崎章弘",
+      "pos": "捕手",
+      "from": "育英高",
+      "competed": false,
+      "note": "→日本ハム(1990-1991)"
+    },
+    {
+      "year": 1979,
+      "round": "3位",
+      "name": "岡崎郁",
+      "pos": "内野手",
+      "from": "大分商業高",
+      "competed": false,
+      "note": "1996"
+    },
+    {
+      "year": 1979,
+      "round": "4位",
+      "name": "上野敬三",
+      "pos": "内野手",
+      "from": "箕島高",
+      "competed": false,
+      "note": "1981"
+    },
+    {
+      "year": 1978,
+      "round": "",
+      "name": "不参加",
+      "pos": "",
+      "from": "",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 1977,
+      "round": "1位",
+      "name": "山倉和博",
+      "pos": "捕手",
+      "from": "早稲田大",
+      "competed": false,
+      "note": "1990"
+    },
+    {
+      "year": 1977,
+      "round": "2位",
+      "name": "木下透",
+      "pos": "投手",
+      "from": "田辺高",
+      "competed": false,
+      "note": "1981"
+    },
+    {
+      "year": 1977,
+      "round": "3位",
+      "name": "曽田康二",
+      "pos": "投手",
+      "from": "日本通運",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 1977,
+      "round": "4位",
+      "name": "鈴木伸良",
+      "pos": "投手",
+      "from": "名古屋電気高",
+      "competed": false,
+      "note": "→南海(1984-)→阪神(1987)／＊野手登録"
+    },
+    {
+      "year": 1977,
+      "round": "5位",
+      "name": "鈴木康友",
+      "pos": "内野手",
+      "from": "天理高",
+      "competed": false,
+      "note": "→西武(1985)→中日(1986-)→西武(1990-1992)"
+    },
+    {
+      "year": 1977,
+      "round": "6位",
+      "name": "島本啓次郎",
+      "pos": "外野手",
+      "from": "法政大",
+      "competed": false,
+      "note": "→近鉄(1981/4-1983)"
+    },
+    {
+      "year": 1976,
+      "round": "1位",
+      "name": "藤城和明",
+      "pos": "投手",
+      "from": "新日鉄広畑",
+      "competed": false,
+      "note": "→阪急(1982/4-)→ロッテ(1986)"
+    },
+    {
+      "year": 1976,
+      "round": "2位",
+      "name": "赤嶺賢勇",
+      "pos": "投手",
+      "from": "豊見城高",
+      "competed": false,
+      "note": "1983"
+    },
+    {
+      "year": 1976,
+      "round": "3位",
+      "name": "角三男",
+      "pos": "投手",
+      "from": "三菱重工三原",
+      "competed": false,
+      "note": "→日本ハム(1989/6-)→ヤクルト(1982)"
+    },
+    {
+      "year": 1976,
+      "round": "4位",
+      "name": "吉沢克美",
+      "pos": "投手",
+      "from": "國學院久我山高",
+      "competed": false,
+      "note": "1980"
+    },
+    {
+      "year": 1976,
+      "round": "5位",
+      "name": "松本匡史",
+      "pos": "内野手",
+      "from": "早稲田大",
+      "competed": false,
+      "note": "1987"
+    },
+    {
+      "year": 1976,
+      "round": "6位",
+      "name": "笠間雄二",
+      "pos": "捕手",
+      "from": "電電北陸",
+      "competed": false,
+      "note": "→阪急(1980)→阪神(1981-1984)"
+    },
+    {
+      "year": 1975,
+      "round": "1位",
+      "name": "篠塚利夫",
+      "pos": "内野手",
+      "from": "銚子商業高",
+      "competed": false,
+      "note": "1994"
+    },
+    {
+      "year": 1975,
+      "round": "2位",
+      "name": "岡田忠雄",
+      "pos": "捕手",
+      "from": "中京高",
+      "competed": false,
+      "note": "1980"
+    },
+    {
+      "year": 1975,
+      "round": "3位",
+      "name": "中畑清",
+      "pos": "内野手",
+      "from": "駒澤大",
+      "competed": false,
+      "note": "1989"
+    },
+    {
+      "year": 1975,
+      "round": "4位",
+      "name": "猪口明宏",
+      "pos": "外野手",
+      "from": "天理高",
+      "competed": false,
+      "note": "1978"
+    },
+    {
+      "year": 1975,
+      "round": "5位",
+      "name": "山本功児",
+      "pos": "内野手",
+      "from": "本田技研鈴鹿",
+      "competed": false,
+      "note": "→ロッテ(1984-1988)"
+    },
+    {
+      "year": 1975,
+      "round": "6位",
+      "name": "柿本孝哉",
+      "pos": "内野手",
+      "from": "宮崎商業高",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 1974,
+      "round": "1位",
+      "name": "定岡正二",
+      "pos": "投手",
+      "from": "鹿児島実業高",
+      "competed": false,
+      "note": "1985"
+    },
+    {
+      "year": 1974,
+      "round": "2位",
+      "name": "中山俊之",
+      "pos": "投手",
+      "from": "大昭和製紙北海道",
+      "competed": false,
+      "note": "1978"
+    },
+    {
+      "year": 1974,
+      "round": "3位",
+      "name": "倉骨道広",
+      "pos": "捕手",
+      "from": "東京農業大",
+      "competed": false,
+      "note": "1978"
+    },
+    {
+      "year": 1974,
+      "round": "4位",
+      "name": "塩月勝義",
+      "pos": "投手",
+      "from": "協和醗酵防府",
+      "competed": false,
+      "note": "1979"
+    },
+    {
+      "year": 1974,
+      "round": "5位",
+      "name": "大本則夫",
+      "pos": "投手",
+      "from": "電電四国",
+      "competed": false,
+      "note": "→ロッテ(1977)"
+    },
+    {
+      "year": 1974,
+      "round": "6位",
+      "name": "岡昭彦",
+      "pos": "内野手",
+      "from": "春日部工業高",
+      "competed": false,
+      "note": "1976"
+    },
+    {
+      "year": 1973,
+      "round": "1位",
+      "name": "小林秀一",
+      "pos": "投手",
+      "from": "愛知学院大",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 1973,
+      "round": "2位",
+      "name": "黒坂幸夫",
+      "pos": "投手",
+      "from": "糸魚川商工高",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 1973,
+      "round": "3位",
+      "name": "中村裕二",
+      "pos": "捕手",
+      "from": "住友金属",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 1973,
+      "round": "4位",
+      "name": "迫丸金次郎",
+      "pos": "外野手",
+      "from": "愛知学院大",
+      "competed": false,
+      "note": "→広島(1982-)"
+    },
+    {
+      "year": 1973,
+      "round": "5位",
+      "name": "尾西和夫",
+      "pos": "投手",
+      "from": "新日鉄堺",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 1973,
+      "round": "6位",
+      "name": "新谷祐二",
+      "pos": "投手",
+      "from": "福井高",
+      "competed": false,
+      "note": "→日本ハム(1976-1977)"
+    },
+    {
+      "year": 1973,
+      "round": "7位",
+      "name": "金島正彦",
+      "pos": "内野手",
+      "from": "武相高卒",
+      "competed": false,
+      "note": "1978"
+    },
+    {
+      "year": 1972,
+      "round": "1位",
+      "name": "中井康之",
+      "pos": "投手",
+      "from": "西京商業高",
+      "competed": false,
+      "note": "1984／＊野手登録"
+    },
+    {
+      "year": 1972,
+      "round": "2位",
+      "name": "西村高司",
+      "pos": "投手",
+      "from": "伊香高",
+      "competed": false,
+      "note": "1975"
+    },
+    {
+      "year": 1972,
+      "round": "3位",
+      "name": "山本和雄",
+      "pos": "内野手",
+      "from": "熊谷組",
+      "competed": false,
+      "note": "1978"
+    },
+    {
+      "year": 1972,
+      "round": "4位",
+      "name": "原田俊治",
+      "pos": "外野手",
+      "from": "三菱自動車川崎",
+      "competed": false,
+      "note": "1981"
+    },
+    {
+      "year": 1972,
+      "round": "5位",
+      "name": "福嶋知春",
+      "pos": "捕手",
+      "from": "新日鉄光",
+      "competed": false,
+      "note": "→ロッテ(1984-1985)"
+    },
+    {
+      "year": 1972,
+      "round": "6位",
+      "name": "恒村勝美",
+      "pos": "投手",
+      "from": "球磨工業高",
+      "competed": false,
+      "note": "1975"
+    },
+    {
+      "year": 1972,
+      "round": "7位",
+      "name": "小川邦和",
+      "pos": "投手",
+      "from": "日本鋼管",
+      "competed": false,
+      "note": "1977／広島(1981-1983）"
+    },
+    {
+      "year": 1972,
+      "round": "8位",
+      "name": "樋江井忠臣",
+      "pos": "投手",
+      "from": "三協精機",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 1972,
+      "round": "9位",
+      "name": "斎藤啓治",
+      "pos": "投手",
+      "from": "焼津水産高",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 1972,
+      "round": "10位",
+      "name": "山本昌樹",
+      "pos": "投手",
+      "from": "松下電器",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 1971,
+      "round": "1位",
+      "name": "横山忠夫",
+      "pos": "投手",
+      "from": "立教大",
+      "competed": false,
+      "note": "→ロッテ(1978)"
+    },
+    {
+      "year": 1971,
+      "round": "2位",
+      "name": "谷山高明",
+      "pos": "投手",
+      "from": "愛知相互銀行",
+      "competed": false,
+      "note": "→日本ハム(1977-1979)"
+    },
+    {
+      "year": 1971,
+      "round": "3位",
+      "name": "庄司智久",
+      "pos": "内野手",
+      "from": "新宮高",
+      "competed": false,
+      "note": "→ロッテ(1980-1988)"
+    },
+    {
+      "year": 1971,
+      "round": "4位",
+      "name": "尾形正巳",
+      "pos": "内野手",
+      "from": "山崎高",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 1971,
+      "round": "5位",
+      "name": "山本昌樹",
+      "pos": "投手",
+      "from": "鳥取西高",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 1971,
+      "round": "6位",
+      "name": "小林繁",
+      "pos": "投手",
+      "from": "神戸大丸",
+      "competed": false,
+      "note": "1972年オフ入団／→阪神(1979-1983)"
+    },
+    {
+      "year": 1971,
+      "round": "7位",
+      "name": "玉井信博",
+      "pos": "投手",
+      "from": "東洋大",
+      "competed": false,
+      "note": "1972年オフ入団／→太平洋・クラウン(1976-1978)"
+    },
+    {
+      "year": 1971,
+      "round": "8位",
+      "name": "板東洋司",
+      "pos": "外野手",
+      "from": "鴨島商業高",
+      "competed": false,
+      "note": "1974"
+    },
+    {
+      "year": 1970,
+      "round": "1位",
+      "name": "湯口敏彦",
+      "pos": "投手",
+      "from": "岐阜短期大付高",
+      "competed": false,
+      "note": "1972"
+    },
+    {
+      "year": 1970,
+      "round": "2位",
+      "name": "大北敏博",
+      "pos": "投手",
+      "from": "高松商業高",
+      "competed": false,
+      "note": "→西武(1980)"
+    },
+    {
+      "year": 1970,
+      "round": "3位",
+      "name": "淡口憲治",
+      "pos": "外野手",
+      "from": "三田学園高",
+      "competed": false,
+      "note": "→近鉄(1986-1989)"
+    },
+    {
+      "year": 1970,
+      "round": "4位",
+      "name": "樋沢良信",
+      "pos": "内野手",
+      "from": "電電東北",
+      "competed": false,
+      "note": "1975"
+    },
+    {
+      "year": 1970,
+      "round": "5位",
+      "name": "森下敏秀",
+      "pos": "内野手",
+      "from": "箕島高",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 1970,
+      "round": "6位",
+      "name": "高橋英二",
+      "pos": "内野手",
+      "from": "仙台鉄道局",
+      "competed": false,
+      "note": "1975"
+    },
+    {
+      "year": 1970,
+      "round": "7位",
+      "name": "魚満芳",
+      "pos": "捕手",
+      "from": "新湊高",
+      "competed": false,
+      "note": "→大洋(1977-1979)"
+    },
+    {
+      "year": 1969,
+      "round": "1位",
+      "name": "小坂敏彦",
+      "pos": "投手",
+      "from": "早稲田大",
+      "competed": false,
+      "note": "→日拓・日本ハム(1973-1976)"
+    },
+    {
+      "year": 1969,
+      "round": "2位",
+      "name": "阿野鉱二",
+      "pos": "捕手",
+      "from": "早稲田大",
+      "competed": false,
+      "note": "1976"
+    },
+    {
+      "year": 1969,
+      "round": "3位",
+      "name": "萩原康弘",
+      "pos": "外野手",
+      "from": "中央大",
+      "competed": false,
+      "note": "→広島(1976-)→ヤクルト(1983)"
+    },
+    {
+      "year": 1969,
+      "round": "4位",
+      "name": "大竹憲治",
+      "pos": "内野手",
+      "from": "専修大京王高",
+      "competed": false,
+      "note": "1976"
+    },
+    {
+      "year": 1969,
+      "round": "5位",
+      "name": "佐藤政夫",
+      "pos": "投手",
+      "from": "電電東北",
+      "competed": false,
+      "note": "→ロッテ(1971-)→中日(1973-)→大洋(1981-)→ロッテ(1985-1987)"
+    },
+    {
+      "year": 1969,
+      "round": "6位",
+      "name": "河埜和正",
+      "pos": "内野手",
+      "from": "八幡浜工業高",
+      "competed": false,
+      "note": "1986"
+    },
+    {
+      "year": 1969,
+      "round": "7位",
+      "name": "楠城徹",
+      "pos": "捕手",
+      "from": "小倉高",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 1969,
+      "round": "8位",
+      "name": "柴崎孝夫",
+      "pos": "投手",
+      "from": "取手第一高",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 1969,
+      "round": "9位",
+      "name": "今久留主邦明",
+      "pos": "捕手",
+      "from": "博多工業高",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 1969,
+      "round": "10位",
+      "name": "松尾輝義",
+      "pos": "投手",
+      "from": "長崎商業高",
+      "competed": false,
+      "note": "1979"
+    },
+    {
+      "year": 1969,
+      "round": "11位",
+      "name": "鎌野裕",
+      "pos": "投手",
+      "from": "関東学院大",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 1969,
+      "round": "12位",
+      "name": "今東一",
+      "pos": "捕手",
+      "from": "拓殖大一高",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 1969,
+      "round": "13位",
+      "name": "所憲佐",
+      "pos": "捕手",
+      "from": "市川高",
+      "competed": false,
+      "note": "1980"
+    },
+    {
+      "year": 1969,
+      "round": "14位",
+      "name": "百田慎太郎",
+      "pos": "投手",
+      "from": "有田工業高",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 1968,
+      "round": "1位",
+      "name": "島野修",
+      "pos": "投手",
+      "from": "武相高",
+      "competed": false,
+      "note": "→阪急(1976-1978)"
+    },
+    {
+      "year": 1968,
+      "round": "2位",
+      "name": "田中章",
+      "pos": "投手",
+      "from": "日通浦和",
+      "competed": false,
+      "note": "→西鉄・太平洋(1971-)→大洋(1976-1977)"
+    },
+    {
+      "year": 1968,
+      "round": "3位",
+      "name": "矢部祐一",
+      "pos": "内野手",
+      "from": "常盤炭鉱",
+      "competed": false,
+      "note": "→大洋(1973-1974)"
+    },
+    {
+      "year": 1968,
+      "round": "4位",
+      "name": "吉村典男",
+      "pos": "投手",
+      "from": "リッカーミシン",
+      "competed": false,
+      "note": "1972"
+    },
+    {
+      "year": 1968,
+      "round": "5位",
+      "name": "松本正幸",
+      "pos": "投手",
+      "from": "熊本工業高",
+      "competed": false,
+      "note": "1974"
+    },
+    {
+      "year": 1968,
+      "round": "6位",
+      "name": "杉山茂",
+      "pos": "捕手",
+      "from": "銚子商業高",
+      "competed": false,
+      "note": "1982"
+    },
+    {
+      "year": 1968,
+      "round": "7位",
+      "name": "大下正忠",
+      "pos": "内野手",
+      "from": "別府鶴見ヶ丘高",
+      "competed": false,
+      "note": "1970"
+    },
+    {
+      "year": 1968,
+      "round": "8位",
+      "name": "池島和彦",
+      "pos": "投手",
+      "from": "明治大",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 1968,
+      "round": "9位",
+      "name": "梅田邦三",
+      "pos": "内野手",
+      "from": "日本新薬",
+      "competed": false,
+      "note": "→西鉄・太平洋(1971-)→中日(1976-)→日本ハム(1980)"
+    },
+    {
+      "year": 1968,
+      "round": "10位",
+      "name": "富田清吾",
+      "pos": "投手",
+      "from": "中央大",
+      "competed": false,
+      "note": "1972"
+    },
+    {
+      "year": 1967,
+      "round": "1位",
+      "name": "高田繁",
+      "pos": "外野手",
+      "from": "明治大",
+      "competed": false,
+      "note": "1980"
+    },
+    {
+      "year": 1967,
+      "round": "2位",
+      "name": "山内新一",
+      "pos": "投手",
+      "from": "三菱重工三原",
+      "competed": false,
+      "note": "→南海(1973-)・阪神(1984-1985)"
+    },
+    {
+      "year": 1967,
+      "round": "3位",
+      "name": "大隈正人",
+      "pos": "投手",
+      "from": "サッポロビール",
+      "competed": false,
+      "note": "→中日(1971-)・阪急(1977-1981)／＊野手登録 ＊中日・阪急時代に登板"
+    },
+    {
+      "year": 1967,
+      "round": "4位",
+      "name": "山田直政",
+      "pos": "投手",
+      "from": "岡山南高",
+      "competed": false,
+      "note": "1968"
+    },
+    {
+      "year": 1967,
+      "round": "5位",
+      "name": "板東順司",
+      "pos": "投手",
+      "from": "鳴門高",
+      "competed": false,
+      "note": "1970"
+    },
+    {
+      "year": 1967,
+      "round": "6位",
+      "name": "菅田秀高",
+      "pos": "投手",
+      "from": "島根農業大付農林高",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 1967,
+      "round": "7位",
+      "name": "沢田止男",
+      "pos": "内野手",
+      "from": "八代東高",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 1967,
+      "round": "8位",
+      "name": "小田芳男",
+      "pos": "捕手",
+      "from": "萩高",
+      "competed": false,
+      "note": "1972"
+    },
+    {
+      "year": 1967,
+      "round": "9位",
+      "name": "小平誠司",
+      "pos": "捕手",
+      "from": "陸上自衛隊西部",
+      "competed": false,
+      "note": "1970"
+    },
+    {
+      "year": 1967,
+      "round": "10位",
+      "name": "関本四十四",
+      "pos": "投手",
+      "from": "糸魚川商工高",
+      "competed": false,
+      "note": "→太平洋(1976)→大洋(1977-1978)"
+    },
+    {
+      "year": 1967,
+      "round": "11位",
+      "name": "依田優一",
+      "pos": "外野手",
+      "from": "堀越高",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 1967,
+      "round": "12位",
+      "name": "飯尾尊雄",
+      "pos": "投手",
+      "from": "丹原高",
+      "competed": false,
+      "note": "1969"
+    },
+    {
+      "year": 1967,
+      "round": "13位",
+      "name": "中室幹雄",
+      "pos": "外野手",
+      "from": "津山商業高",
+      "competed": false,
+      "note": "1969"
+    },
+    {
+      "year": 1967,
+      "round": "14位",
+      "name": "三平孝広",
+      "pos": "投手",
+      "from": "木更津中央高",
+      "competed": false,
+      "note": "1968"
+    },
+    {
+      "year": 1967,
+      "round": "15位",
+      "name": "佐藤清三郎",
+      "pos": "捕手",
+      "from": "木更津中央高",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 1966,
+      "round": "2次 1位",
+      "name": "槌田誠",
+      "pos": "捕手",
+      "from": "立教大",
+      "competed": true,
+      "note": "→ヤクルト(1977)"
+    },
+    {
+      "year": 1966,
+      "round": "2次 2位",
+      "name": "深沢修一",
+      "pos": "外野手",
+      "from": "甲府工業高",
+      "competed": false,
+      "note": "→広島(1968/6-1981)"
+    },
+    {
+      "year": 1966,
+      "round": "2次 3位",
+      "name": "上垣内誠",
+      "pos": "外野手",
+      "from": "東洋大",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 1966,
+      "round": "2次 4位",
+      "name": "三浦健二",
+      "pos": "投手",
+      "from": "日本石油",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 1966,
+      "round": "2次 5位",
+      "name": "高畠導宏",
+      "pos": "外野手",
+      "from": "中央大",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 1966,
+      "round": "1次 1位",
+      "name": "山下司",
+      "pos": "内野手",
+      "from": "伊野商業高",
+      "competed": false,
+      "note": "→日本ハム(1977)"
+    },
+    {
+      "year": 1966,
+      "round": "1次 2位",
+      "name": "荒木清志",
+      "pos": "投手",
+      "from": "桜ヶ丘高",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 1966,
+      "round": "1次 3位",
+      "name": "神部年男",
+      "pos": "投手",
+      "from": "富士鉄広畑",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 1966,
+      "round": "1次 4位",
+      "name": "真鍋安政",
+      "pos": "内野手",
+      "from": "宇部鴻城高",
+      "competed": false,
+      "note": "1972"
+    },
+    {
+      "year": 1966,
+      "round": "1次 5位",
+      "name": "中村国昭",
+      "pos": "内野手",
+      "from": "日鉱佐賀関",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 1965,
+      "round": "1位",
+      "name": "堀内恒夫",
+      "pos": "投手",
+      "from": "甲府商業高",
+      "competed": false,
+      "note": "1983"
+    },
+    {
+      "year": 1965,
+      "round": "2位",
+      "name": "林千代作",
+      "pos": "外野手",
+      "from": "鎌倉学園高",
+      "competed": false,
+      "note": "1969"
+    },
+    {
+      "year": 1965,
+      "round": "3位",
+      "name": "江藤省三",
+      "pos": "内野手",
+      "from": "慶應義塾大",
+      "competed": false,
+      "note": "→中日(1969-1976)"
+    },
+    {
+      "year": 1965,
+      "round": "4位",
+      "name": "広瀬邦敏",
+      "pos": "外野手",
+      "from": "広島大竹高",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 1965,
+      "round": "5位",
+      "name": "才所俊郎",
+      "pos": "外野手",
+      "from": "河合楽器",
+      "competed": false,
+      "note": "→西鉄(1972)"
+    },
+    {
+      "year": 1965,
+      "round": "6位",
+      "name": "宇佐美敏晴",
+      "pos": "投手",
+      "from": "西条高",
+      "competed": false,
+      "note": "1970"
+    },
+    {
+      "year": 1965,
+      "round": "7位",
+      "name": "西山敏明",
+      "pos": "外野手",
+      "from": "津山商業高",
+      "competed": false,
+      "note": ""
+    },
+    {
+      "year": 1965,
+      "round": "8位",
+      "name": "深津修司",
+      "pos": "内野手",
+      "from": "中京高",
+      "competed": false,
+      "note": ""
+    }
   ],
   "ikusei_picks": [
-    {"year": 2024, "round": "育成1位", "name": "坂本達也", "pos": "", "from": "", "note": ""},
-    {"year": 2024, "round": "育成2位", "name": "堀江正太郎", "pos": "", "from": "", "note": ""},
-    {"year": 2024, "round": "育成3位", "name": "鈴木圭晋", "pos": "", "from": "", "note": ""},
-    {"year": 2024, "round": "育成4位", "name": "吹田志道", "pos": "", "from": "", "note": ""},
-    {"year": 2024, "round": "育成5位", "name": "西川歩", "pos": "", "from": "", "note": ""},
-    {"year": 2024, "round": "育成6位", "name": "竹下徠空", "pos": "", "from": "", "note": ""}
+    {
+      "year": 2025,
+      "round": "育成1位",
+      "name": "冨重英二郎",
+      "pos": "投手",
+      "from": "BCL・神奈川",
+      "note": ""
+    },
+    {
+      "year": 2025,
+      "round": "育成2位",
+      "name": "林燦",
+      "pos": "投手",
+      "from": "立正大",
+      "note": ""
+    },
+    {
+      "year": 2025,
+      "round": "育成3位",
+      "name": "松井蓮太朗",
+      "pos": "捕手",
+      "from": "豊橋中央高",
+      "note": ""
+    },
+    {
+      "year": 2025,
+      "round": "育成4位",
+      "name": "河野優作",
+      "pos": "投手",
+      "from": "愛知学院大",
+      "note": ""
+    },
+    {
+      "year": 2025,
+      "round": "育成5位",
+      "name": "知念大成",
+      "pos": "外野手",
+      "from": "オイシックス新潟",
+      "note": ""
+    },
+    {
+      "year": 2024,
+      "round": "育成1位",
+      "name": "坂本達也",
+      "pos": "捕手",
+      "from": "富士大",
+      "note": ""
+    },
+    {
+      "year": 2024,
+      "round": "育成2位",
+      "name": "堀江正太郎",
+      "pos": "投手",
+      "from": "文星芸術大附高",
+      "note": ""
+    },
+    {
+      "year": 2024,
+      "round": "育成3位",
+      "name": "鈴木圭晋",
+      "pos": "投手",
+      "from": "横浜創学館高",
+      "note": ""
+    },
+    {
+      "year": 2024,
+      "round": "育成4位",
+      "name": "吹田志道",
+      "pos": "投手",
+      "from": "弘前学院聖愛高",
+      "note": ""
+    },
+    {
+      "year": 2024,
+      "round": "育成5位",
+      "name": "西川歩",
+      "pos": "投手",
+      "from": "山村学園高",
+      "note": ""
+    },
+    {
+      "year": 2024,
+      "round": "育成6位",
+      "name": "竹下徠空",
+      "pos": "内野手",
+      "from": "明徳義塾高",
+      "note": ""
+    },
+    {
+      "year": 2023,
+      "round": "育成1位",
+      "name": "三浦克也",
+      "pos": "投手",
+      "from": "東京国際大",
+      "note": "2025"
+    },
+    {
+      "year": 2023,
+      "round": "育成2位",
+      "name": "村山源",
+      "pos": "内野手",
+      "from": "鹿屋中央高",
+      "note": ""
+    },
+    {
+      "year": 2023,
+      "round": "育成3位",
+      "name": "宇都宮葵星",
+      "pos": "内野手",
+      "from": "四国ILplus・愛媛",
+      "note": ""
+    },
+    {
+      "year": 2023,
+      "round": "育成4位",
+      "name": "田上優弥",
+      "pos": "内野手",
+      "from": "日本大藤沢高",
+      "note": ""
+    },
+    {
+      "year": 2023,
+      "round": "育成5位",
+      "name": "園田純規",
+      "pos": "投手",
+      "from": "福岡工業大城東高",
+      "note": ""
+    },
+    {
+      "year": 2023,
+      "round": "育成6位",
+      "name": "千葉隆広",
+      "pos": "投手",
+      "from": "旭川明成高",
+      "note": ""
+    },
+    {
+      "year": 2023,
+      "round": "育成7位",
+      "name": "平山功太",
+      "pos": "外野手",
+      "from": "BSL・千葉",
+      "note": ""
+    },
+    {
+      "year": 2022,
+      "round": "育成1位",
+      "name": "松井颯",
+      "pos": "投手",
+      "from": "明星大",
+      "note": ""
+    },
+    {
+      "year": 2022,
+      "round": "育成2位",
+      "name": "田村朋輝",
+      "pos": "投手",
+      "from": "酒田南高",
+      "note": ""
+    },
+    {
+      "year": 2022,
+      "round": "育成3位",
+      "name": "吉村優聖歩",
+      "pos": "投手",
+      "from": "明徳義塾高",
+      "note": ""
+    },
+    {
+      "year": 2022,
+      "round": "育成4位",
+      "name": "中田歩夢",
+      "pos": "内野手",
+      "from": "東奥義塾高",
+      "note": ""
+    },
+    {
+      "year": 2022,
+      "round": "育成5位",
+      "name": "相澤白虎",
+      "pos": "内野手",
+      "from": "桐蔭学園高",
+      "note": ""
+    },
+    {
+      "year": 2022,
+      "round": "育成6位",
+      "name": "三塚琉生",
+      "pos": "外野手",
+      "from": "桐生第一高",
+      "note": ""
+    },
+    {
+      "year": 2022,
+      "round": "育成7位",
+      "name": "大城元",
+      "pos": "外野手",
+      "from": "KBC未来高沖縄",
+      "note": "2025"
+    },
+    {
+      "year": 2022,
+      "round": "育成8位",
+      "name": "北村流音",
+      "pos": "内野手",
+      "from": "桐生第一高",
+      "note": ""
+    },
+    {
+      "year": 2022,
+      "round": "育成9位",
+      "name": "森本哲星",
+      "pos": "投手",
+      "from": "市立船橋高",
+      "note": ""
+    },
+    {
+      "year": 2021,
+      "round": "育成1位",
+      "name": "鈴木大和",
+      "pos": "外野手",
+      "from": "北海学園大",
+      "note": ""
+    },
+    {
+      "year": 2021,
+      "round": "育成2位",
+      "name": "髙田竜星",
+      "pos": "投手",
+      "from": "BCL・石川",
+      "note": "2023"
+    },
+    {
+      "year": 2021,
+      "round": "育成3位",
+      "name": "亀田啓太",
+      "pos": "捕手",
+      "from": "東海大",
+      "note": ""
+    },
+    {
+      "year": 2021,
+      "round": "育成4位",
+      "name": "笹原操希",
+      "pos": "外野手",
+      "from": "上田西高",
+      "note": ""
+    },
+    {
+      "year": 2021,
+      "round": "育成5位",
+      "name": "鴨打瑛二",
+      "pos": "投手",
+      "from": "創成館高",
+      "note": "2025"
+    },
+    {
+      "year": 2021,
+      "round": "育成6位",
+      "name": "菊地大稀",
+      "pos": "投手",
+      "from": "桐蔭横浜大",
+      "note": "→北海道日本ハム(2026-)"
+    },
+    {
+      "year": 2021,
+      "round": "育成7位",
+      "name": "京本眞",
+      "pos": "投手",
+      "from": "明豊高",
+      "note": ""
+    },
+    {
+      "year": 2021,
+      "round": "育成8位",
+      "name": "富田龍",
+      "pos": "投手",
+      "from": "四国学院大",
+      "note": ""
+    },
+    {
+      "year": 2021,
+      "round": "育成9位",
+      "name": "川嵜陽仁",
+      "pos": "投手",
+      "from": "誉高",
+      "note": "2024"
+    },
+    {
+      "year": 2021,
+      "round": "育成10位",
+      "name": "大津綾也",
+      "pos": "捕手",
+      "from": "北海高",
+      "note": "2025"
+    },
+    {
+      "year": 2020,
+      "round": "育成1位",
+      "name": "岡本大翔",
+      "pos": "内野手",
+      "from": "米子東高",
+      "note": "2024"
+    },
+    {
+      "year": 2020,
+      "round": "育成2位",
+      "name": "喜多隆介",
+      "pos": "捕手",
+      "from": "京都先端科学大",
+      "note": ""
+    },
+    {
+      "year": 2020,
+      "round": "育成3位",
+      "name": "笠島尚樹",
+      "pos": "投手",
+      "from": "敦賀気比高",
+      "note": "2024"
+    },
+    {
+      "year": 2020,
+      "round": "育成4位",
+      "name": "木下幹也",
+      "pos": "投手",
+      "from": "横浜高",
+      "note": ""
+    },
+    {
+      "year": 2020,
+      "round": "育成5位",
+      "name": "前田研輝",
+      "pos": "捕手",
+      "from": "駒澤大",
+      "note": "2024"
+    },
+    {
+      "year": 2020,
+      "round": "育成6位",
+      "name": "坂本勇人",
+      "pos": "捕手",
+      "from": "唐津商業高",
+      "note": "2025"
+    },
+    {
+      "year": 2020,
+      "round": "育成7位",
+      "name": "戸田懐生",
+      "pos": "投手",
+      "from": "四国ILplus・徳島",
+      "note": "2025"
+    },
+    {
+      "year": 2020,
+      "round": "育成8位",
+      "name": "阿部剣友",
+      "pos": "投手",
+      "from": "札幌大谷高",
+      "note": "2023"
+    },
+    {
+      "year": 2020,
+      "round": "育成9位",
+      "name": "奈良木陸",
+      "pos": "投手",
+      "from": "筑波大",
+      "note": "2023"
+    },
+    {
+      "year": 2020,
+      "round": "育成10位",
+      "name": "山﨑友輔",
+      "pos": "投手",
+      "from": "福山大",
+      "note": "2024"
+    },
+    {
+      "year": 2020,
+      "round": "育成11位",
+      "name": "保科広一",
+      "pos": "外野手",
+      "from": "創価大",
+      "note": "2023"
+    },
+    {
+      "year": 2020,
+      "round": "育成12位",
+      "name": "加藤廉",
+      "pos": "内野手",
+      "from": "東海大海洋学部",
+      "note": "2024"
+    },
+    {
+      "year": 2019,
+      "round": "育成1位",
+      "name": "平間隼人",
+      "pos": "内野手",
+      "from": "四国ILplus・徳島",
+      "note": "2022"
+    },
+    {
+      "year": 2019,
+      "round": "育成2位",
+      "name": "加藤壮太",
+      "pos": "外野手",
+      "from": "BCL・埼玉武蔵",
+      "note": "2021"
+    },
+    {
+      "year": 2018,
+      "round": "育成1位",
+      "name": "山下航汰",
+      "pos": "外野手",
+      "from": "高崎健康福祉大高崎高",
+      "note": "2021"
+    },
+    {
+      "year": 2018,
+      "round": "育成2位",
+      "name": "平井快青",
+      "pos": "投手",
+      "from": "岐阜第一高",
+      "note": "2021"
+    },
+    {
+      "year": 2018,
+      "round": "育成3位",
+      "name": "沼田翔平",
+      "pos": "投手",
+      "from": "旭川大高",
+      "note": "→東京ヤクルト(2023-)"
+    },
+    {
+      "year": 2018,
+      "round": "育成4位",
+      "name": "黒田響生",
+      "pos": "内野手",
+      "from": "敦賀気比高",
+      "note": "2022"
+    },
+    {
+      "year": 2017,
+      "round": "育成1位",
+      "name": "比嘉賢伸",
+      "pos": "内野手",
+      "from": "盛岡大附高",
+      "note": "2020"
+    },
+    {
+      "year": 2017,
+      "round": "育成2位",
+      "name": "山上信吾",
+      "pos": "投手",
+      "from": "常磐高",
+      "note": "2020"
+    },
+    {
+      "year": 2017,
+      "round": "育成3位",
+      "name": "笠井駿",
+      "pos": "外野手",
+      "from": "東北福祉大",
+      "note": "2020"
+    },
+    {
+      "year": 2017,
+      "round": "育成4位",
+      "name": "田中優大",
+      "pos": "投手",
+      "from": "羽黒高",
+      "note": "2021"
+    },
+    {
+      "year": 2017,
+      "round": "育成5位",
+      "name": "広畑塁",
+      "pos": "捕手",
+      "from": "立正大",
+      "note": "2020"
+    },
+    {
+      "year": 2017,
+      "round": "育成6位",
+      "name": "小山翔平",
+      "pos": "捕手",
+      "from": "関西大",
+      "note": "2020"
+    },
+    {
+      "year": 2017,
+      "round": "育成7位",
+      "name": "折下光輝",
+      "pos": "投手",
+      "from": "新野高",
+      "note": "2020"
+    },
+    {
+      "year": 2017,
+      "round": "育成8位",
+      "name": "荒井颯太",
+      "pos": "外野手",
+      "from": "関根学園高",
+      "note": "2020"
+    },
+    {
+      "year": 2016,
+      "round": "育成1位",
+      "name": "髙井俊",
+      "pos": "投手",
+      "from": "BCL・新潟",
+      "note": "2020"
+    },
+    {
+      "year": 2016,
+      "round": "育成2位",
+      "name": "加藤脩平",
+      "pos": "外野手",
+      "from": "磐田東高",
+      "note": "2020"
+    },
+    {
+      "year": 2016,
+      "round": "育成3位",
+      "name": "山川和大",
+      "pos": "投手",
+      "from": "BFL・兵庫",
+      "note": "2021"
+    },
+    {
+      "year": 2016,
+      "round": "育成4位",
+      "name": "坂本工宜",
+      "pos": "投手",
+      "from": "関西学院大・準硬式",
+      "note": "2019"
+    },
+    {
+      "year": 2016,
+      "round": "育成5位",
+      "name": "松原聖弥",
+      "pos": "外野手",
+      "from": "明星大",
+      "note": "→埼玉西武(2024/6-2025)"
+    },
+    {
+      "year": 2016,
+      "round": "育成6位",
+      "name": "高山竜太朗",
+      "pos": "捕手",
+      "from": "九州産業大",
+      "note": "2020"
+    },
+    {
+      "year": 2016,
+      "round": "育成7位",
+      "name": "堀岡隼人",
+      "pos": "投手",
+      "from": "青森山田高",
+      "note": "→横浜DeNA(2024-)"
+    },
+    {
+      "year": 2016,
+      "round": "育成8位",
+      "name": "松澤裕介",
+      "pos": "外野手",
+      "from": "四国ILplus・香川",
+      "note": "2018"
+    },
+    {
+      "year": 2015,
+      "round": "育成1位",
+      "name": "増田大輝",
+      "pos": "内野手",
+      "from": "四国ILplus・徳島",
+      "note": ""
+    },
+    {
+      "year": 2015,
+      "round": "育成2位",
+      "name": "小林大誠",
+      "pos": "捕手",
+      "from": "BCL・武蔵",
+      "note": "2016"
+    },
+    {
+      "year": 2015,
+      "round": "育成3位",
+      "name": "松澤裕介",
+      "pos": "外野手",
+      "from": "四国ILplus・香川",
+      "note": "入団辞退、2016年8位にて再指名後入団"
+    },
+    {
+      "year": 2015,
+      "round": "育成4位",
+      "name": "田島洸成",
+      "pos": "内野手",
+      "from": "BCL・武蔵",
+      "note": "2019"
+    },
+    {
+      "year": 2015,
+      "round": "育成5位",
+      "name": "大竹秀義",
+      "pos": "投手",
+      "from": "BCL・武蔵",
+      "note": "2017"
+    },
+    {
+      "year": 2015,
+      "round": "育成6位",
+      "name": "山下(橋本)篤郎",
+      "pos": "投手",
+      "from": "鎮西高",
+      "note": "2020"
+    },
+    {
+      "year": 2015,
+      "round": "育成7位",
+      "name": "矢島陽平",
+      "pos": "投手",
+      "from": "BCL・武蔵",
+      "note": "2017"
+    },
+    {
+      "year": 2015,
+      "round": "育成8位",
+      "name": "長谷川潤",
+      "pos": "投手",
+      "from": "BCL・石川",
+      "note": "2017"
+    },
+    {
+      "year": 2014,
+      "round": "育成1位",
+      "name": "篠原慎平",
+      "pos": "投手",
+      "from": "四国ILplus・香川",
+      "note": "2018"
+    },
+    {
+      "year": 2014,
+      "round": "育成2位",
+      "name": "川相拓也",
+      "pos": "内野手",
+      "from": "桜美林大卒",
+      "note": "2017"
+    },
+    {
+      "year": 2014,
+      "round": "育成3位",
+      "name": "田中貴也",
+      "pos": "捕手",
+      "from": "山梨学院大",
+      "note": "→東北楽天(2020/9-)"
+    },
+    {
+      "year": 2014,
+      "round": "育成4位",
+      "name": "髙橋慎之介",
+      "pos": "投手",
+      "from": "木更津総合高卒",
+      "note": "2016"
+    },
+    {
+      "year": 2013,
+      "round": "育成1位",
+      "name": "青山誠",
+      "pos": "外野手",
+      "from": "日本大",
+      "note": "2018"
+    },
+    {
+      "year": 2013,
+      "round": "育成2位",
+      "name": "長江翔太",
+      "pos": "投手",
+      "from": "大阪経済大",
+      "note": "2016"
+    },
+    {
+      "year": 2013,
+      "round": "育成3位",
+      "name": "北之園隆生",
+      "pos": "内野手",
+      "from": "秀岳館高",
+      "note": "2016"
+    },
+    {
+      "year": 2012,
+      "round": "育成1位",
+      "name": "田原啓吾",
+      "pos": "投手",
+      "from": "横浜高",
+      "note": "2016"
+    },
+    {
+      "year": 2012,
+      "round": "育成2位",
+      "name": "松冨倫",
+      "pos": "内野手",
+      "from": "別府大",
+      "note": "→福岡ソフトバンク(2014・育成登録)"
+    },
+    {
+      "year": 2011,
+      "round": "育成1位",
+      "name": "森和樹",
+      "pos": "投手",
+      "from": "市立柏高",
+      "note": "2014"
+    },
+    {
+      "year": 2011,
+      "round": "育成2位",
+      "name": "土田瑞起",
+      "pos": "投手",
+      "from": "四国ILplus・愛媛",
+      "note": "2017"
+    },
+    {
+      "year": 2011,
+      "round": "育成3位",
+      "name": "柴田章吾",
+      "pos": "投手",
+      "from": "明治大",
+      "note": "2014"
+    },
+    {
+      "year": 2011,
+      "round": "育成4位",
+      "name": "芳川庸",
+      "pos": "捕手",
+      "from": "洛北高",
+      "note": "2016"
+    },
+    {
+      "year": 2011,
+      "round": "育成5位",
+      "name": "雨宮敬",
+      "pos": "投手",
+      "from": "BCL・新潟",
+      "note": "2014"
+    },
+    {
+      "year": 2011,
+      "round": "育成6位",
+      "name": "渡辺貴洋",
+      "pos": "投手",
+      "from": "BCL・新潟",
+      "note": "2013"
+    },
+    {
+      "year": 2010,
+      "round": "育成1位",
+      "name": "和田凌太",
+      "pos": "内野手",
+      "from": "広島工業高",
+      "note": "2014"
+    },
+    {
+      "year": 2010,
+      "round": "育成2位",
+      "name": "岸敬祐",
+      "pos": "投手",
+      "from": "四国九州IL・愛媛",
+      "note": "→千葉ロッテ(2014・育成登録)"
+    },
+    {
+      "year": 2010,
+      "round": "育成3位",
+      "name": "福泉敬大",
+      "pos": "投手",
+      "from": "関西独立L・神戸",
+      "note": "2011"
+    },
+    {
+      "year": 2010,
+      "round": "育成4位",
+      "name": "荻野貴幸",
+      "pos": "外野手",
+      "from": "愛知工業大",
+      "note": "2014"
+    },
+    {
+      "year": 2010,
+      "round": "育成5位",
+      "name": "財前貴男",
+      "pos": "内野手",
+      "from": "エイデン愛工大OB BLITZ",
+      "note": "2012"
+    },
+    {
+      "year": 2010,
+      "round": "育成6位",
+      "name": "成瀬功亮",
+      "pos": "投手",
+      "from": "旭川実業高",
+      "note": "2018"
+    },
+    {
+      "year": 2010,
+      "round": "育成7位",
+      "name": "川口寛人",
+      "pos": "内野手",
+      "from": "西多摩倶楽部",
+      "note": "2011"
+    },
+    {
+      "year": 2010,
+      "round": "育成8位",
+      "name": "丸毛謙一",
+      "pos": "内野手",
+      "from": "大阪経済大",
+      "note": "→オリックス(2014-2015/7)"
+    },
+    {
+      "year": 2009,
+      "round": "育成1位",
+      "name": "星野真澄",
+      "pos": "投手",
+      "from": "BCL・信濃",
+      "note": "2014"
+    },
+    {
+      "year": 2009,
+      "round": "育成2位",
+      "name": "河野元貴",
+      "pos": "捕手",
+      "from": "九州国際大付属高",
+      "note": "2018"
+    },
+    {
+      "year": 2009,
+      "round": "育成3位",
+      "name": "陽川尚将",
+      "pos": "内野手",
+      "from": "金光大阪高",
+      "note": ""
+    },
+    {
+      "year": 2009,
+      "round": "育成4位",
+      "name": "大立恭平",
+      "pos": "投手",
+      "from": "岡山商科大",
+      "note": "→福岡ソフトバンク(2013・育成登録)"
+    },
+    {
+      "year": 2009,
+      "round": "育成5位",
+      "name": "神田直輝",
+      "pos": "投手",
+      "from": "群馬大教育学部",
+      "note": "2011"
+    },
+    {
+      "year": 2008,
+      "round": "育成1位",
+      "name": "杉山晃紀",
+      "pos": "投手",
+      "from": "綾部高",
+      "note": "2011"
+    },
+    {
+      "year": 2008,
+      "round": "育成2位",
+      "name": "尾藤竜一",
+      "pos": "投手",
+      "from": "岐阜城北高卒",
+      "note": "2011"
+    },
+    {
+      "year": 2008,
+      "round": "育成3位",
+      "name": "山本和作",
+      "pos": "内野手",
+      "from": "大阪経済大",
+      "note": "→オリックス(2013-2015)"
+    },
+    {
+      "year": 2008,
+      "round": "育成4位",
+      "name": "福元淳史",
+      "pos": "内野手",
+      "from": "NOMO・BC",
+      "note": "→福岡ソフトバンク(2012/6-2013)"
+    },
+    {
+      "year": 2007,
+      "round": "育成1位",
+      "name": "籾山幸徳",
+      "pos": "内野手",
+      "from": "立命館大",
+      "note": "2011"
+    },
+    {
+      "year": 2007,
+      "round": "育成2位",
+      "name": "西村優希",
+      "pos": "投手",
+      "from": "遠軽高",
+      "note": "2010"
+    },
+    {
+      "year": 2007,
+      "round": "育成3位",
+      "name": "谷内田敦士",
+      "pos": "捕手",
+      "from": "北照高",
+      "note": "2011"
+    },
+    {
+      "year": 2006,
+      "round": "育成1位",
+      "name": "鈴木誠",
+      "pos": "投手",
+      "from": "JR東日本",
+      "note": "2008"
+    },
+    {
+      "year": 2006,
+      "round": "育成2位",
+      "name": "下山学",
+      "pos": "外野手",
+      "from": "青森大",
+      "note": "2007"
+    },
+    {
+      "year": 2006,
+      "round": "育成3位",
+      "name": "松本哲也",
+      "pos": "外野手",
+      "from": "専修大",
+      "note": "2017"
+    },
+    {
+      "year": 2006,
+      "round": "育成4位",
+      "name": "隠善智也",
+      "pos": "外野手",
+      "from": "広島国際大",
+      "note": "2015"
+    },
+    {
+      "year": 2006,
+      "round": "育成5位",
+      "name": "芦沢明",
+      "pos": "内野手",
+      "from": "シダックス",
+      "note": "2007"
+    },
+    {
+      "year": 2006,
+      "round": "育成6位",
+      "name": "作田啓一",
+      "pos": "外野手",
+      "from": "苫小牧駒澤大",
+      "note": "2007"
+    },
+    {
+      "year": 2006,
+      "round": "育成7位",
+      "name": "大抜亮祐",
+      "pos": "投手",
+      "from": "中京高",
+      "note": "2009"
+    },
+    {
+      "year": 2005,
+      "round": "育成1位",
+      "name": "山口鉄也",
+      "pos": "投手",
+      "from": "横浜商業高卒",
+      "note": "2018"
+    }
   ],
-  "non_draft": [],
-  "lottery": [],
-  "scouts": [],
-  "ob_scouts": [],
-  "contract_changes": []
+  "non_draft": [
+    {
+      "year": 1990,
+      "name": "秋葉直樹",
+      "pos": "投手",
+      "from": "千葉大宮高",
+      "note": "1991"
+    },
+    {
+      "year": 1989,
+      "name": "大内貴志",
+      "pos": "投手",
+      "from": "東海大四高",
+      "note": "1994"
+    },
+    {
+      "year": 1989,
+      "name": "佐藤謙治",
+      "pos": "投手",
+      "from": "茨城東高",
+      "note": "1995"
+    },
+    {
+      "year": 1989,
+      "name": "柏田貴史",
+      "pos": "投手",
+      "from": "八代工業高",
+      "note": "2005／1997年はMLB・NY.メッツ"
+    },
+    {
+      "year": 1989,
+      "name": "米倉忠信",
+      "pos": "捕手",
+      "from": "拓殖大",
+      "note": "1991"
+    },
+    {
+      "year": 1989,
+      "name": "出口幸夫",
+      "pos": "内野手",
+      "from": "神戸弘陵高",
+      "note": "→ダイエー・ソフトバンク(1999-2005)"
+    },
+    {
+      "year": 1989,
+      "name": "大野和哉",
+      "pos": "外野手",
+      "from": "市立船橋高",
+      "note": "1999"
+    },
+    {
+      "year": 1988,
+      "name": "石毛博史",
+      "pos": "投手",
+      "from": "市立銚子高",
+      "note": "→近鉄(1997-)→阪神(2003-2005)"
+    },
+    {
+      "year": 1988,
+      "name": "伏島良平",
+      "pos": "捕手",
+      "from": "市立船橋高",
+      "note": "1996"
+    },
+    {
+      "year": 1988,
+      "name": "日高博之",
+      "pos": "外野手",
+      "from": "高鍋高",
+      "note": "1990"
+    },
+    {
+      "year": 1987,
+      "name": "荻原満",
+      "pos": "投手",
+      "from": "東海大",
+      "note": "1992"
+    },
+    {
+      "year": 1987,
+      "name": "小原秀天",
+      "pos": "投手",
+      "from": "松下電器",
+      "note": "1989"
+    },
+    {
+      "year": 1987,
+      "name": "川口泰直",
+      "pos": "外野手",
+      "from": "日本大二高",
+      "note": "1991"
+    },
+    {
+      "year": 1986,
+      "name": "山田武史",
+      "pos": "投手",
+      "from": "本田技研熊本",
+      "note": "→ダイエー(1990/6-1991)"
+    },
+    {
+      "year": 1986,
+      "name": "小島圭市",
+      "pos": "投手",
+      "from": "東海大高輪高",
+      "note": "1994／中日(1998)"
+    },
+    {
+      "year": 1986,
+      "name": "高見昌宏",
+      "pos": "捕手",
+      "from": "木本高",
+      "note": "1997"
+    },
+    {
+      "year": 1985,
+      "name": "松原靖",
+      "pos": "投手",
+      "from": "高崎信用金庫",
+      "note": "→西武(1991-1992)"
+    },
+    {
+      "year": 1984,
+      "name": "原田明広",
+      "pos": "投手",
+      "from": "笠間高",
+      "note": "1991"
+    },
+    {
+      "year": 1984,
+      "name": "小幡晴彦",
+      "pos": "捕手",
+      "from": "流通経済大",
+      "note": "1985"
+    },
+    {
+      "year": 1983,
+      "name": "森田実",
+      "pos": "捕手",
+      "from": "三井造船千葉",
+      "note": "1989"
+    },
+    {
+      "year": 1982,
+      "name": "松尾英治",
+      "pos": "投手",
+      "from": "戸塚高",
+      "note": "1989"
+    },
+    {
+      "year": 1982,
+      "name": "稲垣秀次",
+      "pos": "投手",
+      "from": "田中土質基礎研究所",
+      "note": "1984"
+    },
+    {
+      "year": 1982,
+      "name": "栄村忠広",
+      "pos": "内野手",
+      "from": "専売公社鹿児島",
+      "note": "→オリックス(1991)"
+    },
+    {
+      "year": 1982,
+      "name": "堀田徹",
+      "pos": "外野手",
+      "from": "京都商業高",
+      "note": "1983"
+    },
+    {
+      "year": 1981,
+      "name": "田島俊英",
+      "pos": "投手",
+      "from": "花園高",
+      "note": "1983"
+    },
+    {
+      "year": 1981,
+      "name": "呉憲助",
+      "pos": "投手",
+      "from": "葦合高",
+      "note": "1984"
+    },
+    {
+      "year": 1981,
+      "name": "大塚淳弘",
+      "pos": "投手",
+      "from": "日産ディーゼル",
+      "note": "1984"
+    },
+    {
+      "year": 1981,
+      "name": "大石滋昭",
+      "pos": "内野手",
+      "from": "横浜南高",
+      "note": "→近鉄(1984)"
+    },
+    {
+      "year": 1981,
+      "name": "西本和美",
+      "pos": "外野手",
+      "from": "筑波大",
+      "note": "→日本ハム(1985)"
+    },
+    {
+      "year": 1980,
+      "name": "中条善伸",
+      "pos": "投手",
+      "from": "東北高",
+      "note": "→南海・ダイエー(1985-)→大洋(1990)"
+    },
+    {
+      "year": 1980,
+      "name": "藤本貴久",
+      "pos": "捕手",
+      "from": "中京商業高",
+      "note": "1984"
+    },
+    {
+      "year": 1980,
+      "name": "安西健二",
+      "pos": "内野手",
+      "from": "横浜高",
+      "note": "1983"
+    },
+    {
+      "year": 1980,
+      "name": "西尾善政",
+      "pos": "外野手",
+      "from": "横浜商業高",
+      "note": "1983"
+    },
+    {
+      "year": 1980,
+      "name": "後藤敬介",
+      "pos": "外野手",
+      "from": "南筑高",
+      "note": "1982"
+    },
+    {
+      "year": 1979,
+      "name": "香坂英典",
+      "pos": "投手",
+      "from": "中央大",
+      "note": "1984"
+    },
+    {
+      "year": 1979,
+      "name": "橋口敏英",
+      "pos": "投手",
+      "from": "高鍋高",
+      "note": "1983"
+    },
+    {
+      "year": 1979,
+      "name": "山岡勝",
+      "pos": "投手",
+      "from": "佐倉高",
+      "note": "→近鉄(1986-1991)"
+    },
+    {
+      "year": 1979,
+      "name": "西尾亨",
+      "pos": "投手",
+      "from": "市立神港高",
+      "note": "1985"
+    },
+    {
+      "year": 1979,
+      "name": "与那城隆",
+      "pos": "捕手",
+      "from": "都城高",
+      "note": "1983"
+    },
+    {
+      "year": 1979,
+      "name": "北迫謙二",
+      "pos": "内野手",
+      "from": "埼玉栄高",
+      "note": "1982"
+    },
+    {
+      "year": 1979,
+      "name": "島貫省一",
+      "pos": "外野手",
+      "from": "早稲田大",
+      "note": "→近鉄(1985)"
+    },
+    {
+      "year": 1979,
+      "name": "中田好彦",
+      "pos": "外野手",
+      "from": "北陽高",
+      "note": "1981"
+    },
+    {
+      "year": 1978,
+      "name": "鹿取義隆",
+      "pos": "投手",
+      "from": "明治大",
+      "note": "→西武(1990-1997)"
+    },
+    {
+      "year": 1978,
+      "name": "松本基淳",
+      "pos": "投手",
+      "from": "都立立川高",
+      "note": "1981"
+    },
+    {
+      "year": 1978,
+      "name": "福住勝",
+      "pos": "投手",
+      "from": "桜宮高",
+      "note": "1980"
+    },
+    {
+      "year": 1978,
+      "name": "北野明仁",
+      "pos": "投手",
+      "from": "宇治高",
+      "note": "1982"
+    },
+    {
+      "year": 1978,
+      "name": "伊藤元喜",
+      "pos": "投手",
+      "from": "日本電装",
+      "note": "1983"
+    },
+    {
+      "year": 1978,
+      "name": "中村昭",
+      "pos": "捕手",
+      "from": "三協精機",
+      "note": "1984"
+    },
+    {
+      "year": 1978,
+      "name": "志村洋介",
+      "pos": "捕手",
+      "from": "所沢商業高",
+      "note": "1980"
+    },
+    {
+      "year": 1978,
+      "name": "森谷昭",
+      "pos": "内野手",
+      "from": "三菱自動車京都",
+      "note": "1983"
+    },
+    {
+      "year": 1978,
+      "name": "三井康浩",
+      "pos": "内野手",
+      "from": "出雲西高",
+      "note": "1984"
+    },
+    {
+      "year": 1978,
+      "name": "中司得三",
+      "pos": "外野手",
+      "from": "日本生命",
+      "note": "1984"
+    },
+    {
+      "year": 1977,
+      "name": "石川厚",
+      "pos": "投手",
+      "from": "博多高",
+      "note": "1979"
+    },
+    {
+      "year": 1977,
+      "name": "中沢秀一",
+      "pos": "内野手",
+      "from": "三田学園高",
+      "note": "1980"
+    },
+    {
+      "year": 1975,
+      "name": "外園正",
+      "pos": "投手",
+      "from": "八幡大附高",
+      "note": "1978"
+    },
+    {
+      "year": 1975,
+      "name": "黒田真治",
+      "pos": "投手",
+      "from": "下総農業高",
+      "note": "1979"
+    },
+    {
+      "year": 1975,
+      "name": "平田薫",
+      "pos": "内野手",
+      "from": "駒澤大",
+      "note": "→大洋(1985-)→ヤクルト(1988)"
+    },
+    {
+      "year": 1975,
+      "name": "二宮至",
+      "pos": "外野手",
+      "from": "駒澤大",
+      "note": "1983"
+    },
+    {
+      "year": 1975,
+      "name": "小泉泰重",
+      "pos": "外野手",
+      "from": "城西高",
+      "note": "1978"
+    },
+    {
+      "year": 1974,
+      "name": "西本聖",
+      "pos": "投手",
+      "from": "松山商業高",
+      "note": "→中日(1989-)→オリックス(1993)／※1994巨人"
+    },
+    {
+      "year": 1974,
+      "name": "田村勲",
+      "pos": "投手",
+      "from": "岩国工業高",
+      "note": "→ロッテ(1980-)→南海(1986)"
+    },
+    {
+      "year": 1974,
+      "name": "松原由昌",
+      "pos": "投手",
+      "from": "東京都水道局",
+      "note": "→ロッテ(1978-1980)"
+    },
+    {
+      "year": 1974,
+      "name": "荒川俊男",
+      "pos": "捕手",
+      "from": "土浦日本大高",
+      "note": "1978"
+    },
+    {
+      "year": 1973,
+      "name": "中村裕",
+      "pos": "投手",
+      "from": "高島屋東京支店",
+      "note": "1975"
+    },
+    {
+      "year": 1971,
+      "name": "新井智博",
+      "pos": "投手",
+      "from": "拓殖大一高",
+      "note": "→西武（1979）"
+    },
+    {
+      "year": 1968,
+      "name": "新浦壽夫",
+      "pos": "投手",
+      "from": "静岡商業高（中退）",
+      "note": "※韓国・三星（1984-1986）→大洋(1987-)→ダイエー(1992)→ヤクルト(1992)"
+    },
+    {
+      "year": 1968,
+      "name": "松原明夫",
+      "pos": "投手",
+      "from": "鳥取西高",
+      "note": "→南海(1974-)→広島(1977-1982)"
+    },
+    {
+      "year": 1968,
+      "name": "上領義晴",
+      "pos": "捕手",
+      "from": "呉港高卒",
+      "note": "1969"
+    },
+    {
+      "year": 1967,
+      "name": "皆木敏夫",
+      "pos": "投手",
+      "from": "日本大桜丘高",
+      "note": "1971"
+    },
+    {
+      "year": 1967,
+      "name": "門川義博",
+      "pos": "投手",
+      "from": "日南高",
+      "note": "1969"
+    },
+    {
+      "year": 1966,
+      "name": "長尾敏広",
+      "pos": "投手",
+      "from": "岡山南高",
+      "note": "1970"
+    },
+    {
+      "year": 1966,
+      "name": "矢沢正",
+      "pos": "捕手",
+      "from": "中京商業高",
+      "note": "1977"
+    },
+    {
+      "year": 1965,
+      "name": "井上武",
+      "pos": "捕手",
+      "from": "呉港高",
+      "note": "1967"
+    }
+  ],
+  "lottery": [
+    {
+      "year": 2024,
+      "round": "1位",
+      "name": "金丸夢斗",
+      "pos": "投手",
+      "from": "関西大",
+      "competitors": [
+        "中日",
+        "DeNA",
+        "阪神"
+      ],
+      "result": "×",
+      "miss_name": "",
+      "miss_pos": "",
+      "miss_from": "",
+      "note": ""
+    },
+    {
+      "year": 2024,
+      "round": "1位",
+      "name": "石塚裕惺",
+      "pos": "内野手",
+      "from": "花咲徳栄高",
+      "competitors": [
+        "西武"
+      ],
+      "result": "○",
+      "miss_name": "",
+      "miss_pos": "",
+      "miss_from": "",
+      "note": "再抽選"
+    },
+    {
+      "year": 2023,
+      "round": "1位",
+      "name": "西舘勇陽",
+      "pos": "投手",
+      "from": "中央大",
+      "competitors": [
+        "日本ハム"
+      ],
+      "result": "○",
+      "miss_name": "",
+      "miss_pos": "",
+      "miss_from": "",
+      "note": ""
+    },
+    {
+      "year": 2022,
+      "round": "1位",
+      "name": "浅野翔吾",
+      "pos": "投手",
+      "from": "高松商業高",
+      "competitors": [
+        "阪神"
+      ],
+      "result": "○",
+      "miss_name": "",
+      "miss_pos": "",
+      "miss_from": "",
+      "note": ""
+    },
+    {
+      "year": 2021,
+      "round": "1位",
+      "name": "隅田知一郎",
+      "pos": "投手",
+      "from": "西日本工業大",
+      "competitors": [
+        "西武",
+        "広島",
+        "ヤクルト"
+      ],
+      "result": "×",
+      "miss_name": "翁田大勢",
+      "miss_pos": "投手",
+      "miss_from": "関西国際大",
+      "note": ""
+    },
+    {
+      "year": 2020,
+      "round": "1位",
+      "name": "佐藤輝明",
+      "pos": "内野手",
+      "from": "近畿大",
+      "competitors": [
+        "阪神",
+        "オリックス",
+        "ソフトバンク"
+      ],
+      "result": "×",
+      "miss_name": "平内龍太",
+      "miss_pos": "投手",
+      "miss_from": "亜細亜大",
+      "note": ""
+    },
+    {
+      "year": 2019,
+      "round": "1位",
+      "name": "奥川恭伸",
+      "pos": "投手",
+      "from": "星陵高",
+      "competitors": [
+        "ヤクルト",
+        "阪神"
+      ],
+      "result": "×",
+      "miss_name": "",
+      "miss_pos": "",
+      "miss_from": "",
+      "note": ""
+    },
+    {
+      "year": 2019,
+      "round": "1位",
+      "name": "宮川哲",
+      "pos": "投手",
+      "from": "東芝",
+      "competitors": [
+        "西武"
+      ],
+      "result": "×",
+      "miss_name": "堀田賢慎",
+      "miss_pos": "投手",
+      "miss_from": "青森山田高",
+      "note": "再抽選"
+    },
+    {
+      "year": 2018,
+      "round": "1位",
+      "name": "根尾昂",
+      "pos": "内野手",
+      "from": "大阪桐蔭高",
+      "competitors": [
+        "中日",
+        "ヤクルト",
+        "日本ハム"
+      ],
+      "result": "×",
+      "miss_name": "",
+      "miss_pos": "",
+      "miss_from": "",
+      "note": ""
+    },
+    {
+      "year": 2018,
+      "round": "1位",
+      "name": "辰己涼介",
+      "pos": "外野手",
+      "from": "立命館大",
+      "competitors": [
+        "楽天",
+        "阪神",
+        "ソフトバンク"
+      ],
+      "result": "×",
+      "miss_name": "髙橋優貴",
+      "miss_pos": "投手",
+      "miss_from": "八戸学院大",
+      "note": "再抽選"
+    },
+    {
+      "year": 2017,
+      "round": "1位",
+      "name": "清宮幸太郎",
+      "pos": "内野手",
+      "from": "早稲田実業高",
+      "competitors": [
+        "日本ハム",
+        "ソフトバンク",
+        "阪神",
+        "楽天",
+        "ロッテ",
+        "ヤクルト"
+      ],
+      "result": "×",
+      "miss_name": "",
+      "miss_pos": "",
+      "miss_from": "",
+      "note": ""
+    },
+    {
+      "year": 2017,
+      "round": "1位",
+      "name": "村上宗隆",
+      "pos": "捕手",
+      "from": "九州学院高",
+      "competitors": [
+        "ヤクルト",
+        "楽天"
+      ],
+      "result": "×",
+      "miss_name": "鍬原拓也",
+      "miss_pos": "投手",
+      "miss_from": "中央大",
+      "note": "再抽選"
+    },
+    {
+      "year": 2016,
+      "round": "1位",
+      "name": "田中正義",
+      "pos": "投手",
+      "from": "創価大",
+      "competitors": [
+        "ソフトバンク",
+        "ロッテ",
+        "日本ハム",
+        "広島"
+      ],
+      "result": "×",
+      "miss_name": "",
+      "miss_pos": "",
+      "miss_from": "",
+      "note": ""
+    },
+    {
+      "year": 2016,
+      "round": "1位",
+      "name": "佐々木千隼",
+      "pos": "投手",
+      "from": "桜美林大",
+      "competitors": [
+        "ロッテ",
+        "DeNA",
+        "日本ハム",
+        "広島"
+      ],
+      "result": "×",
+      "miss_name": "吉川尚輝",
+      "miss_pos": "内野手",
+      "miss_from": "中京学院大",
+      "note": "再抽選"
+    },
+    {
+      "year": 2013,
+      "round": "1位",
+      "name": "石川歩",
+      "pos": "投手",
+      "from": "東京ガス",
+      "competitors": [
+        "ロッテ"
+      ],
+      "result": "×",
+      "miss_name": "小林誠司",
+      "miss_pos": "捕手",
+      "miss_from": "日本生命",
+      "note": ""
+    },
+    {
+      "year": 2011,
+      "round": "1位",
+      "name": "菅野智之",
+      "pos": "投手",
+      "from": "東海大",
+      "competitors": [
+        "日本ハム"
+      ],
+      "result": "×",
+      "miss_name": "松本竜也",
+      "miss_pos": "投手",
+      "miss_from": "英明高",
+      "note": ""
+    },
+    {
+      "year": 2011,
+      "round": "1位",
+      "name": "松本竜也",
+      "pos": "投手",
+      "from": "英明高",
+      "competitors": [
+        "横浜"
+      ],
+      "result": "○",
+      "miss_name": "",
+      "miss_pos": "",
+      "miss_from": "",
+      "note": "再抽選"
+    },
+    {
+      "year": 2008,
+      "round": "1位",
+      "name": "大田泰示",
+      "pos": "内野手",
+      "from": "東海大相模高",
+      "competitors": [
+        "ソフトバンク"
+      ],
+      "result": "○",
+      "miss_name": "",
+      "miss_pos": "",
+      "miss_from": "",
+      "note": ""
+    },
+    {
+      "year": 2007,
+      "round": "1位",
+      "name": "大場翔太",
+      "pos": "投手",
+      "from": "東洋大",
+      "competitors": [
+        "ソフトバンク",
+        "オリックス",
+        "横浜",
+        "阪神",
+        "日本ハム"
+      ],
+      "result": "×",
+      "miss_name": "",
+      "miss_pos": "",
+      "miss_from": "",
+      "note": ""
+    },
+    {
+      "year": 2007,
+      "round": "1位",
+      "name": "篠田純平",
+      "pos": "投手",
+      "from": "日本大",
+      "competitors": [
+        "広島",
+        "オリックス"
+      ],
+      "result": "×",
+      "miss_name": "村田透",
+      "miss_pos": "投手",
+      "miss_from": "大阪体育大",
+      "note": "再抽選"
+    },
+    {
+      "year": 2007,
+      "round": "1位",
+      "name": "佐藤由規",
+      "pos": "投手",
+      "from": "仙台育英高",
+      "competitors": [
+        "ヤクルト",
+        "中日",
+        "横浜",
+        "楽天"
+      ],
+      "result": "×",
+      "miss_name": "藤村大介",
+      "miss_pos": "内野手",
+      "miss_from": "熊本工業高",
+      "note": ""
+    },
+    {
+      "year": 2006,
+      "round": "1位",
+      "name": "堂上直倫",
+      "pos": "内野手",
+      "from": "愛工大名電高",
+      "competitors": [
+        "中日",
+        "阪神"
+      ],
+      "result": "×",
+      "miss_name": "坂本勇人",
+      "miss_pos": "内野手",
+      "miss_from": "光星学院高",
+      "note": ""
+    },
+    {
+      "year": 2005,
+      "round": "1位",
+      "name": "辻内崇伸",
+      "pos": "投手",
+      "from": "大阪桐蔭高",
+      "competitors": [
+        "オリックス"
+      ],
+      "result": "○",
+      "miss_name": "",
+      "miss_pos": "",
+      "miss_from": "",
+      "note": ""
+    },
+    {
+      "year": 2001,
+      "round": "1位",
+      "name": "寺原隼人",
+      "pos": "投手",
+      "from": "日南学園高",
+      "competitors": [
+        "ダイエー",
+        "横浜",
+        "中日"
+      ],
+      "result": "×",
+      "miss_name": "真田裕貴",
+      "miss_pos": "投手",
+      "miss_from": "姫路工高",
+      "note": ""
+    },
+    {
+      "year": 1995,
+      "round": "1位",
+      "name": "福留孝介",
+      "pos": "内野手",
+      "from": "ＰＬ学園高",
+      "competitors": [
+        "近鉄",
+        "中日",
+        "ヤクルト 日本ハム",
+        "ロッテ",
+        "オリックス"
+      ],
+      "result": "×",
+      "miss_name": "原俊介",
+      "miss_pos": "捕手",
+      "miss_from": "東海大相模高",
+      "note": ""
+    },
+    {
+      "year": 1995,
+      "round": "1位",
+      "name": "原俊介",
+      "pos": "捕手",
+      "from": "東海大相模高",
+      "competitors": [
+        "中日"
+      ],
+      "result": "○",
+      "miss_name": "",
+      "miss_pos": "",
+      "miss_from": "",
+      "note": "再抽選"
+    },
+    {
+      "year": 1992,
+      "round": "1位",
+      "name": "松井秀喜",
+      "pos": "内野手",
+      "from": "星稜高",
+      "competitors": [
+        "中日",
+        "阪神",
+        "ダイエー"
+      ],
+      "result": "○",
+      "miss_name": "",
+      "miss_pos": "",
+      "miss_from": "",
+      "note": ""
+    },
+    {
+      "year": 1991,
+      "round": "1位",
+      "name": "若田部健一",
+      "pos": "投手",
+      "from": "駒澤大",
+      "competitors": [
+        "ダイエー",
+        "広島",
+        "西武"
+      ],
+      "result": "×",
+      "miss_name": "谷口功一",
+      "miss_pos": "投手",
+      "miss_from": "天理高",
+      "note": ""
+    },
+    {
+      "year": 1991,
+      "round": "3位",
+      "name": "松岡正樹",
+      "pos": "捕手",
+      "from": "平安高",
+      "competitors": [
+        "近鉄"
+      ],
+      "result": "○",
+      "miss_name": "",
+      "miss_pos": "",
+      "miss_from": "",
+      "note": ""
+    },
+    {
+      "year": 1990,
+      "round": "2位",
+      "name": "矢野輝弘",
+      "pos": "捕手",
+      "from": "東北福祉大",
+      "competitors": [
+        "中日"
+      ],
+      "result": "×",
+      "miss_name": "吉原孝介",
+      "miss_pos": "捕手",
+      "miss_from": "川崎製鉄水島",
+      "note": ""
+    },
+    {
+      "year": 1989,
+      "round": "3位",
+      "name": "吉岡雄二",
+      "pos": "内野手",
+      "from": "帝京高",
+      "competitors": [
+        "ヤクルト"
+      ],
+      "result": "○",
+      "miss_name": "",
+      "miss_pos": "",
+      "miss_from": "",
+      "note": ""
+    },
+    {
+      "year": 1989,
+      "round": "2位",
+      "name": "岡幸俊",
+      "pos": "投手",
+      "from": "高知商高",
+      "competitors": [
+        "ヤクルト",
+        "広島",
+        "ロッテ",
+        "ダイエー"
+      ],
+      "result": "×",
+      "miss_name": "松谷竜二郎",
+      "miss_pos": "投手",
+      "miss_from": "大阪ガス",
+      "note": ""
+    },
+    {
+      "year": 1987,
+      "round": "4位",
+      "name": "水沢英樹",
+      "pos": "投手",
+      "from": "秋田経法大付高",
+      "competitors": [
+        "広島"
+      ],
+      "result": "×",
+      "miss_name": "小沢浩一",
+      "miss_pos": "内野手",
+      "miss_from": "三菱自動車水島",
+      "note": ""
+    },
+    {
+      "year": 1995,
+      "round": "1位",
+      "name": "阿波野秀幸",
+      "pos": "投手",
+      "from": "亜細亜大",
+      "competitors": [
+        "近鉄",
+        "大洋"
+      ],
+      "result": "×",
+      "miss_name": "木田優夫",
+      "miss_pos": "投手",
+      "miss_from": "日大明誠高",
+      "note": ""
+    },
+    {
+      "year": 1995,
+      "round": "2位",
+      "name": "水沢薫",
+      "pos": "投手",
+      "from": "河合楽器",
+      "competitors": [
+        "阪神",
+        "ロッテ"
+      ],
+      "result": "○",
+      "miss_name": "",
+      "miss_pos": "",
+      "miss_from": "",
+      "note": ""
+    },
+    {
+      "year": 1995,
+      "round": "4位",
+      "name": "樽見金典",
+      "pos": "投手",
+      "from": "柳川高",
+      "competitors": [
+        "阪急"
+      ],
+      "result": "○",
+      "miss_name": "",
+      "miss_pos": "",
+      "miss_from": "",
+      "note": ""
+    },
+    {
+      "year": 1985,
+      "round": "2位",
+      "name": "園川一美",
+      "pos": "投手",
+      "from": "日本体育大",
+      "competitors": [
+        "ロッテ",
+        "ヤクルト",
+        "南海"
+      ],
+      "result": "×",
+      "miss_name": "廣田浩章",
+      "miss_pos": "投手",
+      "miss_from": "NTT四国",
+      "note": ""
+    },
+    {
+      "year": 1984,
+      "round": "1位",
+      "name": "竹田光訓",
+      "pos": "投手",
+      "from": "明治大",
+      "competitors": [
+        "大洋",
+        "中日"
+      ],
+      "result": "×",
+      "miss_name": "上田和明",
+      "miss_pos": "内野手",
+      "miss_from": "慶應大",
+      "note": ""
+    },
+    {
+      "year": 1983,
+      "round": "2位",
+      "name": "池山隆寛",
+      "pos": "内野手",
+      "from": "市立尼崎高",
+      "competitors": [
+        "ヤクルト",
+        "近鉄"
+      ],
+      "result": "×",
+      "miss_name": "香田勲男",
+      "miss_pos": "投手",
+      "miss_from": "佐世保工高",
+      "note": ""
+    },
+    {
+      "year": 1982,
+      "round": "1位",
+      "name": "荒木大輔",
+      "pos": "投手",
+      "from": "早稲田実高",
+      "competitors": [
+        "ヤクルト"
+      ],
+      "result": "×",
+      "miss_name": "斎藤雅樹",
+      "miss_pos": "投手",
+      "miss_from": "市立川口高",
+      "note": ""
+    },
+    {
+      "year": 1982,
+      "round": "2位",
+      "name": "岡本光",
+      "pos": "投手",
+      "from": "松下電器",
+      "competitors": [
+        "ヤクルト",
+        "中日",
+        "阪神"
+      ],
+      "result": "○",
+      "miss_name": "",
+      "miss_pos": "",
+      "miss_from": "",
+      "note": ""
+    },
+    {
+      "year": 1982,
+      "round": "4位",
+      "name": "川相昌弘",
+      "pos": "内野手",
+      "from": "岡山南高",
+      "competitors": [
+        "ヤクルト",
+        "近鉄"
+      ],
+      "result": "○",
+      "miss_name": "",
+      "miss_pos": "",
+      "miss_from": "",
+      "note": ""
+    },
+    {
+      "year": 1982,
+      "round": "3位",
+      "name": "小原正行",
+      "pos": "投手",
+      "from": "臼杵商高",
+      "competitors": [
+        "中日",
+        "阪神",
+        "日本ハム"
+      ],
+      "result": "○",
+      "miss_name": "",
+      "miss_pos": "",
+      "miss_from": "",
+      "note": ""
+    },
+    {
+      "year": 1979,
+      "round": "1位",
+      "name": "木田勇",
+      "pos": "投手",
+      "from": "日本鋼管",
+      "competitors": [
+        "日本ハム",
+        "大洋"
+      ],
+      "result": "×",
+      "miss_name": "林泰宏",
+      "miss_pos": "投手",
+      "miss_from": "市立尼崎高",
+      "note": ""
+    },
+    {
+      "year": 1966,
+      "round": "1位",
+      "name": "槌田誠",
+      "pos": "捕手",
+      "from": "立教大",
+      "competitors": [
+        "南海"
+      ],
+      "result": "○",
+      "miss_name": "",
+      "miss_pos": "",
+      "miss_from": "",
+      "note": ""
+    },
+    {
+      "year": 1966,
+      "round": "1位",
+      "name": "江夏豊",
+      "pos": "投手",
+      "from": "大阪学院高",
+      "competitors": [
+        "阪神",
+        "阪急",
+        "東映"
+      ],
+      "result": "×",
+      "miss_name": "山下司",
+      "miss_pos": "内野手",
+      "miss_from": "伊野商高",
+      "note": ""
+    }
+  ],
+  "scouts": [
+    {
+      "name": "水野雄仁",
+      "title": "編成本部長スカウト・国際担当",
+      "area": "",
+      "note": "池田高－巨人"
+    },
+    {
+      "name": "榑松伸介",
+      "title": "スカウトディレクター",
+      "area": "",
+      "note": "浜松北高－青山学院大－報知新聞"
+    },
+    {
+      "name": "井上真二",
+      "title": "スカウト部次長",
+      "area": "",
+      "note": "熊本工業高－巨人"
+    },
+    {
+      "name": "織田淳哉",
+      "title": "課長・アマチュアスカウトチーフ",
+      "area": "",
+      "note": "日向高－早稲田大－巨人"
+    },
+    {
+      "name": "武田康",
+      "title": "九州・沖縄担当",
+      "area": "",
+      "note": "今治西高－大洋"
+    },
+    {
+      "name": "大場豊千",
+      "title": "関東担当",
+      "area": "",
+      "note": "上宮高－巨人"
+    },
+    {
+      "name": "青木高広",
+      "title": "北海道・関東・独立リーグ担当",
+      "area": "",
+      "note": "岐阜商業高－愛知大－日産自動車－広島－巨人"
+    },
+    {
+      "name": "森中聖雄",
+      "title": "関東・北信越担当",
+      "area": "",
+      "note": "東海大工業高－東海大－横浜"
+    },
+    {
+      "name": "木佐貫洋",
+      "title": "関東・東海担当",
+      "area": "",
+      "note": "川内高－亜細亜大－巨人－オリックス－北海道日本ハム"
+    },
+    {
+      "name": "岸敬祐",
+      "title": "近畿・四国担当",
+      "area": "",
+      "note": "関西学院高－関西学院大－関西独立L・大阪－四国九州IL・愛媛 －巨人－千葉ロッテ－三菱重工長崎"
+    },
+    {
+      "name": "柳舘俊",
+      "title": "近畿・中国担当",
+      "area": "",
+      "note": "静岡高－立命館大"
+    },
+    {
+      "name": "木村龍治",
+      "title": "",
+      "area": "",
+      "note": "中京高－青山学院大－巨人"
+    },
+    {
+      "name": "斉藤宜之",
+      "title": "",
+      "area": "",
+      "note": "横浜高－巨人－東京ヤクルト"
+    },
+    {
+      "name": "友利結",
+      "title": "チーフ国際スカウト",
+      "area": "",
+      "note": "興南高－横浜大洋・横浜－西武－横浜－中日－横浜DeNA－中日"
+    },
+    {
+      "name": "長江翔太",
+      "title": "国際スカウト",
+      "area": "",
+      "note": "金光大阪高－大阪経済大－巨人－BCL・富山－台湾人寿"
+    },
+    {
+      "name": "玉木重雄",
+      "title": "国際スカウト",
+      "area": "",
+      "note": "カスペル・リベロ高－三菱自動車川崎－広島－東北楽天"
+    }
+  ],
+  "ob_scouts": [
+    {
+      "name": "高梨芳昌",
+      "ob_career": "札幌第一高－巨人",
+      "title": "",
+      "area": "北海道",
+      "note": ""
+    },
+    {
+      "name": "佐々木明義",
+      "ob_career": "三沢商業高－オリックス－巨人",
+      "title": "",
+      "area": "青森",
+      "note": ""
+    },
+    {
+      "name": "羽根川竜",
+      "ob_career": "東北高－巨人－ロッテ－CPBL・兄弟",
+      "title": "",
+      "area": "宮城",
+      "note": ""
+    },
+    {
+      "name": "原田明広",
+      "ob_career": "笠間高－巨人",
+      "title": "",
+      "area": "茨城",
+      "note": ""
+    },
+    {
+      "name": "鴨志田貴司",
+      "ob_career": "水戸短大付高－巨人－オリックス",
+      "title": "",
+      "area": "茨城",
+      "note": ""
+    },
+    {
+      "name": "小野剛",
+      "ob_career": "桐蔭学園高－武蔵大－巨人－イタリア・サンマリノ－西武",
+      "title": "",
+      "area": "埼玉",
+      "note": ""
+    },
+    {
+      "name": "大野雄次",
+      "ob_career": "君津商業高－川崎製鉄千葉－大洋－巨人－ヤクルト",
+      "title": "",
+      "area": "神奈川",
+      "note": ""
+    },
+    {
+      "name": "大須賀允",
+      "ob_career": "前橋工業高－東北福祉大－巨人－広島",
+      "title": "",
+      "area": "神奈川",
+      "note": ""
+    },
+    {
+      "name": "前田隆",
+      "ob_career": "延岡西高－三菱自動車水島－巨人",
+      "title": "",
+      "area": "東京",
+      "note": ""
+    },
+    {
+      "name": "福井敬治",
+      "ob_career": "智辯学園高－巨人－広島",
+      "title": "",
+      "area": "東京",
+      "note": ""
+    },
+    {
+      "name": "四條稔",
+      "ob_career": "東海大甲府高－三菱自動車川崎－巨人－オリックス－横浜",
+      "title": "",
+      "area": "山梨",
+      "note": ""
+    },
+    {
+      "name": "佐藤宏志",
+      "ob_career": "瀬戸内高－亜細亜大－巨人－東北楽天",
+      "title": "",
+      "area": "静岡",
+      "note": ""
+    },
+    {
+      "name": "林哲雄",
+      "ob_career": "岐阜第一高－巨人",
+      "title": "",
+      "area": "岐阜",
+      "note": ""
+    },
+    {
+      "name": "石毛博史",
+      "ob_career": "市立銚子高－巨人－近鉄－阪神",
+      "title": "",
+      "area": "富山",
+      "note": ""
+    },
+    {
+      "name": "藤本貴久",
+      "ob_career": "中京商業高－巨人",
+      "title": "",
+      "area": "兵庫",
+      "note": ""
+    },
+    {
+      "name": "籾山幸徳",
+      "ob_career": "天理高－立命館大－巨人",
+      "title": "",
+      "area": "大阪",
+      "note": ""
+    },
+    {
+      "name": "谷口功一",
+      "ob_career": "天理高－巨人－西武－近鉄",
+      "title": "",
+      "area": "大阪",
+      "note": ""
+    },
+    {
+      "name": "浅野智治",
+      "ob_career": "岡山南高－巨人－近鉄",
+      "title": "",
+      "area": "岡山",
+      "note": ""
+    },
+    {
+      "name": "小沢浩一",
+      "ob_career": "松江農林高－三菱自動車水島－巨人",
+      "title": "",
+      "area": "島根",
+      "note": ""
+    },
+    {
+      "name": "岸川勝也",
+      "ob_career": "佐賀北高－南海・福岡ダイエー－巨人－横浜",
+      "title": "",
+      "area": "福岡",
+      "note": ""
+    },
+    {
+      "name": "山本光将",
+      "ob_career": "熊本工業高－巨人",
+      "title": "",
+      "area": "熊本",
+      "note": ""
+    },
+    {
+      "name": "スコット・マシソン",
+      "ob_career": "",
+      "title": "",
+      "area": "アメリカ・東地区",
+      "note": ""
+    },
+    {
+      "name": "ギャレット・ジョーンズ",
+      "ob_career": "",
+      "title": "",
+      "area": "アメリカ・東地区",
+      "note": ""
+    },
+    {
+      "name": "ジョージ・アリアス",
+      "ob_career": "",
+      "title": "",
+      "area": "アメリカ・中地区",
+      "note": ""
+    },
+    {
+      "name": "ケーシー・マギー",
+      "ob_career": "",
+      "title": "",
+      "area": "アメリカ・中地区",
+      "note": ""
+    },
+    {
+      "name": "岡島秀樹",
+      "ob_career": "東山高－巨人－日本ハム－MLB・ボストン－福岡ソフトバンク－MLB・オークランド－福岡ソフトバンク－横浜DeNA",
+      "title": "",
+      "area": "アメリカ・西地区",
+      "note": ""
+    }
+  ],
+  "contract_changes": [
+    {
+      "year": 2007,
+      "name": "松本哲也",
+      "change": "育成→支配下",
+      "date": "2007年02月28日",
+      "note": ""
+    },
+    {
+      "year": 2007,
+      "name": "山口鉄也",
+      "change": "育成→支配下",
+      "date": "2007年04月23日",
+      "note": ""
+    },
+    {
+      "year": 2007,
+      "name": "W.オビスポ",
+      "change": "育成→支配下",
+      "date": "2007年06月29日",
+      "note": "2007年オフ育成登録に変更"
+    },
+    {
+      "year": 2008,
+      "name": "隠善智也",
+      "change": "育成→支配下",
+      "date": "2008年03月21日",
+      "note": ""
+    },
+    {
+      "year": 2008,
+      "name": "W.オビスポ",
+      "change": "育成→支配下",
+      "date": "2008年07月31日",
+      "note": "※2回目"
+    },
+    {
+      "year": 2009,
+      "name": "L.ロメロ",
+      "change": "育成→支配下",
+      "date": "2009年07月28日",
+      "note": "2009年オフ育成登録に変更"
+    },
+    {
+      "year": 2010,
+      "name": "星野真澄",
+      "change": "育成→支配下",
+      "date": "2010年03月18日",
+      "note": "2012年オフ育成登録に変更"
+    },
+    {
+      "year": 2010,
+      "name": "黄志龍",
+      "change": "育成→支配下",
+      "date": "2010年06月04日",
+      "note": ""
+    },
+    {
+      "year": 2010,
+      "name": "L.ロメロ",
+      "change": "育成→支配下",
+      "date": "2010年06月17日",
+      "note": "※2回目"
+    },
+    {
+      "year": 2010,
+      "name": "林羿豪",
+      "change": "育成→支配下",
+      "date": "2010年07月31日",
+      "note": ""
+    },
+    {
+      "year": 2011,
+      "name": "山本和作",
+      "change": "育成→支配下",
+      "date": "2011年05月23日",
+      "note": "2011年オフ育成登録に変更"
+    },
+    {
+      "year": 2011,
+      "name": "福元淳史",
+      "change": "育成→支配下",
+      "date": "2011年05月23日",
+      "note": ""
+    },
+    {
+      "year": 2012,
+      "name": "大立恭平",
+      "change": "育成→支配下",
+      "date": "2012年04月16日",
+      "note": ""
+    },
+    {
+      "year": 2012,
+      "name": "山本和作",
+      "change": "育成→支配下",
+      "date": "2012年07月02日",
+      "note": "※2回目"
+    },
+    {
+      "year": 2012,
+      "name": "河野元貴",
+      "change": "育成→支配下",
+      "date": "2012年07月30日",
+      "note": ""
+    },
+    {
+      "year": 2012,
+      "name": "岸敬祐",
+      "change": "育成→支配下",
+      "date": "2012年07月30日",
+      "note": ""
+    },
+    {
+      "year": 2013,
+      "name": "脇谷亮太",
+      "change": "育成→支配下",
+      "date": "2013年",
+      "note": "※復帰（2012年11月15日*）"
+    },
+    {
+      "year": 2013,
+      "name": "星野真澄",
+      "change": "育成→支配下",
+      "date": "2013年07月26日",
+      "note": "※2回目"
+    },
+    {
+      "year": 2014,
+      "name": "土田瑞起",
+      "change": "育成→支配下",
+      "date": "2014年03月03日",
+      "note": "2016年オフ育成登録に変更"
+    },
+    {
+      "year": 2015,
+      "name": "堂上剛裕",
+      "change": "育成→支配下",
+      "date": "2015年02月23日",
+      "note": "※復帰（中日で支配下登録）"
+    },
+    {
+      "year": 2015,
+      "name": "野間口貴彦",
+      "change": "育成→支配下",
+      "date": "2015年03月20日",
+      "note": "※復帰"
+    },
+    {
+      "year": 2016,
+      "name": "（金伏）ウーゴ",
+      "change": "育成→支配下",
+      "date": "2016年03月28日",
+      "note": "※2回目（ヤクルトで支配下登録）"
+    },
+    {
+      "year": 2016,
+      "name": "長谷川潤",
+      "change": "育成→支配下",
+      "date": "2016年03月28日",
+      "note": ""
+    },
+    {
+      "year": 2016,
+      "name": "A.アブレイユ",
+      "change": "育成→支配下",
+      "date": "2016年03月31日",
+      "note": "※2回目（西武で支配下登録）"
+    },
+    {
+      "year": 2017,
+      "name": "篠原慎平",
+      "change": "育成→支配下",
+      "date": "2017年04月17日",
+      "note": ""
+    },
+    {
+      "year": 2017,
+      "name": "青山誠",
+      "change": "育成→支配下",
+      "date": "2017年07月28日",
+      "note": ""
+    },
+    {
+      "year": 2017,
+      "name": "増田大輝",
+      "change": "育成→支配下",
+      "date": "2017年07月28日",
+      "note": ""
+    },
+    {
+      "year": 2017,
+      "name": "田中貴也",
+      "change": "育成→支配下",
+      "date": "2017年07月31日",
+      "note": ""
+    },
+    {
+      "year": 2018,
+      "name": "高木京介",
+      "change": "育成→支配下",
+      "date": "2018年03月23日",
+      "note": "※復帰 2020年オフ育成登録に変更"
+    },
+    {
+      "year": 2018,
+      "name": "S.アダメス",
+      "change": "育成→支配下",
+      "date": "2018年06月16日",
+      "note": ""
+    },
+    {
+      "year": 2018,
+      "name": "C.C.メルセデス",
+      "change": "育成→支配下",
+      "date": "2018年07月09日",
+      "note": ""
+    },
+    {
+      "year": 2018,
+      "name": "J.マルティネス",
+      "change": "育成→支配下",
+      "date": "2018年07月27日",
+      "note": ""
+    },
+    {
+      "year": 2018,
+      "name": "松原聖弥",
+      "change": "育成→支配下",
+      "date": "2018年07月31日",
+      "note": ""
+    },
+    {
+      "year": 2019,
+      "name": "坂本工宜",
+      "change": "育成→支配下",
+      "date": "2019年03月04日",
+      "note": ""
+    },
+    {
+      "year": 2019,
+      "name": "加藤脩平",
+      "change": "育成→支配下",
+      "date": "2019年06月10日",
+      "note": ""
+    },
+    {
+      "year": 2019,
+      "name": "山下航汰",
+      "change": "育成→支配下",
+      "date": "2019年07月05日",
+      "note": ""
+    },
+    {
+      "year": 2019,
+      "name": "堀岡隼人",
+      "change": "育成→支配下",
+      "date": "2019年07月26日",
+      "note": ""
+    },
+    {
+      "year": 2020,
+      "name": "I.モタ",
+      "change": "育成→支配下",
+      "date": "2020年02月28日",
+      "note": ""
+    },
+    {
+      "year": 2020,
+      "name": "N.ディプラン",
+      "change": "育成→支配下",
+      "date": "2020年03月31日",
+      "note": ""
+    },
+    {
+      "year": 2020,
+      "name": "沼田翔平",
+      "change": "育成→支配下",
+      "date": "2020年06月01日",
+      "note": ""
+    },
+    {
+      "year": 2020,
+      "name": "田中豊樹",
+      "change": "育成→支配下",
+      "date": "2020年07月26日",
+      "note": ""
+    },
+    {
+      "year": 2020,
+      "name": "E.ウレーニャ",
+      "change": "育成→支配下",
+      "date": "2020年09月17日",
+      "note": ""
+    },
+    {
+      "year": 2021,
+      "name": "八百板卓丸",
+      "change": "育成→支配下",
+      "date": "2021年02月16日",
+      "note": "※2回目（東北楽天で支配下登録）"
+    },
+    {
+      "year": 2021,
+      "name": "高木京介",
+      "change": "育成→支配下",
+      "date": "2021年03月05日",
+      "note": "※2回目"
+    },
+    {
+      "year": 2021,
+      "name": "戸田懐生",
+      "change": "育成→支配下",
+      "date": "2021年06月07日",
+      "note": ""
+    },
+    {
+      "year": 2021,
+      "name": "平間隼人",
+      "change": "育成→支配下",
+      "date": "2021年06月17日",
+      "note": ""
+    },
+    {
+      "year": 2021,
+      "name": "直江大輔",
+      "change": "育成→支配下",
+      "date": "2021年06月28日",
+      "note": ""
+    },
+    {
+      "year": 2021,
+      "name": "鍬原拓也",
+      "change": "育成→支配下",
+      "date": "2021年08月30日",
+      "note": ""
+    },
+    {
+      "year": 2021,
+      "name": "喜多隆介",
+      "change": "育成→支配下",
+      "date": "2021年08月30日",
+      "note": ""
+    },
+    {
+      "year": 2022,
+      "name": "鍬原拓也",
+      "change": "育成→支配下",
+      "date": "2022年03月11日",
+      "note": "※2回目"
+    },
+    {
+      "year": 2022,
+      "name": "堀田賢慎",
+      "change": "育成→支配下",
+      "date": "2022年03月11日",
+      "note": ""
+    },
+    {
+      "year": 2022,
+      "name": "増田陸",
+      "change": "育成→支配下",
+      "date": "2022年03月11日",
+      "note": ""
+    },
+    {
+      "year": 2022,
+      "name": "香月一也",
+      "change": "育成→支配下",
+      "date": "2022年03月29日",
+      "note": ""
+    },
+    {
+      "year": 2022,
+      "name": "横川凱",
+      "change": "育成→支配下",
+      "date": "2022年04月11日",
+      "note": ""
+    },
+    {
+      "year": 2022,
+      "name": "菊地大稀",
+      "change": "育成→支配下",
+      "date": "2022年04月29日",
+      "note": ""
+    },
+    {
+      "year": 2022,
+      "name": "井上温大",
+      "change": "育成→支配下",
+      "date": "2022年07月11日",
+      "note": ""
+    },
+    {
+      "year": 2022,
+      "name": "勝俣翔貴",
+      "change": "育成→支配下",
+      "date": "2022年07月28日",
+      "note": ""
+    },
+    {
+      "year": 2023,
+      "name": "横川凱",
+      "change": "育成→支配下",
+      "date": "2023年03月09日",
+      "note": "※2回目"
+    },
+    {
+      "year": 2023,
+      "name": "堀岡隼人",
+      "change": "育成→支配下",
+      "date": "2023年03月09日",
+      "note": "※2回目"
+    },
+    {
+      "year": 2023,
+      "name": "梶谷隆幸",
+      "change": "育成→支配下",
+      "date": "2023年03月24日",
+      "note": ""
+    },
+    {
+      "year": 2023,
+      "name": "田中豊樹",
+      "change": "育成→支配下",
+      "date": "2023年03月30日",
+      "note": "※2回目"
+    },
+    {
+      "year": 2023,
+      "name": "髙橋優貴",
+      "change": "育成→支配下",
+      "date": "2023年04月10日",
+      "note": ""
+    },
+    {
+      "year": 2023,
+      "name": "三上朋也",
+      "change": "育成→支配下",
+      "date": "2023年05月04日",
+      "note": ""
+    },
+    {
+      "year": 2023,
+      "name": "平内龍太",
+      "change": "育成→支配下",
+      "date": "2023年05月14日",
+      "note": ""
+    },
+    {
+      "year": 2023,
+      "name": "松井颯",
+      "change": "育成→支配下",
+      "date": "2023年05月15日",
+      "note": ""
+    },
+    {
+      "year": 2023,
+      "name": "中川皓太",
+      "change": "育成→支配下",
+      "date": "2023年05月15日",
+      "note": ""
+    },
+    {
+      "year": 2023,
+      "name": "高木京介",
+      "change": "育成→支配下",
+      "date": "2023年07月28日",
+      "note": ""
+    },
+    {
+      "year": 2024,
+      "name": "京本眞",
+      "change": "育成→支配下",
+      "date": "2024年03月06日",
+      "note": ""
+    },
+    {
+      "year": 2024,
+      "name": "中田歩夢",
+      "change": "育成→支配下",
+      "date": "2024年03月06日",
+      "note": ""
+    },
+    {
+      "year": 2024,
+      "name": "E.ウレーニャ",
+      "change": "育成→支配下",
+      "date": "2024年04月19日",
+      "note": "※2回目"
+    },
+    {
+      "year": 2024,
+      "name": "立岡宗一郎",
+      "change": "育成→支配下",
+      "date": "2024年05月21日",
+      "note": ""
+    },
+    {
+      "year": 2024,
+      "name": "伊藤優輔",
+      "change": "育成→支配下",
+      "date": "2024年07月24日",
+      "note": ""
+    },
+    {
+      "year": 2025,
+      "name": "戸田懐生",
+      "change": "育成→支配下",
+      "date": "2025年03月31日",
+      "note": "※2回目"
+    },
+    {
+      "year": 2025,
+      "name": "笹原操希",
+      "change": "育成→支配下",
+      "date": "2025年04月14日",
+      "note": ""
+    },
+    {
+      "year": 2025,
+      "name": "山田龍聖",
+      "change": "育成→支配下",
+      "date": "2025年06月09日",
+      "note": ""
+    },
+    {
+      "year": 2025,
+      "name": "鈴木大和",
+      "change": "育成→支配下",
+      "date": "2025年06月09日",
+      "note": ""
+    },
+    {
+      "year": 2025,
+      "name": "三塚琉生",
+      "change": "育成→支配下",
+      "date": "2025年06月13日",
+      "note": ""
+    },
+    {
+      "year": 2025,
+      "name": "M.フルプ",
+      "change": "育成→支配下",
+      "date": "2025年07月12日",
+      "note": ""
+    },
+    {
+      "year": 2025,
+      "name": "菊地大稀",
+      "change": "育成→支配下",
+      "date": "2025年07月29日",
+      "note": "※2回目（2026年～・北海道日本ハム）"
+    },
+    {
+      "year": 2026,
+      "name": "E.ルシアーノ",
+      "change": "育成→支配下",
+      "date": "2026年03月24日",
+      "note": ""
+    },
+    {
+      "year": 2026,
+      "name": "宇都宮葵星",
+      "change": "育成→支配下",
+      "date": "2026年03月24日",
+      "note": ""
+    },
+    {
+      "year": 2026,
+      "name": "平山功太",
+      "change": "育成→支配下",
+      "date": "2026年04月06日",
+      "note": ""
+    },
+    {
+      "year": 2026,
+      "name": "J.ティマ",
+      "change": "育成→支配下",
+      "date": "2026年05月25日",
+      "note": ""
+    }
+  ]
 }

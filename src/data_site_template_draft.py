@@ -244,12 +244,12 @@ def _render_contract_changes(entries: list[dict]) -> str:
     for year, items in _group_by_year_desc(entries):
         for e in items:
             rows.append([
-                str(year),
+                _cell(e.get("date") or year),
                 f'<strong>{_esc(e.get("name"))}</strong>',
                 _cell(e.get("change")),
                 _cell(e.get("note")),
             ])
-    return _table(["年", "選手名", "変更内容", "備考"], rows)
+    return _table(["契約変更日", "選手名", "変更内容", "備考"], rows)
 
 
 # ---- トピックス（小） ----

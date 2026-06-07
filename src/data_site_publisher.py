@@ -95,6 +95,12 @@ from src.data_site_template_leaders import (
     render_leaders_title,
     render_leaders_excerpt,
 )
+from src.data_site_template_cleanup_hitters import (
+    load_cleanup_hitters_data,
+    render_cleanup_hitters_html,
+    render_cleanup_hitters_title,
+    render_cleanup_hitters_excerpt,
+)
 from src.data_site_template_draft import (
     load_draft_data,
     render_draft_html,
@@ -675,6 +681,19 @@ def publish_phase1(only_slugs: set[str] | None = None) -> dict[str, object]:
     )
     LOG.info("record upsert slug=record page_id=%s action=%s clubs=%d",
              record_result.page_id, record_result.action, len(record_room))
+
+    # 468-7: 歴代4番打者ページ (半静的 history spoke) — parent=cluster → /data/cleanup-hitters/
+    cleanup_data = load_cleanup_hitters_data()
+    cleanup_result = _upsert_page(
+        slug="cleanup-hitters",
+        title=render_cleanup_hitters_title(),
+        content_html=render_cleanup_hitters_html(cleanup_data),
+        parent=cluster_page_id,
+        excerpt=render_cleanup_hitters_excerpt(cleanup_data),
+    )
+    LOG.info("cleanup hitters upsert slug=cleanup-hitters page_id=%s action=%s rows=%d",
+             cleanup_result.page_id, cleanup_result.action,
+             len(cleanup_data.get("alltime") or []))
 
     # draft ページ upsert（巨人ドラフト史 hub、user 指定 2026-06-05）— parent=cluster → /data/draft/
     # 全年代整備完了まで本番非公開: ENABLE_DATA_SITE_DRAFT=1 のときだけ upsert。

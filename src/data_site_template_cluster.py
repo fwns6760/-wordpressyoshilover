@@ -16,6 +16,8 @@ from dataclasses import dataclass
 
 SITE_BASE = "https://yoshilover.com"
 CLUSTER_URL = f"{SITE_BASE}/data/"
+NOTABLE_DATA_PATH = "/data/notable/"
+NOTABLE_DATA_URL = f"{SITE_BASE}{NOTABLE_DATA_PATH}"
 
 
 @dataclass
@@ -33,8 +35,10 @@ class ClusterPlayerEntry:
     military: str = ""
     # Phase 1.0 batting stats (insight.db SUM、 data 無ければ "-" 表示)
     season_games: int = 0
+    season_ab: int = 0
     season_hits: int = 0
     season_rbi: int = 0
+    season_hr: int = 0
     season_avg: float | None = None
     has_stats: bool = False
     # Phase 1.5+pitch (投手 stats、 position=投手 のみ意味あり)
@@ -100,13 +104,21 @@ def _build_intro_html() -> str:
         '各選手の打率・防御率・直近 5 試合・関連記事を、 毎朝 6 時に最新化しています。'
         '</p>'
         '<p style="font-size:13px;margin:10px 0 0;">'
-        '<a href="/data/ranking/" style="color:#e25400;font-weight:600;text-decoration:none;">🏆 選手ランキング</a>'
+        '<a href="/data/notable/" style="color:#e25400;font-weight:600;text-decoration:none;">📈 注目データ</a>'
+        '　/　'
+        '<a href="/data/batting-ranking/" style="color:#e25400;font-weight:600;text-decoration:none;">🏆 打撃ランキング</a>'
+        '　/　'
+        '<a href="/data/pitching-ranking/" style="color:#e25400;font-weight:600;text-decoration:none;">⚾ 投手ランキング</a>'
         '　/　'
         '<a href="/data/team/" style="color:#e25400;font-weight:600;text-decoration:none;">📊 チーム成績・順位</a>'
+        '　/　'
+        '<a href="/data/farm/" style="color:#e25400;font-weight:600;text-decoration:none;">🌱 2軍ファーム</a>'
         '　/　'
         '<a href="/data/record/" style="color:#e25400;font-weight:600;text-decoration:none;">🏛 記録室</a>'
         '　/　'
         '<a href="/data/cleanup-hitters/" style="color:#e25400;font-weight:600;text-decoration:none;">4番打者</a>'
+        '　/　'
+        '<a href="/data/jersey-numbers/" style="color:#e25400;font-weight:600;text-decoration:none;">🔢 歴代背番号</a>'
         '　/　'
         '<a href="/data/draft/" style="color:#e25400;font-weight:600;text-decoration:none;">📋 歴代ドラフト</a>'
         '　/　'
@@ -172,7 +184,9 @@ def _build_batter_group_table_html(players: list[ClusterPlayerEntry], group: str
         jersey = p.jersey_number or "-"
         avg = _fmt_avg(p.season_avg)
         games = str(p.season_games) if p.has_stats else "-"
+        ab = str(p.season_ab) if p.has_stats else "-"
         hits = str(p.season_hits) if p.has_stats else "-"
+        hr = str(p.season_hr) if p.has_stats else "-"
         rbi = str(p.season_rbi) if p.has_stats else "-"
         rows.append(
             f'<tr style="border-bottom:1px solid #eee;">'
@@ -181,8 +195,10 @@ def _build_batter_group_table_html(players: list[ClusterPlayerEntry], group: str
             'style="color:#1976d2;text-decoration:none;font-weight:600;">'
             f'{_esc(p.name)}</a></td>'
             f'<td style="padding:8px 10px;text-align:center;color:#555;">{games}</td>'
+            f'<td style="padding:8px 10px;text-align:center;color:#555;">{ab}</td>'
             f'<td style="padding:8px 10px;text-align:center;color:#555;">{hits}</td>'
             f'<td style="padding:8px 10px;text-align:center;color:#1976d2;font-weight:600;">{avg}</td>'
+            f'<td style="padding:8px 10px;text-align:center;color:#555;">{hr}</td>'
             f'<td style="padding:8px 10px;text-align:center;color:#555;">{rbi}</td>'
             '</tr>'
         )
@@ -196,8 +212,10 @@ def _build_batter_group_table_html(players: list[ClusterPlayerEntry], group: str
         '<th style="padding:10px;text-align:center;">背番号</th>'
         '<th style="padding:10px;">名前</th>'
         '<th style="padding:10px;text-align:center;">試合</th>'
+        '<th style="padding:10px;text-align:center;">打数</th>'
         '<th style="padding:10px;text-align:center;">安打</th>'
         '<th style="padding:10px;text-align:center;">打率</th>'
+        '<th style="padding:10px;text-align:center;">本塁打</th>'
         '<th style="padding:10px;text-align:center;">打点</th>'
         '</tr></thead>'
         f'<tbody>{"".join(rows)}</tbody>'
@@ -472,11 +490,127 @@ def _build_hot_html(hot: dict | None) -> str:
     )
 
 
+def _notable_items(notable_data: dict | None) -> tuple[str, list[dict]]:
+    payload = notable_data or {}
+    return str(payload.get("as_of") or "").strip(), list(payload.get("items") or [])
+
+
+def _build_notable_data_cards_html(items: list[dict], *, include_player_links: bool) -> str:
+    rows = []
+    for item in items[:8]:
+        player = str(item.get("player") or "").strip()
+        slug = str(item.get("slug") or "").strip()
+        label = str(item.get("label") or "").strip()
+        value = str(item.get("value") or "").strip()
+        note = str(item.get("note") or "").strip()
+        if not label or not value:
+            continue
+        title = f"{player}の{label}" if player else label
+        player_text = f"この記録の選手: {player}" if player else ""
+        player_html = _esc(player_text)
+        if include_player_links and player and slug:
+            player_html = (
+                'この記録の選手: '
+                f'<a href="/data/{_esc(slug)}/" style="color:#1976d2;font-weight:700;text-decoration:none;">'
+                f'{_esc(player)}</a>'
+            )
+        rows.append(
+            '<article style="background:#fff;border:1px solid #ffd9bf;border-radius:10px;'
+            'padding:12px;">'
+            f'<h3 style="font-size:15px;margin:0 0 6px;color:#5d4037;">{_esc(title)}</h3>'
+            f'<div style="font-size:24px;font-weight:900;color:#e25400;'
+            f'font-variant-numeric:tabular-nums;line-height:1.2;">{_esc(value)}</div>'
+            f'<p style="font-size:12px;color:#666;margin:6px 0 0;line-height:1.55;">'
+            f'{player_html}'
+            f'{(" / " + _esc(note)) if note else ""}</p>'
+            '</article>'
+        )
+    return "".join(rows)
+
+
+def _notable_schema(notable_data: dict | None) -> str:
+    as_of, items = _notable_items(notable_data)
+    dataset = {
+        "@context": "https://schema.org",
+        "@type": "Dataset",
+        "@id": f"{NOTABLE_DATA_URL}#dataset-notable-data",
+        "name": "巨人 注目データ（連続試合・好調指標）",
+        "description": "読売ジャイアンツの最新試合日を基準に、誰の記録か分かる形で連続試合安打、連続得点関与、好調指標を更新するデータセット。",
+        "url": NOTABLE_DATA_URL,
+        "creator": {"@type": "Organization", "name": "ヨシラバー"},
+        "about": {"@type": "SportsTeam", "name": "読売ジャイアンツ"},
+        "variableMeasured": ["最新試合日", "連続試合安打", "連続得点関与", "好調指標"],
+        "dateModified": as_of or None,
+    }
+    dataset = {k: v for k, v in dataset.items() if v is not None}
+    item_list = {
+        "@context": "https://schema.org",
+        "@type": "ItemList",
+        "@id": f"{NOTABLE_DATA_URL}#notable-data-itemlist",
+        "name": "巨人 注目データ一覧",
+        "itemListElement": [
+            {
+                "@type": "ListItem",
+                "position": i + 1,
+                "name": (
+                    f"{str(item.get('player') or '').strip()} "
+                    f"{str(item.get('label') or '').strip()} "
+                    f"{str(item.get('value') or '').strip()}"
+                ).strip(),
+                "url": (
+                    f"{SITE_BASE}/data/{str(item.get('slug') or '').strip()}/"
+                    if str(item.get("slug") or "").strip() else NOTABLE_DATA_URL
+                ),
+            }
+            for i, item in enumerate(items[:8])
+            if str(item.get("label") or "").strip() and str(item.get("value") or "").strip()
+        ],
+    }
+    return (
+        f'<script id="dataset-notable-data" type="application/ld+json">'
+        f'{_json.dumps(dataset, ensure_ascii=False)}</script>'
+        f'<script type="application/ld+json">{_json.dumps(item_list, ensure_ascii=False)}</script>'
+    )
+
+
+def render_notable_data_page_html(notable_data: dict | None) -> str:
+    as_of, items = _notable_items(notable_data)
+    cards = _build_notable_data_cards_html(items, include_player_links=True)
+    empty = '<p style="font-size:13px;color:#777;margin:0;">注目データは集計中です。</p>' if not cards else ""
+    return (
+        '<section class="ys-notable-page" style="background:#fff8f2;border:1px solid #ffd9bf;'
+        'border-radius:12px;padding:16px;margin:0 0 18px;">'
+        '<h1 style="font-size:24px;margin:0 0 8px;color:#e25400;">巨人 注目データ</h1>'
+        '<p style="font-size:13px;color:#666;line-height:1.7;margin:0 0 12px;">'
+        '連続試合安打、連続得点関与、好調指標を、選手名とセットで確認できるページです。'
+        '個人ページの一覧ではなく、「誰のどの記録か」をニュース確認用にまとめています。'
+        f'{(" 基準日: " + _esc(as_of) + " 試合終了時点。") if as_of else ""}</p>'
+        f'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;">'
+        f'{cards}</div>{empty}'
+        '<p style="font-size:12px;color:#777;line-height:1.6;margin:12px 0 0;">'
+        '<a href="/data/" style="color:#1976d2;font-weight:700;text-decoration:none;">巨人選手データへ戻る</a>'
+        '</p>'
+        f'{_notable_schema(notable_data)}'
+        '</section>'
+    )
+
+
+def render_notable_data_title() -> str:
+    return "巨人 注目データ - 誰の記録か分かる連続記録・好調指標 | ヨシラバー"
+
+
+def render_notable_data_excerpt(notable_data: dict | None) -> str:
+    as_of, items = _notable_items(notable_data)
+    suffix = f"{as_of}試合終了時点。" if as_of else "最新試合終了時点。"
+    return f"巨人の連続記録・好調指標を、選手名と記録名が分かる形で掲載。{suffix}掲載件数 {len(items)} 件。"
+
+
 def render_cluster_html(
     players: list[ClusterPlayerEntry],
     ikusei_entries: list[tuple[str, str]] | None = None,
     ob_entries: list[tuple[str, str]] | None = None,
     hot: dict | None = None,
+    notable_data: dict | None = None,
 ) -> str:
     """Cluster page の WP post.content として入る HTML を返す.
 
@@ -487,7 +621,6 @@ def render_cluster_html(
     sections = [
         _build_intro_html(),
         _build_search_html(),
-        _build_hot_html(hot),
         _build_player_table_html(players, ikusei_entries, ob_entries),
         _build_footnote_html(len(players)),
         _build_jsonld(players),
@@ -508,7 +641,12 @@ def render_cluster_title() -> str:
 __all__ = [
     "ClusterPlayerEntry",
     "render_cluster_html",
+    "render_notable_data_page_html",
+    "render_notable_data_title",
+    "render_notable_data_excerpt",
     "render_cluster_title",
     "CLUSTER_URL",
+    "NOTABLE_DATA_PATH",
+    "NOTABLE_DATA_URL",
     "SITE_BASE",
 ]

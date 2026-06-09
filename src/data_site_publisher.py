@@ -21,9 +21,11 @@ env:
 
 from __future__ import annotations
 
+import hashlib as _hashlib
 import json as _json
 import logging
 import os
+import re
 import sys
 from dataclasses import dataclass
 
@@ -50,8 +52,9 @@ from src.data_site_query import (
     fetch_giants_team_record,
     fetch_giants_upcoming,
     fetch_npb_cl_standings,
-    fetch_recent_hot,
-    fetch_team_leaders,
+    fetch_latest_giants_game_date,
+    fetch_player_latest_game_date,
+    fetch_surprise_stats,
     fetch_player_npb_ranks,
     fetch_pitching_stats_season,
     fetch_pitcher_opponent_split_stats,
@@ -83,6 +86,9 @@ from src.data_site_slug import player_slug
 from src.data_site_template_cluster import (
     ClusterPlayerEntry,
     render_cluster_html,
+    render_notable_data_excerpt,
+    render_notable_data_page_html,
+    render_notable_data_title,
     render_cluster_title,
 )
 from src.data_site_template_schedule import (
@@ -101,11 +107,23 @@ from src.data_site_template_cleanup_hitters import (
     render_cleanup_hitters_title,
     render_cleanup_hitters_excerpt,
 )
+from src.data_site_jersey_source import fetch_jersey_rows
+from src.data_site_template_jersey import (
+    render_jersey_numbers_excerpt,
+    render_jersey_numbers_html,
+    render_jersey_numbers_title,
+)
 from src.data_site_template_draft import (
     load_draft_data,
     render_draft_html,
     render_draft_title,
     render_draft_excerpt,
+)
+from src.data_site_template_rotation import (
+    load_rotation_data,
+    render_rotation_html,
+    render_rotation_title,
+    render_rotation_excerpt,
 )
 from src.data_site_template_fa import (
     load_fa_data,
@@ -120,6 +138,24 @@ from src.data_site_template_trade import (
     render_trade_excerpt,
 )
 from src.data_site_farm_stats import giants_farm_map
+from src.data_site_farm_source import (
+    fetch_farm_game_rows,
+    fetch_farm_generic_rows,
+    farm_player_stats,
+)
+from src.data_site_template_farm import (
+    render_farm_child_excerpt,
+    render_farm_child_title,
+    render_farm_championship_html,
+    render_farm_education_html,
+    render_farm_excerpt,
+    render_farm_hub_html,
+    render_farm_players_html,
+    render_farm_schedule_html,
+    render_farm_team_html,
+    render_farm_title,
+    render_farm_titles_html,
+)
 from src.data_site_template_legends import (
     render_legends_html,
     render_legends_title,
@@ -132,6 +168,12 @@ from src.data_site_template_team import (
     render_ranking_html,
     render_ranking_title,
     render_ranking_excerpt,
+    render_batting_ranking_html,
+    render_batting_ranking_title,
+    render_batting_ranking_excerpt,
+    render_pitching_ranking_html,
+    render_pitching_ranking_title,
+    render_pitching_ranking_excerpt,
     render_record_html,
     render_record_title,
     render_record_excerpt,
@@ -181,6 +223,120 @@ def _dry_run_enabled() -> bool:
     return str(os.environ.get("DATA_SITE_DRY_RUN", "")).strip().lower() in {"1", "true", "yes", "on"}
 
 
+# ── 差分更新 (incremental publish) ──────────────────────────────────────────
+# 約 970 ページを毎回まるごと WP upsert すると 1 回 ~15 分かかり Cloud Run コストの主因。
+# 試合で実際に変わるのは数選手だけなので、描画 HTML の SHA256 を GCS 台帳
+# (slug -> {sig,page_id,url}) と照合し、変化なしのページは GET/POST を完全 skip する。
+# 台帳は実行開始で download、終了で upload。download/upload 失敗 (初回 / 権限欠如) 時は
+# 例外を握って全件 upsert にフォールバックするため、最悪でも従来挙動 = フェイルセーフ。
+_HASH_BUCKET = os.environ.get("DATA_SITE_HASH_BUCKET", "baseballsite-yoshilover-state")
+_HASH_PREFIX = os.environ.get("DATA_SITE_HASH_PREFIX", "data_site_publisher")
+_HASH_REMOTE = "page_hashes.json"
+# 親ページ (cluster=data / farm hub) は page_id を子の parent に使うため常に実 upsert
+_ALWAYS_FRESH_SLUGS = {"data", "farm"}
+
+_HASH_LEDGER: dict[str, dict] | None = None
+_HASH_LEDGER_DIRTY = False
+_HASH_SKIPPED = 0
+_FORCE_FULL_RUN = False  # canary など、その run だけ全件にしたい時 True
+
+
+def _incremental_enabled() -> bool:
+    if _FORCE_FULL_RUN or _dry_run_enabled():
+        return False
+    if str(os.environ.get("DATA_SITE_FORCE_FULL", "")).strip().lower() in {"1", "true", "yes", "on"}:
+        return False
+    return str(os.environ.get("DATA_SITE_INCREMENTAL", "1")).strip().lower() in {"1", "true", "yes", "on"}
+
+
+# コンテナに gcloud CLI は無いため、GCS は metadata トークン + REST (requests) で直接叩く。
+_GCS_TOKEN_URL = (
+    "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token"
+)
+
+
+def _gcs_token() -> str:
+    r = requests.get(_GCS_TOKEN_URL, headers={"Metadata-Flavor": "Google"}, timeout=5)
+    r.raise_for_status()
+    return str(r.json()["access_token"])
+
+
+def _gcs_object_name() -> str:
+    return f"{_HASH_PREFIX}/{_HASH_REMOTE}" if _HASH_PREFIX else _HASH_REMOTE
+
+
+def _gcs_download_text() -> str | None:
+    from urllib.parse import quote
+
+    obj = quote(_gcs_object_name(), safe="")
+    url = f"https://storage.googleapis.com/storage/v1/b/{_HASH_BUCKET}/o/{obj}?alt=media"
+    r = requests.get(url, headers={"Authorization": f"Bearer {_gcs_token()}"}, timeout=20)
+    if r.status_code == 404:
+        return None
+    r.raise_for_status()
+    return r.text
+
+
+def _gcs_upload_text(text: str) -> None:
+    from urllib.parse import quote
+
+    obj = quote(_gcs_object_name(), safe="")
+    url = f"https://storage.googleapis.com/upload/storage/v1/b/{_HASH_BUCKET}/o?uploadType=media&name={obj}"
+    r = requests.post(
+        url,
+        data=text.encode("utf-8"),
+        headers={"Authorization": f"Bearer {_gcs_token()}", "Content-Type": "application/json"},
+        timeout=30,
+    )
+    r.raise_for_status()
+
+
+def _load_hash_ledger() -> dict[str, dict]:
+    global _HASH_LEDGER
+    if _HASH_LEDGER is not None:
+        return _HASH_LEDGER
+    _HASH_LEDGER = {}
+    if not _incremental_enabled():
+        return _HASH_LEDGER
+    try:
+        text = _gcs_download_text()
+        data = _json.loads(text) if text else {}
+        if isinstance(data, dict):
+            _HASH_LEDGER = {str(k): v for k, v in data.items() if isinstance(v, dict)}
+        LOG.info("incremental: hash ledger loaded entries=%d", len(_HASH_LEDGER))
+    except Exception as exc:  # noqa: BLE001 - 初回 / file 無し / 権限欠如 → 全件 upsert
+        LOG.info("incremental: no hash ledger (%s) — 初回は全件 upsert", exc)
+        _HASH_LEDGER = {}
+    return _HASH_LEDGER
+
+
+def _save_hash_ledger() -> None:
+    if _HASH_LEDGER is None or not _HASH_LEDGER_DIRTY or not _incremental_enabled():
+        return
+    try:
+        _gcs_upload_text(_json.dumps(_HASH_LEDGER, ensure_ascii=False))
+        LOG.info("incremental: hash ledger saved entries=%d skipped=%d", len(_HASH_LEDGER), _HASH_SKIPPED)
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("incremental: hash ledger save fail: %s", exc)
+
+
+def _content_sig(slug: str, title: str, content_html: str, excerpt: str, featured_media_id) -> str:
+    h = _hashlib.sha256()
+    for part in (slug, title, content_html, excerpt, str(featured_media_id or "")):
+        h.update((part or "").encode("utf-8"))
+        h.update(b"\x00")
+    return h.hexdigest()
+
+
+def _record_hash(slug: str, sig: str, page_id: int, url: str) -> None:
+    global _HASH_LEDGER_DIRTY
+    if not _incremental_enabled() or not page_id:
+        return
+    led = _load_hash_ledger()
+    led[slug] = {"sig": sig, "page_id": int(page_id), "url": str(url or f"/data/{slug}/")}
+    _HASH_LEDGER_DIRTY = True
+
+
 def _draft_page_enabled() -> bool:
     """巨人ドラフト史ページ /data/draft の本番公開ゲート。
 
@@ -200,12 +356,23 @@ def _wp_creds() -> tuple[str, HTTPBasicAuth]:
 
 
 def _find_page_id_by_slug(slug: str, *, parent: int = 0) -> int | None:
-    """WP REST /pages を slug で検索 → 存在すれば page id を返す."""
+    """WP REST /pages を slug で検索 → 存在すれば page id を返す.
+
+    Draft/trash pages can still reserve page slugs in WordPress.  Use edit
+    context + status=any so upsert updates the reserved page instead of
+    accidentally creating `slug-2`.
+    """
     base, auth = _wp_creds()
     try:
         r = requests.get(
             base + "/wp-json/wp/v2/pages",
-            params={"slug": slug, "per_page": 5, "_fields": "id,slug,parent"},
+            params={
+                "slug": slug,
+                "status": "any",
+                "context": "edit",
+                "per_page": 10,
+                "_fields": "id,slug,parent,status",
+            },
             auth=auth,
             timeout=15,
         )
@@ -235,6 +402,20 @@ def _upsert_page(
     if _dry_run_enabled():
         LOG.info("DRY_RUN upsert skipped slug=%s title=%s bytes=%d", slug, title, len(content_html))
         return UpsertResult(slug=slug, page_id=0, action="skipped", url=f"/data/{slug}/")
+
+    # 差分更新: 描画内容が前回と同じページは GET/POST を skip (親ページは常に実 upsert)
+    sig = _content_sig(slug, title, content_html, excerpt, featured_media_id)
+    if slug not in _ALWAYS_FRESH_SLUGS and _incremental_enabled():
+        cached = _load_hash_ledger().get(slug)
+        if cached and cached.get("sig") == sig and cached.get("page_id"):
+            global _HASH_SKIPPED
+            _HASH_SKIPPED += 1
+            return UpsertResult(
+                slug=slug,
+                page_id=int(cached["page_id"]),
+                action="unchanged",
+                url=str(cached.get("url") or f"/data/{slug}/"),
+            )
 
     base, auth = _wp_creds()
     payload: dict[str, object] = {
@@ -276,12 +457,14 @@ def _upsert_page(
             LOG.warning("upsert fail slug=%s status=%d body=%s", slug, r.status_code, r.text[:300])
             return UpsertResult(slug=slug, page_id=0, action="error", url=f"/data/{slug}/")
         page = r.json() or {}
-        return UpsertResult(
+        result = UpsertResult(
             slug=slug,
             page_id=int(page.get("id") or 0),
             action=action,
             url=str(page.get("link") or f"/data/{slug}/"),
         )
+        _record_hash(slug, sig, result.page_id, result.url)
+        return result
     except Exception as exc:  # noqa: BLE001
         LOG.exception("upsert exception slug=%s: %r", slug, exc)
         return UpsertResult(slug=slug, page_id=0, action="error", url=f"/data/{slug}/")
@@ -367,6 +550,7 @@ def _build_pillar_info(player_name: str) -> PillarPlayerInfo | None:
         info.season_rbi = season.rbi
         info.season_runs = season.runs
         info.season_sb = season.sb
+        info.season_hr = season.hr
         info.season_avg = season.avg
     if recent_games_raw:
         info.recent_games = [
@@ -456,6 +640,274 @@ def _name_to_slug(name: str) -> str:
     return player_slug(name)
 
 
+def _build_notable_data(cluster_entries: list[ClusterPlayerEntry], limit: int = 8) -> dict[str, object]:
+    """Build metric-first notable data items for the dedicated page and hub teaser."""
+    latest_game_date = fetch_latest_giants_game_date()
+    if not latest_game_date:
+        return {"as_of": "", "items": []}
+    items: list[dict] = []
+    seen: set[tuple[str, str]] = set()
+
+    def add(player: str, slug: str, label: str, value: str, note: str, priority: float) -> None:
+        key = (player, label)
+        if not player or not label or not value or key in seen:
+            return
+        seen.add(key)
+        items.append({
+            "player": player,
+            "slug": slug,
+            "label": label,
+            "value": value,
+            "note": note,
+            "priority": priority,
+        })
+
+    for entry in cluster_entries:
+        if entry.role in ("manager", "coach") or "投手" in (entry.position_group or entry.position):
+            continue
+        player_game_date = fetch_player_latest_game_date(entry.name, "batting_logs")
+        if latest_game_date and player_game_date != latest_game_date:
+            continue
+        try:
+            hit = fetch_hit_streak(entry.name)
+            contrib = fetch_contribution_streak(entry.name)
+        except Exception as exc:  # noqa: BLE001
+            LOG.warning("notable streak fetch failed player=%s: %r", entry.name, exc)
+            continue
+        as_of = f"{latest_game_date}の試合終了時点。" if latest_game_date else "最新試合終了時点。"
+        if hit.active >= 3:
+            add(
+                entry.name, entry.slug, "連続試合安打", f"{hit.active}試合",
+                f"{as_of}現在進行中。今季最長は{hit.season_max}試合。", 120 + hit.active,
+            )
+        if contrib.active >= 3:
+            add(
+                entry.name, entry.slug, "連続得点関与", f"{contrib.active}試合",
+                f"{as_of}得点または打点に絡んだ試合が継続中。今季最長は{contrib.season_max}試合。",
+                110 + contrib.active,
+            )
+
+    if len(items) < limit:
+        pitcher_labels = {
+            "失点抑止（防御率）",
+            "走者を出さない力（WHIP）",
+            "投球内容（FIP）",
+            "奪三振力（K/9）",
+            "制球と奪三振（K/BB）",
+        }
+        for row in fetch_surprise_stats(top_n=limit * 2):
+            table = "pitching_logs" if row.label in pitcher_labels else "batting_logs"
+            player_game_date = fetch_player_latest_game_date(row.player, table)
+            if latest_game_date and player_game_date != latest_game_date:
+                continue
+            as_of = f"{latest_game_date}の試合終了時点。" if latest_game_date else ""
+            add(
+                row.player,
+                _name_to_slug(row.player),
+                row.label,
+                row.value,
+                f"{as_of}{row.note}",
+                row.priority,
+            )
+            if len(items) >= limit:
+                break
+
+    items.sort(key=lambda item: (-float(item.get("priority") or 0), item.get("player") or ""))
+    for item in items:
+        item.pop("priority", None)
+    return {"as_of": latest_game_date, "items": items[:limit]}
+
+
+def _build_notable_data_from_targets(limit: int = 8) -> dict[str, object]:
+    """Build notable data without building or updating player pages."""
+    entries: list[ClusterPlayerEntry] = []
+    for name in load_data_site_target_names():
+        roster = load_roster_player(name)
+        if not roster or roster.role in ("manager", "coach"):
+            continue
+        entries.append(
+            ClusterPlayerEntry(
+                name=roster.name,
+                slug=_name_to_slug(roster.name),
+                position=roster.position,
+                jersey_number=roster.jersey_number,
+                role=roster.role,
+                position_group=shihai_position_group(roster.name) or "",
+            )
+        )
+    return _build_notable_data(entries, limit=limit)
+
+
+def _get_page_for_edit_by_slug(slug: str, *, parent: int = 0) -> dict | None:
+    page_id = _find_page_id_by_slug(slug, parent=parent)
+    if not page_id:
+        return None
+    base, auth = _wp_creds()
+    try:
+        r = requests.get(
+            base + f"/wp-json/wp/v2/pages/{page_id}",
+            params={"context": "edit", "_fields": "id,slug,parent,status,title,content,excerpt"},
+            auth=auth,
+            timeout=20,
+        )
+        if not r.ok:
+            LOG.warning("get page for edit failed slug=%s status=%d body=%s", slug, r.status_code, r.text[:300])
+            return None
+        return r.json() or {}
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("get page for edit err slug=%s: %r", slug, exc)
+        return None
+
+
+def _page_field_text(page: dict, field: str) -> str:
+    value = page.get(field) or {}
+    if isinstance(value, dict):
+        return str(value.get("raw") or value.get("rendered") or "")
+    return str(value or "")
+
+
+_NOTABLE_SECTION_RE = re.compile(
+    r'<section\b[^>]*\bid=["\']ys-notable-data["\'][\s\S]*?</section>',
+    re.IGNORECASE,
+)
+_LEGACY_NOTABLE_HREF_RE = re.compile(
+    r'href=(["\'])(?:https?://(?:www\.)?yoshilover\.com)?/data/#ys-notable-data\1|href=(["\'])#ys-notable-data\2',
+    re.IGNORECASE,
+)
+
+
+def _replace_legacy_notable_data_links(content_html: str) -> str:
+    """Point old in-page notable links at the dedicated notable-data page."""
+    updated = _LEGACY_NOTABLE_HREF_RE.sub(
+        lambda match: f'href={match.group(1) or match.group(2)}/data/notable/{match.group(1) or match.group(2)}',
+        content_html,
+    )
+    return updated.replace("驚き・注目選手", "注目データ")
+
+
+def _remove_notable_data_section(content_html: str) -> str:
+    """Remove legacy in-page notable-data section from /data/.
+
+    /data/ is the player personal-stats hub. The notable data content belongs
+    only on /data/notable/.
+    """
+    return _NOTABLE_SECTION_RE.sub("", content_html, count=1)
+
+
+def _update_page_content(page_id: int, content_html: str) -> UpsertResult:
+    if _dry_run_enabled():
+        LOG.info("DRY_RUN notable data content update skipped page_id=%s bytes=%d", page_id, len(content_html))
+        return UpsertResult(slug="data", page_id=page_id, action="skipped", url="/data/")
+    base, auth = _wp_creds()
+    try:
+        r = requests.post(
+            base + f"/wp-json/wp/v2/pages/{int(page_id)}",
+            json={"content": content_html},
+            auth=auth,
+            timeout=30,
+        )
+        if not r.ok:
+            LOG.warning("notable data update fail page_id=%s status=%d body=%s", page_id, r.status_code, r.text[:300])
+            return UpsertResult(slug="data", page_id=0, action="error", url="/data/")
+        page = r.json() or {}
+        return UpsertResult(
+            slug="data",
+            page_id=int(page.get("id") or page_id),
+            action="updated",
+            url=str(page.get("link") or "/data/"),
+        )
+    except Exception as exc:  # noqa: BLE001
+        LOG.exception("notable data update exception page_id=%s: %r", page_id, exc)
+        return UpsertResult(slug="data", page_id=0, action="error", url="/data/")
+
+
+def _update_page_status(page_id: int, slug: str, status: str) -> UpsertResult:
+    if _dry_run_enabled():
+        LOG.info("DRY_RUN page status update skipped page_id=%s slug=%s status=%s", page_id, slug, status)
+        return UpsertResult(slug=slug, page_id=page_id, action="skipped", url=f"/data/{slug}/")
+    base, auth = _wp_creds()
+    try:
+        r = requests.post(
+            base + f"/wp-json/wp/v2/pages/{int(page_id)}",
+            json={"status": status},
+            auth=auth,
+            timeout=30,
+        )
+        if not r.ok:
+            LOG.warning("page status update fail page_id=%s slug=%s status=%d body=%s", page_id, slug, r.status_code, r.text[:300])
+            return UpsertResult(slug=slug, page_id=0, action="error", url=f"/data/{slug}/")
+        page = r.json() or {}
+        return UpsertResult(
+            slug=slug,
+            page_id=int(page.get("id") or page_id),
+            action="updated",
+            url=str(page.get("link") or f"/data/{slug}/"),
+        )
+    except Exception as exc:  # noqa: BLE001
+        LOG.exception("page status update exception page_id=%s slug=%s: %r", page_id, slug, exc)
+        return UpsertResult(slug=slug, page_id=0, action="error", url=f"/data/{slug}/")
+
+
+def retire_legacy_notable_page() -> dict[str, object]:
+    """Deprecated no-op.
+
+    /data/notable/ is now the canonical notable-data page again. Keep this CLI
+    harmless so an old runbook invocation cannot draft the page by mistake.
+    """
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    summary = {
+        "status": "ok",
+        "dry_run": _dry_run_enabled(),
+        "mode": "retire_legacy_notable",
+        "action": "canonical_page_kept",
+        "page_id": 0,
+    }
+    LOG.info("legacy notable retire no-op: %s", _json.dumps(summary, ensure_ascii=False))
+    return summary
+
+
+def publish_notable_data_only() -> dict[str, object]:
+    """Update only the notable-data page and clean /data/ legacy links.
+
+    This path intentionally does not upsert player pages, rankings, farm pages,
+    or any other data-site child pages.
+    """
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    notable_data = _build_notable_data_from_targets()
+    if not notable_data.get("as_of"):
+        return {"status": "abort", "reason": "latest_game_date_unavailable", "mode": "notable_data_only"}
+    page = _get_page_for_edit_by_slug("data", parent=0)
+    if not page:
+        return {"status": "abort", "reason": "data_page_not_found"}
+    page_id = int(page.get("id") or 0)
+    notable_result = _upsert_page(
+        slug="notable",
+        title=render_notable_data_title(),
+        content_html=render_notable_data_page_html(notable_data),
+        parent=page_id,
+        excerpt=render_notable_data_excerpt(notable_data),
+    )
+    current = _page_field_text(page, "content")
+    next_content = _replace_legacy_notable_data_links(
+        _remove_notable_data_section(current)
+    )
+    result = _update_page_content(page_id, next_content)
+    ok = result.action in {"updated", "skipped", "unchanged"} and notable_result.action not in {"error"}
+    summary = {
+        "status": "ok" if ok else "error",
+        "dry_run": _dry_run_enabled(),
+        "mode": "notable_data_only",
+        "page_id": result.page_id,
+        "notable_page_id": notable_result.page_id,
+        "notable_action": notable_result.action,
+        "action": result.action,
+        "items": len(notable_data.get("items") or []),
+    }
+    _save_hash_ledger()
+    LOG.info("notable data only publisher done: %s", _json.dumps(summary, ensure_ascii=False))
+    return summary
+
+
 def publish_phase1(only_slugs: set[str] | None = None) -> dict[str, object]:
     """Phase 1.0 main: 3 Pillar + 1 Cluster upsert.
 
@@ -471,6 +923,9 @@ def publish_phase1(only_slugs: set[str] | None = None) -> dict[str, object]:
         return {"status": "abort", "reason": "no_target_players"}
     if only_slugs:
         target_names = [n for n in target_names if _name_to_slug(n) in only_slugs]
+        # canary は指定ページを必ず再公開したいので差分 skip を無効化
+        global _FORCE_FULL_RUN
+        _FORCE_FULL_RUN = True
 
     LOG.info("phase1 target players: %s", target_names)
 
@@ -501,8 +956,10 @@ def publish_phase1(only_slugs: set[str] | None = None) -> dict[str, object]:
                 position_group=shihai_position_group(name) or "",
                 military=staff_military_level(info.position) if (info.role or "") in ("manager", "coach") else "",
                 season_games=info.season_games,
+                season_ab=info.season_ab,
                 season_hits=info.season_hits,
                 season_rbi=info.season_rbi,
+                season_hr=info.season_hr,
                 season_avg=info.season_avg,
                 has_stats=info.has_stats,
                 pitch_games=info.pitch_games,
@@ -554,8 +1011,13 @@ def publish_phase1(only_slugs: set[str] | None = None) -> dict[str, object]:
         }
 
     # Cluster upsert (parent=0)。 育成=一覧のみ、 OB=chip リンク (個別ページあり)。
-    cluster_html = render_cluster_html(cluster_entries, load_ikusei_entries(), ob_entries,
-                                       hot=fetch_recent_hot())
+    notable_data = _build_notable_data(cluster_entries)
+    cluster_html = render_cluster_html(
+        cluster_entries,
+        load_ikusei_entries(),
+        ob_entries,
+        notable_data=notable_data,
+    )
     cluster_title = render_cluster_title()
     cluster_result = _upsert_page(
         slug="data",
@@ -570,6 +1032,18 @@ def publish_phase1(only_slugs: set[str] | None = None) -> dict[str, object]:
 
     # Pillar upsert (parent=cluster_page_id) — dry-run 時は parent=0 (cluster_page_id=0)
     cluster_page_id = cluster_result.page_id if cluster_result.action != "skipped" else 0
+
+    # 注目データ page — parent=cluster → /data/notable/
+    notable_result = _upsert_page(
+        slug="notable",
+        title=render_notable_data_title(),
+        content_html=render_notable_data_page_html(notable_data),
+        parent=cluster_page_id,
+        excerpt=render_notable_data_excerpt(notable_data),
+    )
+    LOG.info("notable data upsert slug=notable page_id=%s action=%s items=%d",
+             notable_result.page_id, notable_result.action, len(notable_data.get("items") or []))
+
     pillar_results: list[UpsertResult] = []
     for info in pillar_infos:
         html = render_pillar_html(info)
@@ -600,6 +1074,44 @@ def publish_phase1(only_slugs: set[str] | None = None) -> dict[str, object]:
     )
     LOG.info("schedule upsert slug=schedule page_id=%s action=%s games=%d",
              sched_result.page_id, sched_result.action, len(sched_rows))
+
+    # farm topic cluster: /data/farm/ + child pages (user request 2026-06-07).
+    # 1軍 schedule と混ざらないよう /data/farm/ 配下に複数枚で分ける。
+    farm_rows = fetch_farm_game_rows()
+    farm_batting, farm_pitching = farm_player_stats()
+    farm_result = _upsert_page(
+        slug="farm",
+        title=render_farm_title(),
+        content_html=render_farm_hub_html(farm_rows, farm_batting, farm_pitching),
+        parent=cluster_page_id,
+        excerpt=render_farm_excerpt(farm_rows),
+    )
+    farm_page_id = farm_result.page_id if farm_result.action not in ("skipped", "error") else 0
+    LOG.info(
+        "farm hub upsert slug=farm page_id=%s action=%s games=%d bat=%d pit=%d",
+        farm_result.page_id, farm_result.action, len(farm_rows), len(farm_batting), len(farm_pitching),
+    )
+    farm_children = [
+        ("schedule", render_farm_schedule_html(farm_rows)),
+        ("spring-education", render_farm_education_html(farm_rows, kind="spring")),
+        ("autumn-education", render_farm_education_html(farm_rows, kind="autumn")),
+        ("team", render_farm_team_html(farm_rows, fetch_farm_generic_rows("team_history"))),
+        ("players", render_farm_players_html(farm_batting, farm_pitching)),
+        ("titles", render_farm_titles_html(
+            farm_batting, farm_pitching, fetch_farm_generic_rows("titles"),
+        )),
+        ("championship", render_farm_championship_html(fetch_farm_generic_rows("championship"))),
+    ]
+    for child_slug, child_html in farm_children:
+        child_result = _upsert_page(
+            slug=child_slug,
+            title=render_farm_child_title(child_slug),
+            content_html=child_html,
+            parent=farm_page_id,
+            excerpt=render_farm_child_excerpt(child_slug),
+        )
+        LOG.info("farm child upsert slug=%s page_id=%s action=%s",
+                 child_slug, child_result.page_id, child_result.action)
 
     # leaders ページ upsert (選手別ランキング、Phase B 452) — parent=cluster → /data/leaders/
     leaders = fetch_team_leaders()
@@ -639,8 +1151,8 @@ def publish_phase1(only_slugs: set[str] | None = None) -> dict[str, object]:
     LOG.info("team upsert slug=team page_id=%s action=%s metrics=%d",
              team_result.page_id, team_result.action, len(team_rankings))
 
-    # ranking ページ upsert (選手別 球団内ランキング HUB、 462) — parent=cluster → /data/ranking/
-    # 468-1: 現役選手の NPB 通算成績ランキングを career cache から集計して併載。
+    # 成績ランキング upsert (462/468)。
+    # /data/ranking/ は旧URLの受け皿だけにし、実データは打撃/投手の直接ページへ分離。
     leaders = fetch_team_leaders()
     try:
         career_leaders = build_career_leaders(_CAREER_CACHE)
@@ -662,8 +1174,26 @@ def publish_phase1(only_slugs: set[str] | None = None) -> dict[str, object]:
         parent=cluster_page_id,
         excerpt=render_ranking_excerpt(leaders),
     )
-    LOG.info("ranking upsert slug=ranking page_id=%s action=%s cats=%d career=%d alltime=%d",
+    LOG.info("ranking gateway upsert slug=ranking page_id=%s action=%s cats=%d career=%d alltime=%d",
              ranking_result.page_id, ranking_result.action, len(leaders), len(career_leaders), len(alltime_leaders))
+    batting_ranking_result = _upsert_page(
+        slug="batting-ranking",
+        title=render_batting_ranking_title(),
+        content_html=render_batting_ranking_html(leaders, career_leaders, alltime_leaders),
+        parent=cluster_page_id,
+        excerpt=render_batting_ranking_excerpt(leaders),
+    )
+    LOG.info("batting ranking upsert slug=batting-ranking page_id=%s action=%s",
+             batting_ranking_result.page_id, batting_ranking_result.action)
+    pitching_ranking_result = _upsert_page(
+        slug="pitching-ranking",
+        title=render_pitching_ranking_title(),
+        content_html=render_pitching_ranking_html(leaders, career_leaders, alltime_leaders),
+        parent=cluster_page_id,
+        excerpt=render_pitching_ranking_excerpt(leaders),
+    )
+    LOG.info("pitching ranking upsert slug=pitching-ranking page_id=%s action=%s",
+             pitching_ranking_result.page_id, pitching_ranking_result.action)
 
     # Phase2: 記録室ハブ /data/record(共有部品 alltime_ranking を閾値 filter)。
     try:
@@ -694,6 +1224,32 @@ def publish_phase1(only_slugs: set[str] | None = None) -> dict[str, object]:
     LOG.info("cleanup hitters upsert slug=cleanup-hitters page_id=%s action=%s rows=%d",
              cleanup_result.page_id, cleanup_result.action,
              len(cleanup_data.get("alltime") or []))
+
+    # 先発ローテ一覧 (2007-2026, 試合ごとログ) — parent=cluster → /data/rotation/
+    # data: config/starter_rotation_2007_2026.json (scripts/scrape_starter_rotation.py 生成)
+    rotation_data = load_rotation_data()
+    rotation_result = _upsert_page(
+        slug="rotation",
+        title=render_rotation_title(),
+        content_html=render_rotation_html(rotation_data),
+        parent=cluster_page_id,
+        excerpt=render_rotation_excerpt(rotation_data),
+    )
+    LOG.info("rotation upsert slug=rotation page_id=%s action=%s years=%d",
+             rotation_result.page_id, rotation_result.action,
+             len(rotation_data.get("years") or []))
+
+    # 468 parity: 歴代背番号 page — parent=cluster → /data/jersey-numbers/
+    jersey_rows = fetch_jersey_rows()
+    jersey_result = _upsert_page(
+        slug="jersey-numbers",
+        title=render_jersey_numbers_title(),
+        content_html=render_jersey_numbers_html(jersey_rows),
+        parent=cluster_page_id,
+        excerpt=render_jersey_numbers_excerpt(jersey_rows),
+    )
+    LOG.info("jersey numbers upsert slug=jersey-numbers page_id=%s action=%s rows=%d",
+             jersey_result.page_id, jersey_result.action, len(jersey_rows))
 
     # draft ページ upsert（巨人ドラフト史 hub、user 指定 2026-06-05）— parent=cluster → /data/draft/
     # 全年代整備完了まで本番非公開: ENABLE_DATA_SITE_DRAFT=1 のときだけ upsert。
@@ -760,12 +1316,27 @@ def publish_phase1(only_slugs: set[str] | None = None) -> dict[str, object]:
         ],
         "pillar_count": len(pillar_results),
     }
+    _save_hash_ledger()
     LOG.info("data-site Phase 1.0 publisher done: %s", _json.dumps(summary, ensure_ascii=False))
     return summary
 
 
 def main() -> int:
     argv = sys.argv[1:]
+    if "--only-notable-data" in argv:
+        try:
+            summary = publish_notable_data_only()
+        except Exception as exc:  # noqa: BLE001
+            LOG.exception("publisher fatal: %r", exc)
+            return 1
+        return 0 if summary.get("status") == "ok" else 1
+    if "--retire-legacy-notable" in argv:
+        try:
+            summary = retire_legacy_notable_page()
+        except Exception as exc:  # noqa: BLE001
+            LOG.exception("publisher fatal: %r", exc)
+            return 1
+        return 0 if summary.get("status") == "ok" else 1
     only_slugs: set[str] | None = None
     if "--only" in argv:
         only_slugs = {s for s in argv[argv.index("--only") + 1:] if not s.startswith("--")}

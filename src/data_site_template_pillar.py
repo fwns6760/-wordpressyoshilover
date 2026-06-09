@@ -53,6 +53,7 @@ class PillarPlayerInfo:
     season_rbi: int = 0
     season_runs: int = 0
     season_sb: int = 0
+    season_hr: int = 0
     season_avg: Optional[float] = None
     # 453: NPB 全 12 球団内 順位バッジ [(label, value_str, rank, total), ...]
     metric_ranks: list[tuple] = field(default_factory=list)

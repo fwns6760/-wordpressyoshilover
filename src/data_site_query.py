@@ -549,6 +549,7 @@ class BattingStatsSeason:
     rbi: int = 0
     runs: int = 0
     sb: int = 0
+    hr: int = 0
 
     @property
     def avg(self) -> Optional[float]:
@@ -750,6 +751,24 @@ def fetch_batting_stats_season(player_canonical: str) -> Optional[BattingStatsSe
                 (player_canonical,),
             )
             row = cur.fetchone()
+            # 本塁打は列が無く atbats_json (打席結果 cell) から導出する
+            # (fetch_team_leaders の 本塁打 board と同方式: 「本」 を含む cell を数える)。
+            cur.execute(
+                """
+                SELECT atbats_json FROM batting_logs
+                WHERE REPLACE(player_canonical,' ','') = REPLACE(?,' ','')
+                  AND team_name = '巨人' AND atbats_json IS NOT NULL
+                """,
+                (player_canonical,),
+            )
+            hr = 0
+            for (aj,) in cur.fetchall():
+                if not aj:
+                    continue
+                try:
+                    hr += sum(1 for c in _json.loads(aj) if "本" in str(c))
+                except Exception:  # noqa: BLE001
+                    pass
     except Exception as exc:  # noqa: BLE001
         LOG.warning("fetch_batting_stats_season err player=%s: %r", player_canonical, exc)
         return None
@@ -762,6 +781,7 @@ def fetch_batting_stats_season(player_canonical: str) -> Optional[BattingStatsSe
         rbi=int(row[3] or 0),
         runs=int(row[4] or 0),
         sb=int(row[5] or 0),
+        hr=hr,
     )
 
 
@@ -1116,6 +1136,16 @@ class LeaderEntry:
     display: str  # 表示用("12本" / ".318" 等)
 
 
+@dataclass
+class SurpriseStatEntry:
+    """ファンが驚きやすい上位データ 1 行。"""
+    player: str
+    label: str
+    value: str
+    note: str
+    priority: float = 0.0
+
+
 def fetch_team_leaders(top_n: int = 8) -> dict[str, list[LeaderEntry]]:
     """巨人選手内の各種記録ランキング (Phase B 452、追加source無し)。
 
@@ -1185,6 +1215,115 @@ def fetch_team_leaders(top_n: int = 8) -> dict[str, list[LeaderEntry]]:
         "防御率": top(p.items(), _era, lambda n, d: f'{d["ER"]*9.0/d["IP"]:.2f}' if d["IP"] >= 10 else "", desc=False),
     }
     return {k: v for k, v in out.items() if v}
+
+
+_SURPRISE_METRICS: dict[str, tuple[str, str]] = {
+    "OPS": ("打撃総合力", "OPS"),
+    "OBP": ("出塁力", "出塁率"),
+    "SLG": ("長打力", "長打率"),
+    "ISO": ("純長打力", "ISO"),
+    "wOBA": ("攻撃貢献", "wOBA"),
+    "BABIP": ("打球結果", "BABIP"),
+    "ERA": ("失点抑止", "防御率"),
+    "WHIP": ("走者を出さない力", "WHIP"),
+    "FIP": ("投球内容", "FIP"),
+    "K_per_9": ("奪三振力", "K/9"),
+    "K_BB": ("制球と奪三振", "K/BB"),
+    "UZR_proxy": ("守備貢献", "守備指標"),
+    "FIELDING_PCT": ("堅実守備", "守備率"),
+}
+
+
+def _scope_label(scope: str) -> str:
+    return {
+        "season": "今季",
+        "last_30d": "直近1ヶ月",
+    }.get(scope, scope)
+
+
+def _surprise_min_sample(metric: str, scope: str) -> int:
+    if scope == "season":
+        return 30 if metric not in {"ERA", "WHIP", "FIP", "K_per_9", "K_BB"} else 10
+    return 20 if metric not in {"ERA", "WHIP", "FIP", "K_per_9", "K_BB"} else 5
+
+
+def fetch_surprise_stats(top_n: int = 8) -> list[SurpriseStatEntry]:
+    """ファンが驚きやすいリーグ上位データを抽出する。
+
+    /data/ranking/ 用。直近5試合・連続記録は別扱いにし、ここでは season /
+    last_30d のリーグ上位率を使う。last_30d は長期欠場選手を freshness gate で
+    落とす。
+    """
+    path = _ensure_insight_db_local()
+    if not path:
+        return []
+    metric_names = tuple(_SURPRISE_METRICS.keys())
+    placeholders = ",".join("?" for _ in metric_names)
+    rows: list[tuple] = []
+    try:
+        with sqlite3.connect(path) as conn:
+            cur = conn.cursor()
+            cur.execute(
+                f"""
+                SELECT player_canonical, metric_name, metric_value, sample_size,
+                       league_rank, league_total, scope
+                FROM advanced_metric_snapshots a
+                WHERE team_code='g'
+                  AND scope IN ('season', 'last_30d')
+                  AND metric_name IN ({placeholders})
+                  AND metric_value IS NOT NULL
+                  AND league_rank IS NOT NULL
+                  AND league_total IS NOT NULL
+                  AND snapshot_date = (
+                    SELECT MAX(snapshot_date) FROM advanced_metric_snapshots b
+                    WHERE b.scope = a.scope AND b.metric_name = a.metric_name
+                  )
+                """,
+                metric_names,
+            )
+            rows = cur.fetchall()
+            out: list[SurpriseStatEntry] = []
+            seen: set[tuple[str, str]] = set()
+            for name, metric, value, sample, rank, total, scope in rows:
+                metric = str(metric or "")
+                scope = str(scope or "")
+                try:
+                    rank_i, total_i = int(rank), int(total)
+                    sample_i = int(sample or 0)
+                except (TypeError, ValueError):
+                    continue
+                if rank_i <= 0 or total_i <= 0:
+                    continue
+                if sample_i < _surprise_min_sample(metric, scope):
+                    continue
+                if scope == "last_30d":
+                    table = "pitching_logs" if metric in {"ERA", "WHIP", "FIP", "K_per_9", "K_BB"} else "batting_logs"
+                    if not _player_recent_enough(conn, table, str(name)):
+                        continue
+                rank_pct = rank_i / total_i
+                if rank_i > 10 and rank_pct > 0.20:
+                    continue
+                key = (str(name), metric)
+                if key in seen:
+                    continue
+                seen.add(key)
+                theme, label = _SURPRISE_METRICS[metric]
+                scope_ja = _scope_label(scope)
+                priority = (1.0 - rank_pct) + (0.15 if scope == "season" else 0.0)
+                out.append(
+                    SurpriseStatEntry(
+                        player=str(name),
+                        label=f"{theme}（{label}）",
+                        value=_fmt_sabr(metric, value),
+                        note=f"{scope_ja}・リーグ{rank_i}/{total_i}位・サンプル{sample_i}",
+                        priority=priority,
+                    )
+                )
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("fetch_surprise_stats err: %r", exc)
+        return []
+    out.sort(key=lambda e: (-e.priority, e.player, e.label))
+    return out[:top_n]
 
 
 def _career_int(s) -> Optional[int]:
@@ -1655,6 +1794,117 @@ def _compute_streak(values: list[int]) -> StreakInfo:
     return StreakInfo(active=active, season_max=season_max)
 
 
+def _count_giants_games_after(conn: sqlite3.Connection, game_date: str) -> int:
+    """Count completed Giants games after ``game_date`` using batting log presence.
+
+    Future schedule rows may already exist in ``games``. Counting rows that also have
+    Giants batting logs keeps the freshness gate tied to actually played games.
+    """
+    if not game_date:
+        return 0
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT COUNT(DISTINCT g.game_id)
+        FROM games g
+        JOIN batting_logs b ON b.game_id = g.game_id AND b.team_name = '巨人'
+        WHERE g.game_date > ?
+          AND (g.game_id LIKE '%:g-%' OR g.game_id LIKE '%-g-%')
+        """,
+        (game_date,),
+    )
+    return int(cur.fetchone()[0] or 0)
+
+
+def _streak_with_freshness(
+    conn: sqlite3.Connection,
+    rows: list[tuple[int, str]],
+    missed_game_limit: int = 2,
+) -> StreakInfo:
+    """Compute streak and suppress active streaks after extended absence."""
+    info = _compute_streak([int(v or 0) for v, _date in rows])
+    if not rows or info.active <= 0:
+        return info
+    latest_player_game = str(rows[0][1] or "")[:10]
+    try:
+        missed_games = _count_giants_games_after(conn, latest_player_game)
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("streak freshness gate failed latest=%s: %r", latest_player_game, exc)
+        return info
+    if missed_games > missed_game_limit:
+        return StreakInfo(active=0, season_max=info.season_max)
+    return info
+
+
+def _latest_player_log_date(conn: sqlite3.Connection, table: str, player_canonical: str) -> str:
+    if table not in {"batting_logs", "pitching_logs"}:
+        return ""
+    cur = conn.cursor()
+    cur.execute(
+        f"""
+        SELECT MAX(g.game_date)
+        FROM {table} l
+        JOIN games g ON l.game_id = g.game_id
+        WHERE REPLACE(l.player_canonical,' ','') = REPLACE(?,' ','')
+          AND l.team_name = '巨人'
+        """,
+        (player_canonical,),
+    )
+    return str(cur.fetchone()[0] or "")[:10]
+
+
+def fetch_latest_giants_game_date() -> str:
+    """Return the latest completed Giants game date backed by batting logs."""
+    path = _ensure_insight_db_local()
+    if not path:
+        return ""
+    try:
+        with sqlite3.connect(path) as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT MAX(g.game_date)
+                FROM games g
+                JOIN batting_logs b ON b.game_id = g.game_id AND b.team_name = '巨人'
+                WHERE g.game_id LIKE '%:g-%' OR g.game_id LIKE '%-g-%'
+                """
+            )
+            return str(cur.fetchone()[0] or "")[:10]
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("fetch_latest_giants_game_date err: %r", exc)
+        return ""
+
+
+def fetch_player_latest_game_date(player_canonical: str, table: str = "batting_logs") -> str:
+    """Return the latest game date for a Giants player in batting/pitching logs."""
+    path = _ensure_insight_db_local()
+    if not path:
+        return ""
+    try:
+        with sqlite3.connect(path) as conn:
+            return _latest_player_log_date(conn, table, player_canonical)
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("fetch_player_latest_game_date err player=%s table=%s: %r", player_canonical, table, exc)
+        return ""
+
+
+def _player_recent_enough(
+    conn: sqlite3.Connection,
+    table: str,
+    player_canonical: str,
+    missed_game_limit: int = 2,
+) -> bool:
+    """Return False when a short-window ranking row is stale due to absence."""
+    try:
+        latest = _latest_player_log_date(conn, table, player_canonical)
+        if not latest:
+            return False
+        return _count_giants_games_after(conn, latest) <= missed_game_limit
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("recent-hot freshness gate failed player=%s table=%s: %r", player_canonical, table, exc)
+        return True
+
+
 def fetch_hit_streak(player_canonical: str) -> StreakInfo:
     """連続安打 streak (Phase 1.0b1 metric #3)。 batting_logs.H >= 1 連続."""
     path = _ensure_insight_db_local()
@@ -1665,18 +1915,19 @@ def fetch_hit_streak(player_canonical: str) -> StreakInfo:
             cur = conn.cursor()
             cur.execute(
                 """
-                SELECT b.H FROM batting_logs b
+                SELECT COALESCE(b.H, 0), g.game_date
+                FROM batting_logs b
                 JOIN games g ON b.game_id = g.game_id
                 WHERE REPLACE(b.player_canonical,' ','') = REPLACE(?,' ','') AND b.team_name = '巨人'
                 ORDER BY g.game_date DESC, b.game_id DESC
                 """,
                 (player_canonical,),
             )
-            rows = [int(r[0] or 0) for r in cur.fetchall()]
+            rows = [(int(r[0] or 0), str(r[1] or "")[:10]) for r in cur.fetchall()]
+            return _streak_with_freshness(conn, rows)
     except Exception as exc:  # noqa: BLE001
         LOG.warning("fetch_hit_streak err player=%s: %r", player_canonical, exc)
         return StreakInfo(active=0, season_max=0)
-    return _compute_streak(rows)
 
 
 def fetch_contribution_streak(player_canonical: str) -> StreakInfo:
@@ -1694,7 +1945,7 @@ def fetch_contribution_streak(player_canonical: str) -> StreakInfo:
             cur = conn.cursor()
             cur.execute(
                 """
-                SELECT (COALESCE(b.R, 0) + COALESCE(b.RBI, 0)) as contrib
+                SELECT (COALESCE(b.R, 0) + COALESCE(b.RBI, 0)) as contrib, g.game_date
                 FROM batting_logs b
                 JOIN games g ON b.game_id = g.game_id
                 WHERE REPLACE(b.player_canonical,' ','') = REPLACE(?,' ','') AND b.team_name = '巨人'
@@ -1702,11 +1953,11 @@ def fetch_contribution_streak(player_canonical: str) -> StreakInfo:
                 """,
                 (player_canonical,),
             )
-            rows = [int(r[0] or 0) for r in cur.fetchall()]
+            rows = [(int(r[0] or 0), str(r[1] or "")[:10]) for r in cur.fetchall()]
+            return _streak_with_freshness(conn, rows)
     except Exception as exc:  # noqa: BLE001
         LOG.warning("fetch_contribution_streak err player=%s: %r", player_canonical, exc)
         return StreakInfo(active=0, season_max=0)
-    return _compute_streak(rows)
 
 
 def fetch_pitching_stats_season(player_canonical: str) -> Optional[PitchingStatsSeason]:
@@ -2189,6 +2440,7 @@ def fetch_recent_hot(top_n: int = 3) -> dict:
     try:
         with sqlite3.connect(path) as conn:
             cur = conn.cursor()
+            limit = max(int(top_n) * 4, int(top_n))
             cur.execute(
                 "SELECT player_canonical, metric_value, league_rank, league_total "
                 "FROM advanced_metric_snapshots WHERE team_code='g' AND scope='last_5_games' "
@@ -2196,10 +2448,14 @@ def fetch_recent_hot(top_n: int = 3) -> dict:
                 "AND snapshot_date=(SELECT MAX(snapshot_date) FROM advanced_metric_snapshots "
                 "  WHERE scope='last_5_games' AND metric_name='OPS') "
                 "ORDER BY metric_value DESC LIMIT ?",
-                (int(top_n),),
+                (limit,),
             )
             for n, v, rk, tot in cur.fetchall():
+                if not _player_recent_enough(conn, "batting_logs", str(n)):
+                    continue
                 out["batter"].append((str(n), f"OPS {_fmt_sabr('OPS', v)}", rk, tot))
+                if len(out["batter"]) >= int(top_n):
+                    break
             cur.execute(
                 "SELECT player_canonical, metric_value, league_rank, league_total "
                 "FROM advanced_metric_snapshots WHERE team_code='g' AND scope='last_5_games' "
@@ -2207,14 +2463,18 @@ def fetch_recent_hot(top_n: int = 3) -> dict:
                 "AND snapshot_date=(SELECT MAX(snapshot_date) FROM advanced_metric_snapshots "
                 "  WHERE scope='last_5_games' AND metric_name='ERA') "
                 "ORDER BY metric_value ASC LIMIT ?",
-                (int(top_n),),
+                (limit,),
             )
             for n, v, rk, tot in cur.fetchall():
+                if not _player_recent_enough(conn, "pitching_logs", str(n)):
+                    continue
                 try:
                     disp = f"防御率 {float(v):.2f}"
                 except (TypeError, ValueError):
                     disp = "防御率 -"
                 out["pitcher"].append((str(n), disp, rk, tot))
+                if len(out["pitcher"]) >= int(top_n):
+                    break
     except Exception as exc:  # noqa: BLE001
         LOG.warning("fetch_recent_hot err: %r", exc)
         return {"batter": [], "pitcher": []}
@@ -2526,8 +2786,12 @@ __all__ = [
     "GiantsScheduleRow",
     "fetch_giants_schedule",
     "LeaderEntry",
+    "SurpriseStatEntry",
     "fetch_team_leaders",
+    "fetch_surprise_stats",
     "fetch_team_rankings",
+    "fetch_latest_giants_game_date",
+    "fetch_player_latest_game_date",
     "fetch_hit_streak",
     "fetch_contribution_streak",
     "fetch_pitching_stats_season",

@@ -126,6 +126,49 @@ def _append_x_handle_to_post_text(post_text: str, source_url: str) -> str:
 # 2026-06-09: X-post を gemini-3.5-flash に切替(user 決定: post 量少・無料枠なので 3.5)。
 # 失敗(レート/品質)時は env X_POST_GEMINI_MODEL=gemini-3.1-flash-lite で rebuild 無しで revert。
 _GEMINI_FLASH_LITE_MODEL = _os.environ.get("X_POST_GEMINI_MODEL", "gemini-3.5-flash")
+# 無料枠 fallback (user 2026-06-09): primary(3.5)が無料枠上限/一時不可で落ちたら
+# 自動で 3.1-flash-lite に切替えて投稿を継続する。手動 revert 不要。
+_X_POST_GEMINI_FALLBACK_MODEL = _os.environ.get(
+    "X_POST_GEMINI_FALLBACK_MODEL", "gemini-3.1-flash-lite"
+)
+
+
+def _x_post_model_unavailable(exc: Exception) -> bool:
+    """無料枠の上限(429/quota)や一時不可(503/overload)を検出。fallback 対象。"""
+    s = f"{type(exc).__name__}: {exc}".lower()
+    return any(
+        k in s
+        for k in (
+            "429",
+            "resource_exhausted",
+            "quota",
+            "rate limit",
+            "rate_limit",
+            "503",
+            "unavailable",
+            "exhaust",
+            "overload",
+        )
+    )
+
+
+def _x_post_generate_content(client, *, model, contents, config):
+    """X-post 用 generate_content。primary が無料枠上限/一時不可で落ちたら
+    fallback モデル(既定 gemini-3.1-flash-lite)へ自動切替。それ以外の例外は再送。"""
+    try:
+        return client.models.generate_content(model=model, contents=contents, config=config)
+    except Exception as exc:  # noqa: BLE001 - fallback handling
+        if model != _X_POST_GEMINI_FALLBACK_MODEL and _x_post_model_unavailable(exc):
+            _logging.getLogger("x_post_branding_gen").warning(
+                "x_post_llm_fallback primary=%s -> fallback=%s reason=%r",
+                model,
+                _X_POST_GEMINI_FALLBACK_MODEL,
+                exc,
+            )
+            return client.models.generate_content(
+                model=_X_POST_GEMINI_FALLBACK_MODEL, contents=contents, config=config
+            )
+        raise
 
 
 # spec 382 hard rule の追加 gate (既存 ``_FORBIDDEN_POST_TERMS`` の上に積む)
@@ -1156,7 +1199,8 @@ def build_team_roundup_candidate(
         from google import genai
         client = genai.Client(api_key=gemini_api_key)
         _llm_budget_guard("roundup")
-        response = client.models.generate_content(
+        response = _x_post_generate_content(
+            client,
             model=model_id,
             contents=prompt,
             config={"temperature": temperature},
@@ -1287,8 +1331,8 @@ def build_quote_rt_comment(
         ])
         try:
             _llm_budget_guard("quote_rt")
-            response = client.models.generate_content(
-                model=model_id, contents=prompt, config={"temperature": temperature},
+            response = _x_post_generate_content(
+                client, model=model_id, contents=prompt, config={"temperature": temperature},
             )
             text = (getattr(response, "text", None) or "").strip()
         except Exception as exc:  # noqa: BLE001 - silent skip, caller falls back to template
@@ -1552,7 +1596,8 @@ def build_gemini_branding_candidate(
         from google import genai
         client = genai.Client(api_key=gemini_api_key)
         _llm_budget_guard("gemini_branding")
-        response = client.models.generate_content(
+        response = _x_post_generate_content(
+            client,
             model=model_id,
             contents=prompt,
             config={"temperature": temperature},
@@ -2035,7 +2080,8 @@ def build_x_post_from_article_info(
 
         client = genai.Client(api_key=gemini_api_key)
         _llm_budget_guard("article_info")
-        response = client.models.generate_content(
+        response = _x_post_generate_content(
+            client,
             model=resolved_model_id,
             contents=prompt,
             config={"temperature": temperature},

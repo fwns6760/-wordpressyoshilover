@@ -30,7 +30,9 @@ from wp_client import WPClient
 
 TRUE_VALUES = {"1", "true", "yes", "on"}
 DEFAULT_LOW_COST_AI_CATEGORIES = {"試合速報", "選手情報", "首脳陣"}
-GEMINI_FLASH_MODEL = "gemini-2.5-flash"
+# 2026-06-09: X-post lane を gemini-3.5-flash に統一(user 決定、無料枠・post 量少)。
+# revert は env X_POST_GEMINI_MODEL=gemini-3.1-flash-lite で rebuild 無し。無印 gemini-3.1-flash は 404。
+GEMINI_FLASH_MODEL = os.environ.get("X_POST_GEMINI_MODEL", "gemini-3.5-flash")
 GEMINI_FLASH_THINKING_BUDGET = 0
 X_POST_AI_ALLOWED_MODES = {"auto", "grok", "gemini", "none"}
 X_POST_GEMINI_TIMEOUT_SECONDS = 8

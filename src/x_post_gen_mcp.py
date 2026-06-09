@@ -34,7 +34,8 @@ DEFAULT_QUERIES: tuple[str, ...] = (
 
 # Gemini API model id (2026-05-22 swap: gemma-4-31b-it → gemini-3.1-flash-lite、
 # 両方 free tier、 paid 切替禁止 lock 維持)。 定数名は履歴互換のため温存。
-GEMMA_MODEL_ID = "gemini-3.1-flash-lite"
+# 2026-06-09: 既定 gemini-3.5-flash。revert は env X_POST_GEMINI_MODEL=gemini-3.1-flash-lite
+GEMMA_MODEL_ID = os.environ.get("X_POST_GEMINI_MODEL", "gemini-3.5-flash")
 
 
 SYSTEM_PROMPT = """あなたはヨシラバーという巨人ファン向けメディアの編集者です。

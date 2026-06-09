@@ -24,6 +24,7 @@ from __future__ import annotations
 import hashlib as _hashlib
 import json as _json
 import logging as _logging
+import os as _os
 import re as _re
 from typing import Any, Optional
 
@@ -122,7 +123,9 @@ def _append_x_handle_to_post_text(post_text: str, source_url: str) -> str:
     if len(combined) > _X_POST_CHAR_LIMIT:
         return post_text
     return combined
-_GEMINI_FLASH_LITE_MODEL = "gemini-3.1-flash-lite"
+# 2026-06-09: X-post を gemini-3.5-flash に切替(user 決定: post 量少・無料枠なので 3.5)。
+# 失敗(レート/品質)時は env X_POST_GEMINI_MODEL=gemini-3.1-flash-lite で rebuild 無しで revert。
+_GEMINI_FLASH_LITE_MODEL = _os.environ.get("X_POST_GEMINI_MODEL", "gemini-3.5-flash")
 
 
 # spec 382 hard rule の追加 gate (既存 ``_FORBIDDEN_POST_TERMS`` の上に積む)

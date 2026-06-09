@@ -147,7 +147,7 @@ def _has_hook(c: "Candidate") -> bool:
 
 
 # ── Flash Lite polish(安価LLM。数字はコードロック、rate数字の捏造は却下)──
-_GEMINI_MODEL = os.environ.get("DAILY_X_CANDIDATES_GEMINI_MODEL", "gemini-3.1-flash-lite")
+_GEMINI_MODEL = os.environ.get("DAILY_X_CANDIDATES_GEMINI_MODEL", "gemini-3.5-flash")
 # rate 数字: 「.412」(先頭0なし野球表記)も「1.65」「0.412」も捕捉
 _RATE_RE = re.compile(r"\d*\.\d+")
 

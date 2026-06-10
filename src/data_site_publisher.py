@@ -516,6 +516,12 @@ def _build_pillar_info(player_name: str) -> PillarPlayerInfo | None:
             ob_profile=ob,
             # OB の年度別フル表 (ベンチマーク由来、 slug 引き)。 無ければ None で安全。
             npb_career=_ob_yearly_payload(slug),
+            # prosports 人物記事の相互リンクは OB (原辰徳/桑田 等) こそ多い
+            prosports_links=[
+                (e.get("url"), e.get("title"))
+                for e in (_prosports_link_map().get(slug) or [])
+                if e.get("url") and e.get("title")
+            ],
         )
     roster = load_roster_player(player_name)
     if not roster:

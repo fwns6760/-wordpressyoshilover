@@ -92,6 +92,24 @@ def _search_analytics(token: str, start: str, end: str, data_only: bool) -> dict
     return {"clicks": round(rows[0].get("clicks", 0)), "impressions": round(rows[0].get("impressions", 0))}
 
 
+def _top_queries(token: str, start: str, end: str, data_only: bool, limit: int = 10) -> list[tuple[str, int, int, float]]:
+    """表示クエリ Top N [(query, impressions, clicks, position), ...]。"""
+    body: dict = {"startDate": start, "endDate": end, "dimensions": ["query"], "rowLimit": limit}
+    if data_only:
+        body["dimensionFilterGroups"] = [{
+            "filters": [{"dimension": "page", "operator": "contains", "expression": "/data"}]
+        }]
+    site = requests.utils.quote(SITE_URL, safe="")
+    r = requests.post(
+        f"{API_BASE}/webmasters/v3/sites/{site}/searchAnalytics/query",
+        headers=_headers(token), json=body, timeout=60,
+    )
+    if not r.ok:
+        return []
+    rows = r.json().get("rows") or []
+    return [(x["keys"][0], round(x.get("impressions", 0)), round(x.get("clicks", 0)), x.get("position", 0.0)) for x in rows]
+
+
 def _sample_data_urls(n: int) -> list[str]:
     html = requests.get(PAGE_SITEMAP, timeout=30).text
     urls = re.findall(r"<loc>(https://yoshilover\.com/data/[^<]+)</loc>", html)
@@ -174,6 +192,16 @@ def build_report() -> tuple[str, str]:
     lines += ["", "■ 主要 hub の状態:"]
     for u, s in hub_states:
         lines.append(f"    {u.replace('https://yoshilover.com/', '/')}: {s}")
+    queries = _top_queries(token, f(start1), f(end1), data_only=False)
+    if queries:
+        lines += ["", "■ 表示クエリ Top10 (サイト全体 / 直近28日):"]
+        for q, imp, clk, pos in queries:
+            lines.append(f"    {q}: 表示{imp} / クリック{clk} / 平均順位{pos:.0f}")
+    dqueries = _top_queries(token, f(start1), f(end1), data_only=True)
+    if dqueries:
+        lines += ["", "■ /data 配下の表示クエリ Top10:"]
+        for q, imp, clk, pos in dqueries:
+            lines.append(f"    {q}: 表示{imp} / クリック{clk} / 平均順位{pos:.0f}")
     lines += [
         "",
         "(毎月1日 09:00 JST 自動送信 / gsc-monthly-report job)",

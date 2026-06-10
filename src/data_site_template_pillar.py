@@ -1311,7 +1311,39 @@ def render_pillar_excerpt(player: PillarPlayerInfo) -> str:
     pos = player.position or "選手"
     is_ob = player.role == "ob" or player.ob_profile is not None
     if is_ob:
-        return f"{name}（元巨人）の通算成績とプロフィール。現役時代の記録や関連ニュースをまとめた巨人選手データ。"
+        # ~800 OB ページが同一定型文だと重複シグナルになるため、台帳の事実
+        # (在籍年 / 通算成績 / 代表実績) からページ固有の 1 文を組み立てる。
+        ob = player.ob_profile or {}
+        years = str(ob.get("years") or "").strip()
+        npb = ob.get("npb") or {}
+        parts = []
+        if ob.get("type") == "pitcher":
+            if npb.get("games"):
+                parts.append(f'通算{npb["games"]}登板')
+            if npb.get("w"):
+                parts.append(f'{npb["w"]}勝')
+            if npb.get("era"):
+                parts.append(f'防御率{npb["era"]}')
+            if npb.get("k"):
+                parts.append(f'{npb["k"]}奪三振')
+        else:
+            if npb.get("games"):
+                parts.append(f'通算{npb["games"]}試合')
+            if npb.get("avg"):
+                parts.append(f'打率{npb["avg"]}')
+            if npb.get("hits"):
+                parts.append(f'{npb["hits"]}安打')
+            if npb.get("hr"):
+                parts.append(f'{npb["hr"]}本塁打')
+        honor = str((ob.get("honors") or [""])[0]).strip()
+        kind = "投手" if ob.get("type") == "pitcher" else "野手"
+        lead = f"{name}（元巨人・{kind}" + (f"、巨人在籍{years}" if years else "") + "）の選手データ。"
+        if parts:
+            lead += "・".join(parts) + "。"
+        if honor:
+            lead += f"{honor}。"
+        lead += "年度別成績と関連ニュースをまとめた巨人OBデータページ。"
+        return lead
     if player.role in ("manager", "coach"):
         return f"{name}（巨人{pos}）のプロフィールと現役時代の通算成績。関連ニュースもまとめた巨人選手データ。"
     if "投手" in pos and player.has_pitching_stats:

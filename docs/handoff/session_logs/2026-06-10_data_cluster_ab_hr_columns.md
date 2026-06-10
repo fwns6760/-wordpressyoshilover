@@ -16,3 +16,5 @@
 14:25 JST | done | OB lead固有化 全ページLIVE | abaa5759 / vpnx8 | shinozuka/cromartie/horiuchi 固有lead verify済
 14:25 JST | done | 301元スキャン結論 | - | 公開2766投稿中prosportsへの301=0件、301元は元々post-sitemap非掲載 → 専用sitemap不要
 14:25 JST | note | 本日SEO一式: AB/HR列→foreign-players hub→prosports相互リンク→301一掃→sitemap投稿除外→OB lead固有化。残=サチコCoverage月1定点、記事noindex解除判断(将来)、岡本和真ページ更新経路(別ticket)
+15:43 JST | done | GSC月次レポート自動化 LIVE | af66311e+c9e568ef / job gsc-monthly-report | 初回メール sent (fsslp 19分=timeout近い)、scheduler 毎月1日09:00 JST、v2(進捗log+timeout30s) deploy済み、重複実行l8jssはcancel
+15:43 JST | note | 認証=Secret gsc-adc-oauth (user OAuth webmasters.readonly)。GSC user追加は「メールアドレスが見つかりません」で断念しOAuth方式に切替

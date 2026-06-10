@@ -11,7 +11,7 @@ import json as _json
 import os as _os
 
 SITE_BASE = "https://yoshilover.com"
-CLUSTER_URL = "https://yoshilover.com/data/"
+CLUSTER_URL = "https://yoshilover.com/data"
 
 
 def _esc(t: str) -> str:
@@ -124,7 +124,7 @@ def _legend_card(e: dict) -> str:
     else:
         key = f'打率{_esc(str(npb.get("avg", "-")))}・{npb.get("hr", "-")}本'
     honor = (e.get("honors") or [""])[0]
-    href = f'{CLUSTER_URL}{_esc(slug)}/' if slug else "#"
+    href = f'{CLUSTER_URL}/{_esc(slug)}' if slug else "#"
     return (
         f'<a href="{href}" style="display:block;text-decoration:none;color:inherit;'
         'border:1px solid #eee;border-radius:8px;padding:10px 12px;margin:0 0 8px;background:#fff;">'
@@ -167,7 +167,7 @@ def _legend_table(entries: list, is_pitcher: bool) -> str:
     rows = []
     for e in entries:
         slug = e.get("slug", "")
-        href = f'{CLUSTER_URL}{_esc(slug)}/' if slug else "#"
+        href = f'{CLUSTER_URL}/{_esc(slug)}' if slug else "#"
         tds = "".join(f'<td style="padding:4px 6px;text-align:right;">{_stat_cell(e, k)}</td>' for _, k in cols)
         rows.append(
             f'<tr><td style="padding:4px 8px;text-align:left;position:sticky;left:0;background:#fff;">'

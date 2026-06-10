@@ -7,7 +7,7 @@ flow:
    - WP tag id 解決 (person_tag_router 経由)
    - 該当 tag の publish 記事 を全件 fetch (paginate)
    - 各記事 content の末尾 (出典 block 直前 OR </body> 相当位置) に
-     `<aside class="ys-data-backlink">関連: <a href="/data/{slug}/">{player} の データを見る</a></aside>`
+     `<aside class="ys-data-backlink">関連: <a href="/data/{slug}">{player} の データを見る</a></aside>`
      を追加 (既存に同 aside あれば skip = idempotent)
    - WP REST POST /posts/{id} で content 上書き
 3. DATA_SITE_BACKLINK_DRY_RUN=1 で 書き込み skip (count + sample のみ)
@@ -51,7 +51,7 @@ _BACKLINK_ASIDE_TEMPLATE = (
     'style="background:#fff8e1;border-left:3px solid #ff6f00;'
     'padding:14px 16px;margin:24px 0 0;border-radius:6px;font-size:14px;">'
     '<strong style="color:#5d4037;">関連 player データ:</strong> '
-    '<a href="https://yoshilover.com/data/{slug}/" '
+    '<a href="https://yoshilover.com/data/{slug}" '
     'style="color:#1976d2;text-decoration:none;font-weight:600;">'
     '🐰 {name} の data page を見る →</a>'
     '</aside>'

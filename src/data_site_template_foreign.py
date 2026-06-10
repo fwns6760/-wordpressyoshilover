@@ -20,7 +20,7 @@ import re as _re
 from src.data_site_internal_link import roster_moves_nav
 
 SITE_BASE = "https://yoshilover.com"
-CLUSTER_URL = f"{SITE_BASE}/data/"
+CLUSTER_URL = f"{SITE_BASE}/data"
 PAGE_SLUG = "foreign-players"
 
 _DATA_PATH = _os.path.join(_os.path.dirname(__file__), "..", "config", "giants_foreign_players.json")
@@ -79,7 +79,7 @@ def _npb_summary(e: dict) -> str:
 
 def _player_link(name: str, slug: str) -> str:
     if slug:
-        return (f'<a href="/data/{_esc(slug)}/" '
+        return (f'<a href="/data/{_esc(slug)}" '
                 f'style="color:#1976d2;text-decoration:none;font-weight:600;">{_esc(name)}</a>')
     return f'<span style="font-weight:600;color:#5d4037;">{_esc(name)}</span>'
 
@@ -337,7 +337,7 @@ def _breadcrumb_jsonld() -> str:
             {"@type": "ListItem", "position": 1, "name": "ホーム", "item": f"{SITE_BASE}/"},
             {"@type": "ListItem", "position": 2, "name": "巨人選手データ", "item": CLUSTER_URL},
             {"@type": "ListItem", "position": 3, "name": "歴代外国人選手",
-             "item": f"{SITE_BASE}/data/{PAGE_SLUG}/"},
+             "item": f"{SITE_BASE}/data/{PAGE_SLUG}"},
         ],
     }
     return ('<script type="application/ld+json">'
@@ -364,7 +364,7 @@ def render_foreign_players_html(data: dict | None = None) -> str:
     data = data if data is not None else load_foreign_players_data()
     nav = ('<nav class="ys-breadcrumb" style="font-size:12px;color:#666;margin:0 0 12px;">'
            f'<a href="/" style="color:#1976d2;text-decoration:none;">ホーム</a> › '
-           f'<a href="/data/" style="color:#1976d2;text-decoration:none;">巨人選手データ</a> › '
+           f'<a href="/data" style="color:#1976d2;text-decoration:none;">巨人選手データ</a> › '
            '歴代外国人選手</nav>')
     return (
         nav

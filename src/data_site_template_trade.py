@@ -17,7 +17,7 @@ import os as _os
 from src.data_site_internal_link import linkify, roster_moves_nav, breadcrumb_jsonld
 
 SITE_BASE = "https://yoshilover.com"
-CLUSTER_URL = "https://yoshilover.com/data/"
+CLUSTER_URL = "https://yoshilover.com/data"
 
 _DATA_PATH = _os.path.join(_os.path.dirname(__file__), "..", "config", "giants_trades.json")
 

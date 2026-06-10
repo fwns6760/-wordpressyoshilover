@@ -10,7 +10,12 @@ import unittest
 
 from src.data_site_query import (
     giants_venue_from_game_id,
+    fetch_contribution_streak,
+    fetch_hit_streak,
+    fetch_latest_giants_game_date,
+    fetch_player_latest_game_date,
     fetch_inning_split_stats,
+    fetch_surprise_stats,
     fetch_weekday_split_stats,
     fetch_month_split_stats,
     fetch_interleague_split_stats,
@@ -114,6 +119,133 @@ class FetchInningSplitStatsTests(unittest.TestCase):
 
     def test_unknown_player_empty(self) -> None:
         self.assertEqual(fetch_inning_split_stats("存在しない選手"), [])
+
+
+class FetchStreakFreshnessTests(unittest.TestCase):
+    """連続記録は長期欠場選手を active 扱いしない。"""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        self.tmp.close()
+        conn = sqlite3.connect(self.tmp.name)
+        conn.execute("CREATE TABLE games(game_id TEXT, game_date TEXT)")
+        conn.execute(
+            "CREATE TABLE batting_logs("
+            "game_id TEXT, player_canonical TEXT, team_name TEXT, H INT, R INT, RBI INT)"
+        )
+        games = [
+            ("2026-05-20:g-t-01", "2026-05-20"),
+            ("2026-05-21:g-t-02", "2026-05-21"),
+            ("2026-05-22:g-t-03", "2026-05-22"),
+            ("2026-05-23:g-t-04", "2026-05-23"),
+            ("2026-05-24:g-t-05", "2026-05-24"),
+            ("2026-05-25:g-t-06", "2026-05-25"),
+        ]
+        conn.executemany("INSERT INTO games VALUES (?, ?)", games)
+        for gid, _date in games:
+            conn.execute(
+                "INSERT INTO batting_logs VALUES (?, ?, ?, ?, ?, ?)",
+                (gid, "吉川尚輝", "巨人", 1, 0, 0),
+            )
+        for gid in ["2026-05-20:g-t-01", "2026-05-21:g-t-02", "2026-05-22:g-t-03"]:
+            conn.execute(
+                "INSERT INTO batting_logs VALUES (?, ?, ?, ?, ?, ?)",
+                (gid, "平山 功太", "巨人", 1, 1, 0),
+            )
+        conn.commit()
+        conn.close()
+        self._prev = os.environ.get("INSIGHT_DB_PATH")
+        os.environ["INSIGHT_DB_PATH"] = self.tmp.name
+
+    def tearDown(self) -> None:
+        if self._prev is None:
+            os.environ.pop("INSIGHT_DB_PATH", None)
+        else:
+            os.environ["INSIGHT_DB_PATH"] = self._prev
+        os.unlink(self.tmp.name)
+
+    def test_hit_streak_extended_absence_is_not_active(self) -> None:
+        streak = fetch_hit_streak("平山 功太")
+        self.assertEqual(streak.active, 0)
+        self.assertEqual(streak.season_max, 3)
+
+    def test_contribution_streak_extended_absence_is_not_active(self) -> None:
+        streak = fetch_contribution_streak("平山 功太")
+        self.assertEqual(streak.active, 0)
+        self.assertEqual(streak.season_max, 3)
+
+    def test_recently_playing_player_keeps_active_streak(self) -> None:
+        streak = fetch_hit_streak("吉川尚輝")
+        self.assertEqual(streak.active, 6)
+        self.assertEqual(streak.season_max, 6)
+
+    def test_latest_game_dates_are_log_backed(self) -> None:
+        self.assertEqual(fetch_latest_giants_game_date(), "2026-05-25")
+        self.assertEqual(fetch_player_latest_game_date("吉川尚輝"), "2026-05-25")
+        self.assertEqual(fetch_player_latest_game_date("平山 功太"), "2026-05-22")
+
+
+class FetchSurpriseStatsTests(unittest.TestCase):
+    """驚きデータは短期欠場ノイズを除外し、season/last_30d から出す。"""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        self.tmp.close()
+        conn = sqlite3.connect(self.tmp.name)
+        conn.execute("CREATE TABLE games(game_id TEXT, game_date TEXT)")
+        conn.execute(
+            "CREATE TABLE batting_logs("
+            "game_id TEXT, player_canonical TEXT, team_name TEXT, H INT, R INT, RBI INT)"
+        )
+        conn.execute(
+            "CREATE TABLE pitching_logs(game_id TEXT, player_canonical TEXT, team_name TEXT)"
+        )
+        conn.execute(
+            "CREATE TABLE advanced_metric_snapshots("
+            "snapshot_date TEXT, player_canonical TEXT, team_code TEXT, scope TEXT, "
+            "metric_name TEXT, metric_value REAL, sample_size INT, league_rank INT, league_total INT)"
+        )
+        games = [
+            ("2026-05-20:g-t-01", "2026-05-20"),
+            ("2026-05-21:g-t-02", "2026-05-21"),
+            ("2026-05-22:g-t-03", "2026-05-22"),
+            ("2026-05-23:g-t-04", "2026-05-23"),
+            ("2026-05-24:g-t-05", "2026-05-24"),
+            ("2026-05-25:g-t-06", "2026-05-25"),
+        ]
+        conn.executemany("INSERT INTO games VALUES (?, ?)", games)
+        for gid, _date in games:
+            conn.execute(
+                "INSERT INTO batting_logs VALUES (?, ?, ?, ?, ?, ?)",
+                (gid, "吉川尚輝", "巨人", 1, 0, 0),
+            )
+        conn.execute("INSERT INTO batting_logs VALUES (?, ?, ?, ?, ?, ?)", ("2026-05-25:g-t-06", "岸田 行倫", "巨人", 1, 0, 0))
+        conn.execute("INSERT INTO batting_logs VALUES (?, ?, ?, ?, ?, ?)", ("2026-05-22:g-t-03", "平山 功太", "巨人", 1, 0, 0))
+        rows = [
+            ("2026-05-25", "吉川尚輝", "g", "season", "OPS", 0.890, 120, 4, 80),
+            ("2026-05-25", "岸田 行倫", "g", "last_30d", "OBP", 0.410, 25, 3, 80),
+            ("2026-05-25", "平山 功太", "g", "last_30d", "OPS", 0.950, 30, 1, 80),
+        ]
+        conn.executemany("INSERT INTO advanced_metric_snapshots VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", rows)
+        conn.commit()
+        conn.close()
+        self._prev = os.environ.get("INSIGHT_DB_PATH")
+        os.environ["INSIGHT_DB_PATH"] = self.tmp.name
+
+    def tearDown(self) -> None:
+        if self._prev is None:
+            os.environ.pop("INSIGHT_DB_PATH", None)
+        else:
+            os.environ["INSIGHT_DB_PATH"] = self._prev
+        os.unlink(self.tmp.name)
+
+    def test_surprise_stats_exclude_stale_last_30d_player(self) -> None:
+        rows = fetch_surprise_stats(top_n=5)
+        names = [r.player for r in rows]
+        self.assertIn("吉川尚輝", names)
+        self.assertIn("岸田 行倫", names)
+        self.assertNotIn("平山 功太", names)
+        self.assertTrue(any("リーグ" in r.note for r in rows))
 
 
 if __name__ == "__main__":

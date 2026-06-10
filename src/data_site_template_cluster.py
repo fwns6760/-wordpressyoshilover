@@ -15,8 +15,8 @@ from dataclasses import dataclass
 
 
 SITE_BASE = "https://yoshilover.com"
-CLUSTER_URL = f"{SITE_BASE}/data/"
-NOTABLE_DATA_PATH = "/data/notable/"
+CLUSTER_URL = f"{SITE_BASE}/data"
+NOTABLE_DATA_PATH = "/data/notable"
 NOTABLE_DATA_URL = f"{SITE_BASE}{NOTABLE_DATA_PATH}"
 
 
@@ -78,7 +78,7 @@ def _build_search_html() -> str:
         'var box=document.getElementById("ys-player-search");if(!box)return;'
         'var empty=document.getElementById("ys-search-empty");'
         'var links=[].slice.call(document.querySelectorAll('
-        '\'section[class*="ys-cluster"][class*="-table"] a[href^="/data/"]\'));'
+        '\'section[class*="ys-cluster"][class*="-table"] a[href^="/data"]\'));'
         'var items=links.map(function(a){'
         'var row=a.closest("tr")||a;'
         'return{el:row,nm:(row.textContent||"").replace(/\\s+/g,"")};});'
@@ -104,29 +104,29 @@ def _build_intro_html() -> str:
         '各選手の打率・防御率・直近 5 試合・関連記事を、 毎朝 6 時に最新化しています。'
         '</p>'
         '<p style="font-size:13px;margin:10px 0 0;">'
-        '<a href="/data/notable/" style="color:#e25400;font-weight:600;text-decoration:none;">📈 注目データ</a>'
+        '<a href="/data/notable" style="color:#e25400;font-weight:600;text-decoration:none;">📈 注目データ</a>'
         '　/　'
-        '<a href="/data/batting-ranking/" style="color:#e25400;font-weight:600;text-decoration:none;">🏆 打撃ランキング</a>'
+        '<a href="/data/batting-ranking" style="color:#e25400;font-weight:600;text-decoration:none;">🏆 打撃ランキング</a>'
         '　/　'
-        '<a href="/data/pitching-ranking/" style="color:#e25400;font-weight:600;text-decoration:none;">⚾ 投手ランキング</a>'
+        '<a href="/data/pitching-ranking" style="color:#e25400;font-weight:600;text-decoration:none;">⚾ 投手ランキング</a>'
         '　/　'
-        '<a href="/data/team/" style="color:#e25400;font-weight:600;text-decoration:none;">📊 チーム成績・順位</a>'
+        '<a href="/data/team" style="color:#e25400;font-weight:600;text-decoration:none;">📊 チーム成績・順位</a>'
         '　/　'
-        '<a href="/data/farm/" style="color:#e25400;font-weight:600;text-decoration:none;">🌱 2軍ファーム</a>'
+        '<a href="/data/farm" style="color:#e25400;font-weight:600;text-decoration:none;">🌱 2軍ファーム</a>'
         '　/　'
-        '<a href="/data/record/" style="color:#e25400;font-weight:600;text-decoration:none;">🏛 記録室</a>'
+        '<a href="/data/record" style="color:#e25400;font-weight:600;text-decoration:none;">🏛 記録室</a>'
         '　/　'
-        '<a href="/data/cleanup-hitters/" style="color:#e25400;font-weight:600;text-decoration:none;">4番打者</a>'
+        '<a href="/data/cleanup-hitters" style="color:#e25400;font-weight:600;text-decoration:none;">4番打者</a>'
         '　/　'
-        '<a href="/data/jersey-numbers/" style="color:#e25400;font-weight:600;text-decoration:none;">🔢 歴代背番号</a>'
+        '<a href="/data/jersey-numbers" style="color:#e25400;font-weight:600;text-decoration:none;">🔢 歴代背番号</a>'
         '　/　'
-        '<a href="/data/draft/" style="color:#e25400;font-weight:600;text-decoration:none;">📋 歴代ドラフト</a>'
+        '<a href="/data/draft" style="color:#e25400;font-weight:600;text-decoration:none;">📋 歴代ドラフト</a>'
         '　/　'
-        '<a href="/data/fa/" style="color:#e25400;font-weight:600;text-decoration:none;">🤝 FA選手</a>'
+        '<a href="/data/fa" style="color:#e25400;font-weight:600;text-decoration:none;">🤝 FA選手</a>'
         '　/　'
-        '<a href="/data/trade/" style="color:#e25400;font-weight:600;text-decoration:none;">🔄 トレード/移籍</a>'
+        '<a href="/data/trade" style="color:#e25400;font-weight:600;text-decoration:none;">🔄 トレード/移籍</a>'
         '　/　'
-        '<a href="/data/foreign-players/" style="color:#e25400;font-weight:600;text-decoration:none;">🌍 歴代外国人</a>'
+        '<a href="/data/foreign-players" style="color:#e25400;font-weight:600;text-decoration:none;">🌍 歴代外国人</a>'
         '</p></section>'
     )
 
@@ -182,7 +182,7 @@ def _build_batter_group_table_html(players: list[ClusterPlayerEntry], group: str
     sorted_players = sorted(members, key=_jersey_sort_key)
     rows = []
     for p in sorted_players:
-        pillar_url = f"/data/{p.slug}/"
+        pillar_url = f"/data/{p.slug}"
         jersey = p.jersey_number or "-"
         avg = _fmt_avg(p.season_avg)
         games = str(p.season_games) if p.has_stats else "-"
@@ -234,7 +234,7 @@ def _build_pitcher_table_html(players: list[ClusterPlayerEntry]) -> str:
     sorted_players = sorted(pitchers, key=_jersey_sort_key)
     rows = []
     for p in sorted_players:
-        pillar_url = f"/data/{p.slug}/"
+        pillar_url = f"/data/{p.slug}"
         jersey = p.jersey_number or "-"
         games = str(p.pitch_games) if p.has_pitching_stats else "-"
         wl = f"{p.pitch_wins}-{p.pitch_losses}" if p.has_pitching_stats else "-"
@@ -297,7 +297,7 @@ def _build_staff_table_html(players: list[ClusterPlayerEntry]) -> str:
         )
         rows = []
         for p in members_sorted:
-            pillar_url = f"/data/{p.slug}/"
+            pillar_url = f"/data/{p.slug}"
             jersey = p.jersey_number or "-"
             pos = p.position or ("監督" if (p.role or "") == "manager" else "コーチ")
             rows.append(
@@ -372,7 +372,7 @@ def _build_ob_table_html(ob_entries: list[tuple[str, str]]) -> str:
         f'<h2 style="font-size:16px;margin:0 0 6px;">歴代在籍選手名鑑 ({n} 名)</h2>'
         '<p style="font-size:12px;color:#666;margin:0 0 12px;">読売ジャイアンツ歴代の名選手を50音で一覧。 '
         '打者は打率・出塁率・OPS、 投手は防御率・WHIP まで通算成績を掲載しています。</p>'
-        '<a href="/data/legends/" '
+        '<a href="/data/legends" '
         'style="display:block;text-align:center;padding:14px;background:#e65100;color:#fff;'
         'border-radius:6px;text-decoration:none;font-size:15px;font-weight:700;">'
         f'🎖 歴代在籍選手 通算成績名鑑(50音)で {n} 名を見る →</a>'
@@ -439,7 +439,7 @@ def _build_jsonld(players: list[ClusterPlayerEntry]) -> str:
                     "item": {
                         "@type": "SportsPlayer",
                         "name": p.name,
-                        "url": f"{SITE_BASE}/data/{p.slug}/",
+                        "url": f"{SITE_BASE}/data/{p.slug}",
                         "memberOf": {
                             "@type": "SportsTeam",
                             "name": "読売ジャイアンツ",
@@ -474,7 +474,7 @@ def _build_hot_html(hot: dict | None) -> str:
 
     def _line(name, disp, rk, tot):
         try:
-            href = f"/data/{player_slug(name)}/"
+            href = f"/data/{player_slug(name)}"
         except Exception:  # noqa: BLE001
             href = ""
         nm = (f'<a href="{href}" style="color:#1a1a1a;text-decoration:none;font-weight:600;">{_esc(name)}</a>'
@@ -513,7 +513,7 @@ def _build_notable_data_cards_html(items: list[dict], *, include_player_links: b
         if include_player_links and player and slug:
             player_html = (
                 'この記録の選手: '
-                f'<a href="/data/{_esc(slug)}/" style="color:#1976d2;font-weight:700;text-decoration:none;">'
+                f'<a href="/data/{_esc(slug)}" style="color:#1976d2;font-weight:700;text-decoration:none;">'
                 f'{_esc(player)}</a>'
             )
         rows.append(
@@ -590,7 +590,7 @@ def render_notable_data_page_html(notable_data: dict | None) -> str:
         f'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;">'
         f'{cards}</div>{empty}'
         '<p style="font-size:12px;color:#777;line-height:1.6;margin:12px 0 0;">'
-        '<a href="/data/" style="color:#1976d2;font-weight:700;text-decoration:none;">巨人選手データへ戻る</a>'
+        '<a href="/data" style="color:#1976d2;font-weight:700;text-decoration:none;">巨人選手データへ戻る</a>'
         '</p>'
         f'{_notable_schema(notable_data)}'
         '</section>'

@@ -114,7 +114,7 @@ class PillarPlayerInfo:
     pitch_interleague_split_stats: list[tuple[str, int, float, int, int, Optional[float]]] = field(default_factory=list)
 
 
-CLUSTER_URL = "https://yoshilover.com/data/"
+CLUSTER_URL = "https://yoshilover.com/data"
 SITE_BASE = "https://yoshilover.com"
 
 
@@ -949,7 +949,7 @@ def _build_related_players_html(player: PillarPlayerInfo) -> str:
     pos = (player.position or "").strip()
     heading = f"同じ{pos}の選手" if pos else "関連選手"
     chips = "\n".join(
-        f'<a href="/data/{_esc(slug)}/" '
+        f'<a href="/data/{_esc(slug)}" '
         'style="display:inline-block;margin:4px 6px 4px 0;padding:6px 12px;background:#fff8e1;'
         'border:1px solid #ffe082;border-radius:16px;color:#5d4037;text-decoration:none;font-size:13px;">'
         f'{_esc(name)}</a>'
@@ -977,7 +977,7 @@ def _build_back_link_html() -> str:
 
 def _build_jsonld(player: PillarPlayerInfo) -> str:
     """SportsPlayer + Person + BreadcrumbList を組み合わせ JSON-LD 出力。"""
-    canonical = f"{SITE_BASE}/data/{player.slug}/"
+    canonical = f"{SITE_BASE}/data/{player.slug}"
     sports_player = {
         "@context": "https://schema.org",
         "@type": "SportsPlayer",
@@ -1188,9 +1188,9 @@ def _build_datasite_nav_html() -> str:
     return (
         '<div class="ys-card" style="text-align:center;font-size:13px;">'
         '<span style="color:#888;">データサイト内: </span>'
-        '<a href="/data/" style="color:#e25400;font-weight:600;text-decoration:none;">全選手一覧</a>　/　'
-        '<a href="/data/ranking/" style="color:#e25400;font-weight:600;text-decoration:none;">選手ランキング</a>　/　'
-        '<a href="/data/team/" style="color:#e25400;font-weight:600;text-decoration:none;">チーム成績</a>'
+        '<a href="/data" style="color:#e25400;font-weight:600;text-decoration:none;">全選手一覧</a>　/　'
+        '<a href="/data/ranking" style="color:#e25400;font-weight:600;text-decoration:none;">選手ランキング</a>　/　'
+        '<a href="/data/team" style="color:#e25400;font-weight:600;text-decoration:none;">チーム成績</a>'
         '</div>'
     )
 

@@ -806,7 +806,7 @@ _NOTABLE_SECTION_RE = re.compile(
     re.IGNORECASE,
 )
 _LEGACY_NOTABLE_HREF_RE = re.compile(
-    r'href=(["\'])(?:https?://(?:www\.)?yoshilover\.com)?/data/#ys-notable-data\1|href=(["\'])#ys-notable-data\2',
+    r'href=(["\'])(?:https?://(?:www\.)?yoshilover\.com)?/data/?#ys-notable-data\1|href=(["\'])#ys-notable-data\2',
     re.IGNORECASE,
 )
 
@@ -814,7 +814,7 @@ _LEGACY_NOTABLE_HREF_RE = re.compile(
 def _replace_legacy_notable_data_links(content_html: str) -> str:
     """Point old in-page notable links at the dedicated notable-data page."""
     updated = _LEGACY_NOTABLE_HREF_RE.sub(
-        lambda match: f'href={match.group(1) or match.group(2)}/data/notable/{match.group(1) or match.group(2)}',
+        lambda match: f'href={match.group(1) or match.group(2)}/data/notable{match.group(1) or match.group(2)}',
         content_html,
     )
     return updated.replace("驚き・注目選手", "注目データ")

@@ -10,7 +10,7 @@ import html as _html
 from typing import Optional
 
 SITE_BASE = "https://yoshilover.com"
-CLUSTER_URL = "https://yoshilover.com/data/"
+CLUSTER_URL = "https://yoshilover.com/data"
 SCHEDULE_SLUG = "data-schedule"
 
 

@@ -16,7 +16,7 @@ from src.data_site_internal_link import breadcrumb_jsonld, load_slug_map
 
 
 SITE_BASE = "https://yoshilover.com"
-CLUSTER_URL = "https://yoshilover.com/data/"
+CLUSTER_URL = "https://yoshilover.com/data"
 SLUG = "cleanup-hitters"
 _DATA_PATH = _os.path.join(_os.path.dirname(__file__), "..", "config", "giants_cleanup_hitters.json")
 _WS = _re.compile(r"[\s　]+")
@@ -65,7 +65,7 @@ def _player(name: str) -> str:
     slug = _slug_for(name)
     if not slug:
         return _esc(name)
-    return f'<a href="/data/{_esc(slug)}/" style="color:#1565c0;text-decoration:none;">{_esc(name)}</a>'
+    return f'<a href="/data/{_esc(slug)}" style="color:#1565c0;text-decoration:none;">{_esc(name)}</a>'
 
 
 def _num(v) -> str:
@@ -109,7 +109,7 @@ def _history_nav() -> str:
             )
         else:
             chips.append(
-                f'<a href="/data/{slug}/" style="display:inline-block;padding:5px 12px;margin:2px;'
+                f'<a href="/data/{slug}" style="display:inline-block;padding:5px 12px;margin:2px;'
                 f'border-radius:14px;border:1px solid #5d4037;color:#5d4037;text-decoration:none;'
                 f'font-size:12px;font-weight:600;">{_esc(label)}</a>'
             )
@@ -254,7 +254,7 @@ def render_cleanup_hitters_html(data: dict | None = None) -> str:
         + _render_current(data)
         + _render_alltime(rows)
         + f'<p style="margin-top:20px;"><a href="{CLUSTER_URL}">← 選手データ一覧へ</a> ／ '
-        f'<a href="/data/record/">記録室へ</a> ／ <a href="/data/legends/">歴代在籍選手へ</a></p>'
+        f'<a href="/data/record">記録室へ</a> ／ <a href="/data/legends">歴代在籍選手へ</a></p>'
         + "</div>"
     )
 

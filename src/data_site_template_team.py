@@ -10,8 +10,19 @@ from __future__ import annotations
 import html as _html
 
 SITE_BASE = "https://yoshilover.com"
-CLUSTER_URL = "https://yoshilover.com/data/"
+CLUSTER_URL = "https://yoshilover.com/data"
+RANKING_URL = "https://yoshilover.com/data/ranking"
+BATTING_RANKING_PATH = "/data/batting-ranking"
+PITCHING_RANKING_PATH = "/data/pitching-ranking"
+BATTING_RANKING_URL = f"{SITE_BASE}{BATTING_RANKING_PATH}"
+PITCHING_RANKING_URL = f"{SITE_BASE}{PITCHING_RANKING_PATH}"
 _METRIC_ORDER = ["打率", "本塁打", "防御率"]
+_CURRENT_BATTING_KEYS = ("打率", "本塁打", "打点", "安打", "盗塁")
+_CURRENT_PITCHING_KEYS = ("防御率", "勝利", "奪三振")
+_CAREER_BATTING_KEYS = ("通算打率", "通算本塁打", "通算打点", "通算安打", "通算盗塁")
+_CAREER_PITCHING_KEYS = ("通算防御率", "通算勝利", "通算セーブ", "通算奪三振", "通算投球回")
+_ALLTIME_BATTING_KEYS = ("本塁打", "安打", "打点")
+_ALLTIME_PITCHING_KEYS = ("勝利", "奪三振")
 
 
 def _esc(t: str) -> str:
@@ -139,13 +150,12 @@ def render_team_html(rankings: dict, team_record: dict = None, standings: list =
 
 # --- 462: 選手ランキング HUB (/data/ranking、 fetch_team_leaders 由来、 pillar 回遊) ---
 def render_ranking_title() -> str:
-    return "巨人 選手ランキング 2026【今季&通算 本塁打・打点・打率・防御率】 | 巨人データ"
+    return "巨人 成績ランキング入口【打撃・投手を分けて掲載】 | 巨人データ"
 
 
 def render_ranking_excerpt(leaders: dict) -> str:
-    cats = "・".join(list(leaders.keys())[:6]) if leaders else "本塁打・打点・打率"
-    return (f"読売ジャイアンツ2026の選手別 球団内ランキング（{cats}）。毎日更新、"
-            "各選手名から詳細データページへ。")
+    return ("読売ジャイアンツ2026の成績ランキング入口。打撃成績ランキングと投手成績ランキングを"
+            "別ページに分けて掲載。")
 
 
 def _ranking_block(cat: str, entries: list) -> str:
@@ -153,7 +163,7 @@ def _ranking_block(cat: str, entries: list) -> str:
 
     def _link(name: str) -> str:
         try:
-            return f"/data/{player_slug(name)}/"
+            return f"/data/{player_slug(name)}"
         except Exception:  # noqa: BLE001
             return ""
 
@@ -175,43 +185,150 @@ def _ranking_block(cat: str, entries: list) -> str:
     )
 
 
+def _ranking_nav(current_label: str) -> str:
+    return (
+        '<nav class="ys-breadcrumb" style="font-size:12px;color:#666;margin:0 0 12px;">'
+        f'<a href="{SITE_BASE}/" style="color:#666;">Home</a> › '
+        f'<a href="{CLUSTER_URL}" style="color:#666;">巨人選手データ</a> › '
+        f'<span>{_esc(current_label)}</span></nav>'
+    )
+
+
+def _ranking_choice_cards(active: str = "") -> str:
+    def _card(url: str, title: str, lead: str, kind: str) -> str:
+        active_style = "border-color:#e25400;background:#fff3ea;" if active == kind else ""
+        badge = '<span style="font-size:11px;color:#e25400;font-weight:700;">表示中</span>' if active == kind else ""
+        return (
+            f'<a href="{url}" style="display:block;text-decoration:none;color:#1a1a1a;'
+            'border:1px solid #ffd9bf;border-radius:10px;padding:12px;background:#fff;'
+            f'{active_style}">'
+            f'<strong style="display:block;font-size:15px;margin:0 0 4px;">{_esc(title)}</strong>'
+            f'<span style="display:block;font-size:12px;color:#666;line-height:1.55;">{_esc(lead)}</span>'
+            f'{badge}</a>'
+        )
+
+    batting_lead = "打撃だけを見る" if active == "pitching" else "打率・本塁打・打点"
+    pitching_lead = "投手だけを見る" if active == "batting" else "防御率・勝利・奪三振"
+    return (
+        '<div class="ys-ranking-choice" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));'
+        'gap:10px;margin:0 0 16px;">'
+        f'{_card(BATTING_RANKING_URL, "打撃成績ランキング", batting_lead, "batting")}'
+        f'{_card(PITCHING_RANKING_URL, "投手成績ランキング", pitching_lead, "pitching")}'
+        '</div>'
+    )
+
+
+def _ranking_blocks(data: dict, keys: tuple[str, ...]) -> str:
+    return "".join(_ranking_block(k, data.get(k) or []) for k in keys if (data or {}).get(k))
+
+
+def _ranking_section(title: str, lead: str, data: dict, keys: tuple[str, ...]) -> str:
+    blocks = _ranking_blocks(data or {}, keys)
+    if not blocks:
+        return ""
+    return (
+        f'<h2 style="font-size:18px;margin:22px 0 4px;padding:8px 12px;background:#fff3ea;'
+        f'border-left:5px solid #e25400;color:#e25400;border-radius:4px;">{_esc(title)}</h2>'
+        f'<p style="font-size:12px;color:#666;margin:0 0 12px;">{_esc(lead)}</p>'
+        f'{blocks}'
+    )
+
+
+def render_batting_ranking_title() -> str:
+    return "巨人 打撃成績ランキング 2026【打率・本塁打・打点】 | 巨人データ"
+
+
+def render_batting_ranking_excerpt(leaders: dict) -> str:
+    cats = "・".join(k for k in _CURRENT_BATTING_KEYS if (leaders or {}).get(k)) or "打率・本塁打・打点"
+    return f"読売ジャイアンツ2026の打撃成績ランキング（{cats}）。投手成績とは別ページで掲載。"
+
+
+def render_batting_ranking_html(
+    leaders: dict, career_leaders: dict = None, alltime_leaders: dict = None
+) -> str:
+    current = _ranking_section(
+        "今季 打撃成績ランキング",
+        "読売ジャイアンツの打者成績だけを掲載。各選手名から個人成績ページへ移動できます。",
+        leaders or {},
+        _CURRENT_BATTING_KEYS,
+    )
+    career = _ranking_section(
+        "現役選手 通算打撃ランキング",
+        "現役巨人選手の NPB 通算打撃記録。移籍前の成績を含みます。",
+        career_leaders or {},
+        _CAREER_BATTING_KEYS,
+    )
+    alltime = _ranking_section(
+        "歴代 通算打撃ランキング",
+        "巨人に在籍した選手の NPB 通算打撃記録。OB と現役を横断して集計しています。",
+        alltime_leaders or {},
+        _ALLTIME_BATTING_KEYS,
+    )
+    body = current + career + alltime
+    return (
+        '<div style="font-family:sans-serif;max-width:640px;">'
+        f'{_ranking_nav("打撃成績ランキング")}'
+        '<h1 style="font-size:20px;margin:0 0 4px;">巨人 打撃成績ランキング 2026</h1>'
+        '<p style="font-size:13px;color:#666;margin:0 0 14px;">打撃成績だけをまとめたランキングページ。投手成績とは分けて掲載しています。</p>'
+        f'{_ranking_choice_cards("batting")}'
+        f'{body or "<p>データ準備中</p>"}'
+        f'<p style="margin-top:16px;"><a href="{CLUSTER_URL}">← 選手データ一覧へ</a></p>'
+        '</div>'
+    )
+
+
+def render_pitching_ranking_title() -> str:
+    return "巨人 投手成績ランキング 2026【防御率・勝利・奪三振】 | 巨人データ"
+
+
+def render_pitching_ranking_excerpt(leaders: dict) -> str:
+    cats = "・".join(k for k in _CURRENT_PITCHING_KEYS if (leaders or {}).get(k)) or "防御率・勝利・奪三振"
+    return f"読売ジャイアンツ2026の投手成績ランキング（{cats}）。打撃成績とは別ページで掲載。"
+
+
+def render_pitching_ranking_html(
+    leaders: dict, career_leaders: dict = None, alltime_leaders: dict = None
+) -> str:
+    current = _ranking_section(
+        "今季 投手成績ランキング",
+        "読売ジャイアンツの投手成績だけを掲載。各選手名から個人成績ページへ移動できます。",
+        leaders or {},
+        _CURRENT_PITCHING_KEYS,
+    )
+    career = _ranking_section(
+        "現役選手 通算投手ランキング",
+        "現役巨人投手の NPB 通算記録。移籍前の成績を含みます。",
+        career_leaders or {},
+        _CAREER_PITCHING_KEYS,
+    )
+    alltime = _ranking_section(
+        "歴代 通算投手ランキング",
+        "巨人に在籍した投手の NPB 通算記録。OB と現役を横断して集計しています。",
+        alltime_leaders or {},
+        _ALLTIME_PITCHING_KEYS,
+    )
+    body = current + career + alltime
+    return (
+        '<div style="font-family:sans-serif;max-width:640px;">'
+        f'{_ranking_nav("投手成績ランキング")}'
+        '<h1 style="font-size:20px;margin:0 0 4px;">巨人 投手成績ランキング 2026</h1>'
+        '<p style="font-size:13px;color:#666;margin:0 0 14px;">投手成績だけをまとめたランキングページ。打撃成績とは分けて掲載しています。</p>'
+        f'{_ranking_choice_cards("pitching")}'
+        f'{body or "<p>データ準備中</p>"}'
+        f'<p style="margin-top:16px;"><a href="{CLUSTER_URL}">← 選手データ一覧へ</a></p>'
+        '</div>'
+    )
+
+
 def render_ranking_html(
     leaders: dict, career_leaders: dict = None, alltime_leaders: dict = None
 ) -> str:
-    nav = (
-        '<nav class="ys-breadcrumb" style="font-size:12px;color:#666;margin:0 0 12px;">'
-        f'<a href="{SITE_BASE}/" style="color:#666;">Home</a> › '
-        f'<a href="{CLUSTER_URL}" style="color:#666;">巨人選手データ</a> › <span>選手ランキング</span></nav>'
-    )
-    blocks = "".join(_ranking_block(c, e) for c, e in (leaders or {}).items() if e)
-    # 468-1: 現役選手の NPB 通算成績ランキング (467 career 由来)。今季ランキングの下に出す。
-    career_blocks = "".join(_ranking_block(c, e) for c, e in (career_leaders or {}).items() if e)
-    career_section = (
-        '<h2 style="font-size:18px;margin:22px 0 4px;padding:8px 12px;background:#fff3ea;'
-        'border-left:5px solid #e25400;color:#e25400;border-radius:4px;">現役選手 通算成績ランキング</h2>'
-        '<p style="font-size:12px;color:#666;margin:0 0 12px;">現役巨人選手の NPB 通算記録（移籍前を含む）。'
-        '率は規定到達者のみ。NPB 公式データより毎日更新。</p>'
-        f'{career_blocks}'
-    ) if career_blocks else ""
-    # Phase1: 全史(歴代 OB + 現役)NPB通算ランキング。共有部品 alltime_ranking 由来。
-    alltime_blocks = "".join(_ranking_block(c, e) for c, e in (alltime_leaders or {}).items() if e)
-    alltime_section = (
-        '<h2 style="font-size:18px;margin:22px 0 4px;padding:8px 12px;background:#1a1a2e;'
-        'border-left:5px solid #e25400;color:#fff;border-radius:4px;">歴代（全史）通算ランキング</h2>'
-        '<p style="font-size:12px;color:#666;margin:0 0 12px;">巨人に在籍した選手の NPB 通算記録を歴代で集計。'
-        'OB レジェンドと現役を横断。<b>★現役</b> は現在の巨人選手。NPB 公式 / 巨人OB 記録より。</p>'
-        f'{alltime_blocks}'
-    ) if alltime_blocks else ""
     return (
         '<div style="font-family:sans-serif;max-width:640px;">'
-        f'{nav}'
-        '<h1 style="font-size:20px;margin:0 0 4px;">巨人 選手ランキング 2026（今季・通算・歴代）</h1>'
-        '<p style="font-size:13px;color:#666;margin:0 0 14px;">球団内の選手別ランキング。今季成績・現役通算・歴代全史。毎日更新。各選手名から詳細データへ。</p>'
-        '<h2 style="font-size:18px;margin:6px 0 8px;padding:8px 12px;background:#fff3ea;'
-        'border-left:5px solid #e25400;color:#e25400;border-radius:4px;">今季成績ランキング</h2>'
-        f'{blocks or "<p>データ準備中</p>"}'
-        f'{career_section}'
-        f'{alltime_section}'
+        f'{_ranking_nav("成績ランキング")}'
+        '<h1 style="font-size:20px;margin:0 0 4px;">巨人 成績ランキング</h1>'
+        '<p style="font-size:13px;color:#666;margin:0 0 14px;">打撃成績と投手成績は別ページに分けて掲載しています。見たいランキングを選んでください。</p>'
+        f'{_ranking_choice_cards("")}'
         f'<p style="margin-top:16px;"><a href="{CLUSTER_URL}">← 選手データ一覧へ</a></p>'
         '</div>'
     )
@@ -234,7 +351,7 @@ def _record_block(club: str, members: list) -> str:
 
     def _link(name: str) -> str:
         try:
-            return f"/data/{player_slug(name)}/"
+            return f"/data/{player_slug(name)}"
         except Exception:  # noqa: BLE001
             return ""
 
@@ -272,6 +389,6 @@ def render_record_html(record: dict) -> str:
         'OB レジェンドと現役を横断、<b>★現役</b> は現在の巨人選手。NPB 通算（全球団含む）で集計、各選手名から詳細データへ。</p>'
         f'{blocks or "<p>データ準備中</p>"}'
         f'<p style="margin-top:16px;"><a href="{CLUSTER_URL}">← 選手データ一覧へ</a> ／ '
-        f'<a href="/data/ranking/">🏆 選手ランキングへ</a></p>'
+        f'<a href="/data/ranking">🏆 選手ランキングへ</a></p>'
         '</div>'
     )

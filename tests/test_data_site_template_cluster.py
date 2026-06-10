@@ -25,7 +25,7 @@ class HotCardTests(unittest.TestCase):
         self.assertIn("直近5試合の注目選手", html)
         self.assertIn("吉川尚輝", html)
         self.assertIn("OPS .950", html)
-        self.assertIn("/data/yoshikawa-naoki/", html)
+        self.assertIn("/data/yoshikawa-naoki", html)
         self.assertIn("防御率 1.20", html)
 
     def test_empty_safe(self) -> None:
@@ -49,28 +49,28 @@ class RenderClusterHtmlTests(unittest.TestCase):
     def test_html_links_to_each_pillar(self) -> None:
         html = render_cluster_html(self.players)
         for p in self.players:
-            self.assertIn(f"/data/{p.slug}/", html)
+            self.assertIn(f"/data/{p.slug}", html)
 
     def test_intro_links_to_farm_cluster(self) -> None:
         html = render_cluster_html(self.players)
-        self.assertIn("/data/farm/", html)
+        self.assertIn("/data/farm", html)
         self.assertIn("2軍ファーム", html)
 
     def test_intro_links_to_jersey_number_cluster(self) -> None:
         html = render_cluster_html(self.players)
-        self.assertIn("/data/jersey-numbers/", html)
+        self.assertIn("/data/jersey-numbers", html)
         self.assertIn("歴代背番号", html)
 
     def test_intro_links_to_record_room_and_notable_page(self) -> None:
         html = render_cluster_html(self.players)
-        self.assertIn("/data/notable/", html)
+        self.assertIn("/data/notable", html)
         self.assertIn("注目データ", html)
-        self.assertIn("/data/batting-ranking/", html)
+        self.assertIn("/data/batting-ranking", html)
         self.assertIn("打撃ランキング", html)
-        self.assertIn("/data/pitching-ranking/", html)
+        self.assertIn("/data/pitching-ranking", html)
         self.assertIn("投手ランキング", html)
-        self.assertNotIn("/data/ranking/", html)
-        self.assertIn("/data/record/", html)
+        self.assertNotIn("/data/ranking", html)
+        self.assertIn("/data/record", html)
         self.assertIn("記録室", html)
         self.assertNotIn("href=\"#ys-notable-data\"", html)
         self.assertNotIn("驚き・注目選手", html)
@@ -89,7 +89,7 @@ class RenderClusterHtmlTests(unittest.TestCase):
             ]
         }
         html = render_cluster_html(self.players, notable_data=notable)
-        self.assertIn("/data/notable/", html)
+        self.assertIn("/data/notable", html)
         self.assertNotIn('id="ys-notable-data"', html)
         self.assertNotIn("注目データ一覧を見る", html)
         self.assertNotIn("基準日: 2026-06-07 試合終了時点", html)
@@ -115,7 +115,7 @@ class RenderClusterHtmlTests(unittest.TestCase):
         self.assertIn("吉川尚輝の連続試合安打", html)
         self.assertIn("6試合", html)
         self.assertIn("この記録の選手", html)
-        self.assertIn("/data/yoshikawa-naoki/", html)
+        self.assertIn("/data/yoshikawa-naoki", html)
         self.assertIn("誰のどの記録か", html)
         self.assertIn("dataset-notable-data", html)
         self.assertIn('"@type": "Dataset"', html)
@@ -137,7 +137,7 @@ class RenderClusterHtmlTests(unittest.TestCase):
             self.assertNotIn(marker, html)
         matches = re.findall(r'<script[^>]*type="application/ld\+json">(.+?)</script>', html, flags=re.DOTALL)
         dataset = next(json.loads(m) for m in matches if "Dataset" in m)
-        self.assertEqual(dataset["url"], "https://yoshilover.com/data/notable/")
+        self.assertEqual(dataset["url"], "https://yoshilover.com/data/notable")
         item_list = next(json.loads(m) for m in matches if "ItemList" in m)
         self.assertEqual(item_list["itemListElement"][0]["name"], "吉川尚輝 連続試合安打 6試合")
 
@@ -157,7 +157,7 @@ class RenderClusterHtmlTests(unittest.TestCase):
         self.assertGreaterEqual(len(matches), 2)
         cp = next(json.loads(m) for m in matches if "CollectionPage" in m)
         self.assertEqual(cp["@type"], "CollectionPage")
-        self.assertEqual(cp["url"], "https://yoshilover.com/data/")
+        self.assertEqual(cp["url"], "https://yoshilover.com/data")
         self.assertEqual(cp["mainEntity"]["@type"], "ItemList")
         self.assertEqual(cp["mainEntity"]["numberOfItems"], 3)
 
@@ -170,7 +170,7 @@ class RenderClusterHtmlTests(unittest.TestCase):
         for i, item in enumerate(items):
             self.assertEqual(item["position"], i + 1)
             self.assertEqual(item["item"]["@type"], "SportsPlayer")
-            self.assertEqual(item["item"]["url"], f"https://yoshilover.com/data/{self.players[i].slug}/")
+            self.assertEqual(item["item"]["url"], f"https://yoshilover.com/data/{self.players[i].slug}")
 
     def test_jsonld_breadcrumb_2_items(self) -> None:
         html = render_cluster_html(self.players)
@@ -307,20 +307,20 @@ class ClusterSearchBoxTests(unittest.TestCase):
     def test_search_script_scoped_to_player_tables(self) -> None:
         html = render_cluster_html(self.players)
         # JS が table section 内の /data/ リンクのみ対象にする (intro ナビ除外)
-        self.assertIn('section[class*="ys-cluster"][class*="-table"] a[href^="/data/"]', html)
+        self.assertIn('section[class*="ys-cluster"][class*="-table"] a[href^="/data"]', html)
         self.assertIn("closest(\"tr\")", html)
         self.assertIn('id="ys-search-empty"', html)
 
     def test_search_box_before_tables(self) -> None:
         html = render_cluster_html(self.players)
         # 検索 box は選手テーブルより前 (画面上部) に出る
-        self.assertLess(html.index("ys-player-search"), html.index("/data/togo-shosei/"))
+        self.assertLess(html.index("ys-player-search"), html.index("/data/togo-shosei"))
 
     def test_full_list_intact_without_js(self) -> None:
         # progressive enhancement: 検索を入れても全選手リンクはそのまま残る
         html = render_cluster_html(self.players)
         for p in self.players:
-            self.assertIn(f"/data/{p.slug}/", html)
+            self.assertIn(f"/data/{p.slug}", html)
 
 
 if __name__ == "__main__":

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Yoshilover 063 Frontend (topic hub / SNS reactions / Phase 1 noindex)
  * Description: 062 contract §2 §3 §5 の front impl。topic hub / SNS block / noindex を基盤に、トップ速報帯・記事下回遊束・右カラム rail・上部密集ナビ・人気記事導線まで含めて SWELL front を高密度化する。既存 SWELL コメント欄は触らない。
- * Version: 0.21.17
+ * Version: 0.21.18
  * Author: yoshilover
  */
 
@@ -114,7 +114,7 @@ function yoshilover_063_render_home_starter_rotation_table() {
     $html  = '<section id="yoshi-home-rotation" class="yoshi-home-rotation" aria-label="巨人 先発ローテ一覧 2007年から2026年">';
     $html .= '<div class="yoshi-home-rotation__head">';
     $html .= '<h2 class="yoshi-home-rotation__title">🧭 先発ローテ一覧（2007年〜2026年）</h2>';
-    $html .= '<a class="yoshi-home-rotation__source" href="/data/rotation/">試合ごとの全ログ →</a>';
+    $html .= '<a class="yoshi-home-rotation__source" href="/data/rotation">試合ごとの全ログ →</a>';
     $html .= '</div>';
     $html .= '<div class="yoshi-home-rotation__meta"><span class="yoshi-home-rotation__pill">20年分</span><span class="yoshi-home-rotation__pill">新しい年度から表示</span><span class="yoshi-home-rotation__pill">先発数順</span></div>';
     $html .= '<p class="yoshi-home-rotation__note">年別の先発投手を先発数順に集計。年度を押すと、その年の全試合の先発・結果一覧（試合ごとの登板ログ）を見られます。2026年はシーズン進行中のデータです。</p>';
@@ -168,19 +168,19 @@ function yoshilover_063_render_home_starter_rotation_table() {
 function yoshilover_063_render_home_data_hub() {
     // SEO: 各カードの title (h3) は「巨人 ◯◯」 の検索意図に合うアンカーテキスト。
     $cards = array(
-        array( 'href' => '/data/batting-ranking/',  'ic' => '🏆', 't' => '打撃成績ランキング', 's' => '打率・本塁打・打点' ),
-        array( 'href' => '/data/pitching-ranking/', 'ic' => '⚾', 't' => '投手成績ランキング', 's' => '防御率・勝利・奪三振' ),
-        array( 'href' => '/data/#ys-player-search', 'ic' => '👤', 't' => '選手別 個人成績',     's' => '全選手のデータを検索' ),
-        array( 'href' => '/data/team/',             'ic' => '📊', 't' => 'セ・リーグ順位表',   's' => '順位・ゲーム差・日程' ),
-        array( 'href' => '/data/farm/',             'ic' => '🌱', 't' => '2軍試合日程・結果',  's' => 'ファーム予定・成績' ),
-        array( 'href' => '/data/jersey-numbers/',   'ic' => '🔢', 't' => '歴代背番号',         's' => '永久欠番・番号変遷' ),
-        array( 'href' => '/data/draft/',            'ic' => '📋', 't' => '歴代ドラフト',       's' => '指名選手・育成・外れ1位' ),
-        array( 'href' => '/data/notable/',          'ic' => '📈', 't' => '注目データ',       's' => '誰の記録か分かる一覧' ),
-        array( 'href' => '/data/rotation/',         'ic' => '🧭', 't' => '先発ローテ一覧',     's' => '2007〜2026年 試合ごとの先発' ),
-        array( 'href' => '/data/roster-moves/',     'ic' => '🔁', 't' => '出場選手登録・抹消', 's' => '1軍登録メンバー・登録/抹消の動き' ),
-        array( 'href' => '/data/tickets/',          'ic' => '🎟️', 't' => 'チケット情報',       's' => '公式・プレイガイド購入リンク' ),
-        array( 'href' => '/data/open-games/',        'ic' => '🌸', 't' => 'オープン戦結果',     's' => '2001〜2026年 年度別の勝敗' ),
-        array( 'href' => '/data/foreign-players/',   'ic' => '🌍', 't' => '歴代外国人選手',     's' => 'スタルヒン〜現役助っ人' ),
+        array( 'href' => '/data/batting-ranking',  'ic' => '🏆', 't' => '打撃成績ランキング', 's' => '打率・本塁打・打点' ),
+        array( 'href' => '/data/pitching-ranking', 'ic' => '⚾', 't' => '投手成績ランキング', 's' => '防御率・勝利・奪三振' ),
+        array( 'href' => '/data#ys-player-search', 'ic' => '👤', 't' => '選手別 個人成績',     's' => '全選手のデータを検索' ),
+        array( 'href' => '/data/team',             'ic' => '📊', 't' => 'セ・リーグ順位表',   's' => '順位・ゲーム差・日程' ),
+        array( 'href' => '/data/farm',             'ic' => '🌱', 't' => '2軍試合日程・結果',  's' => 'ファーム予定・成績' ),
+        array( 'href' => '/data/jersey-numbers',   'ic' => '🔢', 't' => '歴代背番号',         's' => '永久欠番・番号変遷' ),
+        array( 'href' => '/data/draft',            'ic' => '📋', 't' => '歴代ドラフト',       's' => '指名選手・育成・外れ1位' ),
+        array( 'href' => '/data/notable',          'ic' => '📈', 't' => '注目データ',       's' => '誰の記録か分かる一覧' ),
+        array( 'href' => '/data/rotation',         'ic' => '🧭', 't' => '先発ローテ一覧',     's' => '2007〜2026年 試合ごとの先発' ),
+        array( 'href' => '/data/roster-moves',     'ic' => '🔁', 't' => '出場選手登録・抹消', 's' => '1軍登録メンバー・登録/抹消の動き' ),
+        array( 'href' => '/data/tickets',          'ic' => '🎟️', 't' => 'チケット情報',       's' => '公式・プレイガイド購入リンク' ),
+        array( 'href' => '/data/open-games',        'ic' => '🌸', 't' => 'オープン戦結果',     's' => '2001〜2026年 年度別の勝敗' ),
+        array( 'href' => '/data/foreign-players',   'ic' => '🌍', 't' => '歴代外国人選手',     's' => 'スタルヒン〜現役助っ人' ),
     );
     $cards_html = '';
     foreach ( $cards as $c ) {
@@ -227,7 +227,7 @@ function yoshilover_063_render_home_data_hub() {
     $html  = $style;
     $html .= '<section class="yoshi-home-data" aria-label="巨人 選手データ・成績">';
     $html .= '<div class="yoshi-home-data__head"><h2>📊 巨人 選手データ・成績</h2>'
-        . '<a class="yoshi-home-data__more" href="' . esc_url( home_url( '/data/' ) ) . '">すべて見る ＞</a></div>';
+        . '<a class="yoshi-home-data__more" href="' . esc_url( home_url( '/data' ) ) . '">すべて見る ＞</a></div>';
     $html .= '<p class="yoshi-home-data__lead">読売ジャイアンツの個人成績・打率・防御率・セ・リーグ順位を毎日更新。打撃／投手のランキングや選手別データをまとめています。</p>';
     $html .= '<div class="yoshi-home-data__grid">' . $cards_html . '</div>';
     // 2026-06-09: トップの大きな「先発ローテ一覧」表セクションは廃止 (user 指示)。
@@ -354,7 +354,7 @@ function yoshilover_063_buffer_inject_header_titles( $buffer ) {
     // (PC / モバイル / fix header) の cat-all (すべて) li の直後に挿入。dedup は class で判定。
     if ( strpos( $buffer, 'yoshi-data-nav' ) === false ) {
         $data_li = '<li class="menu-item menu-item-type-custom menu-item-object-custom yoshi-data-nav">'
-            . '<a href="' . esc_url( home_url( '/data/' ) ) . '">📊 データ</a></li>';
+            . '<a href="' . esc_url( home_url( '/data' ) ) . '">📊 データ</a></li>';
         $buffer = preg_replace(
             '#(<li[^>]*class="[^"]*cat-all[^"]*menu-item[^"]*"[^>]*>.*?</li>)#s',
             '$1' . $data_li,

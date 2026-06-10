@@ -18,7 +18,7 @@ class LegendsTemplateTests(unittest.TestCase):
         # 刷新: 50音×通算成績テーブル名鑑 (featured カード / 名球会見出しは廃止)。
         html = render_legends_html(self._entries())
         self.assertIn("長嶋茂雄", html)
-        self.assertIn("/data/nagashima-shigeo/", html)  # 名前→個別ページ
+        self.assertIn("/data/nagashima-shigeo", html)  # 名前→個別ページ
         self.assertIn("50音で探す", html)                # 五十音ジャンプナビ
         self.assertIn("歴代在籍選手", html)               # 新見出し
         self.assertNotIn("名球会", html)                  # 名球会の特別枠は廃止

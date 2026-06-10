@@ -91,7 +91,7 @@ class RenderPillarHtmlTests(unittest.TestCase):
 
     def test_breadcrumb_links_to_cluster(self) -> None:
         html = render_pillar_html(self.player)
-        self.assertIn('https://yoshilover.com/data/', html)
+        self.assertIn('https://yoshilover.com/data', html)
         self.assertIn("巨人選手データ", html)
 
     def test_lead_paragraph_precedes_breadcrumb(self) -> None:
@@ -123,7 +123,7 @@ class RenderPillarHtmlTests(unittest.TestCase):
         sports_data = next(json.loads(m) for m in matches if "SportsPlayer" in m)
         self.assertEqual(sports_data["@type"], "SportsPlayer")
         self.assertEqual(sports_data["name"], "坂本勇人")
-        self.assertEqual(sports_data["url"], "https://yoshilover.com/data/sakamoto-hayato/")
+        self.assertEqual(sports_data["url"], "https://yoshilover.com/data/sakamoto-hayato")
         self.assertEqual(sports_data["memberOf"]["name"], "読売ジャイアンツ")
 
     def test_jsonld_breadcrumb_3_items(self) -> None:
@@ -277,8 +277,8 @@ class RenderPillarHtmlTests(unittest.TestCase):
         html = render_pillar_html(p)
         self.assertIn("ys-pillar-related-players", html)
         self.assertIn("同じ投手の選手", html)
-        self.assertIn('href="/data/yamazaki-iori/"', html)
-        self.assertIn('href="/data/akahoshi-yushi/"', html)
+        self.assertIn('href="/data/yamazaki-iori"', html)
+        self.assertIn('href="/data/akahoshi-yushi"', html)
 
     def test_related_players_absent_when_empty(self) -> None:
         p = PillarPlayerInfo(name="丸佳浩", slug="maru-yoshihiro", position="外野手", jersey_number="8")

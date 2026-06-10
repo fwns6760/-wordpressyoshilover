@@ -9,7 +9,7 @@ from __future__ import annotations
 import html as _html
 
 SITE_BASE = "https://yoshilover.com"
-CLUSTER_URL = "https://yoshilover.com/data/"
+CLUSTER_URL = "https://yoshilover.com/data"
 
 # 表示順 + 単位ラベル
 _BAT_KEYS = ["本塁打", "打点", "安打", "打率", "盗塁"]

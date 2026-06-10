@@ -15,7 +15,7 @@ import os as _os
 import re as _re
 
 SITE_BASE = "https://yoshilover.com"
-CLUSTER_URL = "https://yoshilover.com/data/"
+CLUSTER_URL = "https://yoshilover.com/data"
 
 _SLUG_PATH = _os.path.join(_os.path.dirname(__file__), "..", "config", "data_site_player_slugs.json")
 _WS = _re.compile(r"[\s　]+")
@@ -56,7 +56,7 @@ def linkify(name: str, slug_map: dict | None = None) -> str:
     for k in _keys(name):
         slug = m.get(k)
         if slug:
-            return (f'<a href="/data/{_esc(slug)}/" '
+            return (f'<a href="/data/{_esc(slug)}" '
                     f'style="color:#1565c0;text-decoration:none;">{disp}</a>')
     return disp
 
@@ -78,7 +78,7 @@ def roster_moves_nav(current: str) -> str:
                          f'border-radius:14px;background:#5d4037;color:#fff;font-size:12px;'
                          f'font-weight:700;">{_esc(label)}</span>')
         else:
-            chips.append(f'<a href="/data/{slug}/" style="display:inline-block;padding:5px 12px;'
+            chips.append(f'<a href="/data/{slug}" style="display:inline-block;padding:5px 12px;'
                          f'margin:2px;border-radius:14px;border:1px solid #5d4037;color:#5d4037;'
                          f'text-decoration:none;font-size:12px;font-weight:600;">{_esc(label)}</a>')
     return ('<div style="margin:0 0 14px;padding:8px 0;border-bottom:1px solid #eee;">'
@@ -93,7 +93,7 @@ def breadcrumb_jsonld(name: str, slug: str) -> str:
         "itemListElement": [
             {"@type": "ListItem", "position": 1, "name": "ホーム", "item": f"{SITE_BASE}/"},
             {"@type": "ListItem", "position": 2, "name": "巨人選手データ", "item": CLUSTER_URL},
-            {"@type": "ListItem", "position": 3, "name": name, "item": f"{SITE_BASE}/data/{slug}/"},
+            {"@type": "ListItem", "position": 3, "name": name, "item": f"{SITE_BASE}/data/{slug}"},
         ],
     }
     return ('<script type="application/ld+json">'

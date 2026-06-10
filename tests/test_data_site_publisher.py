@@ -9,8 +9,18 @@ import os
 import unittest
 from unittest import mock
 
-from src.data_site_publisher import _build_pillar_info, publish_phase1
+from src.data_site_publisher import (
+    _build_notable_data,
+    _build_pillar_info,
+    _find_page_id_by_slug,
+    _remove_notable_data_section,
+    _replace_legacy_notable_data_links,
+    publish_notable_data_only,
+    publish_phase1,
+    retire_legacy_notable_page,
+)
 from src.data_site_query import RosterPlayer
+from src.data_site_template_cluster import ClusterPlayerEntry
 
 
 class BuildPillarInfoTests(unittest.TestCase):
@@ -73,6 +83,153 @@ class PublishPhase1DryRunTests(unittest.TestCase):
         summary = publish_phase1()
         self.assertEqual(summary["status"], "abort")
         self.assertEqual(summary["reason"], "no_target_players")
+
+
+class NotableDataOnlyTests(unittest.TestCase):
+    @mock.patch.dict(
+        os.environ,
+        {"WP_URL": "https://example.test", "WP_USER": "user", "WP_APP_PASSWORD": "pass"},
+        clear=False,
+    )
+    @mock.patch("src.data_site_publisher.requests.get")
+    def test_find_page_id_by_slug_checks_any_status_to_avoid_slug_2(self, m_get):
+        response = mock.Mock(ok=True)
+        response.json.return_value = [
+            {"id": 86549, "slug": "notable", "parent": 73526, "status": "draft"}
+        ]
+        m_get.return_value = response
+
+        page_id = _find_page_id_by_slug("notable", parent=73526)
+
+        self.assertEqual(page_id, 86549)
+        params = m_get.call_args.kwargs["params"]
+        self.assertEqual(params["slug"], "notable")
+        self.assertEqual(params["status"], "any")
+        self.assertEqual(params["context"], "edit")
+
+    def test_remove_legacy_notable_data_section_from_player_hub(self):
+        original = (
+            '<section class="ys-cluster-intro">intro</section>'
+            '<section id="ys-notable-data"><p>old</p></section>'
+            '<section class="ys-cluster-search">search</section>'
+        )
+        updated = _remove_notable_data_section(original)
+        self.assertNotIn("<p>old</p>", updated)
+        self.assertNotIn('id="ys-notable-data"', updated)
+        self.assertIn('class="ys-cluster-intro"', updated)
+        self.assertIn('class="ys-cluster-search"', updated)
+
+    def test_replace_legacy_notable_data_links(self):
+        original = (
+            '<a href="/data/notable" style="color:#e25400;">📈 驚き・注目選手</a>'
+            '<a href="/data#ys-notable-data">注目データ</a>'
+            '<a href="#ys-notable-data">注目データ</a>'
+        )
+        updated = _replace_legacy_notable_data_links(original)
+        self.assertNotIn("#ys-notable-data", updated)
+        self.assertNotIn("驚き・注目選手", updated)
+        self.assertEqual(updated.count('/data/notable'), 3)
+        self.assertIn("注目データ", updated)
+
+    @mock.patch("src.data_site_publisher.fetch_surprise_stats", return_value=[])
+    @mock.patch("src.data_site_publisher.fetch_contribution_streak")
+    @mock.patch("src.data_site_publisher.fetch_hit_streak")
+    @mock.patch("src.data_site_publisher.fetch_player_latest_game_date")
+    @mock.patch("src.data_site_publisher.fetch_latest_giants_game_date", return_value="2026-06-07")
+    def test_build_notable_data_uses_latest_game_date(
+        self, m_latest, m_player_latest, m_hit, m_contrib, m_surprise
+    ):
+        m_player_latest.side_effect = lambda name, table="batting_logs": {
+            "吉川尚輝": "2026-06-07",
+            "平山功太": "2026-05-30",
+        }.get(name, "")
+        m_hit.side_effect = [
+            mock.Mock(active=6, season_max=6),
+        ]
+        m_contrib.side_effect = [
+            mock.Mock(active=2, season_max=3),
+        ]
+        entries = [
+            ClusterPlayerEntry(
+                name="吉川尚輝", slug="yoshikawa-naoki", position="内野手",
+                jersey_number="2", position_group="内野手",
+            ),
+            ClusterPlayerEntry(
+                name="平山功太", slug="hirayama-kota", position="外野手",
+                jersey_number="002", position_group="外野手",
+            ),
+        ]
+        data = _build_notable_data(entries)
+        self.assertEqual(data["as_of"], "2026-06-07")
+        self.assertEqual(len(data["items"]), 1)
+        self.assertEqual(data["items"][0]["player"], "吉川尚輝")
+        self.assertIn("2026-06-07の試合終了時点", data["items"][0]["note"])
+        self.assertNotIn("平山功太", str(data))
+
+    @mock.patch("src.data_site_publisher._update_page_content")
+    @mock.patch("src.data_site_publisher._get_page_for_edit_by_slug")
+    @mock.patch("src.data_site_publisher._build_notable_data_from_targets")
+    @mock.patch("src.data_site_publisher._upsert_page")
+    def test_publish_notable_data_only_upserts_notable_page_only(
+        self, m_upsert, m_data, m_page, m_update
+    ):
+        m_data.return_value = {"as_of": "2026-06-07", "items": []}
+        m_page.return_value = {
+            "id": 73526,
+            "content": {
+                "raw": (
+                    '<a href="/data#ys-notable-data">驚き・注目選手</a>'
+                    '<section id="ys-notable-data"><p>old</p></section><p>keep</p>'
+                )
+            },
+        }
+        m_upsert.return_value = mock.Mock(action="updated", page_id=81234)
+        m_update.return_value = mock.Mock(action="updated", page_id=73526)
+        summary = publish_notable_data_only()
+        self.assertEqual(summary["mode"], "notable_data_only")
+        self.assertEqual(summary["status"], "ok")
+        self.assertEqual(summary["notable_page_id"], 81234)
+        m_upsert.assert_called_once()
+        self.assertEqual(m_upsert.call_args.kwargs["slug"], "notable")
+        self.assertEqual(m_upsert.call_args.kwargs["parent"], 73526)
+        m_update.assert_called_once()
+        sent_content = m_update.call_args.args[1]
+        self.assertIn("/data/notable", sent_content)
+        self.assertNotIn("#ys-notable-data", sent_content)
+        self.assertNotIn('id="ys-notable-data"', sent_content)
+        self.assertNotIn("驚き・注目選手", sent_content)
+
+    @mock.patch("src.data_site_publisher._get_page_for_edit_by_slug")
+    @mock.patch("src.data_site_publisher._build_notable_data_from_targets")
+    def test_publish_notable_data_only_aborts_without_game_date(self, m_data, m_page):
+        m_data.return_value = {"as_of": "", "items": []}
+        summary = publish_notable_data_only()
+        self.assertEqual(summary["status"], "abort")
+        self.assertEqual(summary["reason"], "latest_game_date_unavailable")
+        m_page.assert_not_called()
+
+    @mock.patch("src.data_site_publisher._update_page_status")
+    @mock.patch("src.data_site_publisher._get_page_for_edit_by_slug")
+    @mock.patch("src.data_site_publisher._find_page_id_by_slug", return_value=73526)
+    def test_retire_legacy_notable_page_is_noop_now_that_page_is_canonical(self, m_find, m_page, m_update):
+        summary = retire_legacy_notable_page()
+        self.assertEqual(summary["status"], "ok")
+        self.assertEqual(summary["mode"], "retire_legacy_notable")
+        self.assertEqual(summary["action"], "canonical_page_kept")
+        m_find.assert_not_called()
+        m_page.assert_not_called()
+        m_update.assert_not_called()
+
+    @mock.patch("src.data_site_publisher._update_page_status")
+    @mock.patch("src.data_site_publisher._get_page_for_edit_by_slug")
+    @mock.patch("src.data_site_publisher._find_page_id_by_slug", return_value=73526)
+    def test_retire_legacy_notable_page_never_drafts_page(self, m_find, m_page, m_update):
+        summary = retire_legacy_notable_page()
+        self.assertEqual(summary["status"], "ok")
+        self.assertEqual(summary["action"], "canonical_page_kept")
+        m_find.assert_not_called()
+        m_page.assert_not_called()
+        m_update.assert_not_called()
 
 
 if __name__ == "__main__":

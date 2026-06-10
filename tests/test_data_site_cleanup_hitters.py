@@ -36,9 +36,9 @@ class CleanupHittersTemplateTests(unittest.TestCase):
         self.assertIn("川上哲治", html)
         self.assertIn("長嶋茂雄", html)
         self.assertIn("王貞治", html)
-        self.assertIn("/data/record/", html)
-        self.assertIn("/data/legends/", html)
-        self.assertIn("/data/oh-sadaharu/", html)
+        self.assertIn("/data/record", html)
+        self.assertIn("/data/legends", html)
+        self.assertIn("/data/oh-sadaharu", html)
         self.assertIn("成績は4番先発時の集計", html)
 
 

@@ -53,8 +53,8 @@ class RenderForeignPlayersTests(unittest.TestCase):
 
     def test_player_links_and_badges(self) -> None:
         html = render_foreign_players_html(_sample_data())
-        self.assertIn('href="/data/cromartie/"', html)
-        self.assertIn('href="/data/baldonado/"', html)
+        self.assertIn('href="/data/cromartie"', html)
+        self.assertIn('href="/data/baldonado"', html)
         # slug 無し (グズマン) はリンクを作らない
         self.assertNotIn('href="/data//"', html)
         self.assertIn("育成", html)

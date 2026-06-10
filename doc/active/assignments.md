@@ -1,6 +1,18 @@
 # assignments — 現場担当と次アクション
 
-最終更新: 2026-06-10 JST (X案データポスト鮮度ゲート + data-insight 朝便 05:00 変更)
+最終更新: 2026-06-10 JST (カード画像デザイン刷新 + 鮮度ゲート + data-insight 朝便 05:00)
+
+## 2026-06-10 — X案カード画像デザイン刷新 (user「ださい」指摘対応)
+
+- **user 指摘**: 「データ記事の絵だけどださい、これは君が作った。もっと洗練させることができないの？」
+- **対応**: `src/x_post_image_gen_v2.py` の全 11 template を再設計 (commit `21deab6d`)。brand 色 lock (orange/gold/黒) は維持。
+  - 行・セルを角丸カード化 (巨人 = orange gradient + soft shadow / 他 = 白カード + hairline border)、下地 warm off-white
+  - rank を円バッジ化 (top3 = 金/銀/銅)、チーム名を選手名と同行 inline 配置 (旧: 行下で次行と衝突・潰れ)
+  - hook 行を半透明黒 pill チップ化 (旧: 金 on orange 低コントラスト)、Noto Bold 環境で stroke 増し打ち全停止 (滲み解消)
+  - footer 黒帯 + orange accent line、spotlight は白 hero カード集約、bar 系は丸端バー化、data_sheet は header帯+zebra
+- **test**: image gen v2 / router / brand / overlay / integration 計 84 passed。cairosvg 系 (v1) のローカル失敗は未導入環境の既存事象で無関係。
+- **サンプル**: `/tmp/cards/new_*.png` (旧版は `cur_*.png`)。
+- **deploy**: クリーン worktree (HEAD `21deab6d`) から Cloud Build `e194e9b5` SUCCESS (2m5s)、image `x-post-mail-lane:card-design-21deab6d`、Job generation `172` に更新。本 image は鮮度ゲート (`f7c13c01`) も同梱。次回 flush 便 (試合中 15 分間隔) から新デザインのカードがメール添付される。
 
 ## 2026-06-10 — X案データポスト: 離脱中選手の「直近N試合」混入を鮮度ゲートで除外
 

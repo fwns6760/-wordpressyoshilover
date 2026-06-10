@@ -66,6 +66,7 @@ _ROSTER_MOVES = [
     ("draft", "📋 歴代ドラフト"),
     ("fa", "🤝 FA選手"),
     ("trade", "🔄 トレード/移籍"),
+    ("foreign-players", "🌍 歴代外国人"),
 ]
 
 

@@ -137,6 +137,12 @@ from src.data_site_template_trade import (
     render_trade_title,
     render_trade_excerpt,
 )
+from src.data_site_template_foreign import (
+    load_foreign_players_data,
+    render_foreign_players_html,
+    render_foreign_players_title,
+    render_foreign_players_excerpt,
+)
 from src.data_site_farm_stats import giants_farm_map
 from src.data_site_farm_source import (
     fetch_farm_game_rows,
@@ -1295,6 +1301,20 @@ def publish_phase1(only_slugs: set[str] | None = None) -> dict[str, object]:
              trade_result.page_id, trade_result.action,
              len(trade_data.get("trades_exchange") or []),
              len(trade_data.get("transactions_all") or []))
+
+    # foreign-players ページ upsert（歴代外国人選手、user 指定 2026-06-10）— parent=cluster → /data/foreign-players/
+    foreign_data = load_foreign_players_data()
+    foreign_result = _upsert_page(
+        slug="foreign-players",
+        title=render_foreign_players_title(),
+        content_html=render_foreign_players_html(foreign_data),
+        parent=cluster_page_id,
+        excerpt=render_foreign_players_excerpt(foreign_data),
+    )
+    LOG.info("foreign-players upsert slug=foreign-players page_id=%s action=%s ob=%d active=%d",
+             foreign_result.page_id, foreign_result.action,
+             len(foreign_data.get("ob") or []),
+             len(foreign_data.get("active") or []))
 
     summary = {
         "status": "ok",

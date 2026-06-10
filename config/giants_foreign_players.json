@@ -1,0 +1,2108 @@
+{
+ "_source": "ob_legends_full.json (kana 欧文判定) + ハワイ日系 extras (ja.wikipedia verify) + data_site_player_class.json (NPB 公式) 由来。generator: scripts/build_foreign_players_config.py",
+ "_updated": "2026-06-10",
+ "_policy": "事実のみ・推測で埋めない。日系選手は出典 verify 済のみ収録。リチャード (砂川リチャード) は沖縄出身の日本人のため対象外。",
+ "season": 2026,
+ "pending": [
+  "金伏ウーゴ (2016、日系ブラジル人、一軍登板なし) — 外国人選手としての扱い整備中",
+  "現役選手の巨人加入年 — 整備後に年度別早見表へ反映"
+ ],
+ "ob": [
+  {
+   "name": "V.スタルヒン(須田博)",
+   "display_name": "V.スタルヒン(須田 博)",
+   "slug": "starffin",
+   "type": "pitcher",
+   "years": "1934-1944",
+   "roman": "VICTOR STARFFIN",
+   "npb": {
+    "games": 586,
+    "w": 303,
+    "era": "2.09",
+    "k": 1960
+   }
+  },
+  {
+   "name": "堀尾文人",
+   "display_name": "堀尾文人",
+   "slug": "horio-fumito",
+   "type": "batter",
+   "years": "1934-1935",
+   "roman": "",
+   "npb": {
+    "games": 391,
+    "avg": ".236",
+    "hits": 359,
+    "hr": 22,
+    "rbi": 209
+   },
+   "note": "ハワイ・マウイ島出身の日系二世 (米国籍)。日本プロ野球の外国人選手第1号、1934年大日本東京野球倶楽部創立メンバー"
+  },
+  {
+   "name": "A.リベラ",
+   "display_name": "A.リベラ",
+   "slug": "rivera",
+   "type": "batter",
+   "years": "1939-1940",
+   "roman": "ATILANO RIVERA",
+   "npb": {
+    "games": 76,
+    "avg": ".268",
+    "hits": 69,
+    "hr": 6,
+    "rbi": 42
+   }
+  },
+  {
+   "name": "与那嶺要",
+   "display_name": "与那嶺要",
+   "slug": "yonamine-kaname",
+   "type": "batter",
+   "years": "1951-1960",
+   "roman": "",
+   "npb": {
+    "games": 1219,
+    "avg": ".311",
+    "hits": 1337,
+    "hr": 82,
+    "rbi": 482
+   },
+   "note": "ハワイ・ホノルル出身の日系二世 (米国籍)。首位打者3回、1994年野球殿堂入り"
+  },
+  {
+   "name": "柏枝文治",
+   "display_name": "柏枝文治",
+   "slug": "kashiwaeda-bunji",
+   "type": "batter",
+   "years": "1953-1956",
+   "roman": "",
+   "npb": {
+    "games": 284,
+    "avg": ".301",
+    "hits": 199,
+    "hr": 18,
+    "rbi": 125
+   },
+   "note": "ハワイ出身の日系二世 (米国籍)。1953年入団、同年打率.341"
+  },
+  {
+   "name": "宮本敏雄",
+   "display_name": "宮本敏雄",
+   "slug": "miyamoto-toshio",
+   "type": "batter",
+   "years": "1955-1962",
+   "roman": "",
+   "npb": {
+    "games": 1007,
+    "avg": ".249",
+    "hits": 726,
+    "hr": 90,
+    "rbi": 359
+   },
+   "note": "ハワイ出身の日系二世 (米国籍)。「エンディ宮本」"
+  },
+  {
+   "name": "D.ジョンソン",
+   "display_name": "D.ジョンソン",
+   "slug": "johnson",
+   "type": "batter",
+   "years": "1975-1976",
+   "roman": "DAVEY JOHNSON",
+   "npb": {
+    "games": 1634,
+    "avg": ".259",
+    "hits": 1411,
+    "hr": 175,
+    "rbi": 721
+   }
+  },
+  {
+   "name": "C.ライト",
+   "display_name": "C.ライト",
+   "slug": "wright",
+   "type": "pitcher",
+   "years": "1976-1978",
+   "roman": "CLYDE WRIGHT",
+   "npb": {
+    "games": 388,
+    "w": 122,
+    "era": "3.58",
+    "k": 809
+   }
+  },
+  {
+   "name": "J.リンド",
+   "display_name": "J.リンド",
+   "slug": "lind",
+   "type": "batter",
+   "years": "1977-1977",
+   "roman": "JACK LIND",
+   "npb": {
+    "games": 91,
+    "avg": ".221",
+    "hits": 52,
+    "hr": 9,
+    "rbi": 24
+   }
+  },
+  {
+   "name": "J.シピン",
+   "display_name": "J.シピン",
+   "slug": "sipin",
+   "type": "batter",
+   "years": "1978-1980",
+   "roman": "JOHN SIPIN",
+   "npb": {
+    "games": 1104,
+    "avg": ".293",
+    "hits": 1175,
+    "hr": 220,
+    "rbi": 634
+   }
+  },
+  {
+   "name": "R.クルーガー",
+   "display_name": "R.クルーガー",
+   "slug": "kreuger",
+   "type": "pitcher",
+   "years": "1979-1979",
+   "roman": "RICK KREUGER",
+   "npb": {
+    "games": 35,
+    "w": 4,
+    "era": "4.30",
+    "k": 36
+   }
+  },
+  {
+   "name": "R.ホワイト",
+   "display_name": "R.ホワイト",
+   "slug": "white",
+   "type": "batter",
+   "years": "1980-1982",
+   "roman": "ROY WHITE",
+   "npb": {
+    "games": 2243,
+    "avg": ".273",
+    "hits": 2151,
+    "hr": 214,
+    "rbi": 930
+   }
+  },
+  {
+   "name": "G.トマソン",
+   "display_name": "G.トマソン",
+   "slug": "thomasson",
+   "type": "batter",
+   "years": "1981-1982",
+   "roman": "GARY THOMASSON",
+   "npb": {
+    "games": 1067,
+    "avg": ".249",
+    "hits": 710,
+    "hr": 81,
+    "rbi": 349
+   }
+  },
+  {
+   "name": "H.クルーズ",
+   "display_name": "H.クルーズ",
+   "slug": "cruz",
+   "type": "batter",
+   "years": "1983-1983",
+   "roman": "HECTOR CRUZ",
+   "npb": {
+    "games": 682,
+    "avg": ".226",
+    "hits": 392,
+    "hr": 43,
+    "rbi": 217
+   }
+  },
+  {
+   "name": "R.スミス",
+   "display_name": "R.スミス",
+   "slug": "smith",
+   "type": "batter",
+   "years": "1983-1984",
+   "roman": "REGGIE SMITH",
+   "npb": {
+    "games": 2173,
+    "avg": ".286",
+    "hits": 2154,
+    "hr": 359,
+    "rbi": 1214
+   }
+  },
+  {
+   "name": "W.クロマティ",
+   "display_name": "W.クロマティ",
+   "slug": "cromartie",
+   "type": "batter",
+   "years": "1984-1990",
+   "roman": "WARREN CROMARTIE",
+   "npb": {
+    "games": 1886,
+    "avg": ".298",
+    "hits": 2055,
+    "hr": 232,
+    "rbi": 949
+   }
+  },
+  {
+   "name": "K.カムストック",
+   "display_name": "K.カムストック",
+   "slug": "comstock",
+   "type": "pitcher",
+   "years": "1985-1986",
+   "roman": "KEITH COMSTOCK",
+   "npb": {
+    "games": 168,
+    "w": 18,
+    "era": "4.25",
+    "k": 236
+   }
+  },
+  {
+   "name": "L.サンチェ",
+   "display_name": "L.サンチェ",
+   "slug": "sanchez",
+   "type": "pitcher",
+   "years": "1986-1987",
+   "roman": "LUIS SANCHEZ",
+   "npb": {
+    "games": 270,
+    "w": 32,
+    "era": "3.51",
+    "k": 275
+   }
+  },
+  {
+   "name": "J.パセラ",
+   "display_name": "J.パセラ",
+   "slug": "pacella",
+   "type": "pitcher",
+   "years": "1987-1987",
+   "roman": "JOHN PACELLA",
+   "npb": {
+    "games": 74,
+    "w": 4,
+    "era": "5.73",
+    "k": 116
+   }
+  },
+  {
+   "name": "B.ガリクソン",
+   "display_name": "B.ガリクソン",
+   "slug": "gullickson",
+   "type": "pitcher",
+   "years": "1988-1989",
+   "roman": "BILL GULLICKSON",
+   "npb": {
+    "games": 439,
+    "w": 183,
+    "era": "3.86",
+    "k": 1510
+   }
+  },
+  {
+   "name": "M.ブラウン",
+   "display_name": "M.ブラウン",
+   "slug": "brown",
+   "type": "batter",
+   "years": "1990-1990",
+   "roman": "MIKE BROWN",
+   "npb": {
+    "games": 385,
+    "avg": ".268",
+    "hits": 303,
+    "hr": 30,
+    "rbi": 142
+   }
+  },
+  {
+   "name": "DENNY.ゴンザレス",
+   "display_name": "DENNY.ゴンザレス",
+   "slug": "gonzalez",
+   "type": "batter",
+   "years": "1991-1992",
+   "roman": "DENNY GONZALEZ",
+   "npb": {
+    "games": 139,
+    "avg": ".220",
+    "hits": 85,
+    "hr": 13,
+    "rbi": 45
+   }
+  },
+  {
+   "name": "H.デラクルーズ",
+   "display_name": "H.デラクルーズ",
+   "slug": "delacruz-hector",
+   "type": "batter",
+   "years": "1991-1991",
+   "roman": "HECTOR De La CRUZ",
+   "npb": {
+    "games": 251,
+    "avg": ".267",
+    "hits": 211,
+    "hr": 24,
+    "rbi": 97
+   }
+  },
+  {
+   "name": "P.ブラッドリー",
+   "display_name": "P.ブラッドリー",
+   "slug": "bradley",
+   "type": "batter",
+   "years": "1991-1991",
+   "roman": "PHIL BRADLEY",
+   "npb": {
+    "games": 1143,
+    "avg": ".286",
+    "hits": 1182,
+    "hr": 99,
+    "rbi": 446
+   }
+  },
+  {
+   "name": "C.ケアリー",
+   "display_name": "C.ケアリー",
+   "slug": "cary",
+   "type": "pitcher",
+   "years": "1992-1992",
+   "roman": "CHARLES CARY",
+   "npb": {
+    "games": 153,
+    "w": 17,
+    "era": "4.10",
+    "k": 357
+   }
+  },
+  {
+   "name": "L.モスビー",
+   "display_name": "L.モスビー",
+   "slug": "moseby",
+   "type": "batter",
+   "years": "1992-1993",
+   "roman": "LLOYD MOSEBY",
+   "npb": {
+    "games": 1721,
+    "avg": ".259",
+    "hits": 1628,
+    "hr": 198,
+    "rbi": 821
+   }
+  },
+  {
+   "name": "Y.ペレス",
+   "display_name": "Y.ペレス",
+   "slug": "perez",
+   "type": "pitcher",
+   "years": "1992-1992",
+   "roman": "YORKIS PEREZ",
+   "npb": {
+    "games": 340,
+    "w": 14,
+    "era": "4.49",
+    "k": 265
+   }
+  },
+  {
+   "name": "J.バーフィールド",
+   "display_name": "J.バーフィールド",
+   "slug": "barfield",
+   "type": "batter",
+   "years": "1993-1993",
+   "roman": "JESSE BARFIELD",
+   "npb": {
+    "games": 1532,
+    "avg": ".253",
+    "hits": 1293,
+    "hr": 267,
+    "rbi": 769
+   }
+  },
+  {
+   "name": "M.ブラントリー",
+   "display_name": "M.ブラントリー",
+   "slug": "brantley",
+   "type": "batter",
+   "years": "1993-1993",
+   "roman": "MICKEY BRANTLY",
+   "npb": {
+    "games": 315,
+    "avg": ".256",
+    "hits": 303,
+    "hr": 0,
+    "rbi": 129
+   }
+  },
+  {
+   "name": "D.グラッデン",
+   "display_name": "D.グラッデン",
+   "slug": "gladden",
+   "type": "batter",
+   "years": "1994-1994",
+   "roman": "DAN GLADDEN",
+   "npb": {
+    "games": 1295,
+    "avg": ".270",
+    "hits": 1315,
+    "hr": 89,
+    "rbi": 483
+   }
+  },
+  {
+   "name": "H.コトー",
+   "display_name": "H.コトー",
+   "slug": "cotto",
+   "type": "batter",
+   "years": "1994-1994",
+   "roman": "HENRY COTTO",
+   "npb": {
+    "games": 991,
+    "avg": ".260",
+    "hits": 665,
+    "hr": 62,
+    "rbi": 262
+   }
+  },
+  {
+   "name": "J.ジョーンズ",
+   "display_name": "J.ジョーンズ",
+   "slug": "jones",
+   "type": "pitcher",
+   "years": "1994-1995",
+   "roman": "JIMMY JONES",
+   "npb": {
+    "games": 173,
+    "w": 52,
+    "era": "4.38",
+    "k": 427
+   }
+  },
+  {
+   "name": "J.ハウエル",
+   "display_name": "J.ハウエル",
+   "slug": "howell",
+   "type": "batter",
+   "years": "1995-1995",
+   "roman": "JACK HOWELL",
+   "npb": {
+    "games": 1346,
+    "avg": ".257",
+    "hits": 1029,
+    "hr": 208,
+    "rbi": 609
+   }
+  },
+  {
+   "name": "S.マック",
+   "display_name": "S.マック",
+   "slug": "mack",
+   "type": "batter",
+   "years": "1995-1996",
+   "roman": "SHANE MACK",
+   "npb": {
+    "games": 1170,
+    "avg": ".295",
+    "hits": 1126,
+    "hr": 122,
+    "rbi": 525
+   }
+  },
+  {
+   "name": "B.ガルベス",
+   "display_name": "B.ガルベス",
+   "slug": "galvez",
+   "type": "pitcher",
+   "years": "1996-2000",
+   "roman": "BALVINO GALVEZ",
+   "npb": {
+    "games": 179,
+    "w": 82,
+    "era": "3.01",
+    "k": 742
+   }
+  },
+  {
+   "name": "J.マント",
+   "display_name": "J.マント",
+   "slug": "manto",
+   "type": "batter",
+   "years": "1996-1996",
+   "roman": "JEFF MANTO",
+   "npb": {
+    "games": 299,
+    "avg": ".226",
+    "hits": 167,
+    "hr": 31,
+    "rbi": 98
+   }
+  },
+  {
+   "name": "マリオ&thinsp;B.",
+   "display_name": "マリオ B.",
+   "slug": "mario",
+   "type": "pitcher",
+   "years": "1996-1996",
+   "roman": "MARIO BRITO",
+   "npb": {
+    "games": 89,
+    "w": 7,
+    "era": "3.64",
+    "k": 147
+   }
+  },
+  {
+   "name": "趙成珉",
+   "display_name": "趙成珉",
+   "slug": "cho-sungmin",
+   "type": "pitcher",
+   "years": "1996-2002",
+   "roman": "CHO SUNG MIN",
+   "npb": {
+    "games": 53,
+    "w": 11,
+    "era": "2.84",
+    "k": 127
+   }
+  },
+  {
+   "name": "E.ヒルマン",
+   "display_name": "E.ヒルマン",
+   "slug": "hillman",
+   "type": "pitcher",
+   "years": "1997-1998",
+   "roman": "ERIC HILLMAN",
+   "npb": {
+    "games": 108,
+    "w": 30,
+    "era": "3.43",
+    "k": 339
+   }
+  },
+  {
+   "name": "P.カステヤーノ",
+   "display_name": "P.カステヤーノ",
+   "slug": "castellano",
+   "type": "batter",
+   "years": "1997-1997",
+   "roman": "PEDRO CASTELLANO",
+   "npb": {
+    "games": 115,
+    "avg": ".181",
+    "hits": 39,
+    "hr": 7,
+    "rbi": 32
+   }
+  },
+  {
+   "name": "デビット&thinsp;P.",
+   "display_name": "デビット P.",
+   "slug": "david",
+   "type": "pitcher",
+   "years": "1997-1997",
+   "roman": "DAVID PAVLAS",
+   "npb": {
+    "games": 63,
+    "w": 6,
+    "era": "2.74",
+    "k": 65
+   }
+  },
+  {
+   "name": "ルイス&thinsp;S.",
+   "display_name": "ルイス S.",
+   "slug": "luis",
+   "type": "batter",
+   "years": "1997-1997",
+   "roman": "LUIS SANTOS",
+   "npb": {
+    "games": 686,
+    "avg": ".332",
+    "hits": 840,
+    "hr": 114,
+    "rbi": 493
+   }
+  },
+  {
+   "name": "M.ダンカン",
+   "display_name": "M.ダンカン",
+   "slug": "duncan",
+   "type": "batter",
+   "years": "1998-1998",
+   "roman": "MARIANO DUNCAN",
+   "npb": {
+    "games": 1342,
+    "avg": ".265",
+    "hits": 1295,
+    "hr": 97,
+    "rbi": 525
+   }
+  },
+  {
+   "name": "D.マルティネス",
+   "display_name": "D.マルティネス",
+   "slug": "martinez",
+   "type": "batter",
+   "years": "1999-2001",
+   "roman": "DOMINGO MARTINEZ",
+   "npb": {
+    "games": 553,
+    "avg": ".295",
+    "hits": 506,
+    "hr": 106,
+    "rbi": 356
+   }
+  },
+  {
+   "name": "E.デセンス",
+   "display_name": "E.デセンス",
+   "slug": "dessens",
+   "type": "pitcher",
+   "years": "1999-1999",
+   "roman": "ELMER DESSENS",
+   "npb": {
+    "games": 449,
+    "w": 52,
+    "era": "4.43",
+    "k": 699
+   }
+  },
+  {
+   "name": "ホセ&thinsp;P.",
+   "display_name": "ホセ P.",
+   "slug": "jose",
+   "type": "pitcher",
+   "years": "1999-1999",
+   "roman": "JOSE PARRA",
+   "npb": {
+    "games": 217,
+    "w": 28,
+    "era": "4.57",
+    "k": 313
+   }
+  },
+  {
+   "name": "D.メイ",
+   "display_name": "D.メイ",
+   "slug": "may",
+   "type": "pitcher",
+   "years": "2000-2001",
+   "roman": "DARRELL MAY",
+   "npb": {
+    "games": 250,
+    "w": 58,
+    "era": "4.48",
+    "k": 954
+   }
+  },
+  {
+   "name": "鄭珉哲",
+   "display_name": "鄭珉哲",
+   "slug": "jung-minchul",
+   "type": "pitcher",
+   "years": "2000-2001",
+   "roman": "JUNG MIN CHUL",
+   "npb": {
+    "games": 12,
+    "w": 3,
+    "era": "4.70",
+    "k": 44
+   }
+  },
+  {
+   "name": "H.アルモンテ",
+   "display_name": "H.アルモンテ",
+   "slug": "almonte",
+   "type": "pitcher",
+   "years": "2001-2002",
+   "roman": "HECTOR ALMONTE",
+   "npb": {
+    "games": 81,
+    "w": 1,
+    "era": "4.88",
+    "k": 63
+   }
+  },
+  {
+   "name": "鄭珉台",
+   "display_name": "鄭珉台",
+   "slug": "chung-mintae",
+   "type": "pitcher",
+   "years": "2001-2002",
+   "roman": "CHUNG MIN TAE",
+   "npb": {
+    "games": 27,
+    "w": 2,
+    "era": "6.28",
+    "k": 28
+   }
+  },
+  {
+   "name": "F.クレスポ",
+   "display_name": "F.クレスポ",
+   "slug": "crespo",
+   "type": "batter",
+   "years": "2002-2002",
+   "roman": "FELIPE CRESPO",
+   "npb": {
+    "games": 286,
+    "avg": ".235",
+    "hits": 114,
+    "hr": 12,
+    "rbi": 75
+   }
+  },
+  {
+   "name": "J.ワズディン",
+   "display_name": "J.ワズディン",
+   "slug": "wasdin",
+   "type": "pitcher",
+   "years": "2002-2002",
+   "roman": "JOHN WASDIN",
+   "npb": {
+    "games": 352,
+    "w": 42,
+    "era": "5.25",
+    "k": 582
+   }
+  },
+  {
+   "name": "C.ベイリー",
+   "display_name": "C.ベイリー",
+   "slug": "bailey",
+   "type": "pitcher",
+   "years": "2003-2003",
+   "roman": "CORY BAILEY",
+   "npb": {
+    "games": 202,
+    "w": 10,
+    "era": "4.08",
+    "k": 182
+   }
+  },
+  {
+   "name": "C.レイサム",
+   "display_name": "C.レイサム",
+   "slug": "latham",
+   "type": "batter",
+   "years": "2003-2004",
+   "roman": "CHRIS LATHAM",
+   "npb": {
+    "games": 170,
+    "avg": ".209",
+    "hits": 72,
+    "hr": 10,
+    "rbi": 36
+   }
+  },
+  {
+   "name": "G.ラス",
+   "display_name": "G.ラス",
+   "slug": "rath",
+   "type": "pitcher",
+   "years": "2003-2003",
+   "roman": "GARY RATH",
+   "npb": {
+    "games": 163,
+    "w": 61,
+    "era": "3.91",
+    "k": 616
+   }
+  },
+  {
+   "name": "J.サンタナ",
+   "display_name": "J.サンタナ",
+   "slug": "santana",
+   "type": "pitcher",
+   "years": "2003-2004",
+   "roman": "JULIO SANTANA",
+   "npb": {
+    "games": 234,
+    "w": 19,
+    "era": "5.28",
+    "k": 329
+   }
+  },
+  {
+   "name": "M.ランデル",
+   "display_name": "M.ランデル",
+   "slug": "randel",
+   "type": "pitcher",
+   "years": "2003-2004",
+   "roman": "MATT RANDEL",
+   "npb": {
+    "games": 144,
+    "w": 53,
+    "era": "3.58",
+    "k": 515
+   }
+  },
+  {
+   "name": "R.ペタジーニ",
+   "display_name": "R.ペタジーニ",
+   "slug": "petagine",
+   "type": "batter",
+   "years": "2003-2004",
+   "roman": "ROBERTO PETAGINE",
+   "npb": {
+    "games": 1262,
+    "avg": ".308",
+    "hits": 1169,
+    "hr": 278,
+    "rbi": 824
+   }
+  },
+  {
+   "name": "R.ペドラザ",
+   "display_name": "R.ペドラザ",
+   "slug": "pedraza",
+   "type": "pitcher",
+   "years": "2003-2003",
+   "roman": "RODNEY PEDRAZA",
+   "npb": {
+    "games": 194,
+    "w": 12,
+    "era": "2.99",
+    "k": 126
+   }
+  },
+  {
+   "name": "B.コーリー",
+   "display_name": "B.コーリー",
+   "slug": "corey",
+   "type": "pitcher",
+   "years": "2004-2004",
+   "roman": "BRYAN COREY",
+   "npb": {
+    "games": 156,
+    "w": 15,
+    "era": "4.80",
+    "k": 167
+   }
+  },
+  {
+   "name": "B.シコースキー",
+   "display_name": "B.シコースキー",
+   "slug": "sikorski",
+   "type": "pitcher",
+   "years": "2004-2005",
+   "roman": "BRIAN SIKORSKI",
+   "npb": {
+    "games": 478,
+    "w": 41,
+    "era": "3.34",
+    "k": 668
+   }
+  },
+  {
+   "name": "T.ローズ",
+   "display_name": "T.ローズ",
+   "slug": "rhodes",
+   "type": "batter",
+   "years": "2004-2005",
+   "roman": "TUFFY RHODES",
+   "npb": {
+    "games": 1899,
+    "avg": ".280",
+    "hits": 1924,
+    "hr": 477,
+    "rbi": 1313
+   }
+  },
+  {
+   "name": "D.ミセリ",
+   "display_name": "D.ミセリ",
+   "slug": "miceli",
+   "type": "pitcher",
+   "years": "2005-2005",
+   "roman": "DAN MICELI",
+   "npb": {
+    "games": 635,
+    "w": 42,
+    "era": "4.56",
+    "k": 635
+   }
+  },
+  {
+   "name": "G.キャプラー",
+   "display_name": "G.キャプラー",
+   "slug": "kapler",
+   "type": "batter",
+   "years": "2005-2005",
+   "roman": "GABE KAPLER",
+   "npb": {
+    "games": 1142,
+    "avg": ".264",
+    "hits": 816,
+    "hr": 85,
+    "rbi": 392
+   }
+  },
+  {
+   "name": "J.B.ミアディッチ",
+   "display_name": "J.B.ミアディッチ",
+   "slug": "miadich",
+   "type": "pitcher",
+   "years": "2005-2005",
+   "roman": "J・B MIADICH",
+   "npb": {
+    "games": 27,
+    "w": 0,
+    "era": "7.02",
+    "k": 43
+   }
+  },
+  {
+   "name": "S.マレン",
+   "display_name": "S.マレン",
+   "slug": "mullen",
+   "type": "pitcher",
+   "years": "2005-2005",
+   "roman": "SCOTT MULLEN",
+   "npb": {
+    "games": 125,
+    "w": 17,
+    "era": "5.15",
+    "k": 202
+   }
+  },
+  {
+   "name": "G.アリアス",
+   "display_name": "G.アリアス",
+   "slug": "arias",
+   "type": "batter",
+   "years": "2006-2006",
+   "roman": "GEORGE ARIAS",
+   "npb": {
+    "games": 812,
+    "avg": ".255",
+    "hits": 726,
+    "hr": 175,
+    "rbi": 491
+   }
+  },
+  {
+   "name": "G.グローバー",
+   "display_name": "G.グローバー",
+   "slug": "glover",
+   "type": "pitcher",
+   "years": "2006-2006",
+   "roman": "GARY GLOVER",
+   "npb": {
+    "games": 349,
+    "w": 56,
+    "era": "4.65",
+    "k": 669
+   }
+  },
+  {
+   "name": "J.ディロン",
+   "display_name": "J.ディロン",
+   "slug": "dillon",
+   "type": "batter",
+   "years": "2006-2006",
+   "roman": "JOE DILLON",
+   "npb": {
+    "games": 168,
+    "avg": ".243",
+    "hits": 74,
+    "hr": 5,
+    "rbi": 26
+   }
+  },
+  {
+   "name": "J.パウエル(ＪＰ)",
+   "display_name": "J.パウエル(ＪＰ)",
+   "slug": "powell",
+   "type": "pitcher",
+   "years": "2006-2007",
+   "roman": "JEREMY POWELL",
+   "npb": {
+    "games": 208,
+    "w": 74,
+    "era": "4.19",
+    "k": 935
+   }
+  },
+  {
+   "name": "林羿豪",
+   "display_name": "林羿豪",
+   "slug": "lin",
+   "type": "pitcher",
+   "years": "2006-2013",
+   "roman": "YI-HAO LIN",
+   "npb": {
+    "games": 2,
+    "w": 0,
+    "era": "12.60",
+    "k": 4
+   }
+  },
+  {
+   "name": "D.ホリンズ",
+   "display_name": "D.ホリンズ",
+   "slug": "hollins",
+   "type": "batter",
+   "years": "2007-2007",
+   "roman": "DAMON HOLLINS",
+   "npb": {
+    "games": 380,
+    "avg": ".247",
+    "hits": 267,
+    "hr": 40,
+    "rbi": 131
+   }
+  },
+  {
+   "name": "GG",
+   "display_name": "GG",
+   "slug": "gonzalez07",
+   "type": "pitcher",
+   "years": "2007-2007",
+   "roman": "GEREMI GONZALEZ",
+   "npb": {
+    "games": 136,
+    "w": 31,
+    "era": "4.99",
+    "k": 371
+   }
+  },
+  {
+   "name": "L.ゴンザレス",
+   "display_name": "L.ゴンザレス",
+   "slug": "gonzalez08",
+   "type": "batter",
+   "years": "2007-2008",
+   "roman": "LUIS GONZALEZ",
+   "npb": {
+    "games": 348,
+    "avg": ".283",
+    "hits": 301,
+    "hr": 28,
+    "rbi": 127
+   }
+  },
+  {
+   "name": "W.オビスポ",
+   "display_name": "W.オビスポ",
+   "slug": "obispo",
+   "type": "pitcher",
+   "years": "2007-2010",
+   "roman": "WIRFIN OBISPO",
+   "npb": {
+    "games": 32,
+    "w": 8,
+    "era": "4.13",
+    "k": 71
+   }
+  },
+  {
+   "name": "A.バーンサイド",
+   "display_name": "A.バーンサイド",
+   "slug": "burnside",
+   "type": "pitcher",
+   "years": "2008-2009",
+   "roman": "ADRIAN BURNSIDE",
+   "npb": {
+    "games": 54,
+    "w": 21,
+    "era": "4.47",
+    "k": 176
+   }
+  },
+  {
+   "name": "A.ラミレス",
+   "display_name": "A.ラミレス",
+   "slug": "ramirez",
+   "type": "batter",
+   "years": "2008-2011",
+   "roman": "ALEX RAMIREZ",
+   "npb": {
+    "games": 1879,
+    "avg": ".299",
+    "hits": 2103,
+    "hr": 392,
+    "rbi": 1320
+   }
+  },
+  {
+   "name": "M.クルーン",
+   "display_name": "M.クルーン",
+   "slug": "kroon",
+   "type": "pitcher",
+   "years": "2008-2010",
+   "roman": "MARC KROON",
+   "npb": {
+    "games": 330,
+    "w": 14,
+    "era": "3.09",
+    "k": 440
+   }
+  },
+  {
+   "name": "S.グライシンガー",
+   "display_name": "S.グライシンガー",
+   "slug": "greisinger",
+   "type": "pitcher",
+   "years": "2008-2011",
+   "roman": "SETH GREISINGER",
+   "npb": {
+    "games": 224,
+    "w": 94,
+    "era": "3.57",
+    "k": 970
+   }
+  },
+  {
+   "name": "DICKY.ゴンザレス",
+   "display_name": "DICKY.ゴンザレス",
+   "slug": "gonzalez09",
+   "type": "pitcher",
+   "years": "2009-2012",
+   "roman": "DICKY GONZALEZ",
+   "npb": {
+    "games": 163,
+    "w": 48,
+    "era": "3.68",
+    "k": 550
+   }
+  },
+  {
+   "name": "E.アルフォンゾ",
+   "display_name": "E.アルフォンゾ",
+   "slug": "alfonzo",
+   "type": "batter",
+   "years": "2009-2009",
+   "roman": "EDGARDO ALFONZO",
+   "npb": {
+    "games": 1527,
+    "avg": ".283",
+    "hits": 1538,
+    "hr": 148,
+    "rbi": 748
+   }
+  },
+  {
+   "name": "L.ロメロ",
+   "display_name": "L.ロメロ",
+   "slug": "romero",
+   "type": "pitcher",
+   "years": "2009-2012",
+   "roman": "LEVI ROMERO",
+   "npb": {
+    "games": 51,
+    "w": 2,
+    "era": "3.10",
+    "k": 48
+   }
+  },
+  {
+   "name": "エドガー&thinsp;G.",
+   "display_name": "エドガー G.",
+   "slug": "gonzalez10",
+   "type": "batter",
+   "years": "2010-2012",
+   "roman": "EDGAR GONZALEZ",
+   "npb": {
+    "games": 350,
+    "avg": ".254",
+    "hits": 239,
+    "hr": 27,
+    "rbi": 114
+   }
+  },
+  {
+   "name": "B.バニスター",
+   "display_name": "B.バニスター",
+   "slug": "bannister",
+   "type": "pitcher",
+   "years": "2011-2011",
+   "roman": "BRIAN BANNISTER",
+   "npb": {
+    "games": 117,
+    "w": 37,
+    "era": "5.08",
+    "k": 384
+   }
+  },
+  {
+   "name": "C.トーレス",
+   "display_name": "C.トーレス",
+   "slug": "torres",
+   "type": "pitcher",
+   "years": "2011-2011",
+   "roman": "CARLOS TORRES",
+   "npb": {
+    "games": 368,
+    "w": 31,
+    "era": "4.20",
+    "k": 466
+   }
+  },
+  {
+   "name": "J.アルバラデホ",
+   "display_name": "J.アルバラデホ",
+   "slug": "albaladejo",
+   "type": "pitcher",
+   "years": "2011-2011",
+   "roman": "JONATHAN ALBALADEJO",
+   "npb": {
+    "games": 112,
+    "w": 8,
+    "era": "3.59",
+    "k": 100
+   }
+  },
+  {
+   "name": "J.フィールズ",
+   "display_name": "J.フィールズ",
+   "slug": "fields",
+   "type": "batter",
+   "years": "2011-2011",
+   "roman": "JOSH FIELDS",
+   "npb": {
+    "games": 257,
+    "avg": ".230",
+    "hits": 189,
+    "hr": 36,
+    "rbi": 116
+   }
+  },
+  {
+   "name": "R.ライアル",
+   "display_name": "R.ライアル",
+   "slug": "ryal",
+   "type": "batter",
+   "years": "2011-2011",
+   "roman": "RUSTY RYAL",
+   "npb": {
+    "games": 167,
+    "avg": ".246",
+    "hits": 89,
+    "hr": 6,
+    "rbi": 24
+   }
+  },
+  {
+   "name": "D.ホールトン",
+   "display_name": "D.ホールトン",
+   "slug": "houlton",
+   "type": "pitcher",
+   "years": "2012-2013",
+   "roman": "DENNIS HOULTON",
+   "npb": {
+    "games": 208,
+    "w": 74,
+    "era": "3.62",
+    "k": 782
+   }
+  },
+  {
+   "name": "J.ボウカー",
+   "display_name": "J.ボウカー",
+   "slug": "bowker",
+   "type": "batter",
+   "years": "2012-2013",
+   "roman": "JOHN BOWKER",
+   "npb": {
+    "games": 479,
+    "avg": ".236",
+    "hits": 293,
+    "hr": 41,
+    "rbi": 151
+   }
+  },
+  {
+   "name": "S.マシソン",
+   "display_name": "S.マシソン",
+   "slug": "mathieson",
+   "type": "pitcher",
+   "years": "2012-2019",
+   "roman": "SCOTT MATHIESON",
+   "npb": {
+    "games": 436,
+    "w": 28,
+    "era": "2.86",
+    "k": 526
+   }
+  },
+  {
+   "name": "J.ロペス",
+   "display_name": "J.ロペス",
+   "slug": "lopez",
+   "type": "batter",
+   "years": "2013-2014",
+   "roman": "JOSE LOPEZ",
+   "npb": {
+    "games": 2029,
+    "avg": ".268",
+    "hits": 2006,
+    "hr": 290,
+    "rbi": 1068
+   }
+  },
+  {
+   "name": "M.アコスタ",
+   "display_name": "M.アコスタ",
+   "slug": "acosta",
+   "type": "pitcher",
+   "years": "2013-2013",
+   "roman": "MANNY ACOSTA",
+   "npb": {
+    "games": 247,
+    "w": 14,
+    "era": "4.07",
+    "k": 231
+   }
+  },
+  {
+   "name": "C.セドン",
+   "display_name": "C.セドン",
+   "slug": "seddon",
+   "type": "pitcher",
+   "years": "2014-2014",
+   "roman": "CHRIS SEDDON",
+   "npb": {
+    "games": 126,
+    "w": 38,
+    "era": "4.37",
+    "k": 460
+   }
+  },
+  {
+   "name": "F.セペダ",
+   "display_name": "F.セペダ",
+   "slug": "cepeda",
+   "type": "batter",
+   "years": "2014-2015",
+   "roman": "FREDERICH CEPEDA",
+   "npb": {
+    "games": 1491,
+    "avg": ".324",
+    "hits": 1602,
+    "hr": 238,
+    "rbi": 927
+   }
+  },
+  {
+   "name": "H.メンドーサ",
+   "display_name": "H.メンドーサ",
+   "slug": "mendoza",
+   "type": "pitcher",
+   "years": "2014-2016",
+   "roman": "HECTOR MENDOZA",
+   "npb": {
+    "games": 59,
+    "w": 8,
+    "era": "2.95",
+    "k": 110
+   }
+  },
+  {
+   "name": "L.アンダーソン",
+   "display_name": "L.アンダーソン",
+   "slug": "anderson",
+   "type": "batter",
+   "years": "2014-2016",
+   "roman": "LESLIE ANDERSON",
+   "npb": {
+    "games": 959,
+    "avg": ".322",
+    "hits": 1099,
+    "hr": 107,
+    "rbi": 555
+   }
+  },
+  {
+   "name": "A.カステヤーノス",
+   "display_name": "A.カステヤーノス",
+   "slug": "castellanos",
+   "type": "batter",
+   "years": "2015-2015",
+   "roman": "ALEX CASTELLANOS",
+   "npb": {
+    "games": 30,
+    "avg": ".148",
+    "hits": 9,
+    "hr": 2,
+    "rbi": 5
+   }
+  },
+  {
+   "name": "A.ポレダ",
+   "display_name": "A.ポレダ",
+   "slug": "poreda",
+   "type": "pitcher",
+   "years": "2015-2016",
+   "roman": "AARON POREDA",
+   "npb": {
+    "games": 69,
+    "w": 12,
+    "era": "3.36",
+    "k": 153
+   }
+  },
+  {
+   "name": "J.フランシスコ",
+   "display_name": "J.フランシスコ",
+   "slug": "francisco",
+   "type": "batter",
+   "years": "2015-2015",
+   "roman": "JUAN FRANCISCO",
+   "npb": {
+    "games": 409,
+    "avg": ".235",
+    "hits": 238,
+    "hr": 48,
+    "rbi": 153
+   }
+  },
+  {
+   "name": "M.マイコラス",
+   "display_name": "M.マイコラス",
+   "slug": "mikolas",
+   "type": "pitcher",
+   "years": "2015-2017",
+   "roman": "MILES MIKOLAS",
+   "npb": {
+    "games": 303,
+    "w": 103,
+    "era": "3.72",
+    "k": 1273
+   }
+  },
+  {
+   "name": "A.アブレイユ",
+   "display_name": "A.アブレイユ",
+   "slug": "abreu",
+   "type": "batter",
+   "years": "2016-2016",
+   "roman": "ABNER ABREU",
+   "npb": {
+    "games": 7,
+    "avg": ".250",
+    "hits": 4,
+    "hr": 0,
+    "rbi": 4
+   }
+  },
+  {
+   "name": "J.A.ガルシア",
+   "display_name": "J.A.ガルシア",
+   "slug": "garcia",
+   "type": "batter",
+   "years": "2016-2016",
+   "roman": "JOSE A GARCIA",
+   "npb": {
+    "games": 898,
+    "avg": ".256",
+    "hits": 820,
+    "hr": 150,
+    "rbi": 523
+   }
+  },
+  {
+   "name": "L.クルーズ",
+   "display_name": "L.クルーズ",
+   "slug": "cruz16",
+   "type": "batter",
+   "years": "2016-2017",
+   "roman": "LUIS CRUZ",
+   "npb": {
+    "games": 557,
+    "avg": ".241",
+    "hits": 465,
+    "hr": 50,
+    "rbi": 233
+   }
+  },
+  {
+   "name": "M.ソリマン",
+   "display_name": "M.ソリマン",
+   "slug": "soliman",
+   "type": "batter",
+   "years": "2016-2017",
+   "roman": "MANUEL SOLIMAN",
+   "npb": {
+    "games": 13
+   }
+  },
+  {
+   "name": "S.アダメス",
+   "display_name": "S.アダメス",
+   "slug": "adames",
+   "type": "pitcher",
+   "years": "2016-2019",
+   "roman": "SAMUEL ADAMES",
+   "npb": {
+    "games": 39,
+    "w": 0,
+    "era": "4.57",
+    "k": 23
+   }
+  },
+  {
+   "name": "ギャレット&thinsp;J.",
+   "display_name": "ギャレット J.",
+   "slug": "garrett",
+   "type": "batter",
+   "years": "2016-2017",
+   "roman": "GARRETT JONES",
+   "npb": {
+    "games": 1034,
+    "avg": ".252",
+    "hits": 843,
+    "hr": 146,
+    "rbi": 468
+   }
+  },
+  {
+   "name": "A.カミネロ",
+   "display_name": "A.カミネロ",
+   "slug": "caminero",
+   "type": "pitcher",
+   "years": "2017-2018",
+   "roman": "ARQUIMEDES CAMINERO",
+   "npb": {
+    "games": 226,
+    "w": 11,
+    "era": "3.61",
+    "k": 227
+   }
+  },
+  {
+   "name": "C.C.メルセデス",
+   "display_name": "C.C.メルセデス",
+   "slug": "mercedes",
+   "type": "pitcher",
+   "years": "2017-2022",
+   "roman": "CRISTOPHER C MERCEDES",
+   "npb": {
+    "games": 126,
+    "w": 37,
+    "era": "3.06",
+    "k": 484
+   }
+  },
+  {
+   "name": "C.マギー",
+   "display_name": "C.マギー",
+   "slug": "mcgehee",
+   "type": "batter",
+   "years": "2017-2018",
+   "roman": "CASEY McGEHEE",
+   "npb": {
+    "games": 1265,
+    "avg": ".272",
+    "hits": 1178,
+    "hr": 134,
+    "rbi": 634
+   }
+  },
+  {
+   "name": "J.マルティネス",
+   "display_name": "J.マルティネス",
+   "slug": "martinez17",
+   "type": "batter",
+   "years": "2017-2019",
+   "roman": "JORGE MARTINEZ",
+   "npb": {
+    "games": 25,
+    "avg": ".174",
+    "hits": 12,
+    "hr": 2,
+    "rbi": 6
+   }
+  },
+  {
+   "name": "A.ゲレーロ",
+   "display_name": "A.ゲレーロ",
+   "slug": "guerrero",
+   "type": "batter",
+   "years": "2018-2019",
+   "roman": "ALEX GUERRERO",
+   "npb": {
+    "games": 1037,
+    "avg": ".283",
+    "hits": 908,
+    "hr": 184,
+    "rbi": 623
+   }
+  },
+  {
+   "name": "T.ヤングマン",
+   "display_name": "T.ヤングマン",
+   "slug": "jungmann",
+   "type": "pitcher",
+   "years": "2018-2019",
+   "roman": "TAYLOR JUNGMANN",
+   "npb": {
+    "games": 44,
+    "w": 15,
+    "era": "4.65",
+    "k": 179
+   }
+  },
+  {
+   "name": "C.ビヤヌエバ",
+   "display_name": "C.ビヤヌエバ",
+   "slug": "villanueva",
+   "type": "batter",
+   "years": "2019-2019",
+   "roman": "CHRISTIAN VILLANUEVA",
+   "npb": {
+    "games": 249,
+    "avg": ".234",
+    "hits": 176,
+    "hr": 36,
+    "rbi": 96
+   }
+  },
+  {
+   "name": "I.モタ",
+   "display_name": "I.モタ",
+   "slug": "mota",
+   "type": "batter",
+   "years": "2019-2020",
+   "roman": "ISRAEL MOTA",
+   "npb": {
+    "games": 9,
+    "avg": ".222",
+    "hits": 2,
+    "hr": 1,
+    "rbi": 4
+   }
+  },
+  {
+   "name": "R.クック",
+   "display_name": "R.クック",
+   "slug": "cook",
+   "type": "pitcher",
+   "years": "2019-2019",
+   "roman": "RYAN COOK",
+   "npb": {
+    "games": 249,
+    "w": 15,
+    "era": "3.65",
+    "k": 242
+   }
+  },
+  {
+   "name": "R.デラロサ",
+   "display_name": "R.デラロサ",
+   "slug": "delarosa",
+   "type": "pitcher",
+   "years": "2019-2022",
+   "roman": "RUBBY De La ROSA",
+   "npb": {
+    "games": 235,
+    "w": 30,
+    "era": "3.62",
+    "k": 474
+   }
+  },
+  {
+   "name": "R.ラモス",
+   "display_name": "R.ラモス",
+   "slug": "ramos",
+   "type": "pitcher",
+   "years": "2019-2020",
+   "roman": "REIMIN RAMOS",
+   "npb": {
+    "games": 78,
+    "w": 11,
+    "era": "2.85",
+    "k": 129
+   }
+  },
+  {
+   "name": "A.サンチェス",
+   "display_name": "A.サンチェス",
+   "slug": "sanchez20",
+   "type": "pitcher",
+   "years": "2020-2021",
+   "roman": "ANGEL SANCHEZ",
+   "npb": {
+    "games": 94,
+    "w": 39,
+    "era": "3.85",
+    "k": 395
+   }
+  },
+  {
+   "name": "E.ウレーニャ",
+   "display_name": "E.ウレーニャ",
+   "slug": "urena",
+   "type": "batter",
+   "years": "2020-2024",
+   "roman": "ESTAMY URENA",
+   "npb": {
+    "games": 22,
+    "avg": ".100",
+    "hits": 3,
+    "hr": 0,
+    "rbi": 0
+   }
+  },
+  {
+   "name": "G.パーラ",
+   "display_name": "G.パーラ",
+   "slug": "para",
+   "type": "batter",
+   "years": "2020-2020",
+   "roman": "GERARDO PARRA",
+   "npb": {
+    "games": 1566,
+    "avg": ".275",
+    "hits": 1374,
+    "hr": 94,
+    "rbi": 545
+   }
+  },
+  {
+   "name": "N.ディプラン",
+   "display_name": "N.ディプラン",
+   "slug": "diplan",
+   "type": "pitcher",
+   "years": "2020-2020",
+   "roman": "NATTINO DIPLAN",
+   "npb": {
+    "games": 2,
+    "w": 0,
+    "era": "19.29",
+    "k": 2
+   }
+  },
+  {
+   "name": "T.ビエイラ",
+   "display_name": "T.ビエイラ",
+   "slug": "vieira",
+   "type": "pitcher",
+   "years": "2020-2022",
+   "roman": "THYAGO VIEIRA",
+   "npb": {
+    "games": 145,
+    "w": 2,
+    "era": "4.56",
+    "k": 166
+   }
+  },
+  {
+   "name": "Z.ウィーラー",
+   "display_name": "Z.ウィーラー",
+   "slug": "wheeler",
+   "type": "batter",
+   "years": "2020-2022",
+   "roman": "ZELOUS WHEELER",
+   "npb": {
+    "games": 874,
+    "avg": ".261",
+    "hits": 751,
+    "hr": 137,
+    "rbi": 447
+   }
+  },
+  {
+   "name": "E.テームズ",
+   "display_name": "E.テームズ",
+   "slug": "thames",
+   "type": "batter",
+   "years": "2021-2021",
+   "roman": "ERIC THAMES",
+   "npb": {
+    "games": 996,
+    "avg": ".287",
+    "hits": 923,
+    "hr": 220,
+    "rbi": 617
+   }
+  },
+  {
+   "name": "J.スモーク",
+   "display_name": "J.スモーク",
+   "slug": "smoak",
+   "type": "batter",
+   "years": "2021-2021",
+   "roman": "JUSTIN SMOAK",
+   "npb": {
+    "games": 1320,
+    "avg": ".230",
+    "hits": 982,
+    "hr": 203,
+    "rbi": 584
+   }
+  },
+  {
+   "name": "J.デラクルーズ",
+   "display_name": "J.デラクルーズ",
+   "slug": "delacruz-jose",
+   "type": "batter",
+   "years": "2021-2023",
+   "roman": "JOSE De La CRUZ",
+   "npb": {
+    "games": 0
+   }
+  },
+  {
+   "name": "S.ハイネマン",
+   "display_name": "S.ハイネマン",
+   "slug": "heineman",
+   "type": "batter",
+   "years": "2021-2021",
+   "roman": "SCOTT HEINEMAN",
+   "npb": {
+    "games": 78,
+    "avg": ".170",
+    "hits": 31,
+    "hr": 5,
+    "rbi": 19
+   }
+  },
+  {
+   "name": "ダニエルM.",
+   "display_name": "ダニエル M.",
+   "slug": "daniel",
+   "type": "pitcher",
+   "years": "2021-2022",
+   "roman": "DANIEL MISSAKI",
+   "npb": {
+    "games": 76,
+    "w": 12,
+    "era": "3.41",
+    "k": 190
+   }
+  },
+  {
+   "name": "A.ウォーカー",
+   "display_name": "A.ウォーカー",
+   "slug": "walker",
+   "type": "batter",
+   "years": "2022-2023",
+   "roman": "ADAM WALKER",
+   "npb": {
+    "games": 201,
+    "avg": ".258",
+    "hits": 152,
+    "hr": 30,
+    "rbi": 75
+   }
+  },
+  {
+   "name": "G.ポランコ",
+   "display_name": "G.ポランコ",
+   "slug": "polanco",
+   "type": "batter",
+   "years": "2022-2022",
+   "roman": "GREGORY POLANCO",
+   "npb": {
+    "games": 1243,
+    "avg": ".240",
+    "hits": 1038,
+    "hr": 174,
+    "rbi": 568
+   }
+  },
+  {
+   "name": "I.クロール",
+   "display_name": "I.クロール",
+   "slug": "krol",
+   "type": "pitcher",
+   "years": "2022-2022",
+   "roman": "IAN KROL",
+   "npb": {
+    "games": 264,
+    "w": 9,
+    "era": "4.43",
+    "k": 211
+   }
+  },
+  {
+   "name": "M.アンドリース",
+   "display_name": "M.アンドリース",
+   "slug": "andriese",
+   "type": "pitcher",
+   "years": "2022-2022",
+   "roman": "MATT ANDRIESE",
+   "npb": {
+    "games": 226,
+    "w": 28,
+    "era": "4.65",
+    "k": 499
+   }
+  },
+  {
+   "name": "M.シューメーカー",
+   "display_name": "M.シューメーカー",
+   "slug": "shoemaker",
+   "type": "pitcher",
+   "years": "2022-2022",
+   "roman": "MATT SHOEMAKER",
+   "npb": {
+    "games": 146,
+    "w": 50,
+    "era": "4.24",
+    "k": 645
+   }
+  },
+  {
+   "name": "L.ブリンソン",
+   "display_name": "L.ブリンソン",
+   "slug": "brinson",
+   "type": "batter",
+   "years": "2023-2023",
+   "roman": "LEWIS BRINSON",
+   "npb": {
+    "games": 445,
+    "avg": ".208",
+    "hits": 282,
+    "hr": 39,
+    "rbi": 144
+   }
+  },
+  {
+   "name": "T.ビーディ",
+   "display_name": "T.ビーディ",
+   "slug": "beede",
+   "type": "batter",
+   "years": "2023-2023",
+   "roman": "TYLER BEEDE",
+   "npb": {
+    "games": 102,
+    "avg": ".106",
+    "hits": 5,
+    "hr": 0,
+    "rbi": 3
+   }
+  },
+  {
+   "name": "Y.メンデス",
+   "display_name": "Y.メンデス",
+   "slug": "mendez",
+   "type": "pitcher",
+   "years": "2023-2024",
+   "roman": "YOHANDER MENDEZ",
+   "npb": {
+    "games": 60,
+    "w": 18,
+    "era": "3.67",
+    "k": 206
+   }
+  },
+  {
+   "name": "Y.ロペス",
+   "display_name": "Y.ロペス",
+   "slug": "lopez23",
+   "type": "pitcher",
+   "years": "2023-2023",
+   "roman": "YOAN LOPEZ",
+   "npb": {
+    "games": 176,
+    "w": 18,
+    "era": "3.97",
+    "k": 211
+   }
+  },
+  {
+   "name": "C.モンテス",
+   "display_name": "C.モンテス",
+   "slug": "montes",
+   "type": "batter",
+   "years": "2024-2024",
+   "roman": "COCO MONTES",
+   "npb": {
+    "games": 64,
+    "avg": ".254",
+    "hits": 48,
+    "hr": 2,
+    "rbi": 17
+   }
+  },
+  {
+   "name": "R.オドーア",
+   "display_name": "R.オドーア",
+   "slug": "odor",
+   "type": "batter",
+   "years": "2024-2024",
+   "roman": "ROUGNED ODOR",
+   "npb": {
+    "games": 1154,
+    "avg": ".230",
+    "hits": 930,
+    "hr": 178,
+    "rbi": 568
+   }
+  }
+ ],
+ "active": [
+  {
+   "name": "ウィットリー",
+   "group": "投手",
+   "status": "支配下",
+   "slug": "whitley"
+  },
+  {
+   "name": "ハワード",
+   "group": "投手",
+   "status": "支配下",
+   "slug": "howard"
+  },
+  {
+   "name": "マタ",
+   "group": "投手",
+   "status": "支配下",
+   "slug": "mata"
+  },
+  {
+   "name": "ルシアーノ",
+   "group": "投手",
+   "status": "支配下",
+   "slug": "luciano"
+  },
+  {
+   "name": "バルドナード",
+   "group": "投手",
+   "status": "支配下",
+   "slug": "baldonado"
+  },
+  {
+   "name": "マルティネス",
+   "group": "投手",
+   "status": "支配下",
+   "slug": ""
+  },
+  {
+   "name": "ダルベック",
+   "group": "内野手",
+   "status": "支配下",
+   "slug": "dalbec"
+  },
+  {
+   "name": "キャベッジ",
+   "group": "外野手",
+   "status": "支配下",
+   "slug": "cabbage"
+  },
+  {
+   "name": "ティマ",
+   "group": "外野手",
+   "status": "支配下",
+   "slug": "tima"
+  },
+  {
+   "name": "グズマン",
+   "group": "投手",
+   "status": "育成",
+   "slug": ""
+  },
+  {
+   "name": "フェリス",
+   "group": "外野手",
+   "status": "育成",
+   "slug": ""
+  }
+ ]
+}

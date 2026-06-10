@@ -125,6 +125,8 @@ def _build_intro_html() -> str:
         '<a href="/data/fa/" style="color:#e25400;font-weight:600;text-decoration:none;">🤝 FA選手</a>'
         '　/　'
         '<a href="/data/trade/" style="color:#e25400;font-weight:600;text-decoration:none;">🔄 トレード/移籍</a>'
+        '　/　'
+        '<a href="/data/foreign-players/" style="color:#e25400;font-weight:600;text-decoration:none;">🌍 歴代外国人</a>'
         '</p></section>'
     )
 

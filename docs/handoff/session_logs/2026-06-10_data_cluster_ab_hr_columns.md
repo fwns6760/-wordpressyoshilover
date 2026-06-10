@@ -7,3 +7,6 @@
 - tests: test_data_site_template_cluster 28 passed / query+publisher 60 passed
 11:41 JST | fire | foreign-players hub | 5b3ddf02+8722d52e | build foreign-players-5b3ddf02 → job update → execute → verify → 063 zip user渡し
 11:56 JST | done | foreign-players hub LIVE | data-site-publisher-kb87l success | /data/foreign-players/ 200 verify済、残=063 zip user手動upload
+12:55 JST | done | prosports相互リンク両方向LIVE | 1ad75f49+41dca070+script | 本体93→80page読み物box (OB含む) + prosports 93記事→本体逆リンク done=90 skip=3(canary) fail=0
+12:55 JST | note | 岡本和真 /data page は更新経路外 (giants_roster stale在籍×NPB公式名簿外でtarget/OB両方から漏れ) — 読み物box未反映、MLB移籍選手の更新経路は別ticket候補
+12:55 JST | note | prosports app password は ~/.prosports_wp_cred (600)。鍵がchatに貼られたため用済み後の破棄→再発行をuserに推奨済み

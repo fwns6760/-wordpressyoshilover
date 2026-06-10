@@ -106,11 +106,19 @@ def _sample_data_urls(n: int) -> list[str]:
 
 
 def _inspect(token: str, url: str) -> str:
+    try:
+        return _inspect_once(token, url)
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("inspect failed url=%s: %r", url, exc)
+        return "INSPECT_ERROR"
+
+
+def _inspect_once(token: str, url: str) -> str:
     r = requests.post(
         f"{API_BASE}/v1/urlInspection/index:inspect",
         headers=_headers(token),
         json={"inspectionUrl": url, "siteUrl": SITE_URL},
-        timeout=60,
+        timeout=30,
     )
     if not r.ok:
         return f"API_ERROR_{r.status_code}"
@@ -141,6 +149,8 @@ def build_report() -> tuple[str, str]:
         counts[state] = counts.get(state, 0) + 1
         if i < len(HUB_SLUGS):
             hub_states.append((u, state))
+        if (i + 1) % 25 == 0:
+            LOG.info("inspect progress %d/%d", i + 1, len(urls))
         time.sleep(0.3)  # quota 600/min に余裕
 
     indexed = sum(v for k, v in counts.items() if "indexed" in k.lower() and "not" not in k.lower())

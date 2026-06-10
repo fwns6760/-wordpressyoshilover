@@ -111,6 +111,15 @@ _BATTING_SNAPSHOT_METRICS = frozenset({"AVG", "OBP", "SLG", "OPS"})
 _PITCHING_SNAPSHOT_METRICS = frozenset({"ERA", "K_per_9", "BB_per_9", "HR_per_9"})
 _SNAPSHOT_METRICS = _BATTING_SNAPSHOT_METRICS | _PITCHING_SNAPSHOT_METRICS
 
+# 2026-06-10 鮮度ゲート: snapshot の 直近 N 試合 scope は **選手ごとの
+# rolling** (本人の最後の N 試合) なので、 離脱中の選手は怪我前の古い
+# 試合がいつまでも「直近」として ranking に載り続ける (平山功太 6/10
+# 事例: 長期離脱中なのに OBP 直近10試合 Top10 に選出)。 最終出場が
+# snapshot 日から下記日数より古い選手は X 向け ranking から除外する。
+# 投手は先発間隔 (中 6 日 + 雨天順延) を考慮して打者より長め。
+_SNAPSHOT_STALE_DAYS_BATTING = 10
+_SNAPSHOT_STALE_DAYS_PITCHING = 14
+
 # period_label → snapshot scope mapping. period_label not in this map
 # falls back to the legacy `query_rank_fn` path.
 # 2026-05-20: 直近 N 試合 のみが新規 publish / mail combo の本流。
@@ -578,6 +587,34 @@ def query_db_latest_game_date(db_path: str) -> Optional[str]:
         conn.close()
 
 
+def _snapshot_last_game_dates(conn: "_sqlite3.Connection") -> dict[str, str]:
+    """player_canonical (空白除去) → 最終出場 game_date の map。
+
+    batting_logs / pitching_logs の両方を見る。 logs table が無い古い
+    DB やテスト fixture では空 dict を返し、 呼び出し側は鮮度ゲートを
+    skip する (fail-open: 除外は確実に古いと分かる選手だけ)。
+    """
+    sql = (
+        "SELECT REPLACE(player_canonical, ' ', '') AS pkey, MAX(game_date) "
+        "FROM ( "
+        "  SELECT b.player_canonical AS player_canonical, g.game_date AS game_date "
+        "  FROM batting_logs b JOIN games g ON b.game_id = g.game_id "
+        "  UNION ALL "
+        "  SELECT p.player_canonical, g.game_date "
+        "  FROM pitching_logs p JOIN games g ON p.game_id = g.game_id "
+        ") GROUP BY pkey"
+    )
+    try:
+        return {
+            str(r[0]): str(r[1] or "")[:10]
+            for r in conn.execute(sql).fetchall()
+            if r[0] and r[1]
+        }
+    except _sqlite3.Error as exc:  # noqa: BLE001
+        LOG.warning("_snapshot_last_game_dates: query failed: %r", exc)
+        return {}
+
+
 def _query_rank_from_snapshots(
     db_path: str,
     *,
@@ -669,6 +706,13 @@ def _query_rank_from_snapshots(
             (metric_name, snapshot_scope, metric_name, snapshot_scope,
              min_sample, limit),
         ).fetchall()
+        snap_row = conn.execute(
+            "SELECT MAX(snapshot_date) FROM advanced_metric_snapshots "
+            "WHERE metric_name = ? AND scope = ?",
+            (metric_name, snapshot_scope),
+        ).fetchone()
+        snapshot_date = str(snap_row[0])[:10] if snap_row and snap_row[0] else None
+        last_game_map = _snapshot_last_game_dates(conn) if rows else {}
     except _sqlite3.Error as exc:  # noqa: BLE001
         LOG.warning("_query_rank_from_snapshots: query failed: %r", exc)
         return {
@@ -681,6 +725,36 @@ def _query_rank_from_snapshots(
         }
     finally:
         conn.close()
+    # 2026-06-10 鮮度ゲート: 直近 N 試合 scope は per-player rolling のため
+    # 離脱中の選手も snapshot に残る。 最終出場が snapshot 日から規定日数
+    # より古い選手は X 向け Top10 から除外する (最終出場が不明な選手は
+    # 誤除外を避けるため残す)。
+    if snapshot_date and last_game_map:
+        stale_days = (
+            _SNAPSHOT_STALE_DAYS_PITCHING
+            if _kind == "pitching"
+            else _SNAPSHOT_STALE_DAYS_BATTING
+        )
+        try:
+            cutoff = (
+                _date.fromisoformat(snapshot_date) - timedelta(days=stale_days)
+            ).isoformat()
+        except ValueError:
+            cutoff = None
+        if cutoff:
+            fresh_rows = []
+            for r in rows:
+                pkey = str(r[0] or "").replace(" ", "")
+                last_d = last_game_map.get(pkey)
+                if last_d and last_d < cutoff:
+                    LOG.info(
+                        "snapshot_rank_stale_drop metric=%s scope=%s player=%s "
+                        "last_game=%s cutoff=%s",
+                        metric_name, snapshot_scope, r[0], last_d, cutoff,
+                    )
+                    continue
+                fresh_rows.append(r)
+            rows = fresh_rows
     total = len(rows)
     rows_out = [
         {

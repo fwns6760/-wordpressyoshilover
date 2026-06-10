@@ -3186,6 +3186,154 @@ class SnapshotPathBattingMetricsTests(unittest.TestCase):
         self.assertIn("佐藤輝明", names)
 
 
+class SnapshotStaleFreshnessGateTests(unittest.TestCase):
+    """2026-06-10 鮮度ゲート: 直近 N 試合 scope は per-player rolling
+    のため、 長期離脱中の選手 (平山功太 事例) が怪我前の古い試合で
+    「直近10試合 OBP」 Top10 に載り続けていた。 最終出場が snapshot 日
+    から打者 10 日 / 投手 14 日より古い選手は ranking から除外する。
+    """
+
+    SNAP_DATE = "2026-06-10"
+
+    def setUp(self) -> None:
+        import tempfile, sqlite3, os
+        self.tmp_dir = tempfile.mkdtemp(prefix="xpostmail_stale_")
+        self.db_path = os.path.join(self.tmp_dir, "snap.db")
+        conn = sqlite3.connect(self.db_path)
+        try:
+            conn.executescript(
+                """
+                CREATE TABLE teams (
+                    team_code TEXT PRIMARY KEY,
+                    team_name TEXT,
+                    league TEXT,
+                    home_park TEXT
+                );
+                CREATE TABLE advanced_metric_snapshots (
+                    snapshot_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    snapshot_date TEXT,
+                    scope TEXT,
+                    player_canonical TEXT,
+                    team_code TEXT,
+                    position TEXT,
+                    metric_name TEXT,
+                    metric_value REAL,
+                    sample_size INTEGER,
+                    league_rank INTEGER,
+                    league_total INTEGER,
+                    position_rank INTEGER,
+                    position_total INTEGER,
+                    extra_json TEXT
+                );
+                CREATE TABLE games (
+                    game_id TEXT PRIMARY KEY,
+                    game_date TEXT
+                );
+                CREATE TABLE batting_logs (
+                    game_id TEXT,
+                    player_canonical TEXT
+                );
+                CREATE TABLE pitching_logs (
+                    game_id TEXT,
+                    player_canonical TEXT
+                );
+                INSERT INTO teams (team_code, team_name, league) VALUES
+                    ('g', '巨人', 'central');
+                """
+            )
+            snaps = [
+                # 打者 OBP: 泉口 = 前日出場 (fresh)、 平山 = 5/20 が最終 (stale)
+                (self.SNAP_DATE, "last_10_games", "泉口友汰",   "g", "OBP", 0.420, 35),
+                (self.SNAP_DATE, "last_10_games", "平山 功太",  "g", "OBP", 0.450, 32),
+                # logs に一切出てこない選手は誤除外を避けて残す (fail-open)
+                (self.SNAP_DATE, "last_10_games", "佐藤輝明",   "g", "OBP", 0.400, 38),
+                # 投手 ERA: 戸郷 = 11 日前 (中 6 日 + 順延の範囲内、 keep)、
+                # 山崎 = 21 日前 (stale)
+                (self.SNAP_DATE, "last_10_games", "戸郷翔征",   "g", "ERA", 2.10, 20),
+                (self.SNAP_DATE, "last_10_games", "山崎伊織",   "g", "ERA", 1.80, 22),
+            ]
+            conn.executemany(
+                "INSERT INTO advanced_metric_snapshots "
+                "(snapshot_date, scope, player_canonical, team_code, "
+                " metric_name, metric_value, sample_size) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                snaps,
+            )
+            conn.executemany(
+                "INSERT INTO games (game_id, game_date) VALUES (?, ?)",
+                [
+                    ("g-0609", "2026-06-09"),
+                    ("g-0530", "2026-05-30"),
+                    ("g-0520", "2026-05-20"),
+                ],
+            )
+            conn.executemany(
+                "INSERT INTO batting_logs (game_id, player_canonical) VALUES (?, ?)",
+                [
+                    ("g-0609", "泉口友汰"),
+                    # snapshot 側は「平山 功太」 (空白あり)、 logs 側は空白なし
+                    # でも REPLACE 正規化で突き合わせられること
+                    ("g-0520", "平山功太"),
+                ],
+            )
+            conn.executemany(
+                "INSERT INTO pitching_logs (game_id, player_canonical) VALUES (?, ?)",
+                [
+                    ("g-0530", "戸郷翔征"),
+                    ("g-0520", "山崎伊織"),
+                ],
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def tearDown(self) -> None:
+        import shutil
+        shutil.rmtree(self.tmp_dir, ignore_errors=True)
+
+    def _names(self, metric: str) -> set:
+        from src.x_post_mail_lane import _query_rank_from_snapshots
+        result = _query_rank_from_snapshots(
+            self.db_path,
+            metric_name=metric,
+            snapshot_scope="last_10_games",
+            min_sample=10,
+            limit=60,
+        )
+        self.assertTrue(result["ok"], msg=result)
+        return {r["player_canonical"] for r in result["rows"]}
+
+    def test_stale_batter_dropped_fresh_batter_kept(self) -> None:
+        """最終出場 21 日前の打者は OBP ranking から落ち、 前日出場は残る。"""
+        names = self._names("OBP")
+        self.assertNotIn("平山 功太", names)
+        self.assertIn("泉口友汰", names)
+
+    def test_player_without_logs_kept_fail_open(self) -> None:
+        """logs に最終出場が見つからない選手は誤除外しない。"""
+        self.assertIn("佐藤輝明", self._names("OBP"))
+
+    def test_pitcher_threshold_is_longer(self) -> None:
+        """投手は 14 日: 11 日前登板は keep、 21 日前登板は drop。"""
+        names = self._names("ERA")
+        self.assertIn("戸郷翔征", names)
+        self.assertNotIn("山崎伊織", names)
+
+    def test_rank_and_total_rebuilt_after_drop(self) -> None:
+        """除外後の rank / total が残存 row で振り直されること。"""
+        from src.x_post_mail_lane import _query_rank_from_snapshots
+        result = _query_rank_from_snapshots(
+            self.db_path,
+            metric_name="OBP",
+            snapshot_scope="last_10_games",
+            min_sample=10,
+            limit=60,
+        )
+        self.assertEqual(result["total"], 2)
+        ranks = {r["player_canonical"]: r["rank"] for r in result["rows"]}
+        self.assertEqual(ranks["泉口友汰"], 1)
+
+
 class BuildDataSplitCandidatesTests(unittest.TestCase):
     """448: 序盤/中盤/終盤・本拠地/ビジター別打率 surprise 候補。"""
 

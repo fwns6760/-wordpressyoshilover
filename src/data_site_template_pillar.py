@@ -36,6 +36,8 @@ class PillarPlayerInfo:
     short_review: str = ""  # AI 短評 200-500 字 (空なら section omit)
     related_topic_links: list[tuple[str, str]] = field(default_factory=list)
     # related_topic_links = [(url, title), ...] (既存記事の link、 関連 Topic = Pillar → Topic)
+    # prosports.yoshilover.com の同一選手 人物・家族記事への相互リンク [(url, title), ...]
+    prosports_links: list[tuple[str, str]] = field(default_factory=list)
     # 監督・コーチ の現役選手時代 NPB 通算成績 (config/coach_career_stats.json 由来、 無ければ None)
     career_stats: Optional[dict] = None
     # 関連選手 (同じ登録ポジションの他選手) [(slug, name), ...] — spoke↔spoke 内部リンク用
@@ -896,6 +898,25 @@ def _build_streak_html(player: PillarPlayerInfo) -> str:
     )
 
 
+def _build_prosports_html(player: PillarPlayerInfo) -> str:
+    """姉妹サイト prosports の同一選手 人物・家族記事への導線 (相互リンクの本体側)。"""
+    if not player.prosports_links:
+        return ""
+    items = "\n".join(
+        f'<li style="margin:6px 0;"><a href="{_esc(url)}" '
+        f'style="color:#1976d2;text-decoration:none;">{_esc(title)}</a></li>'
+        for url, title in player.prosports_links[:5]
+    )
+    return (
+        '<section class="ys-pillar-prosports" '
+        'style="background:#fff;border:1px solid #eee;padding:14px;margin:0 0 16px;border-radius:4px;">'
+        f'<h2 style="font-size:16px;margin:0 0 10px;">📖 {_esc(player.name)}の人物・家族の読み物</h2>'
+        '<p style="font-size:12px;color:#777;margin:0 0 8px;">姉妹サイト「スポーツ選手の実家や結婚家族が気になる」の人物記事。</p>'
+        f'<ul style="font-size:13px;line-height:1.7;margin:0;padding-left:20px;">{items}</ul>'
+        '</section>'
+    )
+
+
 def _build_related_topic_html(player: PillarPlayerInfo) -> str:
     if not player.related_topic_links:
         return (
@@ -1236,6 +1257,7 @@ def render_pillar_html(player: PillarPlayerInfo) -> str:
         _build_profile_html(player),
         _build_short_review_html(player),
         *stats_sections,
+        _build_prosports_html(player),
         _build_related_topic_html(player),
         _build_related_players_html(player),
         _build_datasite_nav_html(),

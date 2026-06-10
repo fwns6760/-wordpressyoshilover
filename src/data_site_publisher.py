@@ -229,6 +229,23 @@ def _dry_run_enabled() -> bool:
     return str(os.environ.get("DATA_SITE_DRY_RUN", "")).strip().lower() in {"1", "true", "yes", "on"}
 
 
+_PROSPORTS_MAP_CACHE: dict | None = None
+
+
+def _prosports_link_map() -> dict:
+    """config/prosports_link_map.json の by_slug を返す (data_slug -> [{url,title,...}])。失敗時は空。"""
+    global _PROSPORTS_MAP_CACHE
+    if _PROSPORTS_MAP_CACHE is None:
+        path = os.path.join(os.path.dirname(__file__), "..", "config", "prosports_link_map.json")
+        try:
+            with open(path, encoding="utf-8") as fh:
+                _PROSPORTS_MAP_CACHE = (_json.load(fh) or {}).get("by_slug") or {}
+        except Exception as exc:  # noqa: BLE001
+            LOG.warning("prosports link map load failed: %r", exc)
+            _PROSPORTS_MAP_CACHE = {}
+    return _PROSPORTS_MAP_CACHE
+
+
 # ── 差分更新 (incremental publish) ──────────────────────────────────────────
 # 約 970 ページを毎回まるごと WP upsert すると 1 回 ~15 分かかり Cloud Run コストの主因。
 # 試合で実際に変わるのは数選手だけなので、描画 HTML の SHA256 を GCS 台帳
@@ -526,6 +543,12 @@ def _build_pillar_info(player_name: str) -> PillarPlayerInfo | None:
     # staff は shihai_position_group=None → [] (related_shihai_players 内で空)。
     info.related_players = [
         (player_slug(n), n) for n in related_shihai_players(player_name)
+    ]
+    # prosports.yoshilover.com の同一選手 人物・家族記事への相互リンク (config 正本)。
+    info.prosports_links = [
+        (e.get("url"), e.get("title"))
+        for e in (_prosports_link_map().get(slug) or [])
+        if e.get("url") and e.get("title")
     ]
     # 467: NPB career page 由来の網羅データ (年度別+通算+プロフィール)。 cache 由来、 無ければ None。
     info.npb_career = npb_career_ingest.career_payload_for(_CAREER_CACHE, player_name)

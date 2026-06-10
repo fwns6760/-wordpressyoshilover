@@ -13,3 +13,6 @@
 13:45 JST | done | 301一掃 (noslash links) 全ページ反映 | c845f3a4 / data-site-publisher-jsbnl | sakamoto/foreign/legends で slash link 0 件 verify
 13:45 JST | done | 063 v0.21.18 user upload 済 | - | トップに歴代外国人カード + noslash 反映 verify 済
 13:45 JST | fire | sitemap 整理 | - | user=投稿チェック外し待ち、Claude=301元抽出 scan 実行中 (b3ih11wuc) → 専用 sitemap 作成予定
+14:25 JST | done | OB lead固有化 全ページLIVE | abaa5759 / vpnx8 | shinozuka/cromartie/horiuchi 固有lead verify済
+14:25 JST | done | 301元スキャン結論 | - | 公開2766投稿中prosportsへの301=0件、301元は元々post-sitemap非掲載 → 専用sitemap不要
+14:25 JST | note | 本日SEO一式: AB/HR列→foreign-players hub→prosports相互リンク→301一掃→sitemap投稿除外→OB lead固有化。残=サチコCoverage月1定点、記事noindex解除判断(将来)、岡本和真ページ更新経路(別ticket)

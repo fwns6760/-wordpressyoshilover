@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Yoshilover 063 Frontend (topic hub / SNS reactions / Phase 1 noindex)
  * Description: 062 contract §2 §3 §5 の front impl。topic hub / SNS block / noindex を基盤に、トップ速報帯・記事下回遊束・右カラム rail・上部密集ナビ・人気記事導線まで含めて SWELL front を高密度化する。既存 SWELL コメント欄は触らない。
- * Version: 0.21.0
+ * Version: 0.21.17
  * Author: yoshilover
  */
 
@@ -42,16 +42,123 @@ add_action( 'dynamic_sidebar_before', 'yoshilover_063_auto_inject_sidebar_top_ad
 add_action( 'dynamic_sidebar_before', 'yoshilover_063_auto_inject_sidebar_rail', 5, 2 );
 
 /**
- * 388 (2026-05-20): H1 内に実 text として site title を挿入し、 H2 を H1 兄弟として
- * 自然な subtitle 位置に挿入する。 template_redirect で ob_start し、 SWELL が
- * 出力する `c-headLogo` HTML を regex で穏当に書き換える方式 (疑似要素ではなく real DOM)。
- *
- * - H1 `<a class="c-headLogo__link">` の </a> 直前に `<span class="yoshi-headLogo__text">` を挿入
- * - H1 `</h1>` 直後に `<h2 class="yoshi-headLogo__subtitle">` を挿入
- *
- * regex 失敗 (構造変化等) の場合は buffer をそのまま返すので無害。 `c-headLogo` は
- * 通常 header と fix_header の 2 箇所に出るため、 各 1 回ずつ挿入する。
+ * 2026-06-08: Header logo/title text is owned by the active theme.
+ * This buffer still applies SEO/navigation fixes below, but does not inject
+ * visible title/subtitle DOM into `c-headLogo`; that overlaps on mobile.
  */
+/**
+ * 先発ローテ一覧 (2007-2026)。
+ * 2026-06-09: 旧実装はフロント表示のたびに外部サイト 20 ページをライブ scrape する
+ * 設計で、初回キャッシュ生成に失敗し実質表示されなかった。
+ * 現在は scripts/scrape_starter_rotation.py で事前生成した同梱 JSON
+ * (data/starter_rotation_summary.json) を読むだけ。外部 fetch / 出典リンクは廃止。
+ * 試合ごとの詳細ログは /data/rotation/ (deeper page) 側で提供する。
+ */
+function yoshilover_063_load_starter_rotation_summary() {
+    static $cache = null;
+    if ( null !== $cache ) {
+        return $cache;
+    }
+    $cache = array();
+    $path  = __DIR__ . '/data/starter_rotation_summary.json';
+    if ( ! is_readable( $path ) ) {
+        return $cache;
+    }
+    $raw = file_get_contents( $path );
+    if ( ! is_string( $raw ) || $raw === '' ) {
+        return $cache;
+    }
+    $decoded = json_decode( $raw, true );
+    if ( ! is_array( $decoded ) || empty( $decoded['years'] ) || ! is_array( $decoded['years'] ) ) {
+        return $cache;
+    }
+    foreach ( $decoded['years'] as $entry ) {
+        if ( ! is_array( $entry ) || empty( $entry['year'] ) ) {
+            continue;
+        }
+        $pitchers = array();
+        if ( ! empty( $entry['pitchers'] ) && is_array( $entry['pitchers'] ) ) {
+            foreach ( $entry['pitchers'] as $p ) {
+                $name = isset( $p['name'] ) ? trim( (string) $p['name'] ) : '';
+                $starts = isset( $p['starts'] ) ? (int) $p['starts'] : 0;
+                if ( $name === '' || $starts <= 0 ) {
+                    continue;
+                }
+                $pitchers[] = array( 'name' => $name, 'starts' => $starts );
+            }
+        }
+        $cache[] = array(
+            'year'     => (int) $entry['year'],
+            'pitchers' => $pitchers,
+        );
+    }
+    return $cache;
+}
+
+function yoshilover_063_get_starter_rotation_rows() {
+    return yoshilover_063_load_starter_rotation_summary();
+}
+
+function yoshilover_063_refresh_starter_rotation_rows() {
+    $rows = yoshilover_063_load_starter_rotation_summary();
+    return array(
+        'rows'      => $rows,
+        'row_count' => count( $rows ),
+        'source'    => 'bundled:data/starter_rotation_summary.json',
+    );
+}
+
+function yoshilover_063_render_home_starter_rotation_table() {
+    $rows = yoshilover_063_get_starter_rotation_rows();
+
+    $html  = '<section id="yoshi-home-rotation" class="yoshi-home-rotation" aria-label="巨人 先発ローテ一覧 2007年から2026年">';
+    $html .= '<div class="yoshi-home-rotation__head">';
+    $html .= '<h2 class="yoshi-home-rotation__title">🧭 先発ローテ一覧（2007年〜2026年）</h2>';
+    $html .= '<a class="yoshi-home-rotation__source" href="/data/rotation/">試合ごとの全ログ →</a>';
+    $html .= '</div>';
+    $html .= '<div class="yoshi-home-rotation__meta"><span class="yoshi-home-rotation__pill">20年分</span><span class="yoshi-home-rotation__pill">新しい年度から表示</span><span class="yoshi-home-rotation__pill">先発数順</span></div>';
+    $html .= '<p class="yoshi-home-rotation__note">年別の先発投手を先発数順に集計。年度を押すと、その年の全試合の先発・結果一覧（試合ごとの登板ログ）を見られます。2026年はシーズン進行中のデータです。</p>';
+    $html .= '<nav class="yoshi-home-rotation__years" aria-label="先発ローテ年度ジャンプ">';
+    foreach ( range( 2026, 2007 ) as $year_link ) {
+        $html .= '<a class="yoshi-home-rotation__year" href="#yoshi-rotation-year-' . esc_attr( (string) $year_link ) . '">' . esc_html( (string) $year_link ) . '</a>';
+    }
+    $html .= '</nav>';
+    $html .= '<div class="yoshi-home-rotation__scroll"><table class="yoshi-home-rotation__table">';
+    $html .= '<thead><tr><th>年度</th><th>主な先発投手</th><th>最多先発</th></tr></thead><tbody>';
+
+    if ( empty( $rows ) ) {
+        $html .= '<tr><td colspan="3">先発ローテのデータを準備中です。</td></tr>';
+    } else {
+        foreach ( $rows as $row ) {
+            $pitchers = isset( $row['pitchers'] ) && is_array( $row['pitchers'] ) ? $row['pitchers'] : array();
+            $chips = '';
+            foreach ( array_slice( $pitchers, 0, 6 ) as $pitcher ) {
+                $name   = isset( $pitcher['name'] ) ? trim( (string) $pitcher['name'] ) : '';
+                $starts = isset( $pitcher['starts'] ) ? (int) $pitcher['starts'] : 0;
+                if ( $name === '' || $starts <= 0 ) {
+                    continue;
+                }
+                $chips .= '<span class="yoshi-home-rotation__chip"><b>' . esc_html( $name ) . '</b><em>' . esc_html( (string) $starts ) . '</em></span>';
+            }
+            $leader = isset( $pitchers[0] ) ? $pitchers[0] : array();
+            $leader_text = '';
+            if ( ! empty( $leader['name'] ) && ! empty( $leader['starts'] ) ) {
+                $leader_text = sprintf( '%s %d先発', (string) $leader['name'], (int) $leader['starts'] );
+            }
+            $year_url = '/data/rotation/#year-' . (int) $row['year'];
+            $html .= '<tr id="yoshi-rotation-year-' . esc_attr( (string) $row['year'] ) . '">';
+            $html .= '<th scope="row"><a href="' . esc_url( $year_url ) . '">' . esc_html( (string) $row['year'] ) . '</a></th>';
+            $html .= '<td><div class="yoshi-home-rotation__chips">' . $chips . '</div></td>';
+            $html .= '<td>' . esc_html( $leader_text ) . '</td>';
+            $html .= '</tr>';
+        }
+    }
+
+    $html .= '</tbody></table></div>';
+    $html .= '</section>';
+    return $html;
+}
+
 /**
  * 2026-06-02: トップpage 最上部に出す「巨人データ」トピクラ入口ブロック。
  * /data/ (pillar hub) と spoke (ランキング / 順位 / レジェンド / 検索) への導線。
@@ -61,12 +168,19 @@ add_action( 'dynamic_sidebar_before', 'yoshilover_063_auto_inject_sidebar_rail',
 function yoshilover_063_render_home_data_hub() {
     // SEO: 各カードの title (h3) は「巨人 ◯◯」 の検索意図に合うアンカーテキスト。
     $cards = array(
-        array( 'href' => '/data/ranking/',          'ic' => '🏆', 't' => '打撃成績ランキング', 's' => '打率・本塁打・打点' ),
-        array( 'href' => '/data/ranking/',          'ic' => '⚾', 't' => '投手成績ランキング', 's' => '防御率・勝利・奪三振' ),
+        array( 'href' => '/data/batting-ranking/',  'ic' => '🏆', 't' => '打撃成績ランキング', 's' => '打率・本塁打・打点' ),
+        array( 'href' => '/data/pitching-ranking/', 'ic' => '⚾', 't' => '投手成績ランキング', 's' => '防御率・勝利・奪三振' ),
         array( 'href' => '/data/#ys-player-search', 'ic' => '👤', 't' => '選手別 個人成績',     's' => '全選手のデータを検索' ),
         array( 'href' => '/data/team/',             'ic' => '📊', 't' => 'セ・リーグ順位表',   's' => '順位・ゲーム差・日程' ),
-        array( 'href' => '/data/',                  'ic' => '📈', 't' => '今日の注目選手',     's' => '直近5試合の好調選手' ),
-        array( 'href' => '/data/legends/',          'ic' => '🎖', 't' => 'レジェンド・OB成績', 's' => '歴代の巨人選手' ),
+        array( 'href' => '/data/farm/',             'ic' => '🌱', 't' => '2軍試合日程・結果',  's' => 'ファーム予定・成績' ),
+        array( 'href' => '/data/jersey-numbers/',   'ic' => '🔢', 't' => '歴代背番号',         's' => '永久欠番・番号変遷' ),
+        array( 'href' => '/data/draft/',            'ic' => '📋', 't' => '歴代ドラフト',       's' => '指名選手・育成・外れ1位' ),
+        array( 'href' => '/data/notable/',          'ic' => '📈', 't' => '注目データ',       's' => '誰の記録か分かる一覧' ),
+        array( 'href' => '/data/rotation/',         'ic' => '🧭', 't' => '先発ローテ一覧',     's' => '2007〜2026年 試合ごとの先発' ),
+        array( 'href' => '/data/roster-moves/',     'ic' => '🔁', 't' => '出場選手登録・抹消', 's' => '1軍登録メンバー・登録/抹消の動き' ),
+        array( 'href' => '/data/tickets/',          'ic' => '🎟️', 't' => 'チケット情報',       's' => '公式・プレイガイド購入リンク' ),
+        array( 'href' => '/data/open-games/',        'ic' => '🌸', 't' => 'オープン戦結果',     's' => '2001〜2026年 年度別の勝敗' ),
+        array( 'href' => '/data/foreign-players/',   'ic' => '🌍', 't' => '歴代外国人選手',     's' => 'スタルヒン〜現役助っ人' ),
     );
     $cards_html = '';
     foreach ( $cards as $c ) {
@@ -82,13 +196,33 @@ function yoshilover_063_render_home_data_hub() {
         . '.yoshi-home-data__head h2{font-size:24px;font-weight:900;margin:0;color:#fff;letter-spacing:.02em;text-shadow:0 1px 2px rgba(0,0,0,.15);}'
         . '.yoshi-home-data__more{font-size:14px;font-weight:800;color:#fff;text-decoration:none;white-space:nowrap;background:rgba(255,255,255,.22);padding:6px 12px;border-radius:999px;}'
         . '.yoshi-home-data__lead{font-size:13px;color:#555;margin:12px 16px 14px;line-height:1.65;}'
-        . '.yoshi-home-data__grid{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;padding:0 16px;}'
+        . '.yoshi-home-data__grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(126px,1fr));gap:12px;padding:0 16px;}'
         . '.yoshi-home-data__card{display:flex;flex-direction:column;align-items:center;text-align:center;gap:5px;padding:18px 6px;background:#fff8f3;border:1.5px solid #ffd9bf;border-radius:14px;text-decoration:none;transition:background .15s,transform .15s,box-shadow .15s;}'
         . '.yoshi-home-data__card:hover{background:#fff1e6;transform:translateY(-3px);box-shadow:0 6px 14px rgba(226,84,0,.18);}'
         . '.yoshi-home-data__ic{font-size:32px;line-height:1;}'
         . '.yoshi-home-data__t{font-size:15px;font-weight:900;color:#1a1a1a;margin:0;line-height:1.3;}'
         . '.yoshi-home-data__s{font-size:11px;color:#777;}'
-        . '@media(max-width:600px){.yoshi-home-data__grid{grid-template-columns:repeat(2,1fr);gap:10px;padding:0 12px;}.yoshi-home-data__head{padding:12px 14px;}.yoshi-home-data__head h2{font-size:19px;}.yoshi-home-data__lead{margin:10px 12px 12px;}.yoshi-home-data__ic{font-size:29px;}.yoshi-home-data__t{font-size:14px;}}'
+        . '.yoshi-home-rotation{margin:18px 16px 0;padding:0 0 14px;background:#fff;border:2px solid #d7dce4;border-radius:14px;box-shadow:0 4px 16px rgba(17,24,39,.10);overflow:hidden;clear:both;}'
+        . '.yoshi-home-rotation__head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0;padding:14px 18px;background:#111827;}'
+        . '.yoshi-home-rotation__title{margin:0;font-size:22px;font-weight:900;color:#fff;line-height:1.35;}'
+        . '.yoshi-home-rotation__source{font-size:13px;font-weight:800;color:#111827;text-decoration:none;white-space:nowrap;background:#fff;padding:6px 12px;border-radius:999px;}'
+        . '.yoshi-home-rotation__meta{display:flex;flex-wrap:wrap;gap:8px;margin:12px 16px 0;}'
+        . '.yoshi-home-rotation__pill{display:inline-flex;align-items:center;padding:4px 9px;border-radius:999px;background:#f3f4f6;color:#374151;font-size:12px;font-weight:800;line-height:1.2;}'
+        . '.yoshi-home-rotation__note{margin:12px 16px 10px;font-size:12px;color:#666;line-height:1.6;}'
+        . '.yoshi-home-rotation__years{display:flex;gap:6px;margin:0 16px 12px;padding:0 0 4px;overflow-x:auto;-webkit-overflow-scrolling:touch;}'
+        . '.yoshi-home-rotation__year{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;min-width:54px;padding:6px 8px;border-radius:999px;background:#fff8f3;border:1px solid #ffd9bf;color:#e25400;font-size:12px;font-weight:900;text-decoration:none;}'
+        . '.yoshi-home-rotation__scroll{margin:0 16px;overflow-x:auto;-webkit-overflow-scrolling:touch;}'
+        . '.yoshi-home-rotation__table{width:100%;min-width:680px;border-collapse:collapse;font-size:13px;}'
+        . '.yoshi-home-rotation__table th,.yoshi-home-rotation__table td{padding:9px 8px;border-top:1px solid #f2e4d8;text-align:left;vertical-align:top;}'
+        . '.yoshi-home-rotation__table thead th{background:#fff6ec;color:#7a2d00;font-size:12px;}'
+        . '.yoshi-home-rotation__table tbody tr{scroll-margin-top:88px;}'
+        . '.yoshi-home-rotation__table tbody th{position:sticky;left:0;z-index:1;width:76px;font-weight:900;background:#fff;}'
+        . '.yoshi-home-rotation__table a{color:#e25400;text-decoration:none;}'
+        . '.yoshi-home-rotation__chips{display:flex;flex-wrap:wrap;gap:6px;}'
+        . '.yoshi-home-rotation__chip{display:inline-flex;align-items:center;gap:5px;padding:4px 7px;border-radius:999px;background:#fff8f3;border:1px solid #ffd9bf;white-space:nowrap;}'
+        . '.yoshi-home-rotation__chip b{font-weight:800;color:#222;}'
+        . '.yoshi-home-rotation__chip em{font-style:normal;font-weight:800;color:#e25400;font-variant-numeric:tabular-nums;}'
+        . '@media(max-width:600px){.yoshi-home-data__grid{grid-template-columns:repeat(2,1fr);gap:10px;padding:0 12px;}.yoshi-home-data__head{padding:12px 14px;}.yoshi-home-data__head h2{font-size:19px;}.yoshi-home-data__lead{margin:10px 12px 12px;}.yoshi-home-data__ic{font-size:29px;}.yoshi-home-data__t{font-size:14px;}.yoshi-home-rotation__head{padding:12px 14px;align-items:flex-start;}.yoshi-home-rotation__title{font-size:18px;}.yoshi-home-rotation__source{font-size:12px;padding:5px 9px;}.yoshi-home-rotation__meta{margin:10px 12px 0;}.yoshi-home-rotation__note{margin:10px 12px;}.yoshi-home-rotation__years{margin:0 12px 10px;}.yoshi-home-rotation__scroll{margin:0 12px;}.yoshi-home-rotation__table{min-width:620px;font-size:12px;}}'
         . '</style>';
     $html  = $style;
     $html .= '<section class="yoshi-home-data" aria-label="巨人 選手データ・成績">';
@@ -96,49 +230,38 @@ function yoshilover_063_render_home_data_hub() {
         . '<a class="yoshi-home-data__more" href="' . esc_url( home_url( '/data/' ) ) . '">すべて見る ＞</a></div>';
     $html .= '<p class="yoshi-home-data__lead">読売ジャイアンツの個人成績・打率・防御率・セ・リーグ順位を毎日更新。打撃／投手のランキングや選手別データをまとめています。</p>';
     $html .= '<div class="yoshi-home-data__grid">' . $cards_html . '</div>';
+    // 2026-06-09: トップの大きな「先発ローテ一覧」表セクションは廃止 (user 指示)。
+    // 先発ローテはデータグリッドのカード → 専用ページ /data/rotation/ へ誘導する。
     $html .= '</section>';
     return $html;
+}
+
+function yoshilover_063_remove_legacy_jersey_toplink_widget( $buffer ) {
+    if ( strpos( $buffer, 'yoshi-jersey-toplink' ) === false
+        && strpos( $buffer, '巨人 歴代背番号・永久欠番を見る' ) === false ) {
+        return $buffer;
+    }
+
+    // 2026-06-08: 歴代背番号は yoshi-home-data のカード内へ統合済み。
+    // 旧 front_top text widget が残ると枠外に同じ導線が出るため、表示時に除去する。
+    $buffer = preg_replace(
+        '#<div\b[^>]*\bid=["\']text-\d+["\'][^>]*class=["\'][^"\']*\bc-widget\b[^"\']*\bwidget_text\b[^"\']*["\'][^>]*>\s*'
+        . '<div\b[^>]*class=["\']textwidget["\'][^>]*>\s*'
+        . '<div\b[^>]*class=["\'][^"\']*\byoshi-jersey-toplink\b[^"\']*["\'][^>]*>[\s\S]*?</div>\s*'
+        . '</div>\s*</div>#i',
+        '',
+        $buffer
+    );
+    return preg_replace(
+        '#<div\b[^>]*class=["\'][^"\']*\byoshi-jersey-toplink\b[^"\']*["\'][^>]*>[\s\S]*?</div>#i',
+        '',
+        $buffer
+    );
 }
 
 function yoshilover_063_buffer_inject_header_titles( $buffer ) {
     if ( ! is_string( $buffer ) || $buffer === '' ) {
         return $buffer;
-    }
-    if ( strpos( $buffer, 'c-headLogo__link' ) === false ) {
-        return $buffer;
-    }
-
-    $title_text    = 'ヨシラバー｜読売ジャイアンツ速報・データサイト';
-    $subtitle_text = '読売ジャイアンツ専門の速報＆データサイト｜試合結果・スタメン・選手成績(打率/防御率)・順位を毎日更新';
-    $span_html = '<span class="yoshi-headLogo__text">' . esc_html( $title_text ) . '</span></a>';
-    $h2_html   = '<h2 class="yoshi-headLogo__subtitle">' . esc_html( $subtitle_text ) . '</h2>';
-
-    // c-headLogo__link は通常 header / fix_header の 2 箇所。 各箇所の </a> 直前に span を入れる。
-    // span を 2 重に入れないよう簡易 dedupe (既に yoshi-headLogo__text を含む箇所は skip)。
-    $buffer = preg_replace_callback(
-        '#(<a\b[^>]*class="[^"]*c-headLogo__link[^"]*"[^>]*>)(.*?)(</a>)#s',
-        function( $m ) use ( $span_html ) {
-            if ( strpos( $m[0], 'yoshi-headLogo__text' ) !== false ) {
-                return $m[0];
-            }
-            return $m[1] . $m[2] . $span_html;
-        },
-        $buffer
-    );
-
-    // H1 c-headLogo の </h1> 直後に H2 を 1 度だけ挿入 (通常 header の方)。
-    // dedup は H2 タグそのもの (<h2 class="yoshi-headLogo__subtitle">) を見る。
-    // (class 名だけだと custom CSS 内の class 定義にひっかかって毎回 skip されてしまう。)
-    if ( strpos( $buffer, '<h2 class="yoshi-headLogo__subtitle">' ) === false ) {
-        // c-headLogo は CSS と HTML の両方に出るので、 H1 element に限定して探す。
-        $h1_open_pos = strpos( $buffer, '<h1 class="c-headLogo' );
-        if ( $h1_open_pos !== false ) {
-            $h1_close_pos = strpos( $buffer, '</h1>', $h1_open_pos );
-            if ( $h1_close_pos !== false ) {
-                $insert_at = $h1_close_pos + strlen( '</h1>' );
-                $buffer = substr_replace( $buffer, $h2_html, $insert_at, 0 );
-            }
-        }
     }
 
     // 398-SEO (2026-05-20): Schema.org sameAs の CRLF-joined string を array に修正。
@@ -248,6 +371,10 @@ function yoshilover_063_buffer_inject_header_titles( $buffer ) {
             $insert_pos = $m[0][1] + strlen( $m[0][0] );
             $buffer = substr_replace( $buffer, yoshilover_063_render_home_data_hub(), $insert_pos, 0 );
         }
+    }
+
+    if ( is_front_page() ) {
+        $buffer = yoshilover_063_remove_legacy_jersey_toplink_widget( $buffer );
     }
 
     return $buffer;
@@ -5044,6 +5171,8 @@ function yoshilover_063_handle_admin_request( $request ) {
             return yoshilover_063_rest_replace_plugin_php( $request );
         case 'read_plugin_file':
             return yoshilover_063_rest_read_plugin_file( $request );
+        case 'refresh_starter_rotation_rows':
+            return yoshilover_063_rest_refresh_starter_rotation_rows();
         default:
             return new WP_Error(
                 'yoshilover_063_unknown_action',
@@ -5419,6 +5548,10 @@ function yoshilover_063_rest_clear_cache() {
     }
 
     return $results;
+}
+
+function yoshilover_063_rest_refresh_starter_rotation_rows() {
+    return yoshilover_063_refresh_starter_rotation_rows();
 }
 
 /**

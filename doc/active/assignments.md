@@ -1,6 +1,110 @@
 # assignments — 現場担当と次アクション
 
-最終更新: 2026-06-04 JST (Phase 0+1 完了 + Phase 2 /data/record 記録室ハブ + §16-B球団打率漏れ修正)
+最終更新: 2026-06-10 JST (X案データポスト鮮度ゲート + data-insight 朝便 05:00 変更)
+
+## 2026-06-10 — X案データポスト: 離脱中選手の「直近N試合」混入を鮮度ゲートで除外
+
+- **user 報告**: データポスト候補の「OBP 直近10試合」に長期離脱中の平山功太が選出されていた（6/10 の 9:00/11:00/13:00 JST 便ログで alternate 選出を確認）。「データで指摘されるとブランディングが崩れる。データサイトをやっている以上、ポストは止めずに正確に」。
+- **原因**: `advanced_metric_snapshots` の `last_N_games` scope は **選手ごとの rolling**（本人の最後のN試合、`insight_etl.py` `_player_last_n_game_window`）。離脱中の選手は怪我前の古い試合がいつまでも「直近」として残り、`x_post_mail_lane._query_rank_from_snapshots` に鮮度チェックがなかったため Top10 に載り続けた。
+- **修正**: `_query_rank_from_snapshots` に鮮度ゲートを追加。batting_logs/pitching_logs の最終出場日が snapshot 日から **打者10日 / 投手14日** より古い選手を X 向け ranking から除外（除外は `snapshot_rank_stale_drop` で INFO ログ、432 の可視化方針準拠）。最終出場が特定できない選手は誤除外を避けて残す fail-open。snapshot テーブル・data site は不可触のまま、ポスト自体は出続ける。
+- **test**: 新規 `SnapshotStaleFreshnessGateTests` 4件（stale打者除外 / fail-open / 投手14日閾値 / rank振り直し）。クリーン worktree（HEAD `af881ea3` + 本修正のみ）で test_x_post_mail.py **165 passed / 0 failed**。本体ツリーの既存2失敗（ReplyCandidateRuntimeConfigTests）は作業中の別変更による既存ずれで本件と無関係。
+- **deploy**: 未コミットの作業中変更を巻き込まないため、クリーン worktree（HEAD `af881ea3` + 本修正のみ）からビルド。Cloud Build `57b41eb3` SUCCESS、image `x-post-mail-lane:stale-gate-af881ea3`（digest `sha256:d8c5ef5b…`）、Job generation `170` に更新。
+- **live verify (19:30 JST 便 `x-post-mail-lane-ks7n8` SUCCESS)**: `snapshot_rank_stale_drop` 268 件発火。平山功太は `last_game=2026-05-22 cutoff=2026-05-31` で AVG/OPS の全 直近N試合 scope から除外を確認。データ候補は継続生成（`data_split appended total=4`、mail `status=sent`）= ポストは止まっていない。
+- **残**: src/tests の変更は未コミット（commit/push は Codex 管轄）。in-flight の feat/377 作業と同居しているため、コミット時は本修正 hunk（`_SNAPSHOT_STALE_DAYS_*` / `_snapshot_last_game_dates` / `_query_rank_from_snapshots` 鮮度ゲート / `SnapshotStaleFreshnessGateTests`）を明示すること。
+
+## 2026-06-10 — 連続試合安打の2試合遅れ解消 (data-insight 朝便 05:00 へ移動) LIVE
+
+- **user 報告**: 試合中 TV「泉口 7試合連続ヒット」に対し /data 選手ページが 5試合表示（1試合遅れのはずが2試合遅れ）。
+- **原因**: ナイトゲームは data-insight 最終便 21:00 に間に合わず翌朝 07:00 便で DB 取込。一方ページ再生成 (data-site-publisher) は 06:00 で取込より先に走るため、朝〜17:30 のページが恒常的に2試合前のまま。公開 HTML は page-cache 失効待ちでさらに遅れて見える。
+- **対応**: user 承認（値段不変が条件）のもと、`data-insight-morning-trigger` の schedule を `0 7 * * *` → `0 5 * * *` (JST) に変更。トリガー数・実行回数は不変 = 課金不変。insight-nightly の実行時間は 1〜2 分のため 05:02 頃完了 → 06:00 publisher に間に合う。05:00 時点は `auto_target_jst_date()` で前日対象のため前夜試合を取込む。
+- **効果**: 毎朝 06:00 の再生成で前夜試合まで反映 = 常時「1試合前」表示（非リアルタイムページの構造上の最小遅れ）。検討した代替案（publisher を 10:30 へ移動）は朝の閲覧者に古い表示が残るため不採用。
+- **doc**: `mkdocs_docs/operations/scheduler.md` の data-insight-morning-trigger 行を 05:00 へ更新。
+- **verify 予定**: 2026-06-11 朝、insight-nightly 05:00 実行 SUCCESS と 06:00 publisher 後の選手ページ streak 値を確認。
+
+## 2026-06-09 — home starter rotation table LIVE_VERIFIED
+
+- **トップUX追加**: user 指示「先発ローテ一覧 2007年〜2026年をスクレイピングして表に」「同じレベルでユーザビリティをあげて」を反映。トップの `巨人 選手データ・成績` 枠には `先発ローテ` カードを追加し、表本体は独立ブロック `🧭 先発ローテ一覧（2007年〜2026年）` として表示。
+- **実装**: `yoshilover-063-frontend.php` version `0.21.10`。my-favorite-giants の `giants_data/rotation/{year}.htm` を 2026→2007 の20年分 `wp_remote_get()` で取得し、年別に先発投手を先発数順へ集計。WP option/transient `yoshi_starter_rotation_rows_2007_2026_v1` に保存。管理REST action `refresh_starter_rotation_rows` を追加。
+- **表示仕様**: 2026→2007 の新しい年度順、年度ジャンプボタン、`20年分` / `新しい年度から表示` / `先発数順` pill、スマホ横スクロール、年度列 sticky。各年度は出典年別ページへリンク。
+- **deploy / verify**: Cloud Build `c5b8f5a3-d4e0-4b52-aaf6-6e48678916fc` SUCCESS、image `wp-frontend-deploy:starter-rotation-0.21.10-170fc801-20260609011425` digest `sha256:c87d2f...`。Cloud Run Job `wp-frontend-deploy` generation `10`、execution `wp-frontend-deploy-nj7mx` SUCCESS。log: `replace_plugin status=ok written_bytes=237728`、`refresh_rotation row_count=20 failed_years=[]`、cache clear `wp_object_cache` / `wp_rocket`。
+- **public validation**: Job 内 public fetch で top status `200`、`has_rotation_block=true`、`has_rotation_title=true`、`has_rotation_card=true`、`has_2026=true`、`has_2007=true`、`has_fetch_placeholder=false`、`has_source=true` を確認。
+- **repo validation**: `php -l src/yoshilover-063-frontend.php` OK、`python3 -m pytest -q tests/test_front_home_data_links.py tests/test_front_adsense_scroll_ui.py` 10 passed、`git diff --check -- src/yoshilover-063-frontend.php tests/test_front_home_data_links.py` OK。
+
+## 2026-06-08 — home legacy jersey toplink cleanup LIVE_VERIFIED
+
+- **方針修正**: user 指摘「🔢 巨人 歴代背番号・永久欠番を見る これだけ 巨人 選手データ・成績 の枠に外れてあるのはおかしくない」を反映。トップのデータ枠内カード `歴代背番号` は残し、枠外に残っていた旧 `front_top` text widget の単独リンクだけを除去。
+- **原因**: 以前の背番号導線追加時に `text-33` / `yoshi-jersey-toplink` の旧ウィジェットが残り、`yoshi-home-data` 内の新カードと重複していた。
+- **front fix**: `yoshilover-063-frontend.php` を `0.21.8` に更新。`yoshilover_063_remove_legacy_jersey_toplink_widget()` を追加し、front page buffer で旧 `yoshi-jersey-toplink` widget wrapper を除去。fallback で inner div だけの残存も除去する。
+- **deploy / verify**: Cloud Build `8bff574b-e6d6-460c-8da0-8cfc5247b0b0` SUCCESS、image `wp-frontend-deploy:jersey-toplink-clean-front-0.21.8-170fc801-20260608091353`。Cloud Run execution `wp-frontend-deploy-2k8nq` SUCCESS、log: `replace_plugin_status=ok`、`version=0.21.8`、`has_legacy_cleanup=true`、cache clear `wp_object_cache` / `wp_rocket`。
+- **public validation**: Cloud Build public verify `f5bdb1a9-28c2-4024-a69d-26fafdd8717c` SUCCESS。top HTML: `legacy_text_count=0`、`legacy_class_count=0`、`jersey_url_count=1`、`has_jersey_card_title=true`。つまり枠外の旧リンクは消え、データ枠内カードだけが残る状態。
+- **repo validation**: `php -l src/yoshilover-063-frontend.php` OK、`python3 -m pytest tests/test_front_home_data_links.py -q` 4 passed、`git diff --check -- src/yoshilover-063-frontend.php tests/test_front_home_data_links.py` OK。
+
+## 2026-06-08 — /data 打撃/投手ランキング split LIVE_VERIFIED
+
+- **方針修正**: user 指摘「打撃成績ランキングと投手成績ランキングが同じ」「残す必要あるの？Topページからの導線でいい」を反映。トップの2カードは同一 `/data/ranking/` ではなく、打撃 `/data/batting-ranking/`、投手 `/data/pitching-ranking/` へ直接リンク。
+- **ページ分離**: `/data/batting-ranking/` は打率・本塁打・打点・安打・盗塁、通算/歴代の打撃系のみ掲載。`/data/pitching-ranking/` は防御率・勝利・奪三振、通算/歴代の投手系のみ掲載。旧 `/data/ranking/` は混在ランキング表を出さず、打撃/投手の2択案内だけに変更。
+- **data hub 導線**: `/data/` の intro からも汎用「選手ランキング」リンクを外し、`打撃ランキング` / `投手ランキング` の直接リンクに分離。
+- **deploy / verify**: data-site image `data-site-publisher:ranking-split-170fc801-20260608082959` (Cloud Build `9a114ff7-5d4b-4f7c-aa82-61f13a7e55f6`) を build。全体 execution は古い自動実行との競合回避で cancel し、同 image ベースの一時 ranking patch Job `data-site-ranking-split-patch-s774p` で `ranking` updated page_id `76423`、`batting-ranking` created page_id `86573`、`pitching-ranking` created page_id `86574`。一時Jobは削除済み。front plugin `0.21.7` は `wp-frontend-deploy-8z6sg` で self-update + cache clear、readback で新リンクあり/旧 child path なしを確認。
+- **public validation**: Cloud Build public verify `c8160744-6654-474d-a7b8-d6ab410f929d` SUCCESS。top は `/data/batting-ranking/` / `/data/pitching-ranking/` を含み旧 `/data/ranking/batting|pitching/` を含まない。`/data/` は直接2リンクを含み `/data/ranking/` を含まない。打撃ページは `巨人 本塁打 ランキング` / `巨人 打率 ランキング` を含み `巨人 防御率 ランキング` / `通算勝利` を含まない。投手ページは `巨人 防御率 ランキング` / `巨人 勝利 ランキング` を含み `巨人 本塁打 ランキング` / `通算安打` を含まない。旧 `/data/ranking/` は2択案内のみ。
+- **repo validation**: `python3 -m py_compile src/data_site_template_team.py src/data_site_template_cluster.py src/data_site_publisher.py` OK、`php -l src/yoshilover-063-frontend.php` OK、`python3 -m pytest tests/test_data_site_publisher.py tests/test_data_site_team.py tests/test_data_site_template_cluster.py tests/test_front_home_data_links.py -q` 54 passed、`compileall` / `git diff --check` OK。
+
+## 2026-06-08 — /data 注目データ separate-page LIVE_VERIFIED
+
+- **方針再修正**: user 指摘「トップページから選手個人ページと注目データが2つ同じだとおかしい」「注目データを新しくページをつくって誰の記録か分かるように」を反映。トップの `注目データ` は `/data/#ys-notable-data` ではなく独立ページ `/data/notable/` へ向ける。
+- **ページ分離を固定**: user 追加指摘「注目データのSectionをかけるではなく、選手別個人成績とは違うページ」を反映。`/data/` は選手別個人成績ハブ専用に戻し、`id="ys-notable-data"` section / 注目データ teaser を出さない。`/data/notable/` だけが注目データ本文を持つ。
+- **表示修正**: `/data/notable/` のカード見出しは「吉川尚輝の連続試合安打」のように、選手名 + 記録名 + 数値を先に出し、各カードから該当選手ページへ戻れるようにする。投手一覧 / 捕手一覧 / 内野手一覧 / 外野手一覧 / 育成選手一覧 / 監督・コーチ一覧は注目データ page に出さないテストを追加。
+- **publisher 修正**: `python -m src.data_site_publisher --only-notable-data` は `/data/notable/` を upsert し、既存 `/data/` に残っている `id="ys-notable-data"` section は削除する。過去の `--retire-legacy-notable` は canonical page を誤って下書き化しない no-op に変更。さらに WP slug 予約の `notable-2` 再発防止として `_find_page_id_by_slug()` を `context=edit` + `status=any` に変更。
+- **live deploy / verify**: Cloud Build `a36a7cda-58c8-4fdb-81e8-53620a3ec044` SUCCESS、image `data-site-publisher:notable-separate-slugfix-170fc801-20260608080707` digest `sha256:7d5f6293...`。Cloud Run Job `data-site-publisher-qx6nf` SUCCESS、log: `notable_page_id=86527 notable_action=updated action=updated items=8`。front plugin は `0.21.6` を `wp-frontend-deploy-j5qpm` で self-update + cache clear。旧 duplicate `/data/notable-2` は canonical fix Job `wp-frontend-deploy-9zgtb` で draft 化し、`/data/notable/` に統一。
+- **public validation**: Cloud Build public verify `2129b476-76f9-460f-9f8b-d4f2b81bcb47` SUCCESS。top は `/data/notable/` を含み `/data/#ys-notable-data` を含まない。`/data/` は `id="ys-notable-data"` を含まず `/data/notable/` link を含む。`/data/notable/` は `この記録の選手` を含み、`投手 一覧` / `捕手 一覧` / `内野手 一覧` / `外野手 一覧` / `育成選手 一覧` / `監督・コーチ 一覧` を含まない。final URL は `/data/notable` で `notable-2` に redirect しない。
+- **repo validation**: `python3 -m py_compile src/data_site_template_cluster.py src/data_site_publisher.py` OK、`php -l src/yoshilover-063-frontend.php` OK、`python3 -m pytest tests/test_data_site_template_cluster.py tests/test_data_site_publisher.py tests/test_front_home_data_links.py -q` 42 passed、`git diff --check` OK。
+
+## 2026-06-08 — /data 注目データ only-mode LIVE_VERIFIED
+
+- **方針修正**: user 指摘「注目データが選手データと重複」「試合日からを起点」「古いデータもある」を反映。`/data/notable/` の驚き・注目選手ページ生成は止め、トップ導線も `/data/#ys-notable-data` の注目データ anchor に固定。注目 section 内も個別選手ページリンクを出さず、データ項目だけを表示する。
+- **更新範囲分離**: `python -m src.data_site_publisher --only-notable-data` を追加。既存 `/data/` の `id="ys-notable-data"` section だけを置換し、選手ページ / ランキング / ファーム / 背番号などの子ページ upsert は走らせない。
+- **古いデータ混入防止**: `fetch_latest_giants_game_date()` と `fetch_player_latest_game_date()` を追加し、注目データは最新の巨人試合日と選手の最新出場日が一致するものだけ採用。最新試合日が取れない場合は live 更新を abort し、空データで `/data/` を上書きしない。
+- **古い導線除去**: 既存 `/data/` 冒頭に残っていた `/data/notable/` / `驚き・注目選手` も only-mode の同一 `/data` content update 内で `#ys-notable-data` / `注目データ` に置換。公開HTMLで `/data/notable/` が残らないことを確認済み。
+- **live deploy / verify**: Cloud Build `047d920a-b554-4b7a-ad1b-3870b2689fbb` SUCCESS、image `data-site-publisher:notable-data-only-linkfix-170fc801-20260608` digest `sha256:626ac753...`。Cloud Run Job `data-site-publisher` image 更新後、execution `data-site-publisher-hf8kb` SUCCESS。job log: `page_id=73526 action=updated items=8`。Cloud Build public verify `63566bba-6638-4986-b6a1-11403a84d715` SUCCESS: `id="ys-notable-data"` / `dataset-notable-data` / `注目データ（連続試合・好調指標）` / `基準日:` found、`/data/notable/` absent。top public verify `a023c1d7-7180-465c-b4f0-4011a5836749` SUCCESS: `/data/#ys-notable-data` / `注目データ` found、`/data/notable/` absent。
+- **legacy page retired**: 過去生成の `/data/notable/` が `200` で残っていたため、`--retire-legacy-notable` を追加。Cloud Build `5ff15a09-415e-41fa-97fd-935683637d30` SUCCESS、image `data-site-publisher:notable-data-retire-legacy-170fc801-20260608` digest `sha256:c8ad5121...`。Cloud Run execution `data-site-publisher-c2c94` SUCCESS。job log: `mode=retire_legacy_notable action=updated page_id=86527`。Cloud Build public verify `727c4d42-d14e-4a73-b2d0-ec532eb3fcd8` SUCCESS: `/data/notable/` status `404`。
+- **tests**: `python3 -m pytest tests/test_data_site_template_cluster.py tests/test_data_site_publisher.py tests/test_data_site_query.py tests/test_front_home_data_links.py -q` 88 passed。`py_compile` / `compileall` / AST parse / `php -l src/yoshilover-063-frontend.php` / `git diff --check` OK。
+
+## 2026-06-08 — /data 注目データ + Dataset schema LIVE_DEPLOYED
+
+- **/data 既存ページ強化 LIVE_DEPLOYED**: user「無駄なページは増やさなければ良い。構造化マークアップもいれて」を反映。新規URLは作らず、既存 `/data/` に `#ys-notable-data` セクションを追加。内容は「直近5/10」固定ではなく、ニュースで使いやすい `連続試合安打` / `連続得点関与` / `今季最長連続安打` を優先し、薄い日は短期OPS/防御率で補完する設計。
+- **schema / トップ導線**: 表示データと一致する Schema.org `Dataset` + `ItemList` JSON-LD を `/data/` 本文に追加。トップ「巨人 選手データ・成績」カードは `注目データ` → `/data/#ys-notable-data` に差し替え。ページ数増加なし。
+- **deploy / verify**: Cloud Build `eee60cb9-37f0-4801-9c53-d1377ba7a80b` SUCCESS、image `data-site-publisher:notable-data-schema-170fc801-20260608` digest `sha256:1f9cc345...`。Cloud Run execution `data-site-publisher-rs4xj` SUCCESS、cluster `/data` page_id `73526` updated。一時Job `notable-front-push-170fc801-8vp7f` SUCCESS、plugin readback `live_has_notable=True` / `version_0214=True`、cache clear `wp_rocket` / `wp_object_cache`。一時Jobは削除済み。Cloud Build public verify `86bfe06c-3685-41f2-b757-d94d429d0c08` SUCCESS: `/data/` の `id="ys-notable-data"` / `注目データ（連続試合・好調指標）` / `dataset-notable-data` / `"@type": "Dataset"`、トップの `/data/#ys-notable-data` / `注目データ` を確認。
+- **tests**: `python3 -m py_compile src/data_site_template_cluster.py src/data_site_publisher.py` OK、`php -l src/yoshilover-063-frontend.php` OK、`python3 -m pytest tests/test_data_site_template_cluster.py tests/test_front_home_data_links.py -q` 28 passed、`python3 -m compileall -q src/data_site_template_cluster.py src/data_site_publisher.py` OK、AST parse OK、`git diff --check` OK。
+
+## 2026-06-08 — /data/jersey-numbers 支配下/育成グループ化 LIVE_DEPLOYED
+
+- **背番号ページ UX update LIVE_DEPLOYED**: user「背番号は育成と背番号をグループ分けて」を反映。`/data/jersey-numbers/` の番号別一覧を `支配下・永久欠番 背番号` と `育成背番号（3桁）` に分離。3桁番号は `001` のような先頭ゼロ付きも育成側として判定。検索 box はページ内 1 つに統一し、両グループ横断で検索できる。
+- **deploy / verify**: Cloud Build `1614d5fd-26dd-4963-9d76-a67000c61a4d` SUCCESS、image `data-site-publisher:jersey-groups-170fc801-20260608`、Cloud Run execution `data-site-publisher-cq6mk` SUCCESS。job log: `jersey numbers upsert slug=jersey-numbers page_id=86346 action=updated rows=234`。Cloud Build public verify `afb68878-2d26-4fd7-85a6-d9e2fcd2d277` SUCCESS: `支配下・永久欠番 背番号` / `育成背番号（3桁）` / `支配下背番号` / `3桁番号を分離` / `ys-jersey-search` found。
+- **tests**: `python3 -m py_compile src/data_site_template_jersey.py src/data_site_jersey_source.py src/data_site_publisher.py` OK、`python3 -m pytest tests/test_data_site_jersey.py -q` 3 passed。
+
+## 2026-06-08 — /data/jersey-numbers 歴代背番号 topic cluster LIVE_DEPLOYED
+
+- **歴代背番号ページ LIVE_DEPLOYED**: `/data/jersey-numbers/` を `/data/` 配下のヒストリー系 spoke として新規作成。my-favorite-giants の `backnumber.htm` / `retired_number.htm` を参照し、永久欠番カード・背番号検索・番号別変遷テーブル・関連トピクラ導線(`/data/` `/data/legends/` `/data/draft/` `/data/farm/`)を追加。Cloud Build `091fd0f4-e594-421b-9189-d5e584e6fa75` SUCCESS、image `data-site-publisher:jersey-numbers-170fc801-20260608`、Cloud Run execution `data-site-publisher-gwvvr` SUCCESS。WP page `/data/jersey-numbers/` page_id `86346` created、rows `234`。
+- **トップページ導線 LIVE_DEPLOYED**: `yoshilover-063-frontend.php` version `0.21.3` に `歴代背番号` → `/data/jersey-numbers/` card を追加。Cloud Build 直RESTは XSERVER 403 のため、Cloud Run 一時Job `jersey-toplink-push-c54p6` で plugin self-update + `front_top` link + cache clear を実行。log readback: `replace_plugin_status=200`、`replace_plugin_written_bytes=222099`、`live_plugin_has_jersey=True`、`clear_cache_keys ['wp_object_cache', 'wp_rocket']`。
+- **live verify**: Cloud Build public verify `5ccee559-1283-4e93-bf73-d6b1796f820a` SUCCESS。`/data/jersey-numbers/` は `巨人 歴代背番号一覧・変遷` / `永久欠番` / `ys-jersey-search` を確認。トップページは `歴代背番号` / `/data/jersey-numbers/` / `2軍試合日程・結果` を確認。
+- **tests**: `python3 -m py_compile src/data_site_jersey_source.py src/data_site_template_jersey.py src/data_site_publisher.py` OK、`php -l src/yoshilover-063-frontend.php` OK、`python3 -m pytest tests/test_data_site_jersey.py tests/test_data_site_template_cluster.py tests/test_front_home_data_links.py -q` 28 passed。
+
+## 2026-06-08 — mobile header duplicate fix LIVE_DEPLOYED
+
+- **ヘッダー重複 fix LIVE_DEPLOYED**: mobile header でタイトル/サブタイトルが重なって見える原因だった `yoshi-headLogo__text` / `yoshi-headLogo__subtitle` の可視 DOM 注入を `yoshilover-063-frontend.php` から削除し、plugin version を `0.21.3` に更新。さらに `src/custom.css` に残っていた旧 388 header 用 CSS block も削除し、テーマ側ヘッダー表示に戻した。
+- **deploy**: ローカル環境は `yoshilover.com` DNS 解決不可のため、Cloud Run Job `wp-frontend-deploy` で WP REST self-update を実行。Cloud Build `97e4301c-406c-438d-a896-2e16de53d852` は Cloud Build 直 WP REST が XSERVER 403 で失敗。迂回として image `wp-frontend-deploy:header-fix-0.21.3-css` を Cloud Build `b2bd08e3-8733-42a4-b518-93810afcd92f` で build、Cloud Run execution `wp-frontend-deploy-vswth` SUCCESS。
+- **live verify**: Job log readback で `live_after_version 0.21.3`、`live_after_header_markers {'yoshi-headLogo__text': False, 'yoshi-headLogo__subtitle': False, '読売ジャイアンツ専門の速報＆データサイト｜試合結果': False}`、`update_custom_css_contains_marker True`、`clear_cache_keys ['wp_object_cache', 'wp_rocket']`、`deploy_status ok` を確認。
+- **tests**: `php -l src/yoshilover-063-frontend.php` OK、`python3 -m pytest -q tests/test_front_home_data_links.py` 3 passed、`git diff --check -- src/yoshilover-063-frontend.php src/custom.css tests/test_front_home_data_links.py` OK。
+
+## 2026-06-07 — 2軍ファーム topic cluster LIVE_DEPLOYED
+
+- **/data/farm 複数ページ LIVE_DEPLOYED**: user「複数枚で作ってね」を反映。親 `/data/farm/` と子 `/data/farm/schedule/` `/data/farm/spring-education/` `/data/farm/autumn-education/` `/data/farm/team/` `/data/farm/players/` `/data/farm/titles/` `/data/farm/championship/` を作成。my-favorite-giants の 2軍導線(試合日程・結果 / 年度別教育リーグ / チーム成績 / 個人成績 / タイトルホルダー / ファーム日本選手権)を参考に、ヨシラバー側では親子構造・カード・検索・内部リンクで再整理。Cloud Build `30a851bb-a2cb-497a-83a7-49420a98de90` SUCCESS、image `data-site-publisher:farm-cluster-170fc801-20260607`、Cloud Run Job `data-site-publisher-nlr6n` SUCCESS。WP page: farm `85088`、child `85089`〜`85095` created。Cloud Build public verify `44d3ef7e-a9fb-4b09-a40a-81dc34d84720` SUCCESS: `/data/farm/` `/data/farm/schedule/` `/data/farm/players/` top card all expected text found。
+- **トップページ導線 LIVE_DEPLOYED**: `yoshilover-063-frontend.php` version `0.21.2` に更新し、トップ「巨人 選手データ・成績」に `2軍試合日程・結果` → `/data/farm/` を追加。7カード化のため grid を `repeat(auto-fit,minmax(126px,1fr))` に変更。WP plugin self-update 成功、cache clear 済。WP REST readback: version `0.21.2`、`2軍試合日程・結果` / `/data/farm/` / `歴代ドラフト` present、`今日の注目選手` absent。
+- **tests**: `python3 -m py_compile src/data_site_farm_source.py src/data_site_template_farm.py src/data_site_publisher.py` OK、`php -l src/yoshilover-063-frontend.php` OK、`python3 -m pytest tests/test_data_site_farm.py tests/test_data_site_template_cluster.py tests/test_front_home_data_links.py -q` 28 passed。
+
+## 2026-06-07 — 469 X-post + SNS cost guard deploy
+
+- **469 SNS realtime 21:15 fast path LIVE_IMAGE_UPDATED**: user「21時15分まで15分に一回でいい」を反映。SNSリアルタイムページは 18:00〜21:15 まで15分間隔。21:30 / 21:45 は `rss_fetcher_redundant_realtime_skip` で早期終了。試合中の :15/:30/:45 は SNS page upsert のみ実行し、RSS記事生成 / Gemini / 下書き作成へ進まない。Cloud Build `164dbed7-02ce-4507-92ee-37e959f21948` SUCCESS、image `yoshilover-fetcher:sns-2115-3edb27c3-20260607`、digest `sha256:9729d88c1a6aebe64eea499ff6a33c04df591913bfcb23aaee9cfd5e7d83774a`、Cloud Run service `yoshilover-fetcher` revision `yoshilover-fetcher-00512-qn6` 100% traffic、`/health` OK。Scheduler/env/Secret は不変。tests `tests/test_sns_realtime_topic.py` + `tests/test_sns_realtime_topic_classifier.py` 40 passed。
+- **469 XPOST/SNS schedule efficiency LIVE_IMAGE_UPDATED**: user「朝は7時からでよい」「月曜日は試合がない」を反映。`run_x_post_mail.py` で 7:00 前は DB download 前に `exit 0`、月曜の試合前 / スタメン / 試合中 / 試合後 timing window も DB download / RSSHub / Gemini 前に `exit 0`。解除 env は `X_POST_MAIL_ALLOW_BEFORE_7AM=1` / `X_POST_MAIL_ALLOW_MONDAY_GAME_WINDOWS=1`。Cloud Build `cabf7277-35c8-4074-8f41-80c76fe6f959` SUCCESS、image `x-post-mail-lane:469-skip-ce38d111-20260607`、digest `sha256:f3844ffdae151afdb9b6052746316a082948800f5becbc8fb8915e72d24b43d7`、Cloud Run Job `x-post-mail-lane` generation `162`。Scheduler/env/Secret は不変。targeted test `MondayNoGameWindowTests` 5 passed。full `tests/test_x_post_mail.py` は既存 `BuildQuoteRtCommentTests.test_returns_comment_post_api` の voice_quality gate で 1 fail(今回変更外)。
 
 ## 2026-06-04 Phase 2 — /data/record 記録室ハブ(共有部品再利用)+ ⑤ defer
 

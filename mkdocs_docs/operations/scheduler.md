@@ -19,15 +19,22 @@
 
     | スケジューラ | cron | 用途 |
     | --- | --- | --- |
-    | `x-post-mail-flush` | `0 6-22 * * *` | 朝 6 時〜夜 22 時の毎時 0 分 |
-    | `x-post-mail-flush-game-1` | `15,30,45 19-20 * * *` | 試合中 (19,20 時) |
-    | `x-post-mail-flush-game-2` | `15,30,45 21 * * *` | 試合終盤〜直後 (21 時) |
+    | `x-post-mail-flush` | `0 7,9,11,13,15,16,17,22 * * *` | 朝 7 時開始、午後〜試合前を厚めにする |
+    | `x-post-mail-flush-game-1` | `0,15,30,45 18-21 * * *` | 試合中 15 分間隔 |
+    | `x-post-mail-flush-game-2` | PAUSED (`15,30,45 21-22 * * *`) | game-1 に集約済み |
+
+    7:00 前に起動しても、runner 側で `before_user_morning_start` として早期 skip する。
+    検証時のみ `X_POST_MAIL_ALLOW_BEFORE_7AM=1` で解除する。
+
+    月曜は原則試合なしのため、runner 側で試合前 / スタメン / 試合中 / 試合後 window を
+    `monday_no_game_window` として早期 skip する。月曜開催がある場合のみ
+    `X_POST_MAIL_ALLOW_MONDAY_GAME_WINDOWS=1` で解除する。
 
 === ":material-chart-bar: data-insight (1 日 7 回)"
 
     | スケジューラ | cron | 時刻 (JST) |
     | --- | --- | --- |
-    | `data-insight-morning-trigger` | `0 7 * * *` | 07:00 |
+    | `data-insight-morning-trigger` | `0 5 * * *` | 05:00 (2026-06-10 変更: 06:00 の data-site-publisher より先に前夜試合を取込み、連続記録の2試合遅れを解消) |
     | `data-insight-1000-trigger` | `0 10 * * *` | 10:00 |
     | `data-insight-noon-trigger` | `0 12 * * *` | 12:00 |
     | `data-insight-1500-trigger` | `0 15 * * *` | 15:00 |

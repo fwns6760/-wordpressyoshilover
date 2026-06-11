@@ -104,11 +104,14 @@ def build_win_correlation_candidates(
     min_gap: float = 0.150,
     dedup_set: Optional[set[str]] = None,
     with_image: bool = True,
+    preferred_players: Optional[set[str]] = None,
 ) -> list:
     """「この選手が活躍した試合、巨人は強い」条件付き勝率の驚き候補。
 
     条件は 2 軸 (打点あり / マルチ安打) を計算し、 選手ごとに gap の大きい方を採用。
     引き分けは分母から除外 (勝敗のみ)。 insight.db read-only。
+    ``preferred_players`` (今夜の話題選手 等) は閾値を満たす限り gap より優先する
+    (2026-06-11 user「色々なデータを試合あとは知りたい」= 今夜の主役の驚きを先に)。
     """
     if now is None:
         now = datetime.now(JST)
@@ -157,9 +160,10 @@ def build_win_correlation_candidates(
             if prev is None or gap > prev[0]:
                 best_by_player[canon] = (gap, key, label, cw, cl, nw, nl, cond_rate, other_rate)
 
+    pref = preferred_players or set()
     out: list = []
     for canon, (gap, key, label, cw, cl, nw, nl, cr, orr) in sorted(
-        best_by_player.items(), key=lambda kv: kv[1][0], reverse=True
+        best_by_player.items(), key=lambda kv: (kv[0] not in pref, -kv[1][0])
     ):
         if len(out) >= max_count:
             break
@@ -236,8 +240,12 @@ def build_opponent_split_candidates(
     min_gap: float = 0.080,
     dedup_set: Optional[set[str]] = None,
     with_image: bool = True,
+    preferred_players: Optional[set[str]] = None,
 ) -> list:
-    """「対○○キラー」対戦カード別打率の驚き候補 (シーズン比 +min_gap 以上)。"""
+    """「対○○キラー」対戦カード別打率の驚き候補 (シーズン比 +min_gap 以上)。
+
+    ``preferred_players`` (今夜の話題選手 等) は閾値を満たす限り gap より優先。
+    """
     if now is None:
         now = datetime.now(JST)
     if not db_path:
@@ -278,9 +286,12 @@ def build_opponent_split_candidates(
             continue
         scored.append((gap, canon, str(opp), oab, oh, orbi, opp_avg, season_avg))
 
+    pref = preferred_players or set()
     out: list = []
     used_players: set[str] = set()
-    for gap, canon, opp, oab, oh, orbi, oavg, savg in sorted(scored, reverse=True):
+    for gap, canon, opp, oab, oh, orbi, oavg, savg in sorted(
+        scored, key=lambda t: (t[1] not in pref, -t[0])
+    ):
         if len(out) >= max_count:
             break
         if canon in used_players:  # 一選手一本

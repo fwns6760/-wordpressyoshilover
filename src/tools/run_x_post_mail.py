@@ -1791,17 +1791,29 @@ def main(argv: Sequence[str] | None = None) -> int:
     # 2026-06-11 角度 v2 (user 全部GO): 勝利相関 (条件付き勝率) / 対戦カード別 split /
     # 歴代通算チェイス。 各角度 1 本ずつ、 カード PNG は builder 側で直接添付
     # (image_bytes)。 公開 X 自動投稿はしない (候補=メールまで)。 flag OFF で既存不変。
+    # 話題選手 counts はここで 1 回だけ取得し、 角度の優先選手 (今夜の主役の驚きを
+    # 先に出す、 user「色々なデータを試合あとは知りたい」) と後段 boost で共用する。
+    topical_counts: dict[str, int] | None = None
     if _data_angles_enabled() and db_path:
         da_max = _data_angles_max_per_run()
         if da_max > 0:
             try:
                 from src import x_post_data_angles as _angles
 
+                if _topical_boost_enabled():
+                    topical_counts = _angles.fetch_topical_counts()
+                _preferred = {
+                    p for p, n in (topical_counts or {}).items() if n >= 2
+                }
+                if _preferred:
+                    LOG.info("data_angles preferred (今夜の話題): %s", sorted(_preferred))
                 da_candidates = (
                     _angles.build_win_correlation_candidates(
-                        db_path, now=now_jst, max_count=1, dedup_set=dedup_set)
+                        db_path, now=now_jst, max_count=1, dedup_set=dedup_set,
+                        preferred_players=_preferred)
                     + _angles.build_opponent_split_candidates(
-                        db_path, now=now_jst, max_count=1, dedup_set=dedup_set)
+                        db_path, now=now_jst, max_count=1, dedup_set=dedup_set,
+                        preferred_players=_preferred)
                     + _angles.build_alltime_chase_candidates(
                         now=now_jst, max_count=1, dedup_set=dedup_set)
                 )[:da_max]
@@ -2308,7 +2320,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         try:
             from src import x_post_data_angles as _angles
 
-            _buzz = _angles.fetch_topical_counts()
+            # data_angles block で取得済みなら再 fetch しない (RSSHub 叩き 1 回/便)
+            _buzz = topical_counts if topical_counts is not None \
+                else _angles.fetch_topical_counts()
             if _buzz:
                 candidates = _angles.boost_topical_candidates(candidates, _buzz)
         except Exception as _tb_exc:  # noqa: BLE001

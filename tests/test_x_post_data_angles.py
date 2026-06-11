@@ -244,3 +244,40 @@ def test_win_correlation_post_includes_streak_line(tmp_path):
     assert len(out) == 1
     # fixture は直近 (06-12 寄り) が H=0 のため streak 行なし
     assert "連続安打" not in out[0].post_text
+
+
+def test_preferred_player_wins_over_larger_gap(tmp_path):
+    """preferred_players (今夜の話題) は閾値を満たす限り gap より優先。"""
+    db = tmp_path / "pref.db"
+    conn = sqlite3.connect(db)
+    conn.executescript(
+        """
+        CREATE TABLE games (game_id TEXT PRIMARY KEY, game_date TEXT, opponent TEXT,
+            result TEXT, giants_score INT, opp_score INT);
+        CREATE TABLE batting_logs (game_id TEXT, team_role TEXT, team_name TEXT,
+            player_canonical TEXT, AB INT, H INT, RBI INT);
+        """
+    )
+    # 大差選手 (gap 大) と 話題選手 (gap 小さめだが閾値内) の 2 人
+    for i in range(12):
+        gid = f"2026-05-{i + 1:02d}:g-t-{i:02d}"
+        conn.execute("INSERT INTO games VALUES (?,?,?,?,0,0)",
+                     (gid, f"2026-05-{i + 1:02d}", "阪神",
+                      "win" if i < 6 else "loss"))
+        # 大差選手: RBI と勝敗が完全一致 (gap 1.0)
+        conn.execute("INSERT INTO batting_logs VALUES (?,?,?,?,?,?,?)",
+                     (gid, "giants", "巨人", "大差選手", 4, 1, 1 if i < 6 else 0))
+        # 話題選手: RBI あり 6 試合中 4 勝 (gap 小)、 なし 6 試合中 2 勝
+        conn.execute("INSERT INTO batting_logs VALUES (?,?,?,?,?,?,?)",
+                     (gid, "giants", "巨人", "話題選手", 4, 1,
+                      1 if i in (0, 1, 2, 3, 6, 7) else 0))
+    conn.commit()
+    conn.close()
+    base = angles.build_win_correlation_candidates(
+        str(db), max_count=1, min_cond_games=3, min_total_games=10,
+        min_gap=0.05, with_image=False)
+    assert base[0].focus_player == "大差選手"  # 既定は gap 順
+    pref = angles.build_win_correlation_candidates(
+        str(db), max_count=1, min_cond_games=3, min_total_games=10,
+        min_gap=0.05, with_image=False, preferred_players={"話題選手"})
+    assert pref[0].focus_player == "話題選手"  # 話題選手が先頭

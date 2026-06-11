@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Yoshilover 063 Frontend (topic hub / SNS reactions / Phase 1 noindex)
  * Description: 062 contract §2 §3 §5 の front impl。topic hub / SNS block / noindex を基盤に、トップ速報帯・記事下回遊束・右カラム rail・上部密集ナビ・人気記事導線まで含めて SWELL front を高密度化する。既存 SWELL コメント欄は触らない。
- * Version: 0.22.4
+ * Version: 0.23.0
  * Author: yoshilover
  */
 
@@ -227,7 +227,7 @@ function yoshilover_063_render_home_data_hub() {
         . '</style>';
     $html  = $style;
     $html .= '<section class="yoshi-home-data" aria-label="巨人 選手データ・成績">';
-    $html .= '<div class="yoshi-home-data__head"><h2>📊 巨人 選手データ・成績</h2>'
+    $html .= '<div class="yoshi-home-data__head"><h2>巨人 選手データ・成績</h2>'
         . '<a class="yoshi-home-data__more" href="' . esc_url( home_url( '/data' ) ) . '">すべて見る ＞</a></div>';
     $html .= '<p class="yoshi-home-data__lead">読売ジャイアンツの個人成績・打率・防御率・セ・リーグ順位を毎日更新。打撃／投手のランキングや選手別データをまとめています。</p>';
     $html .= '<div class="yoshi-home-data__grid">' . $cards_html . '</div>';
@@ -360,6 +360,18 @@ function yoshilover_063_buffer_inject_header_titles( $buffer ) {
         $buffer = preg_replace(
             '#(<li[^>]*class="[^"]*cat-all[^"]*menu-item[^"]*"[^>]*>.*?</li>)#s',
             '$1' . $data_li,
+            $buffer
+        );
+    }
+
+    // 2026-06-12: グローバルナビに「💬 掲示板」項目を注入 (データの隣)。
+    // 掲示板 (/forums) into header。dedup は markup 限定文字列で判定。
+    if ( strpos( $buffer, 'yoshi-board-nav">' ) === false ) {
+        $board_li = '<li class="menu-item menu-item-type-custom menu-item-object-custom yoshi-board-nav">'
+            . '<a href="' . esc_url( home_url( '/forums' ) ) . '">💬 掲示板</a></li>';
+        $buffer = preg_replace(
+            '#(<li[^>]*class="[^"]*yoshi-data-nav[^"]*"[^>]*>.*?</li>)#s',
+            '$1' . $board_li,
             $buffer
         );
     }
@@ -5152,6 +5164,79 @@ function yoshilover_063_build_article_bundles_for_post( $post ) {
 }
 
 /* ------------------------------------------------------------
+ * 4.9) 掲示板 (bbPress) 改修 (2026-06-12 v0.23.0)
+ *
+ *    「見に来た人が書き込む気にならない」問題への対応:
+ *    - 匿名投稿の摩擦除去: ニックネームだけで投稿可
+ *      (名前空欄→「匿名の巨人ファン」、email 空欄→ダミーで自動補完)
+ *    - honeypot で bot 対策 (登録不要化とセット)
+ *    - フォーラム頭に歓迎バナー (登録不要を明示)
+ *    - 投稿ボタン文言「送信」→「書き込む」
+ *    匿名投稿の ON/OFF 自体は option `_bbp_allow_anonymous`
+ *    (admin action set_bbp_anonymous) で切替、ここは挙動のみ。
+ * ---------------------------------------------------------- */
+
+add_filter( 'bbp_pre_anonymous_post_author_name', 'yoshilover_063_bbp_anon_name_fallback' );
+function yoshilover_063_bbp_anon_name_fallback( $name ) {
+    $name = trim( (string) $name );
+    return $name !== '' ? $name : '匿名の巨人ファン';
+}
+
+add_filter( 'bbp_pre_anonymous_post_author_email', 'yoshilover_063_bbp_anon_email_fallback' );
+function yoshilover_063_bbp_anon_email_fallback( $email ) {
+    $email = trim( (string) $email );
+    if ( $email !== '' && is_email( $email ) ) {
+        return $email;
+    }
+    // bbPress は匿名投稿で email 必須 validation をかけるため、
+    // 未入力は配信不能なダミー domain で補完して「ニックネームだけ」を成立させる
+    return 'anon@yoshilover.invalid';
+}
+
+add_action( 'bbp_theme_before_topic_form_submit_wrapper', 'yoshilover_063_bbp_honeypot_field' );
+add_action( 'bbp_theme_before_reply_form_submit_wrapper', 'yoshilover_063_bbp_honeypot_field' );
+function yoshilover_063_bbp_honeypot_field() {
+    echo '<p class="yoshi-bbp-hp" aria-hidden="true">'
+        . '<label>この欄は空のままにしてください'
+        . '<input type="text" name="yoshi_bbp_hp" value="" tabindex="-1" autocomplete="off" /></label></p>';
+}
+
+add_action( 'bbp_new_topic_pre_extras', 'yoshilover_063_bbp_honeypot_check' );
+add_action( 'bbp_new_reply_pre_extras', 'yoshilover_063_bbp_honeypot_check' );
+function yoshilover_063_bbp_honeypot_check() {
+    if ( ! empty( $_POST['yoshi_bbp_hp'] ) ) {
+        bbp_add_error( 'yoshi_bbp_hp', '投稿を受け付けられませんでした。お手数ですが再度お試しください。' );
+    }
+}
+
+add_action( 'bbp_template_before_forums_index', 'yoshilover_063_render_board_welcome' );
+add_action( 'bbp_template_before_single_forum', 'yoshilover_063_render_board_welcome' );
+add_action( 'bbp_template_before_single_topic', 'yoshilover_063_render_board_welcome' );
+function yoshilover_063_render_board_welcome() {
+    echo '<div class="yoshi-board-welcome">'
+        . '<p class="yoshi-board-welcome__title">巨人ファンの語り場</p>'
+        . '<p class="yoshi-board-welcome__lead">登録不要・ニックネームだけで今すぐ書き込めます。'
+        . '試合の感想、選手への想い、ぼやき・独り言、なんでもどうぞ。</p>'
+        . '<p class="yoshi-board-welcome__note">誹謗中傷・個人情報・宣伝の書き込みはご遠慮ください。</p>'
+        . '</div>';
+}
+
+// 文言の最小差し替え (domain=bbpress のみ、元文字列ベースで安全に)
+add_filter( 'gettext', 'yoshilover_063_bbp_relabel', 20, 3 );
+function yoshilover_063_bbp_relabel( $translation, $text, $domain ) {
+    if ( $domain !== 'bbpress' ) {
+        return $translation;
+    }
+    switch ( $text ) {
+        case 'Name (required):':
+            return 'ニックネーム（空欄なら「匿名の巨人ファン」）:';
+        case 'Submit':
+            return '書き込む';
+    }
+    return $translation;
+}
+
+/* ------------------------------------------------------------
  * 5) deploy / smoke helper (admin only)
  *
  *    live 反映は FTP upload 後に REST 経由で行う。
@@ -5202,6 +5287,10 @@ function yoshilover_063_handle_admin_request( $request ) {
             return yoshilover_063_rest_read_plugin_file( $request );
         case 'refresh_starter_rotation_rows':
             return yoshilover_063_rest_refresh_starter_rotation_rows();
+        case 'set_bbp_anonymous':
+            return yoshilover_063_rest_set_bbp_anonymous( $request );
+        case 'create_board_topic':
+            return yoshilover_063_rest_create_board_topic( $request );
         default:
             return new WP_Error(
                 'yoshilover_063_unknown_action',
@@ -5209,6 +5298,79 @@ function yoshilover_063_handle_admin_request( $request ) {
                 array( 'status' => 400 )
             );
     }
+}
+
+/**
+ * 掲示板: bbPress 匿名投稿 (_bbp_allow_anonymous) の ON/OFF。
+ * Request body: action=set_bbp_anonymous, value=0|1
+ */
+function yoshilover_063_rest_set_bbp_anonymous( $request ) {
+    if ( ! current_user_can( 'manage_options' ) ) {
+        return new WP_Error( 'yoshilover_063_bbp_anon_forbidden', 'manage_options required.', array( 'status' => 403 ) );
+    }
+    $value = (int) (bool) $request->get_param( 'value' );
+    $old   = (int) (bool) get_option( '_bbp_allow_anonymous', 0 );
+    update_option( '_bbp_allow_anonymous', $value );
+    return array(
+        'status' => 'ok',
+        'option' => '_bbp_allow_anonymous',
+        'old'    => $old,
+        'new'    => (int) (bool) get_option( '_bbp_allow_anonymous', 0 ),
+    );
+}
+
+/**
+ * 掲示板: 席暖め用トピックの作成 (管理人名義)。
+ * Request body: action=create_board_topic, title, content, forum_id (省略時は最初の公開フォーラム)
+ */
+function yoshilover_063_rest_create_board_topic( $request ) {
+    if ( ! current_user_can( 'manage_options' ) ) {
+        return new WP_Error( 'yoshilover_063_board_topic_forbidden', 'manage_options required.', array( 'status' => 403 ) );
+    }
+    if ( ! function_exists( 'bbp_insert_topic' ) ) {
+        return new WP_Error( 'yoshilover_063_board_topic_no_bbp', 'bbPress is not active.', array( 'status' => 501 ) );
+    }
+    $title   = sanitize_text_field( (string) $request->get_param( 'title' ) );
+    $content = wp_kses_post( (string) $request->get_param( 'content' ) );
+    if ( $title === '' || $content === '' ) {
+        return new WP_Error( 'yoshilover_063_board_topic_empty', 'title and content are required.', array( 'status' => 400 ) );
+    }
+    $forum_id = (int) $request->get_param( 'forum_id' );
+    if ( $forum_id <= 0 ) {
+        $forums = get_posts( array(
+            'post_type'   => bbp_get_forum_post_type(),
+            'numberposts' => 1,
+            'post_status' => 'publish',
+            'orderby'     => 'ID',
+            'order'       => 'ASC',
+        ) );
+        if ( empty( $forums ) ) {
+            return new WP_Error( 'yoshilover_063_board_topic_no_forum', 'no public forum found.', array( 'status' => 404 ) );
+        }
+        $forum_id = (int) $forums[0]->ID;
+    }
+    $topic_id = bbp_insert_topic(
+        array(
+            'post_parent'  => $forum_id,
+            'post_title'   => $title,
+            'post_content' => $content,
+            'post_status'  => bbp_get_public_status_id(),
+            'post_author'  => get_current_user_id(),
+        ),
+        array( 'forum_id' => $forum_id )
+    );
+    if ( empty( $topic_id ) || is_wp_error( $topic_id ) ) {
+        return new WP_Error( 'yoshilover_063_board_topic_failed', 'bbp_insert_topic failed.', array( 'status' => 500 ) );
+    }
+    if ( function_exists( 'bbp_update_forum' ) ) {
+        bbp_update_forum( array( 'forum_id' => $forum_id ) );
+    }
+    return array(
+        'status'   => 'ok',
+        'topic_id' => (int) $topic_id,
+        'forum_id' => $forum_id,
+        'link'     => get_permalink( $topic_id ),
+    );
 }
 
 function yoshilover_063_rest_get_theme_mods( $request ) {

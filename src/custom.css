@@ -9722,3 +9722,276 @@ input:focus-visible {
     font-size: 13.5px;
   }
 }
+
+/* ============================================================
+   v0.23 掲示板 (bbPress) 洗練 (2026-06-12)
+   「書き込む気にならない投稿ページ」対策の見た目側。
+   挙動側 (匿名投稿/honeypot/歓迎バナー) は 063 plugin v0.23.0。
+   ============================================================ */
+
+/* ── 歓迎バナー ── */
+.yoshi-board-welcome {
+  background: var(--white);
+  border: 1px solid var(--yl-bd);
+  border-top: 4px solid var(--orange);
+  border-radius: var(--yl-r);
+  box-shadow: var(--yl-sh);
+  padding: 18px 20px;
+  margin: 0 0 18px;
+}
+.yoshi-board-welcome__title {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--black);
+  margin: 0 0 6px;
+  letter-spacing: 0.02em;
+}
+.yoshi-board-welcome__lead {
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--dark-gray);
+  margin: 0 0 6px;
+}
+.yoshi-board-welcome__note {
+  font-size: 12px;
+  color: var(--mid-gray);
+  margin: 0;
+}
+
+/* ── bbPress 全体: 既定テーブル感を v0.23 カード言語へ ── */
+#bbpress-forums {
+  font-size: 14px;
+}
+#bbpress-forums ul.bbp-forums,
+#bbpress-forums ul.bbp-topics,
+#bbpress-forums ul.bbp-replies {
+  border: 1px solid var(--yl-bd) !important;
+  border-radius: var(--yl-r);
+  overflow: hidden;
+  background: var(--white);
+  box-shadow: var(--yl-sh);
+}
+#bbpress-forums li.bbp-header {
+  background: #FAF9F5 !important;
+  color: var(--dark-gray) !important;
+  border-top: none !important;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+#bbpress-forums li.bbp-body ul.forum,
+#bbpress-forums li.bbp-body ul.topic {
+  border-top: 1px solid var(--yl-bd) !important;
+}
+#bbpress-forums .bbp-forum-title,
+#bbpress-forums .bbp-topic-permalink {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--black) !important;
+  text-decoration: none;
+}
+#bbpress-forums .bbp-forum-title:hover,
+#bbpress-forums .bbp-topic-permalink:hover {
+  color: var(--orange) !important;
+}
+
+/* ── 投稿フォーム: 「書き込みたくなる」カードへ ── */
+#bbpress-forums fieldset.bbp-form {
+  border: 1px solid var(--yl-bd) !important;
+  border-radius: var(--yl-r) !important;
+  background: var(--white);
+  box-shadow: var(--yl-sh);
+  padding: 20px !important;
+  margin-top: 18px;
+}
+#bbpress-forums fieldset.bbp-form legend {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--black);
+  padding: 0 6px;
+}
+#bbpress-forums fieldset.bbp-form label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dark-gray);
+}
+#bbpress-forums fieldset.bbp-form input[type="text"],
+#bbpress-forums fieldset.bbp-form textarea {
+  border: 1px solid var(--yl-bd);
+  border-radius: var(--yl-r-sm);
+  background: #FCFBF8;
+  padding: 9px 12px;
+  font-size: 14px;
+  transition: border-color 0.18s, background 0.18s;
+}
+#bbpress-forums fieldset.bbp-form input[type="text"]:focus,
+#bbpress-forums fieldset.bbp-form textarea:focus {
+  border-color: rgba(245, 129, 31, 0.6);
+  background: var(--white);
+  outline: none;
+}
+#bbpress-forums .bbp-the-content-wrapper textarea.bbp-the-content {
+  min-height: 140px;
+}
+#bbpress-forums .bbp-submit-wrapper {
+  float: none;
+  text-align: right;
+}
+#bbpress-forums .bbp-submit-wrapper button.submit {
+  background: var(--orange) !important;
+  color: var(--white) !important;
+  border: none !important;
+  border-radius: 999px !important;
+  padding: 11px 32px !important;
+  font-size: 15px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition: background 0.18s, transform 0.18s, box-shadow 0.18s;
+}
+#bbpress-forums .bbp-submit-wrapper button.submit:hover {
+  background: #E25400 !important;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(245, 129, 31, 0.35);
+}
+
+/* ── 匿名フォーム: email / website 行は隠す (plugin 側で自動補完) ── */
+#bbpress-forums p:has(> label[for="bbp_anonymous_email"]),
+#bbpress-forums p:has(> label[for="bbp_anonymous_website"]),
+.yoshi-bbp-hp {
+  display: none !important;
+}
+
+/* ── notice 類: 警告色のベタ感を抑える ── */
+#bbpress-forums div.bbp-template-notice,
+div.bbp-template-notice {
+  background: #FFFDF5 !important;
+  border: 1px solid #F0E6C8 !important;
+  border-radius: var(--yl-r-sm) !important;
+  color: var(--dark-gray) !important;
+  padding: 10px 14px;
+}
+#bbpress-forums div.bbp-template-notice.info {
+  background: #F5F9FF !important;
+  border-color: #D8E6F5 !important;
+}
+
+/* ── 返信スレッド表示 ── */
+#bbpress-forums div.bbp-reply-author {
+  font-size: 12px;
+}
+#bbpress-forums div.bbp-reply-content {
+  font-size: 14.5px;
+  line-height: 1.8;
+}
+
+/* ============================================================
+   v0.23 ホーム第2弾: バッジの彩度規律 (ベタ塗り → 淡色チップ)
+   カテゴリ色は保持しつつ、面で塗らず色文字+淡背景に統一
+   ============================================================ */
+.yoshi-breaking-strip__badge {
+  background: rgba(245, 129, 31, 0.14) !important;
+  color: #C45F00 !important;
+}
+.yoshi-breaking-strip__item--lineup .yoshi-breaking-strip__badge {
+  background: rgba(0, 61, 165, 0.1) !important;
+  color: var(--blue) !important;
+}
+.yoshi-breaking-strip__item--postgame .yoshi-breaking-strip__badge {
+  background: rgba(80, 85, 91, 0.12) !important;
+  color: #50555B !important;
+}
+.yoshi-breaking-strip__item--notice .yoshi-breaking-strip__badge {
+  background: rgba(186, 44, 63, 0.12) !important;
+  color: #BA2C3F !important;
+}
+.yoshi-breaking-strip__item--probable_starter .yoshi-breaking-strip__badge {
+  background: rgba(94, 107, 122, 0.12) !important;
+  color: #5E6B7A !important;
+}
+.yoshi-front-card__badge {
+  color: var(--white);
+}
+.yoshi-front-card__badge--live_update {
+  background: rgba(245, 129, 31, 0.14) !important;
+  color: #C45F00 !important;
+}
+.yoshi-front-card__badge--lineup {
+  background: rgba(0, 61, 165, 0.1) !important;
+  color: var(--blue) !important;
+}
+.yoshi-front-card__badge--postgame {
+  background: rgba(51, 51, 51, 0.1) !important;
+  color: var(--dark-gray) !important;
+}
+.yoshi-front-card__badge--pregame,
+.yoshi-front-card__badge--farm,
+.yoshi-front-card__badge--article,
+.yoshi-front-card__badge--generic {
+  background: rgba(102, 102, 102, 0.1) !important;
+  color: var(--mid-gray) !important;
+}
+.yoshi-article-bundles__badge {
+  background: rgba(245, 129, 31, 0.14) !important;
+  color: #C45F00 !important;
+}
+.yoshi-article-bundles__badge--lineup {
+  background: rgba(0, 61, 165, 0.1) !important;
+  color: var(--blue) !important;
+}
+.yoshi-article-bundles__badge--postgame {
+  background: rgba(51, 51, 51, 0.1) !important;
+  color: var(--dark-gray) !important;
+}
+.yoshi-article-bundles__badge--notice {
+  background: rgba(186, 44, 63, 0.12) !important;
+  color: #BA2C3F !important;
+}
+.yoshi-article-bundles__badge--probable_starter,
+.yoshi-article-bundles__badge--pregame,
+.yoshi-article-bundles__badge--farm,
+.yoshi-article-bundles__badge--article {
+  background: rgba(94, 107, 122, 0.12) !important;
+  color: #5E6B7A !important;
+}
+
+/* ── 旧「bbPress 巨人カラー」style block (テーマ側ハードコード) の中和 ──
+   #new-post (form全体) をボタン扱いでオレンジ塗りする誤ルール等を
+   上位 specificity で無効化する。テーマ側の物理削除は別途。 */
+#bbpress-forums form#new-post {
+  background-color: transparent !important;
+  color: inherit !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+  font-weight: normal !important;
+}
+#bbpress-forums ul.bbp-topics li.bbp-header,
+#bbpress-forums ul.bbp-forums li.bbp-header {
+  background-color: #FAF9F5 !important;
+  color: var(--dark-gray) !important;
+}
+#bbpress-forums ul.bbp-topics li.bbp-header span,
+#bbpress-forums ul.bbp-forums li.bbp-header span {
+  color: var(--dark-gray) !important;
+}
+#bbpress-forums li.bbp-body .bbp-forum-title,
+#bbpress-forums li.bbp-body .bbp-topic-title a.bbp-topic-permalink {
+  color: var(--black) !important;
+  font-weight: 700;
+}
+#bbpress-forums li.bbp-body .bbp-forum-title:hover,
+#bbpress-forums li.bbp-body .bbp-topic-title a.bbp-topic-permalink:hover {
+  color: var(--orange) !important;
+}
+#bbpress-forums div.bbp-reply-author,
+#bbpress-forums div.bbp-topic-author {
+  background-color: transparent !important;
+  color: var(--dark-gray) !important;
+}
+#bbpress-forums div.bbp-reply-author .bbp-author-name a,
+#bbpress-forums div.bbp-topic-author .bbp-author-name a {
+  color: var(--dark-gray) !important;
+}
+/* SWELL 側パンくずと二重なので bbPress 内パンくずは出さない */
+#bbpress-forums .bbp-breadcrumb {
+  display: none !important;
+}

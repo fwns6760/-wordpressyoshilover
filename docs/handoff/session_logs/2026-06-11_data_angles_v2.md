@@ -30,3 +30,9 @@ user「ファンが驚く機械学習的なデータはとれるの？」「そ�
 - 14:00 JST | diagnose | DAZN feed 生存確認 (当日投稿+video marker) / 6/10 ログ実測: 試合中便 x_buzz built 0 連発、21時以降のみ built 1-2 | - | 原因=試合中鮮度窓 0.5h × クリップ編集遅延 20-40分
 - 14:10 JST | fix | 動画 lane gather に floor 2h (`max(2.0, phase窓)`)、news/fan_voice の 0.5h 不変 | `ea24cbcc` | build
 - 14:12 JST | deploy | Cloud Build `b675436c` SUCCESS、image `video-ingame-floor-ea24cbcc`、Job gen `177` | - | 今夜の試合中便で DAZN 引用RT候補の復活を verify
+
+## 追記2: mainportalhuge 文体模倣 + 今夜の主役優先 (user 指摘の連続反映)
+
+- 15:25 JST | feat | streak 記録文脈1行 (「📝N試合連続安打中」N>=3、mainportalhuge型) を勝利相関/対戦キラー post_text に追加 | `e250b22f` | カード画像は維持 (文体だけ模倣、user「カードがあったほうがよい」)
+- 15:30 JST | feat | preferred_players: 話題選手 (言及2+) を gap より優先して角度生成 (今夜の主役の驚きを先に)。話題 counts は 1便1回取得で angles/boost 共用 | `6c8a9f24` | -
+- 15:32 JST | deploy | image `tonight-pref-6c8a9f24`、Job gen `178` (streak + preferred 同梱) | - | 今夜 22:05 便で verify

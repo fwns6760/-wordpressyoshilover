@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Yoshilover 063 Frontend (topic hub / SNS reactions / Phase 1 noindex)
  * Description: 062 contract §2 §3 §5 の front impl。topic hub / SNS block / noindex を基盤に、トップ速報帯・記事下回遊束・右カラム rail・上部密集ナビ・人気記事導線まで含めて SWELL front を高密度化する。既存 SWELL コメント欄は触らない。
- * Version: 0.22.0
+ * Version: 0.22.1
  * Author: yoshilover
  */
 
@@ -375,6 +375,31 @@ function yoshilover_063_buffer_inject_header_titles( $buffer ) {
 
     if ( is_front_page() ) {
         $buffer = yoshilover_063_remove_legacy_jersey_toplink_widget( $buffer );
+    }
+
+    // 2026-06-11: メインサイドバーの widget が全て外れる (wp_inactive_widgets 落ち) と、
+    // SWELL は dynamic_sidebar() を呼ばず dynamic_sidebar_before hook の rail 自動注入が
+    // 発火しない = <aside id="sidebar"> が空のまま 280px の空白カラムになる。
+    // fallback として、空の aside を検出した時だけ buffer 側で rail を直接注入する。
+    // widget が 1 個でも復活すれば hook 側が出すので、ここは空の時のみ (dedup は rail class)。
+    if ( yoshilover_063_should_render_sidebar_rail()
+        && strpos( $buffer, 'yoshi-sidebar-rail' ) === false
+        && preg_match( '#<aside\b[^>]*id="sidebar"[^>]*>\s*</aside>#', $buffer, $sm, PREG_OFFSET_CAPTURE ) ) {
+        $rail = yoshilover_063_render_ad_slot(
+            'sidebar-top',
+            'yoshi-ad--sidebar-top',
+            array(
+                'aria_label' => 'サイドバー上部のおすすめ導線',
+                'label'      => 'SIDEBAR PICK',
+                'title'      => '最新の巨人ニュースをまとめてチェック',
+                'copy'       => '速報・選手情報・公示を右カラムからすぐ追えます。',
+                'link_label' => '一覧を見る',
+            )
+        ) . yoshilover_063_render_sidebar_rail();
+        if ( trim( $rail ) !== '' ) {
+            $aside_open_len = strpos( $sm[0][0], '>' ) + 1;
+            $buffer = substr_replace( $buffer, $rail, $sm[0][1] + $aside_open_len, 0 );
+        }
     }
 
     return $buffer;

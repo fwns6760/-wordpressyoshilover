@@ -4,10 +4,12 @@
 
 ## 2026-06-11 — 試合後データ鮮度チェーン (user「データを知りたいのは試合後」)
 
-- **診断**: insight-nightly (ETL) 最終便 21:00 で、22時台の mail flush (game-2 既存) が試合中 stale データを配っていた。欠けは ETL 側のみ
-- **変更**: `data-insight-postgame-2155` / `data-insight-postgame-2240` 新設 (insight-nightly)、`x-post-mail-flush` を `5 7,9,11,13,15,16,17,22,23` に (23時便 + :05 シフトで 15/17時 ETL race 解消)
-- **チェーン**: 試合終了 → ETL 21:55/22:40 (~2分) → flush 22:05〜23:05 で当日確定データのカードがメール着弾
-- 詳細: `docs/handoff/session_logs/2026-06-11_postgame_data_schedule.md`。rollback = trigger 2 本 delete + cron 戻し
+- **診断**: insight-nightly (ETL) 最終便 21:00 で、22時台の mail flush が試合中 stale データを配っていた。欠けは ETL 側のみ
+- **最終形** (user 調整: 費用増なし / ETL 1日1回 / 23時は寝てる / 配信は減らさない):
+  - 試合後 ETL = `data-insight-postgame-2150` (**21:50**、1日1回)。during-game 21:00 と試行した 21:55/22:40 は削除済
+  - 夜: ETL 21:50 → **22:05 便**で当日確定データ着弾。長引いた試合は翌朝 05:00 ETL → **07:05 便** (通勤帯) で復習配信
+  - `x-post-mail-flush` = `5 7,9,11,13,15,16,17,22,23` (23時便追加 + :05 シフトで 15/17時 ETL race 解消)。ETL 7 本/日でネットゼロ
+- 詳細: `docs/handoff/session_logs/2026-06-11_postgame_data_schedule.md`。rollback = trigger delete + cron 戻し
 
 ## 2026-06-11 — X案カード画像バリエーション3種追加 (user「もっとバリエーションふやせる」)
 

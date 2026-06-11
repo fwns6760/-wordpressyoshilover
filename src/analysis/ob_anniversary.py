@@ -127,7 +127,7 @@ def build_birthday_article(name: str, entry: dict, today: dt.date) -> Optional[d
     slug = entry.get("slug", "")
     years = entry.get("years", "")
     honors = entry.get("honors") or []
-    title = f"【巨人データ】本日{today.month}月{today.day}日は{name}の誕生日 — {_headline_stat(entry)}の巨人OB"
+    title = f"【巨人データ】本日{today.month}月{today.day}日は{name}の{age}歳の誕生日 — {_headline_stat(entry)}の巨人OB"
     link = f"{SITE_DATA_BASE}/{slug}/" if slug else SITE_DATA_BASE
     honor_md = ""
     if honors:

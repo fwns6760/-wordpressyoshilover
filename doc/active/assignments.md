@@ -1,6 +1,13 @@
 # assignments — 現場担当と次アクション
 
-最終更新: 2026-06-11 JST (カード画像バリエーション3種追加)
+最終更新: 2026-06-11 JST (カード画像バリエーション3種 + 試合後データ鮮度チェーン)
+
+## 2026-06-11 — 試合後データ鮮度チェーン (user「データを知りたいのは試合後」)
+
+- **診断**: insight-nightly (ETL) 最終便 21:00 で、22時台の mail flush (game-2 既存) が試合中 stale データを配っていた。欠けは ETL 側のみ
+- **変更**: `data-insight-postgame-2155` / `data-insight-postgame-2240` 新設 (insight-nightly)、`x-post-mail-flush` を `5 7,9,11,13,15,16,17,22,23` に (23時便 + :05 シフトで 15/17時 ETL race 解消)
+- **チェーン**: 試合終了 → ETL 21:55/22:40 (~2分) → flush 22:05〜23:05 で当日確定データのカードがメール着弾
+- 詳細: `docs/handoff/session_logs/2026-06-11_postgame_data_schedule.md`。rollback = trigger 2 本 delete + cron 戻し
 
 ## 2026-06-11 — X案カード画像バリエーション3種追加 (user「もっとバリエーションふやせる」)
 

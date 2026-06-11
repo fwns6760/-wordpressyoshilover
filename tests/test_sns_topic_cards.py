@@ -11,12 +11,68 @@ from src import sns_topic_cards as tc
 
 class HeadlineTests(unittest.TestCase):
     def test_mapping(self):
-        self.assertEqual(tc.headline_from_events(["完投", "初"]), "プロ初完投！")
+        # 2026-06-11: 複合 claim は source_text の literal 連続語が必要 (token 合成禁止)
+        self.assertEqual(tc.headline_from_events(["完投", "初"]), "完投！")
+        self.assertEqual(tc.headline_from_events(["完投"], "プロ初完投の快投"), "プロ初完投！")
         self.assertEqual(tc.headline_from_events(["完投"]), "完投！")
-        self.assertEqual(tc.headline_from_events(["ホームラン", "復帰"]), "復帰即アーチ！")
-        self.assertEqual(tc.headline_from_events(["勝利", "初"]), "今季初勝利！")
+        self.assertEqual(
+            tc.headline_from_events(["ホームラン", "復帰"], "復帰した男が一発"), "復帰即アーチ！")
+        self.assertEqual(tc.headline_from_events(["ホームラン", "復帰"]), "一発！")
+        self.assertEqual(
+            tc.headline_from_events(["勝利", "初"], "今季初勝利を挙げた"), "今季初勝利！")
         self.assertEqual(tc.headline_from_events(["好投"]), "好投！")
         self.assertEqual(tc.headline_from_events([]), "注目！")
+
+    def test_no_fabricated_first_win_from_token_bag(self):
+        """報知「古巣楽天と初対決 勝てば…12球団勝利」→「今季初勝利！」事故の回帰。
+
+        「初」(初対決) と「勝利」(勝てば〜勝利) が別文脈で同居しても合成しない。
+        """
+        title = "「さまざまな思い出のある球場」巨人・田中将大が古巣楽天と初対決 勝てば則本に続き１２球団勝利"
+        events = [e for e in tc._EVENT_WORDS if e in title]
+        self.assertIn("初", events)
+        self.assertIn("勝利", events)
+        self.assertNotEqual(tc.headline_from_events(events, title), "今季初勝利！")
+
+
+class ReplyFallbackVariationTests(unittest.TestCase):
+    """2026-06-11 user「同じような文章が多い。AIっぽい」: プール選択の検証。"""
+
+    def _db(self):
+        import tempfile
+        path = tempfile.mktemp(suffix=".db")
+        conn = sqlite3.connect(path)
+        conn.executescript(
+            "CREATE TABLE batting_logs (game_id TEXT, player_canonical TEXT,"
+            " team_name TEXT, AB INT, H INT, RBI INT);"
+            "CREATE TABLE pitching_logs (game_id TEXT, player_canonical TEXT,"
+            " team_name TEXT, result_mark TEXT, K INT, IP REAL, ER INT);"
+        )
+        conn.commit(); conn.close()
+        return path
+
+    def test_deterministic_per_post(self):
+        db = self._db()
+        a1 = tc._yoshilover_reply_fallback(db, "岡本和真", ["起用"], "岡本和真をスタメン起用")
+        a2 = tc._yoshilover_reply_fallback(db, "岡本和真", ["起用"], "岡本和真をスタメン起用")
+        self.assertEqual(a1, a2)  # 同じ親投稿 → 常に同じ文 (dedup 安定)
+
+    def test_varies_across_posts(self):
+        db = self._db()
+        outs = {
+            tc._yoshilover_reply_fallback(db, "岡本和真", ["起用"], f"スタメン起用 その{i}")
+            for i in range(8)
+        }
+        self.assertGreaterEqual(len(outs), 2)  # 8 投稿で最低 2 種以上の文面
+
+    def test_no_hedge_phrases(self):
+        db = self._db()
+        for i in range(8):
+            for ev in (["起用"], ["昇格"], ["復帰"], []):
+                t = tc._yoshilover_reply_fallback(db, "岡本和真", ev, f"親投稿 {ev} {i}")
+                self.assertNotIn("見方が分かれ", t)
+                self.assertNotIn("見たいです", t)
+                self.assertLessEqual(len(t), 180)
 
 
 class ExtractTests(unittest.TestCase):
@@ -126,8 +182,9 @@ class ReplyCandidatesTests(unittest.TestCase):
         self.assertIn("status/12345", reps[0]["url"])
         self.assertIn("プロ初完投", reps[0]["reply"])       # 同じ声
         self.assertIn("10K", reps[0]["reply"])             # データ
-        self.assertIn("次も長い回を任せる", reps[0]["reply"])
-        self.assertIn("見方が分かれそう", reps[0]["reply"])
+        self.assertTrue(any(k in reps[0]["reply"] for k in
+            ("数字は嘘をつかない", "文句を言える人はいない", "先発の柱", "ローテの軸")),
+            reps[0]["reply"])  # 投手プール 4 案のどれか (断定形)
         self.assertNotIn("http", reps[0]["reply"])
         self.assertNotIn("#", reps[0]["reply"])
         self.assertNotIn("報知", reps[0]["reply"])
@@ -167,7 +224,9 @@ class ReplyCandidatesTests(unittest.TestCase):
         )
         self.assertEqual(len(reps), 1)
         self.assertIn("10K", reps[0]["reply"])             # fallback の数字行
-        self.assertIn("次も長い回を任せる", reps[0]["reply"])
+        self.assertTrue(any(k in reps[0]["reply"] for k in
+            ("数字は嘘をつかない", "文句を言える人はいない", "先発の柱", "ローテの軸")),
+            reps[0]["reply"])  # 投手プール 4 案のどれか (断定形)
 
     def test_reply_usage_template_invites_giants_fan_reaction(self):
         feed = (
@@ -181,9 +240,8 @@ class ReplyCandidatesTests(unittest.TestCase):
         )
         self.assertEqual(len(reps), 1)
         reply = reps[0]["reply"]
-        self.assertTrue(reply.startswith("坂本勇人"))
-        self.assertIn("この起用", reply)
-        self.assertIn("固定で見たい", reply)  # 2026-06-04: 空虚な「意見分かれそう」廃止、スタンスのある一言へ
+        self.assertTrue(reply.startswith("坂本勇人"), reply)
+        self.assertIn("起用", reply)  # 起用プールの文 (2026-06-11 プール化で固定文言 assert 廃止)
         self.assertNotIn("阿部監督", reply)
         self.assertNotIn("今季打率", reply)  # 起用論点に無関係なDB数字は混ぜない
 
@@ -212,6 +270,25 @@ class ReplyCandidatesTests(unittest.TestCase):
         self.assertEqual(len(reps), 1)
         self.assertEqual(reps[0]["tweet_id"], "12345")
         self.assertEqual(reps[0]["handle"], "hochi_giants")
+
+    def test_reply_can_target_tokyo_giants_official_posts(self):
+        official_feed = (
+            "<rss><channel><item><title>竹丸和幸 プロ初完投 8回10K</title>"
+            "<link>https://x.com/TokyoGiants/status/67890</link></item></channel></rss>"
+        )
+
+        reps = tc.build_reply_candidates(
+            self._db(), fetch_fn=lambda u: official_feed, max_replies=3,
+            detect_player_fn=lambda t: "竹丸和幸" if "竹丸" in t else "",
+            handles=["TokyoGiants"],
+        )
+        self.assertEqual(len(reps), 1)
+        self.assertEqual(reps[0]["tweet_id"], "67890")
+        self.assertEqual(reps[0]["handle"], "TokyoGiants")
+        self.assertIn("status/67890", reps[0]["url"])
+        self.assertTrue(any(k in reps[0]["reply"] for k in
+            ("数字は嘘をつかない", "文句を言える人はいない", "先発の柱", "ローテの軸")),
+            reps[0]["reply"])  # 投手プール 4 案のどれか (断定形)
 
     def test_reply_intent_url(self):
         from src.x_post_mail_lane import encode_x_reply_intent_url

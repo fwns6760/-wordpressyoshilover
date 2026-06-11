@@ -27,29 +27,4857 @@
         "keiyakukin_note": "契約金1億円＋出来高払い5000万円 (入団時年俸1500万円)"
       },
       "years": [
-        {"year": 2007, "team": "楽天", "league": "NPB", "salary_man": 1500},
-        {"year": 2008, "team": "楽天", "league": "NPB", "salary_man": 6000},
-        {"year": 2009, "team": "楽天", "league": "NPB", "salary_man": 9500,
-         "note": "週べONLINEは7500万と記載するが、年収ガイド・球歴.com系の複数ソースが9500万で一致するため9500万を採用"},
-        {"year": 2010, "team": "楽天", "league": "NPB", "salary_man": 18000},
-        {"year": 2011, "team": "楽天", "league": "NPB", "salary_man": 20000},
-        {"year": 2012, "team": "楽天", "league": "NPB", "salary_man": 32000},
-        {"year": 2013, "team": "楽天", "league": "NPB", "salary_man": 40000},
-        {"year": 2014, "team": "ヤンキース", "league": "MLB", "usd": 22000000, "salary_man": 231000},
-        {"year": 2015, "team": "ヤンキース", "league": "MLB", "usd": 22000000, "salary_man": 266200},
-        {"year": 2016, "team": "ヤンキース", "league": "MLB", "usd": 22000000, "salary_man": 237600},
-        {"year": 2017, "team": "ヤンキース", "league": "MLB", "usd": 22000000, "salary_man": 246400},
-        {"year": 2018, "team": "ヤンキース", "league": "MLB", "usd": 22000000, "salary_man": 242000},
-        {"year": 2019, "team": "ヤンキース", "league": "MLB", "usd": 22000000, "salary_man": 239800},
-        {"year": 2020, "team": "ヤンキース", "league": "MLB", "usd": 23000000, "salary_man": 245000,
-         "note": "新型コロナによる60試合短縮シーズンのため実受取は契約額の約37% (約8.6億円) とされる。表記は契約ベース"},
-        {"year": 2021, "team": "楽天", "league": "NPB", "salary_man": 90000,
-         "note": "NPB復帰。推定9億円は当時の日本球界歴代最高年俸"},
-        {"year": 2022, "team": "楽天", "league": "NPB", "salary_man": 90000},
-        {"year": 2023, "team": "楽天", "league": "NPB", "salary_man": 47500},
-        {"year": 2024, "team": "楽天", "league": "NPB", "salary_man": 26000},
-        {"year": 2025, "team": "巨人", "league": "NPB", "salary_man": 16000, "note": "巨人移籍1年目"},
-        {"year": 2026, "team": "巨人", "league": "NPB", "salary_man": 10000}
+        {
+          "year": 2007,
+          "team": "楽天",
+          "league": "NPB",
+          "salary_man": 1500
+        },
+        {
+          "year": 2008,
+          "team": "楽天",
+          "league": "NPB",
+          "salary_man": 6000
+        },
+        {
+          "year": 2009,
+          "team": "楽天",
+          "league": "NPB",
+          "salary_man": 9500,
+          "note": "週べONLINEは7500万と記載するが、年収ガイド・球歴.com系の複数ソースが9500万で一致するため9500万を採用"
+        },
+        {
+          "year": 2010,
+          "team": "楽天",
+          "league": "NPB",
+          "salary_man": 18000
+        },
+        {
+          "year": 2011,
+          "team": "楽天",
+          "league": "NPB",
+          "salary_man": 20000
+        },
+        {
+          "year": 2012,
+          "team": "楽天",
+          "league": "NPB",
+          "salary_man": 32000
+        },
+        {
+          "year": 2013,
+          "team": "楽天",
+          "league": "NPB",
+          "salary_man": 40000
+        },
+        {
+          "year": 2014,
+          "team": "ヤンキース",
+          "league": "MLB",
+          "usd": 22000000,
+          "salary_man": 231000
+        },
+        {
+          "year": 2015,
+          "team": "ヤンキース",
+          "league": "MLB",
+          "usd": 22000000,
+          "salary_man": 266200
+        },
+        {
+          "year": 2016,
+          "team": "ヤンキース",
+          "league": "MLB",
+          "usd": 22000000,
+          "salary_man": 237600
+        },
+        {
+          "year": 2017,
+          "team": "ヤンキース",
+          "league": "MLB",
+          "usd": 22000000,
+          "salary_man": 246400
+        },
+        {
+          "year": 2018,
+          "team": "ヤンキース",
+          "league": "MLB",
+          "usd": 22000000,
+          "salary_man": 242000
+        },
+        {
+          "year": 2019,
+          "team": "ヤンキース",
+          "league": "MLB",
+          "usd": 22000000,
+          "salary_man": 239800
+        },
+        {
+          "year": 2020,
+          "team": "ヤンキース",
+          "league": "MLB",
+          "usd": 23000000,
+          "salary_man": 245000,
+          "note": "新型コロナによる60試合短縮シーズンのため実受取は契約額の約37% (約8.6億円) とされる。表記は契約ベース"
+        },
+        {
+          "year": 2021,
+          "team": "楽天",
+          "league": "NPB",
+          "salary_man": 90000,
+          "note": "NPB復帰。推定9億円は当時の日本球界歴代最高年俸"
+        },
+        {
+          "year": 2022,
+          "team": "楽天",
+          "league": "NPB",
+          "salary_man": 90000
+        },
+        {
+          "year": 2023,
+          "team": "楽天",
+          "league": "NPB",
+          "salary_man": 47500
+        },
+        {
+          "year": 2024,
+          "team": "楽天",
+          "league": "NPB",
+          "salary_man": 26000
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 16000,
+          "note": "巨人移籍1年目"
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 10000
+        }
+      ]
+    },
+    {
+      "name": "大勢",
+      "slug": "taisei",
+      "kana": "おうた たいせい",
+      "position": "投手",
+      "jersey": "15",
+      "active": true,
+      "nenshuu_id": "81085155",
+      "years": [
+        {
+          "year": 2022,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1600
+        },
+        {
+          "year": 2023,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 5700
+        },
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 5600
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 9000
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 18000
+        }
+      ],
+      "draft": {
+        "desc": "2021年ドラフト1位",
+        "keiyakukin_man": 10000
+      }
+    },
+    {
+      "name": "西舘勇陽",
+      "slug": "nishidate-yuyo",
+      "kana": "にしだて ゆうひ",
+      "position": "投手",
+      "jersey": "17",
+      "active": true,
+      "nenshuu_id": "31635159",
+      "years": [
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1600
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 2800
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 2700
+        }
+      ],
+      "draft": {
+        "desc": "2023年ドラフト1位",
+        "keiyakukin_man": 10000
+      }
+    },
+    {
+      "name": "山﨑伊織",
+      "slug": "yamazaki-iori",
+      "kana": "やまさき いおり",
+      "position": "投手",
+      "jersey": "19",
+      "active": true,
+      "nenshuu_id": "03305153",
+      "years": [
+        {
+          "year": 2021,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1200
+        },
+        {
+          "year": 2022,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1200
+        },
+        {
+          "year": 2023,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 2500
+        },
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 5100
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 9000
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 18000
+        }
+      ],
+      "draft": {
+        "desc": "2020年ドラフト2位",
+        "keiyakukin_man": 7500
+      }
+    },
+    {
+      "name": "戸郷翔征",
+      "slug": "togo-shosei",
+      "kana": "とごう しょうせい",
+      "position": "投手",
+      "jersey": "20",
+      "active": true,
+      "nenshuu_id": "41045138",
+      "years": [
+        {
+          "year": 2019,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 500
+        },
+        {
+          "year": 2020,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 650
+        },
+        {
+          "year": 2021,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 2600
+        },
+        {
+          "year": 2022,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 4000
+        },
+        {
+          "year": 2023,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 9000
+        },
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 18000
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 30000
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 24000
+        }
+      ],
+      "draft": {
+        "desc": "2018年ドラフト6位",
+        "keiyakukin_man": 3000
+      }
+    },
+    {
+      "name": "岡本和真",
+      "slug": "okamoto-kazuma",
+      "kana": "おかもと かずま",
+      "position": "内野手",
+      "jersey": "25",
+      "active": true,
+      "nenshuu_id": "11515130",
+      "years": [
+        {
+          "year": 2015,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1000
+        },
+        {
+          "year": 2016,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1400
+        },
+        {
+          "year": 2017,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1200
+        },
+        {
+          "year": 2018,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1200
+        },
+        {
+          "year": 2019,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 8000
+        },
+        {
+          "year": 2020,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 14000
+        },
+        {
+          "year": 2021,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 21000
+        },
+        {
+          "year": 2022,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 30000
+        },
+        {
+          "year": 2023,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 27000
+        },
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 42000
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 54000
+        }
+      ],
+      "draft": {
+        "desc": "2014年ドラフト1位",
+        "keiyakukin_man": 8000
+      }
+    },
+    {
+      "name": "中川皓太",
+      "slug": "nakagawa-kota",
+      "kana": "なかがわ こうた",
+      "position": "投手",
+      "jersey": "41",
+      "active": true,
+      "nenshuu_id": "81285132",
+      "years": [
+        {
+          "year": 2016,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 800
+        },
+        {
+          "year": 2017,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 840
+        },
+        {
+          "year": 2018,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1560
+        },
+        {
+          "year": 2019,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1900
+        },
+        {
+          "year": 2020,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 5500
+        },
+        {
+          "year": 2021,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 7500
+        },
+        {
+          "year": 2022,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 9500
+        },
+        {
+          "year": 2023,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 7500
+        },
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 10000
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 8500
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 15000
+        }
+      ],
+      "draft": {
+        "desc": "2015年ドラフト7位",
+        "keiyakukin_man": 3000
+      }
+    },
+    {
+      "name": "高梨雄平",
+      "slug": "takanashi-yuhei",
+      "kana": "たかなし ゆうへい",
+      "position": "投手",
+      "jersey": "53",
+      "active": true,
+      "nenshuu_id": "91095134",
+      "years": [
+        {
+          "year": 2017,
+          "team": "楽天",
+          "league": "NPB",
+          "salary_man": 800
+        },
+        {
+          "year": 2018,
+          "team": "楽天",
+          "league": "NPB",
+          "salary_man": 3000
+        },
+        {
+          "year": 2019,
+          "team": "楽天",
+          "league": "NPB",
+          "salary_man": 5500
+        },
+        {
+          "year": 2020,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 4800
+        },
+        {
+          "year": 2020,
+          "team": "楽天",
+          "league": "NPB",
+          "salary_man": 4800
+        },
+        {
+          "year": 2021,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 7000
+        },
+        {
+          "year": 2022,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 7800
+        },
+        {
+          "year": 2023,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 11000
+        },
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 12000
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 15000
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 15000
+        }
+      ],
+      "draft": {
+        "desc": "2016年ドラフト9位",
+        "keiyakukin_man": 2500
+      }
+    },
+    {
+      "name": "井上温大",
+      "slug": "inoue-haruhiro",
+      "kana": "いのうえ はると",
+      "position": "投手",
+      "jersey": "97",
+      "active": true,
+      "nenshuu_id": "51355151",
+      "years": [
+        {
+          "year": 2020,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 540
+        },
+        {
+          "year": 2021,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 540
+        },
+        {
+          "year": 2022,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 510
+        },
+        {
+          "year": 2023,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 650
+        },
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 670
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 3400
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 3800
+        }
+      ],
+      "draft": {
+        "desc": "2019年ドラフト4位",
+        "keiyakukin_man": 4000
+      }
+    },
+    {
+      "name": "甲斐拓也",
+      "slug": "kai-takuya",
+      "kana": "かい たくや",
+      "position": "捕手",
+      "jersey": "10",
+      "active": true,
+      "nenshuu_id": "91595133",
+      "years": [
+        {
+          "year": 2011,
+          "team": "ソフトバンク",
+          "league": "NPB",
+          "salary_man": 300
+        },
+        {
+          "year": 2012,
+          "team": "ソフトバンク",
+          "league": "NPB",
+          "salary_man": 270
+        },
+        {
+          "year": 2013,
+          "team": "ソフトバンク",
+          "league": "NPB",
+          "salary_man": 270
+        },
+        {
+          "year": 2014,
+          "team": "ソフトバンク",
+          "league": "NPB",
+          "salary_man": 500
+        },
+        {
+          "year": 2015,
+          "team": "ソフトバンク",
+          "league": "NPB",
+          "salary_man": 600
+        },
+        {
+          "year": 2016,
+          "team": "ソフトバンク",
+          "league": "NPB",
+          "salary_man": 600
+        },
+        {
+          "year": 2017,
+          "team": "ソフトバンク",
+          "league": "NPB",
+          "salary_man": 900
+        },
+        {
+          "year": 2018,
+          "team": "ソフトバンク",
+          "league": "NPB",
+          "salary_man": 4000
+        },
+        {
+          "year": 2019,
+          "team": "ソフトバンク",
+          "league": "NPB",
+          "salary_man": 6500
+        },
+        {
+          "year": 2020,
+          "team": "ソフトバンク",
+          "league": "NPB",
+          "salary_man": 11000
+        },
+        {
+          "year": 2021,
+          "team": "ソフトバンク",
+          "league": "NPB",
+          "salary_man": 16500
+        },
+        {
+          "year": 2022,
+          "team": "ソフトバンク",
+          "league": "NPB",
+          "salary_man": 21000
+        },
+        {
+          "year": 2023,
+          "team": "ソフトバンク",
+          "league": "NPB",
+          "salary_man": 21000
+        },
+        {
+          "year": 2024,
+          "team": "ソフトバンク",
+          "league": "NPB",
+          "salary_man": 21000
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 21000
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 30000
+        }
+      ],
+      "draft": {
+        "desc": "2010年育成選手ドラフト6位",
+        "keiyakukin_man": 270
+      }
+    },
+    {
+      "name": "小林誠司",
+      "slug": "kobayashi-seiji",
+      "kana": "こばやし せいじ",
+      "position": "捕手",
+      "jersey": "22",
+      "active": true,
+      "nenshuu_id": "91795139",
+      "years": [
+        {
+          "year": 2014,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1500
+        },
+        {
+          "year": 2015,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 2500
+        },
+        {
+          "year": 2016,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 2600
+        },
+        {
+          "year": 2017,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 5000
+        },
+        {
+          "year": 2018,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 5400
+        },
+        {
+          "year": 2019,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 6000
+        },
+        {
+          "year": 2020,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 10000
+        },
+        {
+          "year": 2021,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 10000
+        },
+        {
+          "year": 2022,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 10000
+        },
+        {
+          "year": 2023,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 10000
+        },
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 3000
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 4000
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 4000
+        }
+      ],
+      "draft": {
+        "desc": "2013年ドラフト1位",
+        "keiyakukin_man": 10000
+      }
+    },
+    {
+      "name": "大城卓三",
+      "slug": "ohshiro-takuzo",
+      "kana": "おおしろ たくみ",
+      "position": "捕手",
+      "jersey": "24",
+      "active": true,
+      "nenshuu_id": "21325136",
+      "years": [
+        {
+          "year": 2018,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1000
+        },
+        {
+          "year": 2019,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 2000
+        },
+        {
+          "year": 2020,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 3500
+        },
+        {
+          "year": 2021,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 4500
+        },
+        {
+          "year": 2022,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 5500
+        },
+        {
+          "year": 2023,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 8000
+        },
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 13000
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 16000
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 16000
+        }
+      ],
+      "draft": {
+        "desc": "2017年ドラフト3位",
+        "keiyakukin_man": 6000
+      }
+    },
+    {
+      "name": "吉川尚輝",
+      "slug": "yoshikawa-naoki",
+      "kana": "よしかわ なおき",
+      "position": "内野手",
+      "jersey": "2",
+      "active": true,
+      "nenshuu_id": "73375134",
+      "years": [
+        {
+          "year": 2017,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1500
+        },
+        {
+          "year": 2018,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1300
+        },
+        {
+          "year": 2019,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 2800
+        },
+        {
+          "year": 2020,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 2300
+        },
+        {
+          "year": 2021,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 3300
+        },
+        {
+          "year": 2022,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 3700
+        },
+        {
+          "year": 2023,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 7000
+        },
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 9000
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 20000
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 20000
+        }
+      ],
+      "draft": {
+        "desc": "2016年ドラフト1位",
+        "keiyakukin_man": 10000
+      }
+    },
+    {
+      "name": "門脇誠",
+      "slug": "kadowaki-makoto",
+      "kana": "かどわき まこと",
+      "position": "内野手",
+      "jersey": "5",
+      "active": true,
+      "nenshuu_id": "11515157",
+      "years": [
+        {
+          "year": 2023,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 840
+        },
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 3100
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 4500
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 4000
+        }
+      ],
+      "draft": {
+        "desc": "2022年ドラフト4位",
+        "keiyakukin_man": 5000
+      }
+    },
+    {
+      "name": "坂本勇人",
+      "slug": "sakamoto-hayato",
+      "kana": "さかもと はやと",
+      "position": "内野手",
+      "jersey": "6",
+      "active": true,
+      "nenshuu_id": "51955114",
+      "years": [
+        {
+          "year": 2007,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 650
+        },
+        {
+          "year": 2008,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 2550
+        },
+        {
+          "year": 2009,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 3400
+        },
+        {
+          "year": 2010,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 8000
+        },
+        {
+          "year": 2011,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 12000
+        },
+        {
+          "year": 2012,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 11000
+        },
+        {
+          "year": 2013,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 18000
+        },
+        {
+          "year": 2014,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 18000
+        },
+        {
+          "year": 2015,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 22000
+        },
+        {
+          "year": 2016,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 25000
+        },
+        {
+          "year": 2017,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 35000
+        },
+        {
+          "year": 2018,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 35000
+        },
+        {
+          "year": 2019,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 50000
+        },
+        {
+          "year": 2020,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 50000
+        },
+        {
+          "year": 2021,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 50000
+        },
+        {
+          "year": 2022,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 60000
+        },
+        {
+          "year": 2023,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 60000
+        },
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 60000
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 50000
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 30000
+        }
+      ],
+      "draft": {
+        "desc": "2006年高校生ドラフト1巡目",
+        "keiyakukin_man": 8000
+      }
+    },
+    {
+      "name": "石塚裕惺",
+      "slug": "ishizuka-yusei",
+      "kana": "いしづか ゆうせい",
+      "position": "内野手",
+      "jersey": "23",
+      "active": true,
+      "nenshuu_id": "61165150",
+      "years": [
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1200
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1230
+        }
+      ],
+      "draft": {
+        "desc": "2024年ドラフト1位",
+        "keiyakukin_man": 8500
+      }
+    },
+    {
+      "name": "浦田俊輔",
+      "slug": "urata-shunsuke",
+      "kana": "うらた しゅんすけ",
+      "position": "内野手",
+      "jersey": "32",
+      "active": true,
+      "nenshuu_id": "81385150",
+      "years": [
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1200
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1300
+        }
+      ],
+      "draft": {
+        "desc": "2024年ドラフト2位",
+        "keiyakukin_man": 7000
+      }
+    },
+    {
+      "name": "泉口友汰",
+      "slug": "izuguchi-yuta",
+      "kana": "いずぐち ゆうた",
+      "position": "内野手",
+      "jersey": "35",
+      "active": true,
+      "nenshuu_id": "61165159",
+      "years": [
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1000
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 2200
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 5900
+        }
+      ],
+      "draft": {
+        "desc": "2023年ドラフト4位",
+        "keiyakukin_man": 5000
+      }
+    },
+    {
+      "name": "丸佳浩",
+      "slug": "maru-yoshihiro",
+      "kana": "まる よしひろ",
+      "position": "外野手",
+      "jersey": "8",
+      "active": true,
+      "nenshuu_id": "21425116",
+      "years": [
+        {
+          "year": 2008,
+          "team": "広島",
+          "league": "NPB",
+          "salary_man": 500
+        },
+        {
+          "year": 2009,
+          "team": "広島",
+          "league": "NPB",
+          "salary_man": 500
+        },
+        {
+          "year": 2010,
+          "team": "広島",
+          "league": "NPB",
+          "salary_man": 550
+        },
+        {
+          "year": 2011,
+          "team": "広島",
+          "league": "NPB",
+          "salary_man": 600
+        },
+        {
+          "year": 2012,
+          "team": "広島",
+          "league": "NPB",
+          "salary_man": 1700
+        },
+        {
+          "year": 2013,
+          "team": "広島",
+          "league": "NPB",
+          "salary_man": 2300
+        },
+        {
+          "year": 2014,
+          "team": "広島",
+          "league": "NPB",
+          "salary_man": 5100
+        },
+        {
+          "year": 2015,
+          "team": "広島",
+          "league": "NPB",
+          "salary_man": 9000
+        },
+        {
+          "year": 2016,
+          "team": "広島",
+          "league": "NPB",
+          "salary_man": 8500
+        },
+        {
+          "year": 2017,
+          "team": "広島",
+          "league": "NPB",
+          "salary_man": 14000
+        },
+        {
+          "year": 2018,
+          "team": "広島",
+          "league": "NPB",
+          "salary_man": 21000
+        },
+        {
+          "year": 2019,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 45000
+        },
+        {
+          "year": 2020,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 45000
+        },
+        {
+          "year": 2021,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 45000
+        },
+        {
+          "year": 2022,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 45000
+        },
+        {
+          "year": 2023,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 45000
+        },
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 28000
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 32000
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 20000
+        }
+      ],
+      "draft": {
+        "desc": "2007年高校生ドラフト3巡目",
+        "keiyakukin_man": 4000
+      }
+    },
+    {
+      "name": "萩尾匡也",
+      "slug": "hagio-masaya",
+      "kana": "はぎお まさや",
+      "position": "外野手",
+      "jersey": "12",
+      "active": true,
+      "nenshuu_id": "81485157",
+      "years": [
+        {
+          "year": 2023,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1200
+        },
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1200
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1900
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1600
+        }
+      ],
+      "draft": {
+        "desc": "2022年ドラフト2位",
+        "keiyakukin_man": 7500
+      }
+    },
+    {
+      "name": "岡田悠希",
+      "slug": "okada-yuki",
+      "kana": "おかだ ゆうき",
+      "position": "外野手",
+      "jersey": "38",
+      "active": true,
+      "nenshuu_id": "81385155",
+      "years": [
+        {
+          "year": 2022,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 800
+        },
+        {
+          "year": 2023,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 900
+        },
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 900
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 850
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 850
+        }
+      ],
+      "draft": {
+        "desc": "2021年ドラフト5位",
+        "keiyakukin_man": 4500
+      }
+    },
+    {
+      "name": "中山礼都",
+      "slug": "nakayama-raito",
+      "kana": "なかやま らいと",
+      "position": "外野手",
+      "jersey": "40",
+      "active": true,
+      "nenshuu_id": "51655153",
+      "years": [
+        {
+          "year": 2021,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 600
+        },
+        {
+          "year": 2022,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 610
+        },
+        {
+          "year": 2023,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1260
+        },
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 2260
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 2260
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 3800
+        }
+      ],
+      "draft": {
+        "desc": "2020年ドラフト3位",
+        "keiyakukin_man": 5000
+      }
+    },
+    {
+      "name": "佐々木俊輔",
+      "slug": "sasaki-shunsuke",
+      "kana": "ささき しゅんすけ",
+      "position": "外野手",
+      "jersey": "44",
+      "active": true,
+      "nenshuu_id": "51955159",
+      "years": [
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1200
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1840
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 2300
+        }
+      ],
+      "draft": {
+        "desc": "2023年ドラフト3位",
+        "keiyakukin_man": 6000
+      }
+    },
+    {
+      "name": "浅野翔吾",
+      "slug": "asano-shogo",
+      "kana": "あさの しょうご",
+      "position": "外野手",
+      "jersey": "51",
+      "active": true,
+      "nenshuu_id": "91195157",
+      "years": [
+        {
+          "year": 2023,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1200
+        },
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1230
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1800
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1700
+        }
+      ],
+      "draft": {
+        "desc": "2022年ドラフト1位",
+        "keiyakukin_man": 10000
+      }
+    },
+    {
+      "name": "若林楽人",
+      "slug": "wakabayashi-rakuto",
+      "kana": "わかばやし がくと",
+      "position": "外野手",
+      "jersey": "59",
+      "active": true,
+      "nenshuu_id": "53555153",
+      "years": [
+        {
+          "year": 2021,
+          "team": "西武",
+          "league": "NPB",
+          "salary_man": 1000
+        },
+        {
+          "year": 2022,
+          "team": "西武",
+          "league": "NPB",
+          "salary_man": 1400
+        },
+        {
+          "year": 2023,
+          "team": "西武",
+          "league": "NPB",
+          "salary_man": 1220
+        },
+        {
+          "year": 2024,
+          "team": "西武",
+          "league": "NPB",
+          "salary_man": 1220
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1800
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 3250
+        }
+      ],
+      "draft": {
+        "desc": "2020年ドラフト4位",
+        "keiyakukin_man": 4000
+      }
+    },
+    {
+      "name": "長野久義",
+      "slug": "chono-hisayoshi",
+      "kana": "ちょうの ひさよし",
+      "position": "外野手",
+      "jersey": "7",
+      "active": true,
+      "nenshuu_id": "91995131",
+      "years": [
+        {
+          "year": 2010,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1500
+        },
+        {
+          "year": 2011,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 3500
+        },
+        {
+          "year": 2012,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 9500
+        },
+        {
+          "year": 2013,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 16000
+        },
+        {
+          "year": 2014,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 18000
+        },
+        {
+          "year": 2015,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 20000
+        },
+        {
+          "year": 2016,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 17500
+        },
+        {
+          "year": 2017,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 22500
+        },
+        {
+          "year": 2018,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 19000
+        },
+        {
+          "year": 2019,
+          "team": "広島",
+          "league": "NPB",
+          "salary_man": 22000
+        },
+        {
+          "year": 2020,
+          "team": "広島",
+          "league": "NPB",
+          "salary_man": 17000
+        },
+        {
+          "year": 2021,
+          "team": "広島",
+          "league": "NPB",
+          "salary_man": 16500
+        },
+        {
+          "year": 2022,
+          "team": "広島",
+          "league": "NPB",
+          "salary_man": 12000
+        },
+        {
+          "year": 2023,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 2000
+        },
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 4000
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 5000
+        }
+      ],
+      "draft": {
+        "desc": "2009年ドラフト1位",
+        "keiyakukin_man": 10000
+      }
+    },
+    {
+      "name": "赤星優志",
+      "slug": "akahoshi-yushi",
+      "kana": "あかほし ゆうじ",
+      "position": "投手",
+      "jersey": "31",
+      "active": true,
+      "nenshuu_id": "51155155",
+      "years": [
+        {
+          "year": 2022,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1000
+        },
+        {
+          "year": 2023,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 2200
+        },
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 3000
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 3300
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 4800
+        }
+      ],
+      "draft": {
+        "desc": "2021年ドラフト3位",
+        "keiyakukin_man": 6000
+      }
+    },
+    {
+      "name": "石川達也",
+      "slug": "ishikawa-tatsuya",
+      "kana": "いしかわ たつや",
+      "position": "打者",
+      "jersey": "65",
+      "active": true,
+      "nenshuu_id": "61165153",
+      "years": [
+        {
+          "year": 2021,
+          "team": "DeNA",
+          "league": "NPB",
+          "salary_man": 340
+        },
+        {
+          "year": 2022,
+          "team": "DeNA",
+          "league": "NPB",
+          "salary_man": 340
+        },
+        {
+          "year": 2023,
+          "team": "DeNA",
+          "league": "NPB",
+          "salary_man": 440
+        },
+        {
+          "year": 2024,
+          "team": "DeNA",
+          "league": "NPB",
+          "salary_man": 1600
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1600
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 3650
+        }
+      ],
+      "draft": {
+        "desc": "2020年育成選手ドラフト1位",
+        "keiyakukin_man": 300
+      }
+    },
+    {
+      "name": "泉圭輔",
+      "slug": "izumi-keisuke",
+      "kana": "いずみ けいすけ",
+      "position": "投手",
+      "jersey": "63",
+      "active": true,
+      "nenshuu_id": "01105138",
+      "years": [
+        {
+          "year": 2019,
+          "team": "ソフトバンク",
+          "league": "NPB",
+          "salary_man": 800
+        },
+        {
+          "year": 2020,
+          "team": "ソフトバンク",
+          "league": "NPB",
+          "salary_man": 1250
+        },
+        {
+          "year": 2021,
+          "team": "ソフトバンク",
+          "league": "NPB",
+          "salary_man": 2800
+        },
+        {
+          "year": 2022,
+          "team": "ソフトバンク",
+          "league": "NPB",
+          "salary_man": 2700
+        },
+        {
+          "year": 2023,
+          "team": "ソフトバンク",
+          "league": "NPB",
+          "salary_man": 2700
+        },
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 2700
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 4350
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 3500
+        }
+      ],
+      "draft": {
+        "desc": "2018年ドラフト6位",
+        "keiyakukin_man": 3000
+      }
+    },
+    {
+      "name": "宇都宮葵星",
+      "slug": "utsunomiya-aoi",
+      "kana": "うつのみや きさら",
+      "position": "打者",
+      "jersey": "68",
+      "active": true,
+      "nenshuu_id": "01305159",
+      "years": [
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 400
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 400
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 440
+        }
+      ],
+      "draft": {
+        "desc": "2023年育成選手ドラフト3位",
+        "keiyakukin_man": 290
+      }
+    },
+    {
+      "name": "岸田行倫",
+      "slug": "kishida-yukinori",
+      "kana": "きしだ ゆきのり",
+      "position": "打者",
+      "jersey": "27",
+      "active": true,
+      "nenshuu_id": "91595136",
+      "years": [
+        {
+          "year": 2018,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1200
+        },
+        {
+          "year": 2019,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1080
+        },
+        {
+          "year": 2020,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1100
+        },
+        {
+          "year": 2021,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1500
+        },
+        {
+          "year": 2022,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1600
+        },
+        {
+          "year": 2023,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1600
+        },
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 2150
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 4300
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 7000
+        }
+      ],
+      "draft": {
+        "desc": "2017年ドラフト2位",
+        "keiyakukin_man": 7000
+      }
+    },
+    {
+      "name": "田中瑛斗",
+      "slug": "tanaka-akito",
+      "kana": "たなか えいと",
+      "position": "投手",
+      "jersey": "45",
+      "active": true,
+      "nenshuu_id": "61065136",
+      "years": [
+        {
+          "year": 2018,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 540
+        },
+        {
+          "year": 2019,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 540
+        },
+        {
+          "year": 2020,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 560
+        },
+        {
+          "year": 2021,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 560
+        },
+        {
+          "year": 2022,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 560
+        },
+        {
+          "year": 2023,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 700
+        },
+        {
+          "year": 2024,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 700
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 750
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 4650
+        }
+      ],
+      "draft": {
+        "desc": "2017年ドラフト3位",
+        "keiyakukin_man": 4500
+      }
+    },
+    {
+      "name": "平山功太",
+      "slug": "hirayama-kota",
+      "kana": "ひらやま こうた",
+      "position": "打者",
+      "jersey": "69",
+      "active": true,
+      "nenshuu_id": "41645159",
+      "years": [
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 400
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 400
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 390
+        }
+      ],
+      "draft": {
+        "desc": "2023年育成選手ドラフト7位",
+        "keiyakukin_man": 290
+      }
+    },
+    {
+      "name": "船迫大雅",
+      "slug": "funasako-taiga",
+      "kana": "ふなばさま ひろまさ",
+      "position": "投手",
+      "jersey": "58",
+      "active": true,
+      "nenshuu_id": "31835157",
+      "years": [
+        {
+          "year": 2023,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 800
+        },
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 2300
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 5600
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 9000
+        }
+      ],
+      "draft": {
+        "desc": "2022年ドラフト5位",
+        "keiyakukin_man": 4000
+      }
+    },
+    {
+      "name": "堀田賢慎",
+      "slug": "hotta-kenshin",
+      "kana": "ほった けんしん",
+      "position": "投手",
+      "jersey": "91",
+      "active": true,
+      "nenshuu_id": "21625151",
+      "years": [
+        {
+          "year": 2020,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 800
+        },
+        {
+          "year": 2021,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 630
+        },
+        {
+          "year": 2022,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 580
+        },
+        {
+          "year": 2023,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 650
+        },
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 630
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1660
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1500
+        }
+      ],
+      "draft": {
+        "desc": "2019年ドラフト1位",
+        "keiyakukin_man": 8000
+      }
+    },
+    {
+      "name": "増田陸",
+      "slug": "masuda-riku",
+      "kana": "ますだ りく",
+      "position": "打者",
+      "jersey": "61",
+      "active": true,
+      "nenshuu_id": "01605138",
+      "years": [
+        {
+          "year": 2019,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 650
+        },
+        {
+          "year": 2020,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 650
+        },
+        {
+          "year": 2021,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 650
+        },
+        {
+          "year": 2022,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 610
+        },
+        {
+          "year": 2023,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1800
+        },
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1450
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1300
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 2600
+        }
+      ],
+      "draft": {
+        "desc": "2018年ドラフト2位",
+        "keiyakukin_man": 6000
+      }
+    },
+    {
+      "name": "又木鉄平",
+      "slug": "matagi-teppei",
+      "kana": "またき てっぺい",
+      "position": "投手",
+      "jersey": "46",
+      "active": true,
+      "nenshuu_id": "33135159",
+      "years": [
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1000
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1000
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 970
+        }
+      ],
+      "draft": {
+        "desc": "2023年ドラフト5位",
+        "keiyakukin_man": 5000
+      }
+    },
+    {
+      "name": "宮原駿介",
+      "slug": "miyahara-shunsuke",
+      "kana": "みやはら しゅんすけ",
+      "position": "投手",
+      "jersey": "57",
+      "active": true,
+      "nenshuu_id": "13115150",
+      "years": [
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 800
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1000
+        }
+      ],
+      "draft": {
+        "desc": "2024年ドラフト5位",
+        "keiyakukin_man": 4000
+      }
+    },
+    {
+      "name": "山瀬慎之助",
+      "slug": "yamase-shinnosuke",
+      "kana": "やませ しんのすけ",
+      "position": "打者",
+      "jersey": "67",
+      "active": true,
+      "nenshuu_id": "03105151",
+      "years": [
+        {
+          "year": 2020,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 540
+        },
+        {
+          "year": 2021,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 560
+        },
+        {
+          "year": 2022,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 570
+        },
+        {
+          "year": 2023,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 650
+        },
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 670
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 680
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1000
+        }
+      ],
+      "draft": {
+        "desc": "2019年ドラフト5位",
+        "keiyakukin_man": 3500
+      }
+    },
+    {
+      "name": "荒巻悠",
+      "slug": "aramaki-yu",
+      "kana": "あらまき ゆう",
+      "position": "打者",
+      "jersey": "60",
+      "active": true,
+      "nenshuu_id": "71175150",
+      "years": [
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1000
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1200
+        }
+      ],
+      "draft": {
+        "desc": "2024年ドラフト3位",
+        "keiyakukin_man": 6000
+      }
+    },
+    {
+      "name": "亀田啓太",
+      "slug": "kameda-keita",
+      "kana": "かめだ けいた",
+      "position": "打者",
+      "jersey": "022",
+      "active": true,
+      "nenshuu_id": "21525155",
+      "years": [
+        {
+          "year": 2022,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 400
+        },
+        {
+          "year": 2023,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 410
+        },
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 410
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 400
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 390
+        }
+      ],
+      "draft": {
+        "desc": "2021年育成選手ドラフト3位",
+        "keiyakukin_man": 290
+      }
+    },
+    {
+      "name": "郡拓也",
+      "slug": "kori-takuya",
+      "kana": "こおり たくや",
+      "position": "打者",
+      "jersey": "37",
+      "active": true,
+      "nenshuu_id": "91795134",
+      "years": [
+        {
+          "year": 2017,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 480
+        },
+        {
+          "year": 2018,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 490
+        },
+        {
+          "year": 2019,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 490
+        },
+        {
+          "year": 2020,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 510
+        },
+        {
+          "year": 2021,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 550
+        },
+        {
+          "year": 2022,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 800
+        },
+        {
+          "year": 2023,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 880
+        },
+        {
+          "year": 2024,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 880
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 880
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 840
+        }
+      ],
+      "draft": {
+        "desc": "2016年ドラフト7位",
+        "keiyakukin_man": 2000
+      }
+    },
+    {
+      "name": "坂本達也",
+      "slug": "sakamoto-tatsuya",
+      "kana": "さかもと たつや",
+      "position": "打者",
+      "jersey": "024",
+      "active": true,
+      "nenshuu_id": "81985150",
+      "years": [
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 400
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 420
+        }
+      ],
+      "draft": {
+        "desc": "2024年育成選手ドラフト1位",
+        "keiyakukin_man": 290
+      }
+    },
+    {
+      "name": "代木大和",
+      "slug": "shiroki-yamato",
+      "kana": "しろき やまと",
+      "position": "投手",
+      "jersey": "068",
+      "active": true,
+      "nenshuu_id": "11015155",
+      "years": [
+        {
+          "year": 2022,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 540
+        },
+        {
+          "year": 2023,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 550
+        },
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 730
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 630
+        }
+      ],
+      "draft": {
+        "desc": "2021年ドラフト6位",
+        "keiyakukin_man": 3000
+      }
+    },
+    {
+      "name": "鈴木大和",
+      "slug": "suzuki-yamato",
+      "kana": "すずき やまと",
+      "position": "打者",
+      "jersey": "001",
+      "active": true,
+      "nenshuu_id": "91095155",
+      "years": [
+        {
+          "year": 2022,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 400
+        },
+        {
+          "year": 2023,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 410
+        },
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 420
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 410
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 440
+        }
+      ],
+      "draft": {
+        "desc": "2021年育成選手ドラフト1位",
+        "keiyakukin_man": 290
+      }
+    },
+    {
+      "name": "園田純規",
+      "slug": "sonoda-junki",
+      "kana": "そのだ あつき",
+      "position": "投手",
+      "jersey": "019",
+      "active": true,
+      "nenshuu_id": "21025159",
+      "years": [
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 360
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 380
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 420
+        }
+      ],
+      "draft": {
+        "desc": "2023年育成選手ドラフト5位",
+        "keiyakukin_man": 290
+      }
+    },
+    {
+      "name": "竹下徠空",
+      "slug": "takeshita-sora",
+      "kana": "たけした らいあ",
+      "position": "打者",
+      "jersey": "025",
+      "active": true,
+      "nenshuu_id": "81285150",
+      "years": [
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 360
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 370
+        }
+      ],
+      "draft": {
+        "desc": "2024年育成選手ドラフト6位",
+        "keiyakukin_man": 290
+      }
+    },
+    {
+      "name": "田村朋輝",
+      "slug": "tamura-tomoki",
+      "kana": "たむら ともき",
+      "position": "投手",
+      "jersey": "023",
+      "active": true,
+      "nenshuu_id": "41045157",
+      "years": [
+        {
+          "year": 2023,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 360
+        },
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 380
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 390
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 410
+        }
+      ],
+      "draft": {
+        "desc": "2022年育成選手ドラフト2位",
+        "keiyakukin_man": 290
+      }
+    },
+    {
+      "name": "中田歩夢",
+      "slug": "nakata-ayumu",
+      "kana": "なかた あゆむ",
+      "position": "打者",
+      "jersey": "002",
+      "active": true,
+      "nenshuu_id": "01205157",
+      "years": [
+        {
+          "year": 2023,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 360
+        },
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 380
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 430
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 420
+        }
+      ],
+      "draft": {
+        "desc": "2022年育成選手ドラフト4位",
+        "keiyakukin_man": 290
+      }
+    },
+    {
+      "name": "西川歩",
+      "slug": "nishikawa-ayumu",
+      "kana": "にしかわ あゆむ",
+      "position": "投手",
+      "jersey": "029",
+      "active": true,
+      "nenshuu_id": "01605150",
+      "years": [
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 360
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 380
+        }
+      ],
+      "draft": {
+        "desc": "2024年育成選手ドラフト5位",
+        "keiyakukin_man": 290
+      }
+    },
+    {
+      "name": "平内龍太",
+      "slug": "hirauchi-ryuta",
+      "kana": "へいない りゅうた",
+      "position": "投手",
+      "jersey": "66",
+      "active": true,
+      "nenshuu_id": "21825153",
+      "years": [
+        {
+          "year": 2021,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1600
+        },
+        {
+          "year": 2022,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1450
+        },
+        {
+          "year": 2023,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 2900
+        },
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 2300
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 3200
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 2700
+        }
+      ],
+      "draft": {
+        "desc": "2020年ドラフト1位",
+        "keiyakukin_man": 10000
+      }
+    },
+    {
+      "name": "堀江正太郎",
+      "slug": "horie-shotaro",
+      "kana": "ほりえ しょうたろう",
+      "position": "投手",
+      "jersey": "014",
+      "active": true,
+      "nenshuu_id": "21825150",
+      "years": [
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 360
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 380
+        }
+      ],
+      "draft": {
+        "desc": "2024年育成選手ドラフト2位",
+        "keiyakukin_man": 290
+      }
+    },
+    {
+      "name": "増田大輝",
+      "slug": "masuda-daiki",
+      "kana": "ますだ だいき",
+      "position": "打者",
+      "jersey": "0",
+      "active": true,
+      "nenshuu_id": "51855132",
+      "years": [
+        {
+          "year": 2016,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 240
+        },
+        {
+          "year": 2017,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 290
+        },
+        {
+          "year": 2018,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 440
+        },
+        {
+          "year": 2019,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 500
+        },
+        {
+          "year": 2020,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1500
+        },
+        {
+          "year": 2021,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 2200
+        },
+        {
+          "year": 2022,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 2100
+        },
+        {
+          "year": 2023,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 2300
+        },
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 2150
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 2450
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 2700
+        }
+      ],
+      "draft": {
+        "desc": "2015年育成選手ドラフト1位",
+        "keiyakukin_man": 300
+      }
+    },
+    {
+      "name": "三塚琉生",
+      "slug": "mitsuka-ryusei",
+      "kana": "みつか るい",
+      "position": "打者",
+      "jersey": "96",
+      "active": true,
+      "nenshuu_id": "13115157",
+      "years": [
+        {
+          "year": 2023,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 360
+        },
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 370
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 370
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 450
+        }
+      ],
+      "draft": {
+        "desc": "2022年育成選手ドラフト6位",
+        "keiyakukin_man": 290
+      }
+    },
+    {
+      "name": "森田駿哉",
+      "slug": "morita-shunya",
+      "kana": "もりた しゅんや",
+      "position": "投手",
+      "jersey": "47",
+      "active": true,
+      "nenshuu_id": "43345159",
+      "years": [
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1500
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1350
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1500
+        }
+      ],
+      "draft": {
+        "desc": "2023年ドラフト2位",
+        "keiyakukin_man": 8500
+      }
+    },
+    {
+      "name": "山田龍聖",
+      "slug": "yamada-ryusei",
+      "kana": "やまだ りゅうせい",
+      "position": "投手",
+      "jersey": "64",
+      "active": true,
+      "nenshuu_id": "53555155",
+      "years": [
+        {
+          "year": 2022,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1200
+        },
+        {
+          "year": 2023,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1100
+        },
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1000
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 950
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 950
+        }
+      ],
+      "draft": {
+        "desc": "2021年ドラフト2位",
+        "keiyakukin_man": 7500
+      }
+    },
+    {
+      "name": "湯浅大",
+      "slug": "yuasa-dai",
+      "kana": "ゆあさ だい",
+      "position": "打者",
+      "jersey": "00",
+      "active": true,
+      "nenshuu_id": "43145136",
+      "years": [
+        {
+          "year": 2018,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 480
+        },
+        {
+          "year": 2019,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 520
+        },
+        {
+          "year": 2020,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 550
+        },
+        {
+          "year": 2021,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 600
+        },
+        {
+          "year": 2022,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 800
+        },
+        {
+          "year": 2023,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1500
+        },
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1300
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1500
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1350
+        }
+      ],
+      "draft": {
+        "desc": "2017年ドラフト8位",
+        "keiyakukin_man": 2500
+      }
+    },
+    {
+      "name": "鈴木圭晋",
+      "slug": "suzuki-keishin",
+      "kana": "すずき けいしん",
+      "position": "",
+      "jersey": "015",
+      "active": true,
+      "nenshuu_id": "21225150",
+      "years": [
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 360
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 360
+        }
+      ],
+      "draft": {
+        "desc": "2024年育成選手ドラフト3位",
+        "keiyakukin_man": 290
+      }
+    },
+    {
+      "name": "千葉隆広",
+      "slug": "chiba-takahiro",
+      "kana": "ちば たかひろ",
+      "position": "",
+      "jersey": "016",
+      "active": true,
+      "nenshuu_id": "41245159",
+      "years": [
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 360
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 380
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 360
+        }
+      ],
+      "draft": {
+        "desc": "2023年育成選手ドラフト6位",
+        "keiyakukin_man": 290
+      }
+    },
+    {
+      "name": "木下幹也",
+      "slug": "kinoshita-motoya",
+      "kana": "きのした もとや",
+      "position": "",
+      "jersey": "018",
+      "active": true,
+      "nenshuu_id": "71975153",
+      "years": [
+        {
+          "year": 2021,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 360
+        },
+        {
+          "year": 2022,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 370
+        },
+        {
+          "year": 2023,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 390
+        },
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 400
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 450
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 410
+        }
+      ],
+      "draft": {
+        "desc": "2020年育成選手ドラフト4位",
+        "keiyakukin_man": 300
+      }
+    },
+    {
+      "name": "松井颯",
+      "slug": "matsui-hayate",
+      "kana": "まつい はやて",
+      "position": "",
+      "jersey": "021",
+      "active": true,
+      "nenshuu_id": "01805157",
+      "years": [
+        {
+          "year": 2023,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 400
+        },
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 660
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 660
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 630
+        }
+      ],
+      "draft": {
+        "desc": "2022年育成選手ドラフト1位",
+        "keiyakukin_man": 290
+      }
+    },
+    {
+      "name": "吉村優聖歩",
+      "slug": "yoshimura-yuusefu",
+      "kana": "よしむら ゆうせふ",
+      "position": "",
+      "jersey": "026",
+      "active": true,
+      "nenshuu_id": "73575157",
+      "years": [
+        {
+          "year": 2023,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 360
+        },
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 380
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 370
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 380
+        }
+      ],
+      "draft": {
+        "desc": "2022年育成選手ドラフト3位",
+        "keiyakukin_man": 290
+      }
+    },
+    {
+      "name": "富田龍",
+      "slug": "tomida-ryuu",
+      "kana": "とみだ りゅう",
+      "position": "",
+      "jersey": "028",
+      "active": true,
+      "nenshuu_id": "11415155",
+      "years": [
+        {
+          "year": 2022,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 400
+        },
+        {
+          "year": 2023,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 410
+        },
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 430
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 420
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 410
+        }
+      ],
+      "draft": {
+        "desc": "2021年育成選手ドラフト8位",
+        "keiyakukin_man": 290
+      }
+    },
+    {
+      "name": "吹田志道",
+      "slug": "fukita-shidou",
+      "kana": "ふきた しどう",
+      "position": "",
+      "jersey": "030",
+      "active": true,
+      "nenshuu_id": "51855150",
+      "years": [
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 360
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 370
+        }
+      ],
+      "draft": {
+        "desc": "2024年育成選手ドラフト4位",
+        "keiyakukin_man": 290
+      }
+    },
+    {
+      "name": "森本哲星",
+      "slug": "morimoto-tessei",
+      "kana": "もりもと てっせい",
+      "position": "",
+      "jersey": "034",
+      "active": true,
+      "nenshuu_id": "13315157",
+      "years": [
+        {
+          "year": 2023,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 360
+        },
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 380
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 390
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 380
+        }
+      ],
+      "draft": {
+        "desc": "2022年育成選手ドラフト9位",
+        "keiyakukin_man": 290
+      }
+    },
+    {
+      "name": "花田侑樹",
+      "slug": "hanada-yuuki",
+      "kana": "はなだ ゆうき",
+      "position": "",
+      "jersey": "063",
+      "active": true,
+      "nenshuu_id": "71675155",
+      "years": [
+        {
+          "year": 2022,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 500
+        },
+        {
+          "year": 2023,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 480
+        },
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 450
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 420
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 420
+        }
+      ],
+      "draft": {
+        "desc": "2021年ドラフト7位",
+        "keiyakukin_man": 2500
+      }
+    },
+    {
+      "name": "石田隼都",
+      "slug": "ishita-hayato",
+      "kana": "いした はやと",
+      "position": "",
+      "jersey": "077",
+      "active": true,
+      "nenshuu_id": "81185155",
+      "years": [
+        {
+          "year": 2022,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 600
+        },
+        {
+          "year": 2023,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 610
+        },
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 610
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 550
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 510
+        }
+      ],
+      "draft": {
+        "desc": "2021年ドラフト4位",
+        "keiyakukin_man": 4000
+      }
+    },
+    {
+      "name": "石田充冴",
+      "slug": "ishida-juuza",
+      "kana": "いしだ じゅうざ",
+      "position": "",
+      "jersey": "090",
+      "active": true,
+      "nenshuu_id": "41145150",
+      "years": [
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 600
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 560
+        }
+      ],
+      "draft": {
+        "desc": "2024年ドラフト4位",
+        "keiyakukin_man": 4000
+      }
+    },
+    {
+      "name": "京本眞",
+      "slug": "kyoumoto-makoto",
+      "kana": "きょうもと まこと",
+      "position": "",
+      "jersey": "099",
+      "active": true,
+      "nenshuu_id": "91795155",
+      "years": [
+        {
+          "year": 2022,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 360
+        },
+        {
+          "year": 2023,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 380
+        },
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 420
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 460
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 440
+        }
+      ],
+      "draft": {
+        "desc": "2021年育成選手ドラフト7位",
+        "keiyakukin_man": 290
+      }
+    },
+    {
+      "name": "喜多隆介",
+      "slug": "kita-ryuusuke",
+      "kana": "きた りゅうすけ",
+      "position": "",
+      "jersey": "020",
+      "active": true,
+      "nenshuu_id": "31935153",
+      "years": [
+        {
+          "year": 2021,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 400
+        },
+        {
+          "year": 2022,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 460
+        },
+        {
+          "year": 2023,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 650
+        },
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 630
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 640
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 600
+        }
+      ],
+      "draft": {
+        "desc": "2020年育成選手ドラフト2位",
+        "keiyakukin_man": 300
+      }
+    },
+    {
+      "name": "村山源",
+      "slug": "murayama-gen",
+      "kana": "むらやま げん",
+      "position": "",
+      "jersey": "004",
+      "active": true,
+      "nenshuu_id": "03305159",
+      "years": [
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 360
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 390
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 370
+        }
+      ],
+      "draft": {
+        "desc": "2023年育成選手ドラフト2位",
+        "keiyakukin_man": 290
+      }
+    },
+    {
+      "name": "田上優弥",
+      "slug": "tanoue-yuuya",
+      "kana": "たのうえ ゆうや",
+      "position": "",
+      "jersey": "005",
+      "active": true,
+      "nenshuu_id": "21225159",
+      "years": [
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 360
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 360
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 370
+        }
+      ],
+      "draft": {
+        "desc": "2023年育成選手ドラフト4位",
+        "keiyakukin_man": 290
+      }
+    },
+    {
+      "name": "北村流音",
+      "slug": "kitamura-rio",
+      "kana": "きたむら りお",
+      "position": "",
+      "jersey": "027",
+      "active": true,
+      "nenshuu_id": "21525157",
+      "years": [
+        {
+          "year": 2023,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 360
+        },
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 380
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 390
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 370
+        }
+      ],
+      "draft": {
+        "desc": "2022年育成選手ドラフト8位",
+        "keiyakukin_man": 290
+      }
+    },
+    {
+      "name": "相澤白虎",
+      "slug": "aizawa-hakuto",
+      "kana": "あいざわ はくと",
+      "position": "",
+      "jersey": "008",
+      "active": true,
+      "nenshuu_id": "31135157",
+      "years": [
+        {
+          "year": 2023,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 360
+        },
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 380
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 380
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 380
+        }
+      ],
+      "draft": {
+        "desc": "2022年育成選手ドラフト5位",
+        "keiyakukin_man": 290
+      }
+    },
+    {
+      "name": "笹原操希",
+      "slug": "sasahara-misaki",
+      "kana": "ささはら みさき",
+      "position": "",
+      "jersey": "069",
+      "active": true,
+      "nenshuu_id": "21925155",
+      "years": [
+        {
+          "year": 2022,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 360
+        },
+        {
+          "year": 2023,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 370
+        },
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 390
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 420
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 600
+        }
+      ],
+      "draft": {
+        "desc": "2021年育成選手ドラフト4位",
+        "keiyakukin_man": 290
+      }
+    },
+    {
+      "name": "Ｆ．ウィットリー",
+      "slug": "whitley",
+      "kana": "",
+      "position": "投手",
+      "jersey": "26",
+      "active": true,
+      "nenshuu_id": null,
+      "years": [
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 20000
+        }
+      ]
+    },
+    {
+      "name": "リチャード",
+      "slug": "richard",
+      "kana": "すながわ りちゃ",
+      "position": "内野手",
+      "jersey": "52",
+      "active": true,
+      "nenshuu_id": "11015136",
+      "years": [
+        {
+          "year": 2018,
+          "team": "ソフトバンク",
+          "league": "NPB",
+          "salary_man": 300
+        },
+        {
+          "year": 2019,
+          "team": "ソフトバンク",
+          "league": "NPB",
+          "salary_man": 300
+        },
+        {
+          "year": 2020,
+          "team": "ソフトバンク",
+          "league": "NPB",
+          "salary_man": 600
+        },
+        {
+          "year": 2021,
+          "team": "ソフトバンク",
+          "league": "NPB",
+          "salary_man": 660
+        },
+        {
+          "year": 2022,
+          "team": "ソフトバンク",
+          "league": "NPB",
+          "salary_man": 1160
+        },
+        {
+          "year": 2023,
+          "team": "ソフトバンク",
+          "league": "NPB",
+          "salary_man": 1000
+        },
+        {
+          "year": 2024,
+          "team": "ソフトバンク",
+          "league": "NPB",
+          "salary_man": 1000
+        },
+        {
+          "year": 2025,
+          "team": "ソフトバンク",
+          "league": "NPB",
+          "salary_man": 1000
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 2600
+        }
+      ],
+      "draft": {
+        "desc": "2017年育成選手ドラフト3位",
+        "keiyakukin_man": 300
+      }
+    },
+    {
+      "name": "キャベッジ",
+      "slug": "cabbage",
+      "kana": "",
+      "position": "打者",
+      "jersey": "13",
+      "active": true,
+      "nenshuu_id": "73575150",
+      "years": [
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 20000
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 25000
+        }
+      ]
+    },
+    {
+      "name": "北浦竜次",
+      "slug": "kitaura-ryuji",
+      "kana": "きたうら りゅうじ",
+      "position": "投手",
+      "jersey": "56",
+      "active": true,
+      "nenshuu_id": "01505136",
+      "years": [
+        {
+          "year": 2018,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 520
+        },
+        {
+          "year": 2019,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 560
+        },
+        {
+          "year": 2020,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 700
+        },
+        {
+          "year": 2021,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 720
+        },
+        {
+          "year": 2022,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 720
+        },
+        {
+          "year": 2023,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 770
+        },
+        {
+          "year": 2024,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 850
+        },
+        {
+          "year": 2025,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 850
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1300
+        }
+      ],
+      "draft": {
+        "desc": "2017年ドラフト5位",
+        "keiyakukin_man": 2500
+      }
+    },
+    {
+      "name": "小濱佑斗",
+      "slug": "ohama-yuto",
+      "kana": "",
+      "position": "打者",
+      "jersey": "33",
+      "active": true,
+      "nenshuu_id": null,
+      "years": [
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1000
+        }
+      ]
+    },
+    {
+      "name": "ダルベック",
+      "slug": "dalbec",
+      "kana": "",
+      "position": "打者",
+      "jersey": "29",
+      "active": true,
+      "nenshuu_id": null,
+      "years": [
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 15000
+        }
+      ]
+    },
+    {
+      "name": "竹丸和幸",
+      "slug": "takemaru-kazuyuki",
+      "kana": "",
+      "position": "投手",
+      "jersey": "21",
+      "active": true,
+      "nenshuu_id": null,
+      "years": [
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1600
+        }
+      ]
+    },
+    {
+      "name": "田和廉",
+      "slug": "tawa-ren",
+      "kana": "",
+      "position": "投手",
+      "jersey": "30",
+      "active": true,
+      "nenshuu_id": null,
+      "years": [
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1200
+        }
+      ]
+    },
+    {
+      "name": "則本昂大",
+      "slug": "norimoto-takahiro",
+      "kana": "のりもと たかひろ",
+      "position": "投手",
+      "jersey": "43",
+      "active": true,
+      "nenshuu_id": "51055137",
+      "years": [
+        {
+          "year": 2013,
+          "team": "楽天",
+          "league": "NPB",
+          "salary_man": 1200
+        },
+        {
+          "year": 2014,
+          "team": "楽天",
+          "league": "NPB",
+          "salary_man": 6000
+        },
+        {
+          "year": 2015,
+          "team": "楽天",
+          "league": "NPB",
+          "salary_man": 12000
+        },
+        {
+          "year": 2016,
+          "team": "楽天",
+          "league": "NPB",
+          "salary_man": 15000
+        },
+        {
+          "year": 2017,
+          "team": "楽天",
+          "league": "NPB",
+          "salary_man": 20000
+        },
+        {
+          "year": 2018,
+          "team": "楽天",
+          "league": "NPB",
+          "salary_man": 25000
+        },
+        {
+          "year": 2019,
+          "team": "楽天",
+          "league": "NPB",
+          "salary_man": 30000
+        },
+        {
+          "year": 2020,
+          "team": "楽天",
+          "league": "NPB",
+          "salary_man": 30000
+        },
+        {
+          "year": 2021,
+          "team": "楽天",
+          "league": "NPB",
+          "salary_man": 30000
+        },
+        {
+          "year": 2022,
+          "team": "楽天",
+          "league": "NPB",
+          "salary_man": 30000
+        },
+        {
+          "year": 2023,
+          "team": "楽天",
+          "league": "NPB",
+          "salary_man": 30000
+        },
+        {
+          "year": 2024,
+          "team": "楽天",
+          "league": "NPB",
+          "salary_man": 30000
+        },
+        {
+          "year": 2025,
+          "team": "楽天",
+          "league": "NPB",
+          "salary_man": 30000
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 30000
+        }
+      ],
+      "draft": {
+        "desc": "2012年ドラフト2位",
+        "keiyakukin_man": 7000
+      }
+    },
+    {
+      "name": "ハワード",
+      "slug": "howard",
+      "kana": "",
+      "position": "投手",
+      "jersey": "28",
+      "active": true,
+      "nenshuu_id": "23725150",
+      "years": [
+        {
+          "year": 2025,
+          "team": "楽天",
+          "league": "NPB",
+          "salary_man": 15000
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 10000
+        }
+      ]
+    },
+    {
+      "name": "マタ",
+      "slug": "mata",
+      "kana": "",
+      "position": "投手",
+      "jersey": "42",
+      "active": true,
+      "nenshuu_id": null,
+      "years": [
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 10000
+        }
+      ]
+    },
+    {
+      "name": "マルティネス",
+      "slug": "martinez",
+      "kana": "",
+      "position": "投手",
+      "jersey": "92",
+      "active": true,
+      "nenshuu_id": "23925134",
+      "years": [
+        {
+          "year": 2017,
+          "team": "中日",
+          "league": "NPB",
+          "salary_man": 1000
+        },
+        {
+          "year": 2018,
+          "team": "中日",
+          "league": "NPB",
+          "salary_man": 1000
+        },
+        {
+          "year": 2019,
+          "team": "中日",
+          "league": "NPB",
+          "salary_man": 1000
+        },
+        {
+          "year": 2020,
+          "team": "中日",
+          "league": "NPB",
+          "salary_man": 6000
+        },
+        {
+          "year": 2021,
+          "team": "中日",
+          "league": "NPB",
+          "salary_man": 6000
+        },
+        {
+          "year": 2022,
+          "team": "中日",
+          "league": "NPB",
+          "salary_man": 20000
+        },
+        {
+          "year": 2023,
+          "team": "中日",
+          "league": "NPB",
+          "salary_man": 20000
+        },
+        {
+          "year": 2024,
+          "team": "中日",
+          "league": "NPB",
+          "salary_man": 23000
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 120000
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 120000
+        }
+      ]
+    },
+    {
+      "name": "松本剛",
+      "slug": "matsumoto-tsuyoshi",
+      "kana": "まつもと ごう",
+      "position": "打者",
+      "jersey": "9",
+      "active": true,
+      "nenshuu_id": "21625135",
+      "years": [
+        {
+          "year": 2012,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 600
+        },
+        {
+          "year": 2013,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 600
+        },
+        {
+          "year": 2014,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 620
+        },
+        {
+          "year": 2015,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 620
+        },
+        {
+          "year": 2016,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 630
+        },
+        {
+          "year": 2017,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 650
+        },
+        {
+          "year": 2018,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 2270
+        },
+        {
+          "year": 2019,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 2100
+        },
+        {
+          "year": 2020,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 1800
+        },
+        {
+          "year": 2021,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 2100
+        },
+        {
+          "year": 2022,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 2050
+        },
+        {
+          "year": 2023,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 8600
+        },
+        {
+          "year": 2024,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 11000
+        },
+        {
+          "year": 2025,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 11000
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 11000
+        }
+      ],
+      "draft": {
+        "desc": "2011年ドラフト2位",
+        "keiyakukin_man": 6000
+      }
+    },
+    {
+      "name": "皆川岳飛",
+      "slug": "minagawa-takato",
+      "kana": "",
+      "position": "打者",
+      "jersey": "39",
+      "active": true,
+      "nenshuu_id": null,
+      "years": [
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1000
+        }
+      ]
+    },
+    {
+      "name": "山城京平",
+      "slug": "yamashiro-kyohei",
+      "kana": "",
+      "position": "投手",
+      "jersey": "36",
+      "active": true,
+      "nenshuu_id": null,
+      "years": [
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1000
+        }
+      ]
+    },
+    {
+      "name": "ルシアーノ",
+      "slug": "luciano",
+      "kana": "",
+      "position": "投手",
+      "jersey": "48",
+      "active": true,
+      "nenshuu_id": "03005157",
+      "years": [
+        {
+          "year": 2023,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1000
+        },
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1000
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1200
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1200
+        }
+      ]
+    },
+    {
+      "name": "川原田純平",
+      "slug": "kawaharada-junpei",
+      "kana": "かわらだ じゅんぺい",
+      "position": "打者",
+      "jersey": "067",
+      "active": true,
+      "nenshuu_id": "81785153",
+      "years": [
+        {
+          "year": 2021,
+          "team": "ソフトバンク",
+          "league": "NPB",
+          "salary_man": 550
+        },
+        {
+          "year": 2022,
+          "team": "ソフトバンク",
+          "league": "NPB",
+          "salary_man": 550
+        },
+        {
+          "year": 2023,
+          "team": "ソフトバンク",
+          "league": "NPB",
+          "salary_man": 560
+        },
+        {
+          "year": 2024,
+          "team": "ソフトバンク",
+          "league": "NPB",
+          "salary_man": 570
+        },
+        {
+          "year": 2025,
+          "team": "ソフトバンク",
+          "league": "NPB",
+          "salary_man": 570
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 540
+        }
+      ],
+      "draft": {
+        "desc": "2020年ドラフト4位",
+        "keiyakukin_man": 3500
+      }
+    },
+    {
+      "name": "河野優作",
+      "slug": "kono-yusaku",
+      "kana": "",
+      "position": "投手",
+      "jersey": "047",
+      "active": true,
+      "nenshuu_id": null,
+      "years": [
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 400
+        }
+      ]
+    },
+    {
+      "name": "知念大成",
+      "slug": "chinen-taisei",
+      "kana": "",
+      "position": "打者",
+      "jersey": "003",
+      "active": true,
+      "nenshuu_id": null,
+      "years": [
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 400
+        }
+      ]
+    },
+    {
+      "name": "ティマ",
+      "slug": "tima",
+      "kana": "",
+      "position": "打者",
+      "jersey": "013",
+      "active": true,
+      "nenshuu_id": "13015153",
+      "years": [
+        {
+          "year": 2022,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 220
+        },
+        {
+          "year": 2023,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 240
+        },
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 500
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 550
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 550
+        }
+      ],
+      "draft": {
+        "keiyakukin_man": 7090
+      }
+    },
+    {
+      "name": "冨重英二郎",
+      "slug": "tomishige-eijiro",
+      "kana": "",
+      "position": "投手",
+      "jersey": "011",
+      "active": true,
+      "nenshuu_id": null,
+      "years": [
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 400
+        }
+      ]
+    },
+    {
+      "name": "バルドナード",
+      "slug": "baldonado",
+      "kana": "",
+      "position": "投手",
+      "jersey": "49",
+      "active": true,
+      "nenshuu_id": "23225157",
+      "years": [
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 9000
+        },
+        {
+          "year": 2025,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 15000
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 15000
+        }
+      ]
+    },
+    {
+      "name": "板東湧梧",
+      "slug": "bando-yugo",
+      "kana": "ばんどう ゆうご",
+      "position": "投手",
+      "jersey": "050",
+      "active": true,
+      "nenshuu_id": "21425138",
+      "years": [
+        {
+          "year": 2019,
+          "team": "ソフトバンク",
+          "league": "NPB",
+          "salary_man": 1000
+        },
+        {
+          "year": 2020,
+          "team": "ソフトバンク",
+          "league": "NPB",
+          "salary_man": 950
+        },
+        {
+          "year": 2021,
+          "team": "ソフトバンク",
+          "league": "NPB",
+          "salary_man": 1500
+        },
+        {
+          "year": 2022,
+          "team": "ソフトバンク",
+          "league": "NPB",
+          "salary_man": 2700
+        },
+        {
+          "year": 2023,
+          "team": "ソフトバンク",
+          "league": "NPB",
+          "salary_man": 3400
+        },
+        {
+          "year": 2024,
+          "team": "ソフトバンク",
+          "league": "NPB",
+          "salary_man": 4000
+        },
+        {
+          "year": 2025,
+          "team": "ソフトバンク",
+          "league": "NPB",
+          "salary_man": 3200
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1300
+        }
+      ],
+      "draft": {
+        "desc": "2018年ドラフト4位",
+        "keiyakukin_man": 6000
+      }
+    },
+    {
+      "name": "藤井健翔",
+      "slug": "fujii-kento",
+      "kana": "",
+      "position": "打者",
+      "jersey": "99",
+      "active": true,
+      "nenshuu_id": null,
+      "years": [
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 540
+        }
+      ]
+    },
+    {
+      "name": "松浦慶斗",
+      "slug": "matsuura-keito",
+      "kana": "まつうら けいと",
+      "position": "投手",
+      "jersey": "54",
+      "active": true,
+      "nenshuu_id": "33135155",
+      "years": [
+        {
+          "year": 2022,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 520
+        },
+        {
+          "year": 2023,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 540
+        },
+        {
+          "year": 2024,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 540
+        },
+        {
+          "year": 2025,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 650
+        },
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 650
+        }
+      ],
+      "draft": {
+        "desc": "2021年ドラフト7位",
+        "keiyakukin_man": 2000
+      }
+    },
+    {
+      "name": "グズマン",
+      "slug": "guzuman",
+      "kana": "",
+      "position": "",
+      "jersey": "042",
+      "active": true,
+      "nenshuu_id": null,
+      "years": [
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 360
+        }
+      ]
+    },
+    {
+      "name": "フェリス",
+      "slug": "ferisu",
+      "kana": "",
+      "position": "",
+      "jersey": "049",
+      "active": true,
+      "nenshuu_id": null,
+      "years": [
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 360
+        }
+      ]
+    },
+    {
+      "name": "林燦",
+      "slug": "hayashi-kira",
+      "kana": "はやし きら",
+      "position": "",
+      "jersey": "012",
+      "active": true,
+      "years": [
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 400
+        }
+      ]
+    },
+    {
+      "name": "松井蓮太朗",
+      "slug": "matsui-rentaro",
+      "kana": "まつい れんたろう",
+      "position": "",
+      "jersey": "006",
+      "active": true,
+      "years": [
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 360
+        }
+      ]
+    },
+    {
+      "name": "黄錦豪",
+      "slug": "huang-jinhao",
+      "kana": "ファン・ジンハオ",
+      "position": "",
+      "jersey": "041",
+      "active": true,
+      "years": [
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 450
+        }
       ]
     }
   ]

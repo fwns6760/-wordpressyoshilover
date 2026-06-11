@@ -1,6 +1,17 @@
 # assignments — 現場担当と次アクション
 
-最終更新: 2026-06-11 JST (カード画像バリエーション3種 + 試合後データ鮮度チェーン)
+最終更新: 2026-06-11 JST (データ角度v2 + カードバリエーション + 試合後鮮度チェーン)
+
+## 2026-06-11 — データ角度v2: 驚き系3角度 + 話題選手連動 (user「全部やるgo」)
+
+- **新角度** (`src/x_post_data_angles.py`、insight.db read-only、LLM不使用・新規課金なし、commit `d5994902`):
+  - 勝利相関 (条件付き勝率): 「キャベッジ打点あり9勝2敗(.818)/なし14勝17敗(.452)」+ 新カード `win_split`
+  - 対戦別split: 「対○○キラー」(対戦打率シーズン比+.080以上)
+  - 歴代通算チェイス: OB878名+現役の通算ランキング「あと○本で△△に並ぶ」
+  - 話題選手ブースト: RSSHub巨人系X言及数で候補先頭寄せ + why_now「🔥今夜の話題」
+- **deploy**: Cloud Build `45cf959f`、image `data-angles-d5994902`、Job gen `175`、flag 3種 ON
+- rollback = env flag 0 戻しのみ。詳細: `docs/handoff/session_logs/2026-06-11_data_angles_v2.md`
+- needs-ticket: 年度別シーズン形比較 (OB年度別 scrape 必要)
 
 ## 2026-06-11 — 試合後データ鮮度チェーン (user「データを知りたいのは試合後」)
 

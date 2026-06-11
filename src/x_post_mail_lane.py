@@ -4697,8 +4697,22 @@ def _compose_html_body(
         if share_x_button_urls and idx - 1 < len(share_x_button_urls):
             share_x_url = share_x_button_urls[idx - 1] or ""
         button_href = share_x_url or intent_url
+        # 2026-06-11 user「次へ遷移せず戻る」: 画像つき share (navigator.share →
+        # X app の画像編集ステップ) が端末/X app 側で詰まると投稿手段が無くなる
+        # ため、 画像つきボタンがある時もテキストのみ intent を予備ボタンで併記
+        # する (intent は X compose 直開きで画像ステップを通らない = 確実)。
+        fallback_intent_html = ""
         if share_x_url:
             button_label = "🐦 画像つきで X に投稿"
+            if intent_url:
+                fallback_intent_html = (
+                    f"<a href=\"{_html.escape(intent_url)}\" "
+                    "style=\"display:inline-block;padding:8px 14px;"
+                    "background:#fff;color:#000;text-decoration:none;"
+                    "border-radius:6px;font-size:13px;font-weight:600;"
+                    "border:1px solid #000;\">"
+                    "✍ テキストのみで投稿 (画像は手動添付)</a>"
+                )
         elif cand_reply_id:
             button_label = "💬 この投稿にリプライ"
         elif cand_quote_url:
@@ -4750,6 +4764,7 @@ def _compose_html_body(
             "style=\"display:inline-block;padding:8px 14px;background:#000;"
             "color:#fff;text-decoration:none;border-radius:6px;font-size:13px;"
             f"font-weight:600;\">{button_label}</a>"
+            f"{fallback_intent_html}"
             f"{open_original_html}"
             f"<div style=\"font-size:11px;color:{counter_color};\">"
             f"{char_count} / {X_CHAR_LIMIT} 字{counter_suffix}</div>"

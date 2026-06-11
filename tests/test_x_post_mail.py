@@ -3863,3 +3863,39 @@ class VideoRadarInGameFreshnessFloorTests(unittest.TestCase):
                 fetch_fn=lambda url: self._feed(pub),
             )
         self.assertEqual(cands, [])  # 3h 前は試合中候補にしない
+
+
+class ShareXFallbackButtonTests(unittest.TestCase):
+    """2026-06-11: 画像つき share ボタンがあってもテキストのみ intent を併記する。
+
+    user 報告「X投稿画面で次へが遷移せず戻る」(端末/X app 側の画像ステップ詰まり)
+    の際に、 メール内に確実な投稿経路 (intent 直開き) を常設する。
+    """
+
+    def _cand(self):
+        from src import x_post_mail_lane as lane
+        return lane.Candidate(
+            title="t", metric="m", period_label="今シーズン",
+            draft_text="d", char_count=10, post_text="本文 #巨人",
+        )
+
+    def test_fallback_text_button_shown_with_share_x(self):
+        from datetime import datetime
+        from src import x_post_mail_lane as lane
+        html = lane._compose_html_body(
+            [self._cand()], datetime(2026, 6, 11, 22, 5),
+            share_x_button_urls=["https://fetcher.example/share-x-cand?key=k&token=t"],
+        )
+        self.assertIn("画像つきで X に投稿", html)
+        self.assertIn("テキストのみで投稿", html)
+        self.assertIn("x.com/intent/post?text=", html)
+
+    def test_no_fallback_button_without_share_x(self):
+        from datetime import datetime
+        from src import x_post_mail_lane as lane
+        html = lane._compose_html_body(
+            [self._cand()], datetime(2026, 6, 11, 22, 5),
+            share_x_button_urls=[None],
+        )
+        self.assertNotIn("テキストのみで投稿", html)
+        self.assertIn("X で投稿", html)

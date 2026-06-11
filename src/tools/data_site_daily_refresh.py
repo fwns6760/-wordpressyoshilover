@@ -102,10 +102,31 @@ def _load(path: Path) -> dict:
     return {"years": []}
 
 
+def _page_raw_content(base, auth, page_id: int) -> str | None:
+    """既存ページの保存済み raw content (取得失敗時は None = 比較スキップ)。"""
+    try:
+        r = requests.get(
+            base + f"/wp-json/wp/v2/pages/{page_id}",
+            params={"context": "edit", "_fields": "id,content"},
+            auth=auth, timeout=30,
+        )
+        r.raise_for_status()
+        return (r.json() or {}).get("content", {}).get("raw")
+    except Exception as exc:  # noqa: BLE001
+        print(f"WARN: raw fetch page_id={page_id} failed: {exc!r}", file=sys.stderr)
+        return None
+
+
 def _upsert(base, auth, *, slug, title, content, excerpt, parent) -> bool:
     payload = {"slug": slug, "title": title, "content": content,
                "status": "publish", "parent": parent, "excerpt": excerpt}
     existing = _find_page_id(base, auth, slug, parent=parent)
+    if existing:
+        # 動かないデータを毎日上げ直さない: 内容が前回と同一なら POST しない
+        # (revision 肥大と無駄 write 防止。取得失敗時は従来どおり update に進む)
+        if _page_raw_content(base, auth, existing) == content:
+            print(f"[{slug}] unchanged; skip page_id={existing}")
+            return True
     url = base + (f"/wp-json/wp/v2/pages/{existing}" if existing
                  else "/wp-json/wp/v2/pages")
     action = "updated" if existing else "created"

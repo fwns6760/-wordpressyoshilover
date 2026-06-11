@@ -204,3 +204,43 @@ def test_fetch_topical_counts_graceful_on_fetch_error():
         handles=["hochi_giants"],
     )
     assert counts == {}
+
+
+def test_hit_streak_counts_consecutive_games(tmp_path):
+    """fixture: 強打者は RBI あり期 (直近側に並べ替え) — streak は H>0 連続数。"""
+    db = tmp_path / "streak.db"
+    conn = sqlite3.connect(db)
+    conn.executescript(
+        """
+        CREATE TABLE games (game_id TEXT PRIMARY KEY, game_date TEXT, opponent TEXT,
+            result TEXT, giants_score INT, opp_score INT);
+        CREATE TABLE batting_logs (game_id TEXT, team_role TEXT, team_name TEXT,
+            player_canonical TEXT, AB INT, H INT, RBI INT);
+        """
+    )
+    # 新しい順に H: 1,2,1, 0, 3 → 現在 streak = 3
+    hs = [1, 2, 1, 0, 3]
+    for i, h in enumerate(hs):
+        gid = f"2026-06-{10 - i:02d}:g-t-{i:02d}"
+        conn.execute("INSERT INTO games VALUES (?,?,?,?,0,0)",
+                     (gid, f"2026-06-{10 - i:02d}", "阪神", "win"))
+        conn.execute("INSERT INTO batting_logs VALUES (?,?,?,?,?,?,?)",
+                     (gid, "giants", "巨人", "強打者", 4, h, 0))
+    conn.commit()
+    conn.close()
+    assert angles._current_hit_streak(str(db), "強打者") == 3
+    assert angles._streak_line(str(db), "強打者") == "📝3試合連続安打中\n"
+    assert angles._streak_line(str(db), "強打者", min_streak=4) == ""
+    assert angles._current_hit_streak(str(db), "居ない選手") == 0
+
+
+def test_win_correlation_post_includes_streak_line(tmp_path):
+    """fixture (連続安打 8 試合…直近 4 試合は H=0) — streak 0 なので行は出ない。"""
+    db = _make_db(tmp_path)
+    out = angles.build_win_correlation_candidates(
+        db, max_count=1, min_cond_games=5, min_total_games=10,
+        min_gap=0.10, with_image=False,
+    )
+    assert len(out) == 1
+    # fixture は直近 (06-12 寄り) が H=0 のため streak 行なし
+    assert "連続安打" not in out[0].post_text

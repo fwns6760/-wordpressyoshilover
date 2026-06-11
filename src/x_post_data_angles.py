@@ -57,6 +57,40 @@ def _try_png(template_key: str, data: dict) -> bytes:
         return b""
 
 
+def _current_hit_streak(db_path: str, canon: str) -> int:
+    """出場試合 (AB>0) ベースの現在の連続安打試合数。 取れなければ 0。
+
+    mainportalhuge 型の「6試合連続ヒット」記録文脈 (2026-06-11 user
+    「【選手名】は分かりやすい」「試合後に単発」)。 read-only。
+    """
+    try:
+        with _sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
+            rows = conn.execute(
+                "SELECT COALESCE(b.H,0) FROM batting_logs b "
+                "JOIN games g USING(game_id) "
+                "WHERE b.team_name='巨人' AND b.player_canonical=? "
+                " AND COALESCE(b.AB,0) > 0 "
+                "ORDER BY g.game_date DESC",
+                (canon,),
+            ).fetchall()
+    except Exception as exc:  # noqa: BLE001
+        logger.info("hit_streak skip %s: %r", canon, exc)
+        return 0
+    streak = 0
+    for (h,) in rows:
+        if int(h or 0) > 0:
+            streak += 1
+        else:
+            break
+    return streak
+
+
+def _streak_line(db_path: str, canon: str, *, min_streak: int = 3) -> str:
+    """記録文脈 1 行 (連続安打 3 試合以上の時だけ)。 無ければ空文字。"""
+    n = _current_hit_streak(db_path, canon)
+    return f"📝{n}試合連続安打中\n" if n >= min_streak else ""
+
+
 # ─── 1. 勝利相関 (条件付き勝率) ──────────────────────────────────────
 
 
@@ -139,7 +173,8 @@ def build_win_correlation_candidates(
             f"【{canon}】{label}、巨人は強い\n"
             f"あり {cw}勝{cl}敗 (勝率{_fmt3(cr)})\n"
             f"なし {nw}勝{nl}敗 (勝率{_fmt3(orr)})\n"
-            f"今季{total}試合・勝率差+{_fmt3(gap)} #巨人 #ジャイアンツ"
+            + _streak_line(db_path, canon)
+            + f"今季{total}試合・勝率差+{_fmt3(gap)} #巨人 #ジャイアンツ"
         )
         fact = (
             f"{label}: {cw}勝{cl}敗 勝率{_fmt3(cr)} ｜ それ以外: {nw}勝{nl}敗 "
@@ -259,7 +294,8 @@ def build_opponent_split_candidates(
             f"【{canon}】{opp}キラー\n"
             f"対{opp} {_fmt3(oavg)} ({oh}安打/{oab}打数・{orbi}打点)\n"
             f"シーズン {_fmt3(savg)} — 対{opp}で+{_fmt3(gap)}\n"
-            f"#巨人 #ジャイアンツ"
+            + _streak_line(db_path, canon)
+            + f"#巨人 #ジャイアンツ"
         )
         fact = (
             f"対{opp} 打率{_fmt3(oavg)} ({oh}安打/{oab}打数・{orbi}打点) ｜ "

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Yoshilover 063 Frontend (topic hub / SNS reactions / Phase 1 noindex)
  * Description: 062 contract §2 §3 §5 の front impl。topic hub / SNS block / noindex を基盤に、トップ速報帯・記事下回遊束・右カラム rail・上部密集ナビ・人気記事導線まで含めて SWELL front を高密度化する。既存 SWELL コメント欄は触らない。
- * Version: 0.23.0
+ * Version: 0.23.1
  * Author: yoshilover
  */
 
@@ -182,6 +182,7 @@ function yoshilover_063_render_home_data_hub() {
         array( 'href' => '/data/tickets',          'ic' => '🎟️', 't' => 'チケット情報',       's' => '公式・プレイガイド購入リンク' ),
         array( 'href' => '/data/open-games',        'ic' => '🌸', 't' => 'オープン戦結果',     's' => '2001〜2026年 年度別の勝敗' ),
         array( 'href' => '/data/foreign-players',   'ic' => '🌍', 't' => '歴代外国人選手',     's' => 'スタルヒン〜現役助っ人' ),
+        array( 'href' => '/data/salary',            'ic' => '💰', 't' => '年俸ランキング',     's' => '選手別の推移・契約金・通算' ),
     );
     $cards_html = '';
     foreach ( $cards as $c ) {

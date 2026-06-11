@@ -22,6 +22,7 @@ _DATA_PAGES = [
     ("team", "セ・リーグ順位表"),
     ("jersey-numbers", "歴代背番号"),
     ("draft", "歴代ドラフト"),
+    ("salary", "年俸ランキング"),
     ("tickets", "チケット情報"),
 ]
 

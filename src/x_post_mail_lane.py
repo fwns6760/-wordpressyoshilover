@@ -4309,11 +4309,15 @@ def _is_pitcher_metric(metric: str) -> bool:
 
 # 437 Phase 7: rank 1 既定 router 以外は candidate index で round-robin に
 # template を振り分け、 mail 内 8 候補で 8 異なる visual を見せる。
+# 2026-06-11: variation 3 種追加 (podium_top3 / focus_duel / dark_hero)。
 _ROUND_ROBIN_TEMPLATES = (
     "ranking_table",
+    "podium_top3",
     "chart_bars",
+    "focus_duel",
     "data_sheet",
     "monthly_summary",
+    "dark_hero",
     "starting_lineup",
     "12team_crown",
     "12team_bar",
@@ -4421,7 +4425,8 @@ def _select_template_and_data(candidate, rows: list[dict], *, candidate_index: i
         return template_key, data
 
     # その他 (ranking_table / chart_bars / data_sheet / monthly_summary /
-    # starting_lineup / 12team_crown / scoreboard): rows を共通 schema で渡す
+    # starting_lineup / 12team_crown / scoreboard / podium_top3 /
+    # focus_duel / dark_hero): rows を共通 schema で渡す
     data = build_ranking_data(title=title, subtitle=subtitle, hook_line=hook, rows=rows)
     return template_key, data
 

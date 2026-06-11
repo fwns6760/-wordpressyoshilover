@@ -259,3 +259,69 @@ def test_emoji_font_lookup_finds_if_installed():
     # 環境依存: install 済なら font / path 共に non-None、 未 install なら None
     if font is not None:
         assert path.endswith(".ttf") or path.endswith(".ttc")
+
+
+# ---------- 2026-06-11 variation templates ----------
+
+
+@pytest.mark.parametrize("template_key", ["podium_top3", "focus_duel", "dark_hero"])
+def test_variation_templates_render_valid_png(template_key):
+    """新 variation 3 種が ranking rows 共通 schema で 1080x1080 PNG を返す。"""
+    png = generate_png(template_key, _sample_data())
+    assert png is not None
+    w, h = _png_size_from_bytes(png)
+    assert (w, h) == (1080, 1080)
+    assert len(png) <= PNG_MAX_BYTES
+
+
+@pytest.mark.parametrize("template_key", ["podium_top3", "focus_duel", "dark_hero"])
+def test_variation_templates_render_without_giants_rows(template_key):
+    """巨人 row ゼロでも fallback (1位 hero / leader duel) で描画が通る。"""
+    rows = [dict(r, is_giants=False) for r in _sample_rows()]
+    data = build_ranking_data(
+        title="セ・リーグ OPS ランキング", subtitle="直近 10 試合",
+        hook_line="★ セ・リーグ OPS ★", rows=rows,
+    )
+    png = generate_png(template_key, data)
+    assert png is not None
+
+
+def test_podium_top3_renders_with_two_rows():
+    """rows が 2 件 (3位なし) でも表彰台が描ける。"""
+    data = build_ranking_data(
+        title="t", subtitle="s", hook_line="h", rows=_sample_rows()[:2],
+    )
+    png = generate_png("podium_top3", data)
+    assert png is not None
+
+
+def test_focus_duel_single_row_renders_header_only():
+    """rows 1 件では対決が組めないが、 PNG 自体は生成される (None にしない)。"""
+    data = build_ranking_data(
+        title="t", subtitle="s", hook_line="h", rows=_sample_rows()[:1],
+    )
+    png = generate_png("focus_duel", data)
+    assert png is not None
+
+
+def test_focus_duel_picks_giants_vs_better_neighbor():
+    """巨人 focus (3位) の rival は 1 つ上の 2位 — 描画が通り giants 色が乗る。"""
+    png = generate_png("focus_duel", _sample_data())
+    assert png is not None
+    # 巨人 gradient (orange) が左 card に乗っている = orange 系 pixel が存在
+    from PIL import Image
+    img = Image.open(io.BytesIO(png)).convert("RGB")
+    w, h = img.size
+    sample = img.getpixel((w // 4, h // 2))
+    assert sample[0] > 150 and sample[0] > sample[2], f"left card not orange: {sample}"
+
+
+def test_dark_hero_canvas_is_dark():
+    """dark_hero は下地が dark (中央下部寄り pixel の輝度が低い)。"""
+    png = generate_png("dark_hero", _sample_data())
+    assert png is not None
+    from PIL import Image
+    img = Image.open(io.BytesIO(png)).convert("RGB")
+    # 左端 (card / glow が無い領域) の pixel
+    sample = img.getpixel((30, 600))
+    assert sum(sample) < 240, f"canvas not dark: {sample}"

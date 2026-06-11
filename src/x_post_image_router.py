@@ -31,6 +31,9 @@ TEMPLATE_KEYS = frozenset(
         "chart_bars",
         "12team_bar",
         "spray_chart",
+        "podium_top3",
+        "focus_duel",
+        "dark_hero",
     }
 )
 

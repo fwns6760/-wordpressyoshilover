@@ -80,6 +80,14 @@ COLOR_MEDAL_BRONZE = "#C9804E"
 COLOR_FOOTER_BAND = "#141414"
 COLOR_BAR_NEUTRAL = "#D9D5CF"   # 非巨人 bar
 
+# 2026-06-11 variation palette (night 系 template 用)。 brand lock の
+# orange / gold / 黒 の範囲内で、 下地を warm dark に振った別 mood を作る。
+COLOR_NIGHT_BG = "#171411"      # night 下地 (warm dark)
+COLOR_NIGHT_CARD = "#221E1A"    # night card
+COLOR_NIGHT_BORDER = "#332D27"  # night card border
+COLOR_NIGHT_TEXT = "#F4F0EA"    # night 本文
+COLOR_NIGHT_SUB = "#A89F94"     # night 補足
+
 
 def _find_font(size: int):
     """CJK 描画可能な TrueType font を探して返す。
@@ -1243,6 +1251,269 @@ def _render_scoreboard(data: dict[str, Any], size: int = DEFAULT_SIZE):
     return canvas
 
 
+def _parse_stat_value(raw: object) -> float | None:
+    """".867" / "2.45" / "12" 等の表示文字列を float に。 解釈不能は None。"""
+    s = str(raw or "").replace(",", "").strip()
+    if not s:
+        return None
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def _format_stat_diff(diff: float, *, leading_dot: bool) -> str:
+    """対決カードの差分表示。 counting 系は整数、 率系は .3f を trim。"""
+    text = f"{abs(diff):.3f}".rstrip("0").rstrip(".")
+    if not text:
+        text = "0"
+    if leading_dot and text.startswith("0."):
+        text = text[1:]
+    return text
+
+
+def _render_podium_top3(data: dict[str, Any], size: int = DEFAULT_SIZE):
+    """TOP3 を表彰台 (2位-1位-3位) で。 4-6位は下部に小さく添える。
+
+    2026-06-11 variation 追加: list / grid 系と違う「式典」mood。
+    """
+    from PIL import Image, ImageDraw
+
+    canvas = Image.new("RGBA", (size, size), COLOR_CANVAS)
+    draw = ImageDraw.Draw(canvas)
+    _draw_header_block(canvas, draw, str(data.get("title", "")),
+                       str(data.get("subtitle", "")),
+                       str(data.get("hook_line", "")), size=size, header_h=190)
+
+    rows = data.get("rows", []) or []
+    top3 = rows[:3]
+    if not top3:
+        _draw_footer_block(canvas, draw, str(data.get("footer_handle", DEFAULT_FOOTER_HANDLE)),
+                           str(data.get("footer_meta", DEFAULT_FOOTER_META)), size=size)
+        return canvas
+
+    # 表彰台 slot: (row, x1, 台の高さ)。 中央 = 1位 が最も高い。
+    col_w, gap = 296, 28
+    x_left = (size - col_w * 3 - gap * 2) // 2
+    base_y = 830
+    slots = [(top3[0], x_left + col_w + gap, 380)]
+    if len(top3) >= 2:
+        slots.append((top3[1], x_left, 290))
+    if len(top3) >= 3:
+        slots.append((top3[2], x_left + (col_w + gap) * 2, 230))
+
+    for row, px, plat_h in slots:
+        plat_top = base_y - plat_h
+        rect = (px, plat_top, px + col_w, base_y)
+        is_giants = bool(row.get("is_giants"))
+        rank_n = row.get("rank", "?")
+        if is_giants:
+            _rounded_gradient_card(canvas, rect, radius=20, shadow=True)
+            val_c = COLOR_WHITE
+        else:
+            _rounded_card(canvas, rect, radius=20, shadow=True)
+            val_c = COLOR_TEXT
+        cx = px + col_w // 2
+        # 台の上 (overhang): 1位だけ王冠代わりの金star → 名前 → 球団
+        draw = ImageDraw.Draw(canvas)
+        try:
+            is_first = int(rank_n) == 1
+        except (TypeError, ValueError):
+            is_first = False
+        if is_first:
+            _draw_crisp_text(draw, (cx, plat_top - 124), "★", size=46,
+                             fill=COLOR_MEDAL_GOLD, anchor="ms")
+        name_c = COLOR_GIANTS_ROW_LEFT if is_giants else COLOR_TEXT
+        _draw_crisp_text(draw, (cx, plat_top - 68), str(row.get("name", "")),
+                         size=40, fill=name_c, anchor="ms")
+        font_team, _ = _find_font(size=24)
+        draw.text((cx, plat_top - 30), str(row.get("team", "")),
+                  font=font_team, fill=COLOR_TEXT_SUB, anchor="ms")
+        # 台の中: rank badge (メダル色) + 値
+        draw = _rank_badge(canvas, (cx, plat_top + 52), rank_n, r=32,
+                           on_giants=is_giants)
+        _draw_crisp_text(draw, (cx, base_y - max(38, plat_h // 2 - 28)),
+                         str(row.get("value", "")), size=64,
+                         fill=val_c, anchor="mm")
+
+    # 4-6位 strip (1 行 3 列の小カード)
+    extras = rows[3:6]
+    if extras:
+        strip = (x_left, 866, size - x_left, 982)
+        _rounded_card(canvas, strip, radius=18, shadow=False)
+        draw = ImageDraw.Draw(canvas)
+        col = (strip[2] - strip[0]) // len(extras)
+        for i, r in enumerate(extras):
+            ex = strip[0] + col * i + col // 2
+            is_giants = bool(r.get("is_giants"))
+            name_c = COLOR_GIANTS_ROW_LEFT if is_giants else COLOR_TEXT
+            font_rk, _ = _find_font(size=22)
+            draw.text((ex, 902), f"{r.get('rank', i + 4)}位", font=font_rk,
+                      fill=COLOR_TEXT_SUB, anchor="ms")
+            _draw_crisp_text(draw, (ex, 938), str(r.get("name", "")),
+                             size=27, fill=name_c, anchor="ms")
+            font_v, _ = _find_font(size=24)
+            draw.text((ex, 970), str(r.get("value", "")), font=font_v,
+                      fill=COLOR_TEXT_SUB, anchor="ms")
+
+    _draw_footer_block(canvas, draw, str(data.get("footer_handle", DEFAULT_FOOTER_HANDLE)),
+                       str(data.get("footer_meta", DEFAULT_FOOTER_META)), size=size)
+    return canvas
+
+
+def _render_focus_duel(data: dict[str, Any], size: int = DEFAULT_SIZE):
+    """巨人 focus 選手 vs 隣接 rival の 1on1 対決 (左=orange / 右=dark の対比)。
+
+    2026-06-11 variation 追加。 scoreboard (TOP1 vs 残り平均) と違い、
+    巨人選手と直接のライバル 1 人を選んで個 vs 個 で見せる。
+    """
+    from PIL import Image, ImageDraw
+
+    canvas = Image.new("RGBA", (size, size), COLOR_CANVAS)
+    draw = ImageDraw.Draw(canvas)
+    _draw_header_block(canvas, draw, str(data.get("title", "")),
+                       str(data.get("subtitle", "")),
+                       str(data.get("hook_line", "")), size=size, header_h=160)
+
+    rows = data.get("rows", []) or []
+    if len(rows) < 2:
+        _draw_footer_block(canvas, draw, str(data.get("footer_handle", DEFAULT_FOOTER_HANDLE)),
+                           str(data.get("footer_meta", DEFAULT_FOOTER_META)), size=size)
+        return canvas
+
+    # focus = 最上位の巨人 row (居なければ 1位)。 rival = 1 つ上の順位
+    # (focus が先頭なら 1 つ下)。
+    focus_i = next((i for i, r in enumerate(rows) if r.get("is_giants")), 0)
+    rival_i = focus_i - 1 if focus_i > 0 else focus_i + 1
+    focus, rival = rows[focus_i], rows[rival_i]
+
+    card_y, card_b = 220, 930
+    half_w = (size - 80 - 24) // 2
+    lx, rx = 40, 40 + half_w + 24
+    _rounded_gradient_card(canvas, (lx, card_y, lx + half_w, card_b),
+                           radius=26, shadow=True)
+    _rounded_card(canvas, (rx, card_y, rx + half_w, card_b),
+                  fill=COLOR_NIGHT_CARD, radius=26,
+                  border=COLOR_NIGHT_BORDER, shadow=True)
+    draw = ImageDraw.Draw(canvas)
+
+    for r, cx, name_c, sub_c, val_c in (
+        (focus, lx + half_w // 2, COLOR_WHITE, (255, 235, 220, 255), COLOR_WHITE),
+        (rival, rx + half_w // 2, COLOR_NIGHT_TEXT, COLOR_NIGHT_SUB, COLOR_GOLD),
+    ):
+        font_rank, _ = _find_font(size=30)
+        draw.text((cx, 300), f"{r.get('rank', '?')}位", font=font_rank,
+                  fill=sub_c, anchor="ms")
+        name = str(r.get("name", ""))
+        name_size = 52 if len(name) <= 5 else 42
+        _draw_crisp_text(draw, (cx, 392), name, size=name_size,
+                         fill=name_c, anchor="ms")
+        font_team, _ = _find_font(size=26)
+        draw.text((cx, 442), str(r.get("team", "")), font=font_team,
+                  fill=sub_c, anchor="ms")
+        _draw_crisp_text(draw, (cx, 660), str(r.get("value", "")),
+                         size=110, fill=val_c, anchor="mm")
+
+    # 中央 VS 円
+    vs_layer = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+    vd = ImageDraw.Draw(vs_layer)
+    vs_cy = (card_y + card_b) // 2
+    vd.ellipse((size // 2 - 46, vs_cy - 46, size // 2 + 46, vs_cy + 46),
+               fill=_hex_to_rgb("#23211E") + (255,))
+    canvas.alpha_composite(vs_layer)
+    draw = ImageDraw.Draw(canvas)
+    _draw_crisp_text(draw, (size // 2, vs_cy + 2), "VS", size=36,
+                     fill=COLOR_GOLD, anchor="mm")
+
+    # 差分 chip (両値が数値解釈できる時だけ)
+    fv = _parse_stat_value(focus.get("value"))
+    rv = _parse_stat_value(rival.get("value"))
+    if fv is not None and rv is not None and fv != rv:
+        leading_dot = str(focus.get("value", "")).startswith(".") and \
+            str(rival.get("value", "")).startswith(".")
+        diff_text = _format_stat_diff(fv - rv, leading_dot=leading_dot)
+        label = "リード" if fv > rv else "差"
+        _pill_chip(canvas, (size // 2, 848), f"{label} {diff_text}",
+                   size=28, bg=(0, 0, 0, 200), fg=COLOR_GOLD)
+        draw = ImageDraw.Draw(canvas)
+
+    _draw_footer_block(canvas, draw, str(data.get("footer_handle", DEFAULT_FOOTER_HANDLE)),
+                       str(data.get("footer_meta", DEFAULT_FOOTER_META)), size=size)
+    return canvas
+
+
+def _render_dark_hero(data: dict[str, Any], size: int = DEFAULT_SIZE):
+    """night 仕様: warm dark 下地に hero 数字を orange glow で大きく。
+
+    2026-06-11 variation 追加。 hero = 最上位の巨人 row (居なければ 1位)。
+    下部に TOP3 mini list を添える。
+    """
+    from PIL import Image, ImageDraw, ImageFilter
+
+    canvas = Image.new("RGBA", (size, size), COLOR_NIGHT_BG)
+    draw = ImageDraw.Draw(canvas)
+    _draw_header_block(canvas, draw, str(data.get("title", "")),
+                       str(data.get("subtitle", "")),
+                       str(data.get("hook_line", "")), size=size, header_h=160)
+
+    rows = data.get("rows", []) or []
+    if not rows:
+        _draw_footer_block(canvas, draw, str(data.get("footer_handle", DEFAULT_FOOTER_HANDLE)),
+                           str(data.get("footer_meta", DEFAULT_FOOTER_META)), size=size)
+        return canvas
+
+    hero = next((r for r in rows if r.get("is_giants")), rows[0])
+    hero_name = str(hero.get("name", ""))
+    if hero_name:
+        _draw_crisp_text(draw, (size // 2, 330), hero_name, size=64,
+                         fill=COLOR_NIGHT_TEXT, anchor="ms")
+    rank_label = f"セ・リーグ {hero.get('rank', '?')}位 ・ {hero.get('team', '')}"
+    _pill_chip(canvas, (size // 2, 396), rank_label, size=25,
+               bg=(0, 0, 0, 170), fg=COLOR_GOLD)
+
+    # hero value: orange glow 層 → 本体 (白寄り) の 2 段重ね
+    hero_value = str(hero.get("value", ""))
+    if hero_value:
+        glow = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+        gd = ImageDraw.Draw(glow)
+        font_glow, _ = _find_font(size=228)
+        gd.text((size // 2, 700), hero_value, font=font_glow,
+                fill=_hex_to_rgb(COLOR_HEADER_TOP) + (200,), anchor="ms")
+        glow = glow.filter(ImageFilter.GaussianBlur(radius=18))
+        canvas.alpha_composite(glow)
+        draw = ImageDraw.Draw(canvas)
+        _draw_crisp_text(draw, (size // 2, 700), hero_value, size=228,
+                         fill="#FFE8D6", anchor="ms")
+
+    # TOP3 mini list
+    for i, r in enumerate(rows[:3]):
+        top = 766 + i * 70
+        rect = (140, top, size - 140, top + 58)
+        cy = top + 29
+        is_giants = bool(r.get("is_giants"))
+        if is_giants:
+            _rounded_gradient_card(canvas, rect, radius=14, shadow=False)
+            name_c = val_c = COLOR_WHITE
+        else:
+            _rounded_card(canvas, rect, fill=COLOR_NIGHT_CARD, radius=14,
+                          border=COLOR_NIGHT_BORDER)
+            name_c = COLOR_NIGHT_TEXT
+            val_c = COLOR_NIGHT_SUB
+        draw = _rank_badge(canvas, (186, cy), r.get("rank", i + 1), r=20,
+                           on_giants=is_giants)
+        font_name, name_path = _find_font(size=30)
+        sw = 0 if _is_bold_font_path(name_path) else 1
+        draw.text((232, cy), str(r.get("name", "")), font=font_name,
+                  fill=name_c, anchor="lm",
+                  stroke_width=sw if is_giants else 0, stroke_fill=name_c)
+        _draw_crisp_text(draw, (size - 168, cy), str(r.get("value", "")),
+                         size=32, fill=val_c, anchor="rm")
+
+    _draw_footer_block(canvas, draw, str(data.get("footer_handle", DEFAULT_FOOTER_HANDLE)),
+                       str(data.get("footer_meta", DEFAULT_FOOTER_META)), size=size)
+    return canvas
+
+
 # 各 template_key → render function dispatch table
 TEMPLATE_RENDERERS = {
     "ranking_table": _render_ranking_table,
@@ -1256,6 +1527,9 @@ TEMPLATE_RENDERERS = {
     "12team_crown": _render_12team_crown,
     "starting_lineup": _render_starting_lineup,
     "scoreboard": _render_scoreboard,
+    "podium_top3": _render_podium_top3,
+    "focus_duel": _render_focus_duel,
+    "dark_hero": _render_dark_hero,
 }
 
 

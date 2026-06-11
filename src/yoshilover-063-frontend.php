@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Yoshilover 063 Frontend (topic hub / SNS reactions / Phase 1 noindex)
  * Description: 062 contract §2 §3 §5 の front impl。topic hub / SNS block / noindex を基盤に、トップ速報帯・記事下回遊束・右カラム rail・上部密集ナビ・人気記事導線まで含めて SWELL front を高密度化する。既存 SWELL コメント欄は触らない。
- * Version: 0.22.2
+ * Version: 0.22.3
  * Author: yoshilover
  */
 
@@ -382,9 +382,11 @@ function yoshilover_063_buffer_inject_header_titles( $buffer ) {
     // SWELL は dynamic_sidebar() を呼ばず dynamic_sidebar_before hook の rail 自動注入が
     // 発火しない = <aside id="sidebar"> が空のまま 280px の空白カラムになる。
     // fallback として、空の aside を検出した時だけ buffer 側で rail を直接注入する。
-    // widget が 1 個でも復活すれば hook 側が出すので、ここは空の時のみ (dedup は rail class)。
+    // widget が 1 個でも復活すれば hook 側が出すので、ここは空の時のみ。
+    // dedup は markup 限定の class="..." で判定する (素の 'yoshi-sidebar-rail' だと
+    // 追加CSS内のセレクタ文字列に誤反応して注入が skip される)。
     if ( yoshilover_063_should_render_sidebar_rail()
-        && strpos( $buffer, 'yoshi-sidebar-rail' ) === false
+        && strpos( $buffer, 'class="yoshi-sidebar-rail"' ) === false
         && preg_match( '#<aside\b[^>]*id="sidebar"[^>]*>\s*</aside>#', $buffer, $sm, PREG_OFFSET_CAPTURE ) ) {
         $rail = yoshilover_063_render_ad_slot(
             'sidebar-top',

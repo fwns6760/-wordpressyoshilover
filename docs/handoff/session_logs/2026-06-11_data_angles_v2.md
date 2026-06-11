@@ -36,3 +36,10 @@ user「ファンが驚く機械学習的なデータはとれるの？」「そ�
 - 15:25 JST | feat | streak 記録文脈1行 (「📝N試合連続安打中」N>=3、mainportalhuge型) を勝利相関/対戦キラー post_text に追加 | `e250b22f` | カード画像は維持 (文体だけ模倣、user「カードがあったほうがよい」)
 - 15:30 JST | feat | preferred_players: 話題選手 (言及2+) を gap より優先して角度生成 (今夜の主役の驚きを先に)。話題 counts は 1便1回取得で angles/boost 共用 | `6c8a9f24` | -
 - 15:32 JST | deploy | image `tonight-pref-6c8a9f24`、Job gen `178` (streak + preferred 同梱) | - | 今夜 22:05 便で verify
+
+## 追記3: 報知リプ候補の精度問題 (user 検証依頼 → 2バグ修正)
+
+- user 提示の候補「田中将大 今季初勝利！」を検証: **数字3つ (9登板/防御率2.79/40K) は本番DB照合で正確**。見出しが誤り — 元投稿は「古巣楽天と初対決 勝てば…12球団勝利」(田中は当時今季3勝済)
+- 原因1: headline_from_events が「初」+「勝利」の token 袋合成 → literal 連続語 gate に変更 (回帰テスト lock)
+- 原因2 (user「同じような文章が多い。AIっぽい」): fallback 固定テンプレ 1本/分岐 → 4案プール×hash決定的選択、「見方が分かれそう」「〜見たいです」ヘッジ全廃
+- 16:50 JST | deploy | `e482d57e` → image `headline-voice-e482d57e`、Job gen `179` | sns_topic_cards 21 passed | 469 WIP (avoid_player_names) は未 commit のまま分離維持

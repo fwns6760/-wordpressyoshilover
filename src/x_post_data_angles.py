@@ -429,8 +429,17 @@ def fetch_topical_counts(
     handles: Optional[list[str]] = None,
     min_mentions: int = 1,
     top_n: int = 12,
+    max_age_hours: float = 6.0,
+    now: Optional[datetime] = None,
 ) -> dict[str, int]:
-    """自前 RSSHub の巨人系 X feed から {選手名: 直近言及数} を返す。失敗は {}。"""
+    """自前 RSSHub の巨人系 X feed から {選手名: 直近言及数} を返す。失敗は {}。
+
+    video_radar.fetch_buzzing_players と違い pubDate で鮮度 gate する
+    (default 6h)。「その試合で話題」のため、 昨日のバズを今夜の話題として
+    拾わない。 pubDate 不明の item は判定不能なので通す (RSSHub は通常返す)。
+    """
+    if now is None:
+        now = datetime.now(JST)
     try:
         from src import video_radar as _vr
         from src.x_post_mail_lane import (
@@ -439,17 +448,32 @@ def fetch_topical_counts(
             detect_giants_player_name,
         )
         alias_map = {**_load_giants_player_aliases(), **_load_giants_member_aliases()}
-
-        def _detect(text: str) -> str:
-            return detect_giants_player_name(text, alias_map=alias_map)
-
-        return _vr.fetch_buzzing_players(
-            detect_player_fn=_detect,
-            fetch_fn=fetch_fn,
-            handles=handles,
-            min_mentions=min_mentions,
-            top_n=top_n,
-        )
+        fetch = fetch_fn or _vr._default_fetch
+        handles = handles or _vr._BUZZ_HANDLES
+        counts: dict[str, int] = {}
+        for h in handles:
+            try:
+                xml = fetch(f"{_vr._RSSHUB_BASE}/twitter/user/{h}?limit=30")
+            except Exception:  # noqa: BLE001
+                continue
+            for item in _vr._extract_rss_items(xml):
+                published_at = item.get("published_at")
+                if published_at is not None:
+                    try:
+                        age_h = (now - published_at).total_seconds() / 3600.0
+                    except (TypeError, ValueError):
+                        age_h = 0.0
+                    if age_h > max_age_hours:
+                        continue
+                try:
+                    p = detect_giants_player_name(
+                        item.get("text", ""), alias_map=alias_map) or ""
+                except Exception:  # noqa: BLE001
+                    p = ""
+                if p:
+                    counts[p] = counts.get(p, 0) + 1
+        filtered = {k: v for k, v in counts.items() if v >= min_mentions}
+        return dict(sorted(filtered.items(), key=lambda kv: kv[1], reverse=True)[:top_n])
     except Exception as exc:  # noqa: BLE001
         logger.info("topical counts skip: %r", exc)
         return {}

@@ -157,3 +157,50 @@ def test_boost_topical_empty_inputs_passthrough():
     cands = [_Stub("A")]
     assert angles.boost_topical_candidates(cands, {}) is cands
     assert angles.boost_topical_candidates([], {"A": 3}) == []
+
+
+def _rss_xml(items: list[tuple[str, str]]) -> str:
+    """(text, pubdate) のリストから RSSHub 風 RSS 2.0 を組む。"""
+    body = "".join(
+        f"<item><title>{text}</title><description>{text}</description>"
+        f"<link>https://x.com/t/{i}</link><pubDate>{pub}</pubDate></item>"
+        for i, (text, pub) in enumerate(items)
+    )
+    return f"<rss><channel>{body}</channel></rss>"
+
+
+def test_fetch_topical_counts_gates_by_age(monkeypatch):
+    """6h 窓: 直近の言及だけ数え、 昨日の投稿は拾わない。"""
+    from datetime import datetime, timezone, timedelta
+
+    now = datetime(2026, 6, 11, 22, 0, tzinfo=timezone(timedelta(hours=9)))
+
+    def fmt(dt):
+        return dt.strftime("%a, %d %b %Y %H:%M:%S %z")
+
+    xml = _rss_xml([
+        ("岡本和真が逆転2ラン", fmt(now - timedelta(hours=1))),
+        ("岡本和真 ヒーローインタビュー", fmt(now - timedelta(hours=2))),
+        ("岡本和真 昨日の一発", fmt(now - timedelta(hours=30))),  # 窓外
+    ])
+    import src.x_post_mail_lane as lane
+    monkeypatch.setattr(lane, "_load_giants_player_aliases",
+                        lambda: {"岡本和真": "岡本和真"})
+    monkeypatch.setattr(lane, "_load_giants_member_aliases", lambda: {})
+    monkeypatch.setattr(
+        lane, "detect_giants_player_name",
+        lambda text, alias_map=None: "岡本和真" if "岡本和真" in text else "",
+    )
+    counts = angles.fetch_topical_counts(
+        fetch_fn=lambda url: xml, handles=["hochi_giants"],
+        max_age_hours=6.0, now=now,
+    )
+    assert counts == {"岡本和真": 2}  # 30h 前の 1 件は除外
+
+
+def test_fetch_topical_counts_graceful_on_fetch_error():
+    counts = angles.fetch_topical_counts(
+        fetch_fn=lambda url: (_ for _ in ()).throw(RuntimeError("down")),
+        handles=["hochi_giants"],
+    )
+    assert counts == {}

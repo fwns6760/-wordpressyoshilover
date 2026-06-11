@@ -1,0 +1,56 @@
+{
+  "_meta": {
+    "description": "巨人関連選手の年度別推定年俸 (検証済 baked データ)。金額単位は万円 (salary_man)。MLB 在籍年はドル契約 (usd) が一次事実で、salary_man は当時レートによる推定円換算。",
+    "verification_policy": "各選手とも複数ソース突合で確定した値のみ収録する (推測で埋めない)。ソース間で食い違う年は第3ソースで多数決し、note に記録する。",
+    "sources": {
+      "shube": "https://sp.baseball.findfriends.jp/player/salary/<id>/ (週刊ベースボールONLINE 選手別年俸推移)",
+      "nenshuu": "https://www.nenshuu.net/shoku/baseball/players.php?name=<id> (年収ガイド: 年度別年俸・契約金・ドラフト)",
+      "baseball_chronicle": "https://x.com/BaseballChron/status/1749265640718758125 (田中将大 MLB 年の当時レート円換算)"
+    },
+    "updated": "2026-06-12",
+    "update_policy": "年俸は契約更改期 (11-1月) と開幕時に年1-2回更新すれば足りる。当年値は週べONLINE再scrapeで refresh。"
+  },
+  "players": [
+    {
+      "name": "田中将大",
+      "slug": "tanaka-masahiro",
+      "kana": "たなか まさひろ",
+      "position": "投手",
+      "jersey": "11",
+      "active": true,
+      "shube_id": "19880067",
+      "nenshuu_id": "11215114",
+      "draft": {
+        "year": 2006,
+        "desc": "2006年 高校生ドラフト1巡目 (東北楽天ゴールデンイーグルス / 駒大苫小牧高)",
+        "keiyakukin_man": 10000,
+        "keiyakukin_note": "契約金1億円＋出来高払い5000万円 (入団時年俸1500万円)"
+      },
+      "years": [
+        {"year": 2007, "team": "楽天", "league": "NPB", "salary_man": 1500},
+        {"year": 2008, "team": "楽天", "league": "NPB", "salary_man": 6000},
+        {"year": 2009, "team": "楽天", "league": "NPB", "salary_man": 9500,
+         "note": "週べONLINEは7500万と記載するが、年収ガイド・球歴.com系の複数ソースが9500万で一致するため9500万を採用"},
+        {"year": 2010, "team": "楽天", "league": "NPB", "salary_man": 18000},
+        {"year": 2011, "team": "楽天", "league": "NPB", "salary_man": 20000},
+        {"year": 2012, "team": "楽天", "league": "NPB", "salary_man": 32000},
+        {"year": 2013, "team": "楽天", "league": "NPB", "salary_man": 40000},
+        {"year": 2014, "team": "ヤンキース", "league": "MLB", "usd": 22000000, "salary_man": 231000},
+        {"year": 2015, "team": "ヤンキース", "league": "MLB", "usd": 22000000, "salary_man": 266200},
+        {"year": 2016, "team": "ヤンキース", "league": "MLB", "usd": 22000000, "salary_man": 237600},
+        {"year": 2017, "team": "ヤンキース", "league": "MLB", "usd": 22000000, "salary_man": 246400},
+        {"year": 2018, "team": "ヤンキース", "league": "MLB", "usd": 22000000, "salary_man": 242000},
+        {"year": 2019, "team": "ヤンキース", "league": "MLB", "usd": 22000000, "salary_man": 239800},
+        {"year": 2020, "team": "ヤンキース", "league": "MLB", "usd": 23000000, "salary_man": 245000,
+         "note": "新型コロナによる60試合短縮シーズンのため実受取は契約額の約37% (約8.6億円) とされる。表記は契約ベース"},
+        {"year": 2021, "team": "楽天", "league": "NPB", "salary_man": 90000,
+         "note": "NPB復帰。推定9億円は当時の日本球界歴代最高年俸"},
+        {"year": 2022, "team": "楽天", "league": "NPB", "salary_man": 90000},
+        {"year": 2023, "team": "楽天", "league": "NPB", "salary_man": 47500},
+        {"year": 2024, "team": "楽天", "league": "NPB", "salary_man": 26000},
+        {"year": 2025, "team": "巨人", "league": "NPB", "salary_man": 16000, "note": "巨人移籍1年目"},
+        {"year": 2026, "team": "巨人", "league": "NPB", "salary_man": 10000}
+      ]
+    }
+  ]
+}

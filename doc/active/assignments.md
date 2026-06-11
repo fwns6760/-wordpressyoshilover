@@ -1,6 +1,18 @@
 # assignments — 現場担当と次アクション
 
-最終更新: 2026-06-10 JST (カード画像デザイン刷新 + 鮮度ゲート + data-insight 朝便 05:00)
+最終更新: 2026-06-11 JST (カード画像バリエーション3種追加)
+
+## 2026-06-11 — X案カード画像バリエーション3種追加 (user「もっとバリエーションふやせる」)
+
+- **user 指示**: 「ポストのデータカードは良くなったが、もっとバリエーションふやせる。」(6/10 刷新の続き)
+- **対応**: `src/x_post_image_gen_v2.py` に新 template 3 種追加 (commit `c4871091`)。ranking rows 共通 schema のままなのでデータ抽出側は無変更。
+  - `podium_top3`: TOP3 表彰台 (2位-1位-3位、台の高さ差 + メダル badge + 4-6位下部 strip)
+  - `focus_duel`: 巨人 focus 選手 vs 隣接順位 rival の 1on1 (左 orange / 右 warm dark + VS 円 + 差分 chip「リード .015」等)
+  - `dark_hero`: night 仕様 — warm dark 下地に hero 数字 orange glow + TOP3 mini list (brand lock 範囲内の別 mood)
+- mail lane round-robin 9→12 種 (`_ROUND_ROBIN_TEMPLATES`)、router `TEMPLATE_KEYS` にも追加
+- **test**: 新規 9 件含む image 系 81 passed。mail lane 系の既存 fail 5 件は worktree 上の別 WIP (469 source 効率化、reply handle 系) 由来で本件と無関係
+- **サンプル**: `/tmp/cards/var_*.png`
+- **deploy**: クリーン worktree (HEAD `c4871091`) から Cloud Build `535fefed` SUCCESS (1m35s)、image `x-post-mail-lane:card-variation-c4871091`、Job generation `174`。次回 flush 便から新 variation がローテに入る
 
 ## 2026-06-10 — X案カード画像デザイン刷新 (user「ださい」指摘対応)
 

@@ -7,3 +7,6 @@
 - 13:58 JST | 修正 | 063 plugin | v0.22.1 | buffer fallback: 空aside検出時のみad slot+railを直接注入(dedup=rail class)。注入regexはlive HTML実物でマッチ検証済。zip再ビルド済(build/063-v22-wp-admin)
 - 残課題 | wp_inactive_widgetsの30 widget復元(WP側設定変更=user判断領域)は未実施。railで埋まるため必須ではない。widget手動復元時もdedupで二重表示なし
 - 14:05 JST | 追加 | 063 plugin | v0.22.2 | user指示「交流戦の導線をトップにおく」→ データカード4枚目に ⚔️セ・パ交流戦 (/data/interleague、正規URL=スラッシュなし200確認) 追加、計15枚。コンパクト維持(速報帯ファーストビュー内)をプレビュー検証済。zip再ビルド済
+- 15:10 JST | deploy経路訂正 | user「交流戦出てこない」→ live verify で v0.21.18 のまま判明 | 063 には v16.1 (56f3dda7) から REST self-update (action=replace_plugin_php + clear_cache) があり、手動zip不要だった。REST で v0.22.2 deploy
+- 15:15 JST | bug fix | 063 plugin | v0.22.3 | rail注入dedup strpos('yoshi-sidebar-rail') が追加CSS内セレクタ文字列(41箇所)に誤反応し注入skip → class="yoshi-sidebar-rail" のmarkup限定判定へ。REST deploy + clear_cache + live HTML/screenshot verify 済 (モバイル=コンパクト+交流戦カード、デスクトップ=右カラム復活)
+- 以後の063 deploy正本 | REST self-update (POST /wp-json/yoshilover-063/v1/admin action=replace_plugin_php, expected_version 付き, .bak 自動) → action=clear_cache → ?nc= verify。zipはバックアップ用途のみ

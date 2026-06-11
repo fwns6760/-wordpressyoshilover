@@ -43,3 +43,16 @@ user「ファンが驚く機械学習的なデータはとれるの？」「そ�
 - 原因1: headline_from_events が「初」+「勝利」の token 袋合成 → literal 連続語 gate に変更 (回帰テスト lock)
 - 原因2 (user「同じような文章が多い。AIっぽい」): fallback 固定テンプレ 1本/分岐 → 4案プール×hash決定的選択、「見方が分かれそう」「〜見たいです」ヘッジ全廃
 - 16:50 JST | deploy | `e482d57e` → image `headline-voice-e482d57e`、Job gen `179` | sns_topic_cards 21 passed | 469 WIP (avoid_player_names) は未 commit のまま分離維持
+
+## 追記4: ブランド統一監査 (user「ブランディング、認知できてる？」「私はプロではないから考えて」)
+
+- 実タイムライン(@yoshilover6760 17本)監査: 芯はできている(カード視覚ID/【選手名】型/名言集第N回連載/データ辛口声)
+- 薄め要因3つ: ①記事共有ポストが見出し+URLだけでbot臭(12分に4連発) ②声3種混在(事実型/詩的/評論) ③署名不統一(タグ・🐰・URL)
+- **決定(Claude判断、user委任)**: 記事共有ポストの統一(【ラベル】+title+URL+#巨人 #ジャイアンツ固定、random.choiceテンプレ廃止)を**明日午前に実施**。生成元= `x_post_generator.py`(fetcher/公開パイプライン)のため、試合前deployを避ける(deploy hygiene)
+- 詩的voice laneは06-01復元lockのため現状維持・観察。署名統一は記事共有統一と同便で
+- 認知の計測: API Free(write-only)でインプ不可 → user運用「週1でXアナリティクスの数字(インプ上位5+フォロワー増減)を貼る」を依頼済み、効果学習ループの入力にする
+
+### 明日朝の作業(next_action)
+
+1. `x_post_generator.py` 非AI共有テンプレ統一 + `x_api_client.py` X_HASHTAGS を「#巨人 #ジャイアンツ」に統一
+2. fetcher image rebuild + guarded-publish 確認 + 朝便で実投稿verify

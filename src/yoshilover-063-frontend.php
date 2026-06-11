@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Yoshilover 063 Frontend (topic hub / SNS reactions / Phase 1 noindex)
  * Description: 062 contract §2 §3 §5 の front impl。topic hub / SNS block / noindex を基盤に、トップ速報帯・記事下回遊束・右カラム rail・上部密集ナビ・人気記事導線まで含めて SWELL front を高密度化する。既存 SWELL コメント欄は触らない。
- * Version: 0.21.18
+ * Version: 0.22.0
  * Author: yoshilover
  */
 
@@ -191,17 +191,17 @@ function yoshilover_063_render_home_data_hub() {
             . '</a>';
     }
     $style = '<style>'
-        . '.yoshi-home-data{margin:0 0 22px;padding:0 0 18px;background:#fff;border:2px solid #ffcba8;border-radius:16px;box-shadow:0 4px 16px rgba(226,84,0,.12);overflow:hidden;}'
-        . '.yoshi-home-data__head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0;padding:14px 18px;background:linear-gradient(135deg,#ff6a00,#e25400);}'
-        . '.yoshi-home-data__head h2{font-size:24px;font-weight:900;margin:0;color:#fff;letter-spacing:.02em;text-shadow:0 1px 2px rgba(0,0,0,.15);}'
-        . '.yoshi-home-data__more{font-size:14px;font-weight:800;color:#fff;text-decoration:none;white-space:nowrap;background:rgba(255,255,255,.22);padding:6px 12px;border-radius:999px;}'
-        . '.yoshi-home-data__lead{font-size:13px;color:#555;margin:12px 16px 14px;line-height:1.65;}'
-        . '.yoshi-home-data__grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(126px,1fr));gap:12px;padding:0 16px;}'
-        . '.yoshi-home-data__card{display:flex;flex-direction:column;align-items:center;text-align:center;gap:5px;padding:18px 6px;background:#fff8f3;border:1.5px solid #ffd9bf;border-radius:14px;text-decoration:none;transition:background .15s,transform .15s,box-shadow .15s;}'
-        . '.yoshi-home-data__card:hover{background:#fff1e6;transform:translateY(-3px);box-shadow:0 6px 14px rgba(226,84,0,.18);}'
-        . '.yoshi-home-data__ic{font-size:32px;line-height:1;}'
-        . '.yoshi-home-data__t{font-size:15px;font-weight:900;color:#1a1a1a;margin:0;line-height:1.3;}'
-        . '.yoshi-home-data__s{font-size:11px;color:#777;}'
+        . '.yoshi-home-data{margin:0 0 18px;padding:0 0 14px;background:#fff;border:2px solid #ffcba8;border-radius:14px;box-shadow:0 4px 16px rgba(226,84,0,.12);overflow:hidden;}'
+        . '.yoshi-home-data__head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0;padding:10px 16px;background:linear-gradient(135deg,#ff6a00,#e25400);}'
+        . '.yoshi-home-data__head h2{font-size:18px;font-weight:900;margin:0;color:#fff;letter-spacing:.02em;text-shadow:0 1px 2px rgba(0,0,0,.15);}'
+        . '.yoshi-home-data__more{font-size:13px;font-weight:800;color:#fff;text-decoration:none;white-space:nowrap;background:rgba(255,255,255,.22);padding:5px 11px;border-radius:999px;}'
+        . '.yoshi-home-data__lead{font-size:12px;color:#555;margin:10px 14px 10px;line-height:1.6;}'
+        . '.yoshi-home-data__grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:8px;padding:0 14px;}'
+        . '.yoshi-home-data__card{display:grid;grid-template-columns:auto 1fr;column-gap:9px;row-gap:1px;align-items:center;text-align:left;padding:8px 11px;background:#fff8f3;border:1.5px solid #ffd9bf;border-radius:10px;text-decoration:none;transition:background .15s,box-shadow .15s;}'
+        . '.yoshi-home-data__card:hover{background:#fff1e6;box-shadow:0 4px 10px rgba(226,84,0,.16);}'
+        . '.yoshi-home-data__ic{grid-row:1/3;font-size:21px;line-height:1;}'
+        . '.yoshi-home-data__t{font-size:13px;font-weight:800;color:#1a1a1a;margin:0;line-height:1.25;}'
+        . '.yoshi-home-data__s{font-size:10px;color:#888;line-height:1.3;}'
         . '.yoshi-home-rotation{margin:18px 16px 0;padding:0 0 14px;background:#fff;border:2px solid #d7dce4;border-radius:14px;box-shadow:0 4px 16px rgba(17,24,39,.10);overflow:hidden;clear:both;}'
         . '.yoshi-home-rotation__head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0;padding:14px 18px;background:#111827;}'
         . '.yoshi-home-rotation__title{margin:0;font-size:22px;font-weight:900;color:#fff;line-height:1.35;}'
@@ -222,7 +222,7 @@ function yoshilover_063_render_home_data_hub() {
         . '.yoshi-home-rotation__chip{display:inline-flex;align-items:center;gap:5px;padding:4px 7px;border-radius:999px;background:#fff8f3;border:1px solid #ffd9bf;white-space:nowrap;}'
         . '.yoshi-home-rotation__chip b{font-weight:800;color:#222;}'
         . '.yoshi-home-rotation__chip em{font-style:normal;font-weight:800;color:#e25400;font-variant-numeric:tabular-nums;}'
-        . '@media(max-width:600px){.yoshi-home-data__grid{grid-template-columns:repeat(2,1fr);gap:10px;padding:0 12px;}.yoshi-home-data__head{padding:12px 14px;}.yoshi-home-data__head h2{font-size:19px;}.yoshi-home-data__lead{margin:10px 12px 12px;}.yoshi-home-data__ic{font-size:29px;}.yoshi-home-data__t{font-size:14px;}.yoshi-home-rotation__head{padding:12px 14px;align-items:flex-start;}.yoshi-home-rotation__title{font-size:18px;}.yoshi-home-rotation__source{font-size:12px;padding:5px 9px;}.yoshi-home-rotation__meta{margin:10px 12px 0;}.yoshi-home-rotation__note{margin:10px 12px;}.yoshi-home-rotation__years{margin:0 12px 10px;}.yoshi-home-rotation__scroll{margin:0 12px;}.yoshi-home-rotation__table{min-width:620px;font-size:12px;}}'
+        . '@media(max-width:600px){.yoshi-home-data__grid{grid-template-columns:repeat(2,1fr);gap:7px;padding:0 10px;}.yoshi-home-data__head{padding:9px 12px;}.yoshi-home-data__head h2{font-size:16px;}.yoshi-home-data__lead{display:none;}.yoshi-home-data__grid{margin-top:10px;}.yoshi-home-data__card{padding:8px 9px;column-gap:7px;}.yoshi-home-data__ic{font-size:18px;}.yoshi-home-data__t{font-size:12px;}.yoshi-home-data__s{display:none;}.yoshi-home-rotation__head{padding:12px 14px;align-items:flex-start;}.yoshi-home-rotation__title{font-size:18px;}.yoshi-home-rotation__source{font-size:12px;padding:5px 9px;}.yoshi-home-rotation__meta{margin:10px 12px 0;}.yoshi-home-rotation__note{margin:10px 12px;}.yoshi-home-rotation__years{margin:0 12px 10px;}.yoshi-home-rotation__scroll{margin:0 12px;}.yoshi-home-rotation__table{min-width:620px;font-size:12px;}}'
         . '</style>';
     $html  = $style;
     $html .= '<section class="yoshi-home-data" aria-label="巨人 選手データ・成績">';

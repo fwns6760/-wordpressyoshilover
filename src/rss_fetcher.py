@@ -26148,6 +26148,49 @@ def _main(args, logger):
     if _fetcher_log_sampling_v1_enabled() or _pre_post_gen_validate_skip_enabled():
         _reset_log_sampling_state()
 
+    # 469 / SNS cost guard:
+    # 試合中の SNS リアルタイムページは 15分に1回更新したいが、:15/:30/:45 まで
+    # RSS記事生成・Gemini・下書き作成を毎回走らせる必要はない。SNS 専用 dense slot は
+    # WP page upsert だけ実行して即終了する。
+    if os.environ.get("ENABLE_SNS_REALTIME_TOPIC", "").strip().lower() in ("1", "true", "yes", "on"):
+        try:
+            import sns_realtime_topic as _sns_topic
+            _sns_now = datetime.now(_sns_topic.JST)
+            if _sns_topic.is_redundant_after_game_dense_slot(_sns_now):
+                logger.info(
+                    json.dumps(
+                        {
+                            "event": "rss_fetcher_redundant_realtime_skip",
+                            "reason": "after_sns_dense_window",
+                            "hour": _sns_now.hour,
+                            "minute": _sns_now.minute,
+                        },
+                        ensure_ascii=False,
+                    )
+                )
+                return
+            if _sns_topic.is_sns_only_game_dense_slot(_sns_now):
+                logger.info(
+                    json.dumps(
+                        {
+                            "event": "rss_fetcher_sns_only_fast_path",
+                            "reason": "game_dense_sns_slot",
+                            "hour": _sns_now.hour,
+                            "minute": _sns_now.minute,
+                        },
+                        ensure_ascii=False,
+                    )
+                )
+                _sns_wp = None if args.dry_run else WPClient()
+                _sns_result = _sns_topic.run(wp_client=_sns_wp, now=_sns_now)
+                logger.info(
+                    json.dumps({"event": "sns_realtime_topic_result", **_sns_result}, ensure_ascii=False)
+                )
+                return
+        except Exception as _sns_exc:
+            logger.exception("sns_realtime_topic fast path failed: %s", _sns_exc)
+            return
+
     # 今日の巨人戦有無を確認（試合なしの日は試合記事プロンプトを使わない）
     has_game, opponent, venue = check_giants_game_today()
     if has_game:

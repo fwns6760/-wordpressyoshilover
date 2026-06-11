@@ -2,7 +2,7 @@
 
 !!! info "これは何のページ"
 
-    Yahoo リアルタイム検索の **巨人専門 一軍 / 二軍・三軍 版**。 巨人専門の X 公式アカウント (球団 + 報知 / サンスポ 巨人担当) を **RSSHub 経由** で 24h 集約し、 「==今 X で何が話題か==」 を 2 ページ (一軍 / ファーム) として WordPress に毎日 4 回 update する。
+    Yahoo リアルタイム検索の **巨人専門 一軍 / 二軍・三軍 版**。 巨人専門の X 公式アカウント (球団 + 報知 / サンスポ 巨人担当) と主要スポーツ紙 X を **RSSHub 経由** で 24h 集約し、 「==今 X で何が話題か==」 を 2 ページ (一軍 / ファーム) として WordPress に更新する。
 
     **追加コスト ¥0** (新 Scheduler なし / X API なし / LLM なし / RSSHub 既稼働 / WP は既支払 hosting)。
 
@@ -17,12 +17,17 @@
 
 | 既存 Scheduler | 該当時刻 (10-23 JST) | 本 subtype 発火スロット |
 | --- | --- | --- |
-| `giants-weekday-daytime` (`0 6-16 * * *`) | 10:00, 11:00, 12:00, 13:00, 14:00, 15:00, 16:00 | **10:00 / 13:00** |
-| `giants-realtime-trigger` (`0,30 17-21 * * *`) | 17:00, 17:30, ... 21:00 | **17:00 / 21:00** |
+| `giants-weekday-daytime` (`0 6-16 * * *`) | 10:00, 11:00, 12:00, 13:00, 14:00, 15:00, 16:00 | **10:00 / 12:00 / 15:00 / 16:00** |
+| `giants-realtime-trigger` (`0,30 17-21 * * *`) | 17:00, 17:30, ... 21:30 | **17:00 / 18:00 / 18:30 / 19:00 / 19:30 / 20:00 / 20:30 / 21:00** |
+| `giants-realtime-peak-15min` (`15,45 18-21 * * *`) | 18:15, 18:45, ... 21:45 | **18:15 / 18:45 / 19:15 / 19:45 / 20:15 / 20:45 / 21:15** |
+| `giants-postgame-catchup-am` (`0 22 * * *`) | 22:00 | **22:00** |
 
-実行場所: Cloud Run service `yoshilover-fetcher` の hourly run の中、 `JST.hour in {10,13,17,21} and minute < 5` の time gate で `sns_realtime_topic.run()` を呼ぶ (env `ENABLE_SNS_REALTIME_TOPIC=1` で有効化)。
+実行場所: Cloud Run service `yoshilover-fetcher` の `/run` 内で、`sns_realtime_topic.run()` を呼ぶ (env `ENABLE_SNS_REALTIME_TOPIC=1` で有効化)。
+15分更新は **18:00-21:15 JST** まで。21:30 / 21:45 は scheduler が残っていても
+`rss_fetcher_redundant_realtime_skip` として早期終了する。
 
-== 1 日 4 回 (10:00 / 13:00 / 17:00 / 21:00) ==、 過去 24h の X 投稿を集約する。
+通常枠は 10:00 / 12:00 / 15:00 / 16:00 / 17:00 / 22:00、
+試合中枠は 18:00-21:15 の15分更新で、過去 24h の X 投稿を集約する。
 
 ## :material-source-branch: source = 巨人専門 X アカウント
 
@@ -62,7 +67,7 @@ https://rsshub-487178857517.asia-northeast1.run.app/twitter/user/{handle}?limit=
 ```
 <hero banner>
   ⚾ 巨人  SNS リアルタイム (一軍)
-  ●LIVE  最終更新 YYYY-MM-DD HH:MM JST (10/13/17/21 JST 更新)
+  ●LIVE  最終更新 YYYY-MM-DD HH:MM JST
   [投稿/24h: 51]  [話題の選手: 27]
 
 <トレンド section>
@@ -175,7 +180,7 @@ WP page の `excerpt` field に top3 トレンド + 投稿数 + 更新 schedule 
 | `og:image` | site default OG image |
 | `twitter:card` | `summary_large_image` (theme default) |
 
-excerpt 例: 「巨人 SNS リアルタイム (一軍) - 過去 24h で 49 件の X 投稿。 話題: #増田大輝 (8) / #中山礼都 (8) / #浅野翔吾 (6)。 1 日 4 回 (10/13/17/21 JST) 自動更新。」
+excerpt 例: 「巨人 SNS リアルタイム (一軍) - 過去 24h で 49 件の X 投稿。 話題: #増田大輝 (8) / #中山礼都 (8) / #浅野翔吾 (6)。 試合中は21:15まで15分間隔で自動更新。」
 
 ## :material-database-outline: WP upsert
 

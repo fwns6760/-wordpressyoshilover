@@ -1,6 +1,6 @@
 # 469 — X-post / SNS スケジュール & ソース効率化 + 全スケジューラ棚卸し
 
-- status: DESIGN (user 確認待ち、実装前)
+- status: LIVE_IMAGE_UPDATED (step4b SNS 21:15 fast path + step5 early skip guard deployed 2026-06-07)
 - owner: Claude
 - created: 2026-06-03
 - 目的: Gemini 叩き(コスト)を減らしつつ、試合中はリアルタイム性を保つ。発火を「巨人のネタが動く時間 + user が起きている時間」に集約。SNS リアルタイムページは鮮度UP(Gemini不使用なのでコスト増なし)。
@@ -12,9 +12,10 @@
 
 - 試合中 = **15分に1回**(リアルタイム)。
 - 試合外 = **2時間に1回**でよい。
-- SNSリアルタイムページ = **15時くらいから毎時**。
+- SNSリアルタイムページ = **15時くらいから毎時**、試合中は **18:00〜21:15まで15分に1回**。
 - 試合中のソースは **スポニチ + 報知の2つでよい**。
 - **朝の起床は7時** → 7時前の user-facing draft 発火は無駄(寝ている)。
+- 2026-06-07 追加: **月曜日は試合がない** → 月曜の試合前 / スタメン / 試合中 / 試合後 window は runner 側で早期 skip。
 - コスト方針: Gemini は最安 flash-lite だが**従量課金**(¥40/日実績、98%が x-post)。叩きを減らす。SNSページは Gemini 不使用なので頻度UPしても¥ほぼ増えない。
 
 ---
@@ -25,10 +26,10 @@
 | --- | --- | --- | --- |
 | 試合外(日中) | `0 7,9,11,13 * * *` | 全ソース | 2時間毎、7時起床に合わせ開始 |
 | スタメン前後 | `0 16,17 * * *` | 全ソース | 先発/スタメン |
-| 試合中 | `0,15,30,45 18-21 * * *` | **報知 + スポニチ巨人 のみ** | 15分毎リアルタイム、2ソースで安く |
+| 試合中 | `0,15,30,45 18-21 * * *` | **報知 + スポニチ巨人 + TokyoGiants公式** | 15分毎リアルタイム、3ソースで安く |
 | 試合直後 | `0 22 * * *` | 全ソース | ヒーロー/速報 |
 
-- 発火: 現状 ~35回 → **~23回**(うち試合中16は2ソースで軽量)。
+- 発火: 現状 ~35回 → **24回**(うち試合中16は3ソースで軽量)。
 - **7時前(04:30 catchup / 06:00)の user-facing 発火は撤去**。
 - 既存ガード併用: per-fire LLM上限8(`X_POST_MAIL_MAX_LLM_PER_RUN`)+ 同一選手dedup + 空振りskip(新規)。
 - 試合中ソース絞り: `hochi_giants` + `SponichiGiants`(両方 RSSHub 実在・鮮度検証済 `video_radar.py:22-31`)。
@@ -43,11 +44,13 @@
 | 区分 | 発火(JST) | 備考 |
 | --- | --- | --- |
 | 朝 | 10:00, 12:00 | 朝の話題 |
-| 午後〜夜 毎時 | 15,16,17,18,19,20,21,22 | 鮮度UP(リアルタイム性) |
+| 午後〜試合前 | 15:00, 16:00, 17:00 | 鮮度UP(リアルタイム性) |
+| 試合中SNS | 18:00〜21:15 の 15分間隔 | SNSページのみ。:15/:30/:45 はRSS記事生成/Geminiに進まず早期終了 |
+| 試合後 | 22:00 | 試合後の話題 |
 
-- 現状 `FIRE_SLOTS={10,13,17,21}`(4回)→ 上記(~10回)。
+- 現状 `FIRE_SLOTS={10,13,17,21}`(4回)→ 上記。
 - Gemini 不使用 → **¥ほぼ増えず鮮度だけ向上**(RSSHub + Cloud Run のみ、無料枠内見込み)。
-- 実装: `sns_realtime_topic.FIRE_SLOTS` 修正 + rss_fetcher トリガ(giants-realtime系)が該当時刻に発火するよう整合。
+- 実装: `sns_realtime_topic` の time gate 修正 + `rss_fetcher` に SNS専用 fast path を追加。21:30 / 21:45 は `rss_fetcher_redundant_realtime_skip` で早期終了。
 
 ---
 
@@ -80,7 +83,7 @@
 
 ## 4. コスト効果(概算)
 
-- x-post 叩き(Gemini): 現状 ~460/日 → 発火集約(35→23)+ 試合中2ソース + 上限8 + 空振りskip で **~80〜120/日 見込み**(大幅減)。
+- x-post 叩き(Gemini): 現状 ~460/日 → 発火集約(35→24)+ 試合中3ソース + 上限8 + 空振りskip で **~80〜120/日 見込み**(大幅減)。
 - SNSページ: 頻度UP するが Gemini 不使用 → **¥ほぼ不変**、鮮度向上。
 - A群修正(fact-check 毎時 / 昼間ブランケット)で Cloud Run 実行回数も削減。
 
@@ -111,10 +114,12 @@
 - step2 ✅ **DONE** 試合中3ソース絞り(commit 82f15035、image game3src-82f15035 deploy済、test pass)
    - ※ 空振りskip は per-fire budget(8)が既に waste を cap するため後回し(follow-up)
 - step3 ✅ **DONE** x-post scheduler 再構成:
-   - `x-post-mail-flush` = `0 7,9,11,13,15,17,18,22`(全ソース・8発火)
-   - `x-post-mail-flush-game-1` = `0,15,30,45 19-21`(試合中15分・narrowing窓と整合・12発火・3ソース)
-   - `x-post-mail-flush-game-2` / `-lineup` = PAUSED(集約)
-   - 合計 35→**20発火/日**(うち12は3ソース)
+   - `x-post-mail-flush` = `0 7,9,11,13,15,16,17,22`(全ソース・8発火)
+   - `x-post-mail-flush-game-1` = `0,15,30,45 18-21`(試合中15分・narrowing窓と整合・16発火・3ソース)
+   - `x-post-mail-flush-game-2` = PAUSED(`15,30,45 21-22`、集約)
+   - 合計 35→**24発火/日**(うち16は3ソース)
 - step4 ✅ **DONE** SNSページ `FIRE_SLOTS`=10,12,15-22(commit 3edb27c3、fetcher rev 00511-hps、/health 200、traffic 100%)
-- step5 ⏭ giants-weekday-daytime(昼間毎時11)間引き + giants-realtime重複集約
-- step6 ⏭ publish-notice / guarded-publish 過密集約(§11、idempotency確認後)
+- step4b ✅ **LIVE_IMAGE_UPDATED** SNS 15分更新を 18:00〜21:15 に限定。:15/:30/:45 は SNS page upsert だけ実行して RSS記事生成 / Gemini / 下書き作成へ進まない。21:30 / 21:45 は scheduler が来ても早期 skip。Cloud Build `164dbed7-02ce-4507-92ee-37e959f21948` SUCCESS、image `yoshilover-fetcher:sns-2115-3edb27c3-20260607` digest `sha256:9729d88c1a6aebe64eea499ff6a33c04df591913bfcb23aaee9cfd5e7d83774a`、Cloud Run service `yoshilover-fetcher` revision `yoshilover-fetcher-00512-qn6` 100% traffic、`/health` OK。旧 image rollback: `yoshilover-fetcher:sns-hourly-3edb27c3`。
+- step5 ✅ **LIVE_IMAGE_UPDATED** 早期 skip guard: `run_x_post_mail.py` で 7:00 前は DB download 前に `exit 0`(`X_POST_MAIL_ALLOW_BEFORE_7AM=1` で解除可)。月曜の試合系 timing window も DB download / RSSHub / Gemini 前に `exit 0`。祝日等の月曜開催は `X_POST_MAIL_ALLOW_MONDAY_GAME_WINDOWS=1` で解除可。Cloud Build `cabf7277-35c8-4074-8f41-80c76fe6f959` SUCCESS、image `x-post-mail-lane:469-skip-ce38d111-20260607` digest `sha256:f3844ffdae151afdb9b6052746316a082948800f5becbc8fb8915e72d24b43d7`、Cloud Run Job `x-post-mail-lane` generation `162`。旧 image rollback: `x-post-mail-lane:fanreply-3465be06`。
+- step6 ⏭ giants-weekday-daytime(昼間毎時11)間引き + giants-realtime重複集約
+- step7 ⏭ publish-notice / guarded-publish 過密集約(§11、idempotency確認後)

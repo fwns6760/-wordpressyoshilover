@@ -11,14 +11,19 @@
 
 | スケジューラ | 発火タイミング |
 | --- | --- |
-| `x-post-mail-flush` | 6〜22 時の毎時 0 分 |
-| `x-post-mail-flush-game-1` | 19,20 時の 15 / 30 / 45 分 |
-| `x-post-mail-flush-game-2` | 21 時の 15 / 30 / 45 分 |
+| `x-post-mail-flush` | 7 / 9 / 11 / 13 / 15 / 16 / 17 / 22 時の 0 分 |
+| `x-post-mail-flush-game-1` | 18〜21 時の 0 / 15 / 30 / 45 分 |
+| `x-post-mail-flush-game-2` | PAUSED (`15,30,45 21-22 * * *`, game-1 に集約) |
 
 実行場所: Cloud Run job `x-post-mail-lane`。
 
 候補が 0 件のときはメールを送らない (空メール抑止)。
 最低候補数を下回るときは 24 時間 dedup を一時的に緩めて補充する fallback あり (`24h dedup left only ...` log)。
+朝の user-facing 発火は 7:00 から。Scheduler 反映漏れ等で 7:00 前に起動しても runner 側で
+`before_user_morning_start` として早期 skip する。検証時のみ `X_POST_MAIL_ALLOW_BEFORE_7AM=1` で解除する。
+月曜は原則試合なしのため、試合前 / スタメン / 試合中 / 試合後 window では
+runner 側で `monday_no_game_window` として早期 skip する。祝日等で月曜開催がある場合のみ
+`X_POST_MAIL_ALLOW_MONDAY_GAME_WINDOWS=1` で解除する。
 
 ## :material-format-list-bulleted-type: 候補は 5 種類
 

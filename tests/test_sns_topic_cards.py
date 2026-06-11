@@ -212,6 +212,25 @@ class ReplyCandidatesTests(unittest.TestCase):
         self.assertIn("竹丸和幸", seen["player"])          # 親ツイート本文 + player が渡る
         self.assertIn("プロ初完投", seen["parent"])
 
+    def test_reply_avoid_player_skips_before_voice_comment_fn(self):
+        feed = ("<rss><channel><item><title>竹丸和幸 プロ初完投 8回10K</title>"
+                "<link>https://x.com/hochi_giants/status/12345</link></item></channel></rss>")
+        calls = []
+
+        def _voice(parent_text, player):
+            calls.append((parent_text, player))
+            return "竹丸和幸、初完投か。次も見たい。"
+
+        reps = tc.build_reply_candidates(
+            self._db(), fetch_fn=lambda u: feed, max_replies=3,
+            detect_player_fn=lambda t: "竹丸和幸" if "竹丸" in t else "",
+            comment_fn=_voice,
+            handles=["hochi_giants"],
+            avoid_player_names={"竹丸和幸"},
+        )
+        self.assertEqual(reps, [])
+        self.assertEqual(calls, [])
+
     def test_reply_falls_back_when_comment_fn_empty(self):
         # comment_fn が空文字 (LLM 失敗 / safety NG) なら数字 1 行へ fallback。
         feed = ("<rss><channel><item><title>竹丸和幸 プロ初完投 8回10K</title>"

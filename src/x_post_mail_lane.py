@@ -1162,6 +1162,31 @@ def _truncate_text(value: object, max_chars: int) -> str:
     return text[: max(0, max_chars - 1)].rstrip() + "…"
 
 
+def _cap_sentence(value: object, max_chars: int) -> str:
+    """文末 (。！？!?) で自然に切って max_chars 以内に収める。
+
+    動画ポスト対策 (user 2026-06-09): X は本文が長いと「動画＋テキスト」を一緒に
+    投稿できない (短くすると動画が付く)。引用RT/動画候補のコメントを余裕を持って短く
+    固定するために使う。文末が取れなければ … で切る。
+    """
+    text = " ".join(str(value or "").split())
+    if max_chars <= 0 or len(text) <= max_chars:
+        return text
+    window = text[:max_chars]
+    cut = max((window.rfind(c) for c in "。！？!?"), default=-1)
+    if cut >= int(max_chars * 0.5):
+        return window[: cut + 1]
+    return window[: max(0, max_chars - 1)].rstrip() + "…"
+
+
+def _video_post_char_cap() -> int:
+    """動画ポストコメントの上限 (既定 110、env X_VIDEO_POST_MAX_CHARS で調整可)。"""
+    try:
+        return max(40, int(os.environ.get("X_VIDEO_POST_MAX_CHARS", "110")))
+    except (TypeError, ValueError):
+        return 110
+
+
 def _classify_news_material(title: str, excerpt: str) -> tuple[str, str]:
     """Classify RSS/source material without inventing facts."""
     haystack = f"{title} {excerpt}"
@@ -1828,6 +1853,7 @@ def build_video_radar_candidates(
     min_score: int = 2,
     comment_fn=None,
     handles: Optional[list[str]] = None,
+    avoid_player_names: Optional[set[str]] = None,
 ) -> list[Candidate]:
     """451: 巨人系 X account の投稿 (RSSHub 経由) から「懐かしい・ファンが面白い・いま話題」の
     投稿を拾い、 **引用RT / リプライ** 用の X 投稿候補 (メール) を作る。
@@ -1903,6 +1929,11 @@ def build_video_radar_candidates(
     phase_label, phase_hint = _video_comment_phase_hint(now)
     out: list[Candidate] = []
     used_players: set[str] = set()
+    avoid_names = {
+        _normalize_player_name(name)
+        for name in (avoid_player_names or set())
+        if _normalize_player_name(name)
+    }
     for p in posts:
         if len(out) >= max_count:
             break
@@ -1913,6 +1944,10 @@ def build_video_radar_candidates(
         if dedup_set is not None and signature in dedup_set:
             continue
         player = (p.get("player") or "").strip()
+        player_key = _normalize_player_name(player)
+        if player_key and player_key in avoid_names:
+            LOG.info("x_buzz skip: player in live duplicate cooldown player=%s", player)
+            continue
         # 一記事一本: 同じ選手は 1 本だけ
         if player and player in used_players:
             continue
@@ -1947,6 +1982,9 @@ def build_video_radar_candidates(
                 continue
             # comment_fn 未設定 (key 無し / test) のみ graceful に template fallback。
             post_text = _x_buzz_event_comment(p.get("text", ""), player, phase=phase_label)
+        # 動画ポスト対策 (user 2026-06-09): X は本文が長いと「動画＋テキスト」を一緒に
+        # 投稿できない (短くすると動画が付く)。 引用RT/動画候補のコメントを短く固定する。
+        post_text = _cap_sentence(post_text, _video_post_char_cap())
         # 2026-06-03: ブランディング投稿に「おしゃれ系」ヨシラバー画像を1枚添付 (style B、
         # 選手写真+ブランドパネル、 データなし、 ¥0=PILローカル合成)。 user 確定。
         # env X_POST_BRAND_IMAGE_ENABLED=0 で無効化可。 失敗時は画像なしで続行 (graceful)。
@@ -1959,17 +1997,18 @@ def build_video_radar_candidates(
                 LOG.info("brand image skip player=%s: %r", player, _bexc)
                 brand_img = b""
         draft = "\n".join([
-            f"【引用RT候補: {tag}】",
+            f"【動画ポスト候補: {tag}】 @{handle}",
             f"検出選手: {player or '(なし)'}",
-            f"引用RT/リプライ先 (元投稿): {url}",
+            f"▶ 元動画ツイート (タップで開く): {url}",
             f"元投稿本文: {src_text}",
             "",
-            "【引用RTコメント案 (native・外部リンク無し=リーチ維持)】",
+            f"▼ コピペ用（このコメントだけ貼って動画と一緒に投稿 / {len(post_text)}字）",
             post_text,
+            "── ここまで貼る ──",
             "",
-            f"参考 (今季): {fact}" if fact else "",
-            "※ X 内で完結 (元投稿を引用RT または リプライ)。 本文に YouTube 等の外部リンクを貼らない",
-            "  (外部リンクは X でリーチが落ちるため)。 動画ファイルの転載はしない。",
+            f"参考 (今季・本文には入れない): {fact}" if fact else "",
+            "※ 本文が長いと X で動画を一緒に投稿できないため、上のコメントは短く調整済み。",
+            "※ 外部リンク (YouTube 等) は貼らない (リーチ減)。 動画ファイルの転載はしない。",
         ])
         out.append(Candidate(
             title=f"(引用RT) {tag}｜@{handle}｜{player or '巨人'}",
@@ -2614,6 +2653,46 @@ _X_IMPRESSION_TIMING_LABELS = {
     "standard": "通常データ枠",
 }
 
+EXTRA_GAME_DATE_ENV = "X_POST_MAIL_EXTRA_GAME_DATE"
+EXTRA_GAME_START_ENV = "X_POST_MAIL_EXTRA_GAME_START"
+EXTRA_GAME_END_ENV = "X_POST_MAIL_EXTRA_GAME_END"
+
+
+def _parse_hhmm_to_minutes(value: str) -> Optional[int]:
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    match = _re.fullmatch(r"(\d{1,2}):(\d{2})", raw)
+    if not match:
+        return None
+    hour = int(match.group(1))
+    minute = int(match.group(2))
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        return None
+    return hour * 60 + minute
+
+
+def is_extra_game_window(now: datetime) -> bool:
+    """Return True for a one-day day-game override window.
+
+    Cloud Scheduler can add one-day 15-minute fires for irregular day games.
+    This env gate lets those fires use the same "試合中" freshness/source
+    rules as the regular 18:00-21:15 dense window without changing normal days.
+    """
+    if now.tzinfo is None:
+        now_jst = now.replace(tzinfo=JST)
+    else:
+        now_jst = now.astimezone(JST)
+    game_date = (os.environ.get(EXTRA_GAME_DATE_ENV) or "").strip()
+    if not game_date or game_date != now_jst.date().isoformat():
+        return False
+    start = _parse_hhmm_to_minutes(os.environ.get(EXTRA_GAME_START_ENV, ""))
+    end = _parse_hhmm_to_minutes(os.environ.get(EXTRA_GAME_END_ENV, ""))
+    if start is None or end is None or end < start:
+        return False
+    minute_of_day = now_jst.hour * 60 + now_jst.minute
+    return start <= minute_of_day <= end
+
 
 def x_impression_timing_label(now: datetime) -> str:
     """Return the human-facing posting window label for the given JST time.
@@ -2627,6 +2706,8 @@ def x_impression_timing_label(now: datetime) -> str:
     else:
         now_jst = now.astimezone(JST)
     minute_of_day = now_jst.hour * 60 + now_jst.minute
+    if is_extra_game_window(now_jst):
+        return _X_IMPRESSION_TIMING_LABELS["in_game_strong"]
     if 4 * 60 <= minute_of_day < 8 * 60:
         return _X_IMPRESSION_TIMING_LABELS["morning_catchup"]
     if 11 * 60 <= minute_of_day < 13 * 60:

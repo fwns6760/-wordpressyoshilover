@@ -20,6 +20,8 @@ from sns_realtime_topic import (  # noqa: E402
     build_pages,
     collect_all_posts,
     filter_recent_24h,
+    is_redundant_after_game_dense_slot,
+    is_sns_only_game_dense_slot,
     section_oembeds,
     should_run_now,
     split_by_level,
@@ -36,6 +38,10 @@ JST = timezone(timedelta(hours=9))
 def test_should_run_in_slot():
     assert should_run_now(datetime(2026, 5, 28, 10, 0, tzinfo=JST))
     assert should_run_now(datetime(2026, 5, 28, 15, 4, tzinfo=JST))
+    assert should_run_now(datetime(2026, 5, 28, 18, 15, tzinfo=JST))
+    assert should_run_now(datetime(2026, 5, 28, 18, 30, tzinfo=JST))
+    assert should_run_now(datetime(2026, 5, 28, 18, 45, tzinfo=JST))
+    assert should_run_now(datetime(2026, 5, 28, 21, 15, tzinfo=JST))
     assert should_run_now(datetime(2026, 5, 28, 22, 0, tzinfo=JST))
     assert should_run_now(datetime(2026, 5, 28, 17, 2, tzinfo=JST))
     assert should_run_now(datetime(2026, 5, 28, 21, 0, tzinfo=JST))
@@ -45,7 +51,55 @@ def test_should_not_run_outside_slot():
     assert not should_run_now(datetime(2026, 5, 28, 11, 0, tzinfo=JST))
     assert not should_run_now(datetime(2026, 5, 28, 10, 5, tzinfo=JST))
     assert not should_run_now(datetime(2026, 5, 28, 9, 0, tzinfo=JST))
+    assert not should_run_now(datetime(2026, 5, 28, 21, 30, tzinfo=JST))
+    assert not should_run_now(datetime(2026, 5, 28, 21, 45, tzinfo=JST))
     assert not should_run_now(datetime(2026, 5, 28, 23, 0, tzinfo=JST))
+
+
+def test_game_dense_slots_are_sns_only_until_2115():
+    assert is_sns_only_game_dense_slot(datetime(2026, 5, 28, 18, 15, tzinfo=JST))
+    assert is_sns_only_game_dense_slot(datetime(2026, 5, 28, 18, 30, tzinfo=JST))
+    assert is_sns_only_game_dense_slot(datetime(2026, 5, 28, 18, 45, tzinfo=JST))
+    assert is_sns_only_game_dense_slot(datetime(2026, 5, 28, 21, 15, tzinfo=JST))
+    assert not is_sns_only_game_dense_slot(datetime(2026, 5, 28, 18, 0, tzinfo=JST))
+    assert not is_sns_only_game_dense_slot(datetime(2026, 5, 28, 21, 30, tzinfo=JST))
+    assert not is_sns_only_game_dense_slot(datetime(2026, 5, 28, 21, 45, tzinfo=JST))
+
+
+def test_extra_day_game_slots_are_sns_only_with_env():
+    env = {
+        "SNS_REALTIME_EXTRA_GAME_DATE": "2026-06-07",
+        "SNS_REALTIME_EXTRA_GAME_START": "13:45",
+        "SNS_REALTIME_EXTRA_GAME_END": "17:15",
+    }
+    with patch.dict("os.environ", env):
+        assert should_run_now(datetime(2026, 6, 7, 13, 45, tzinfo=JST))
+        assert should_run_now(datetime(2026, 6, 7, 14, 15, tzinfo=JST))
+        assert should_run_now(datetime(2026, 6, 7, 17, 15, tzinfo=JST))
+        assert not should_run_now(datetime(2026, 6, 7, 13, 30, tzinfo=JST))
+        assert not should_run_now(datetime(2026, 6, 7, 17, 30, tzinfo=JST))
+        assert is_sns_only_game_dense_slot(datetime(2026, 6, 7, 13, 45, tzinfo=JST))
+        assert is_sns_only_game_dense_slot(datetime(2026, 6, 7, 14, 15, tzinfo=JST))
+        assert is_sns_only_game_dense_slot(datetime(2026, 6, 7, 17, 15, tzinfo=JST))
+        assert not is_sns_only_game_dense_slot(datetime(2026, 6, 7, 14, 0, tzinfo=JST))
+
+
+def test_extra_day_game_does_not_mask_regular_night_dense_slots():
+    env = {
+        "SNS_REALTIME_EXTRA_GAME_DATE": "2026-06-07",
+        "SNS_REALTIME_EXTRA_GAME_START": "13:45",
+        "SNS_REALTIME_EXTRA_GAME_END": "18:00",
+    }
+    with patch.dict("os.environ", env):
+        assert not is_sns_only_game_dense_slot(datetime(2026, 6, 7, 18, 0, tzinfo=JST))
+        assert is_sns_only_game_dense_slot(datetime(2026, 6, 7, 18, 15, tzinfo=JST))
+
+
+def test_after_2115_dense_slots_are_redundant_skip():
+    assert is_redundant_after_game_dense_slot(datetime(2026, 5, 28, 21, 30, tzinfo=JST))
+    assert is_redundant_after_game_dense_slot(datetime(2026, 5, 28, 21, 45, tzinfo=JST))
+    assert not is_redundant_after_game_dense_slot(datetime(2026, 5, 28, 21, 15, tzinfo=JST))
+    assert not is_redundant_after_game_dense_slot(datetime(2026, 5, 28, 22, 30, tzinfo=JST))
 
 
 # ----- filter_recent_24h -----

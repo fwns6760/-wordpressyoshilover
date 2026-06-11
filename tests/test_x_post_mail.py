@@ -93,6 +93,101 @@ class CentralLeagueFilterTests(unittest.TestCase):
             self.assertTrue(is_central_league(alias), msg=alias)
 
 
+class MondayNoGameWindowTests(unittest.TestCase):
+    def test_before_7am_is_skipped(self) -> None:
+        from src.tools import run_x_post_mail as runner
+
+        self.assertTrue(runner._is_before_7am_jst(datetime(2026, 6, 8, 6, 59, tzinfo=JST)))
+        self.assertFalse(runner._is_before_7am_jst(datetime(2026, 6, 8, 7, 0, tzinfo=JST)))
+
+    def test_before_7am_skip_can_be_overridden(self) -> None:
+        from src.tools import run_x_post_mail as runner
+
+        with patch.dict("os.environ", {"X_POST_MAIL_ALLOW_BEFORE_7AM": "1"}):
+            self.assertFalse(runner._before_7am_skip_enabled())
+
+    def test_monday_game_windows_are_skipped(self) -> None:
+        from src.tools import run_x_post_mail as runner
+
+        for now in [
+            datetime(2026, 6, 8, 17, 0, tzinfo=JST),
+            datetime(2026, 6, 8, 18, 30, tzinfo=JST),
+            datetime(2026, 6, 8, 19, 15, tzinfo=JST),
+            datetime(2026, 6, 8, 22, 0, tzinfo=JST),
+        ]:
+            with self.subTest(now=now.isoformat()):
+                self.assertTrue(runner._is_monday_game_window(now))
+
+    def test_monday_daytime_and_non_monday_game_windows_are_not_skipped(self) -> None:
+        from src.tools import run_x_post_mail as runner
+
+        self.assertFalse(runner._is_monday_game_window(datetime(2026, 6, 8, 13, 0, tzinfo=JST)))
+        self.assertFalse(runner._is_monday_game_window(datetime(2026, 6, 9, 19, 15, tzinfo=JST)))
+
+    def test_monday_game_window_skip_can_be_overridden(self) -> None:
+        from src.tools import run_x_post_mail as runner
+
+        with patch.dict("os.environ", {"X_POST_MAIL_ALLOW_MONDAY_GAME_WINDOWS": "1"}):
+            self.assertFalse(runner._monday_game_window_skip_enabled())
+
+    def test_extra_day_game_window_uses_in_game_timing(self) -> None:
+        from src import x_post_mail_lane as lane
+        from src.tools.run_x_post_mail import _is_fan_voice_fire_window
+
+        env = {
+            "X_POST_MAIL_EXTRA_GAME_DATE": "2026-06-07",
+            "X_POST_MAIL_EXTRA_GAME_START": "13:45",
+            "X_POST_MAIL_EXTRA_GAME_END": "17:15",
+        }
+        with patch.dict("os.environ", env):
+            now = datetime(2026, 6, 7, 14, 15, tzinfo=JST)
+            self.assertEqual(lane.x_impression_timing_label(now), "試合中強イベント枠")
+            self.assertEqual(lane.phase_freshness_max_age_hours(now), 0.5)
+            self.assertTrue(_is_fan_voice_fire_window(now))
+            self.assertFalse(lane.is_extra_game_window(datetime(2026, 6, 7, 17, 30, tzinfo=JST)))
+
+    def test_live_duplicate_cooldown_only_active_in_game(self) -> None:
+        from src.tools import run_x_post_mail as runner
+
+        self.assertTrue(
+            runner._live_duplicate_player_cooldown_active(
+                datetime(2026, 6, 9, 20, 0, tzinfo=JST)
+            )
+        )
+        self.assertFalse(
+            runner._live_duplicate_player_cooldown_active(
+                datetime(2026, 6, 9, 13, 0, tzinfo=JST)
+            )
+        )
+
+
+class ReplyTargetHandleTests(unittest.TestCase):
+    def test_default_reply_targets_add_tokyo_giants_without_env_change(self) -> None:
+        from src.tools import run_x_post_mail as runner
+
+        with patch.dict("os.environ", {}, clear=True):
+            self.assertEqual(runner._reply_target_handles(), ["hochi_giants", "TokyoGiants"])
+
+    def test_configured_reply_targets_keep_existing_and_add_tokyo_giants(self) -> None:
+        from src.tools import run_x_post_mail as runner
+
+        with patch.dict("os.environ", {"X_POST_REPLY_TARGET_HANDLES": "hochi_giants,Sanspo_Giants"}):
+            self.assertEqual(
+                runner._reply_target_handles(),
+                ["hochi_giants", "Sanspo_Giants", "TokyoGiants"],
+            )
+
+    def test_tokyo_giants_reply_candidate_uses_official_label(self) -> None:
+        from src.tools import run_x_post_mail as runner
+
+        label, why_now, source_type, metric, tags = runner._reply_candidate_mail_labels("TokyoGiants")
+        self.assertEqual(label, "公式リプ候補")
+        self.assertIn("読売巨人軍公式", why_now)
+        self.assertEqual(source_type, "official_reply")
+        self.assertEqual(metric, "reply_candidate")
+        self.assertIn("reply:official", tags)
+
+
 class IntentUrlEncodeTests(unittest.TestCase):
     def test_url_encodes_newline_and_hashtag(self) -> None:
         text = "line1\nline2 #巨人"
@@ -2314,6 +2409,10 @@ class XPostMailEntrypointFreshnessTests(unittest.TestCase):
                 "X_POST_MAIL_DEDUP_MIN_CANDIDATES": "0",
                 "X_POST_MAIL_LINEUP_FOCUS_DISABLED": "1",
                 "X_POST_MAIL_NEWS_FALLBACK_DISABLED": "1",
+                # hermetic 化: local env に GEMINI key があると queue 417 drain が
+                # 実 GCS を読み、 prod queue の中身次第で候補が湧いて flaky になる
+                "GEMINI_API_KEY": "",
+                "GEMMA_BRANDING_GEMINI_API_KEY": "",
             },
             clear=False,
         ), patch.object(
@@ -3455,7 +3554,11 @@ class BuildVideoRadarCandidatesTests(unittest.TestCase):
         # 引用元ツイート URL は quote_url に乗る (HTML mail の引用RTボタン用)
         self.assertEqual(c.quote_url, "https://x.com/yomiuri_giants/status/111")
         self.assertTrue(c.signature.startswith("xbuzz|"))
-        self.assertIn("引用RT/リプライ先", c.draft_text)
+        # 動画ポスト対策 (2026-06-09): 元動画リンク先頭 + コピペ用ブロックを明示
+        self.assertIn("元動画ツイート", c.draft_text)
+        self.assertIn("コピペ用", c.draft_text)
+        # 本文が長いと動画を一緒に投稿できないため、コメントは短く調整される
+        self.assertLessEqual(len(c.post_text), 110)
 
     def test_quote_intent_url_for_buzz_candidate(self):
         from src.x_post_mail_lane import encode_x_quote_intent_url
@@ -3474,6 +3577,25 @@ class BuildVideoRadarCandidatesTests(unittest.TestCase):
             )
         self.assertEqual(len(cands), 1)
         self.assertEqual(cands[0].post_text, "坂本勇人、最高だ！")  # LLM 出力を採用
+
+    def test_avoid_player_skips_before_comment_fn(self):
+        from src import x_post_mail_lane as lane
+        calls = []
+
+        def _comment(parent_text, player):
+            calls.append((parent_text, player))
+            return f"{player}、最高だ！"
+
+        with self._detect_patch():
+            cands = lane.build_video_radar_candidates(
+                db_path=None,
+                max_count=3,
+                fetch_fn=lambda url: self._FEED,
+                comment_fn=_comment,
+                avoid_player_names={"坂本勇人"},
+            )
+        self.assertEqual(cands, [])
+        self.assertEqual(calls, [])
 
     def test_comment_fn_empty_skips_candidate(self):
         # ネタ無しは書かない: comment_fn (LLM) が空/門番落ち時、 優等生・スカスカな
@@ -3566,9 +3688,15 @@ class BuildQuoteRtCommentTests(unittest.TestCase):
 
     def test_returns_comment_post_api(self):
         from src import x_post_branding_gen as xbg
-        with self._patch_genai("坂本勇人、サヨナラ最高だ！しびれた。"):
+        # 50字未満は非liveの _voice_quality_ok 門番が弾く (live時間帯だけ通る) ため、
+        # 時刻に依存しない 50字以上の mock 文で「返り値=生成文」だけを検証する。
+        comment = (
+            "坂本勇人、サヨナラの場面で一番怖い打者であることをまた証明したな。"
+            "土壇場でも自分のスイングを崩さないのが坂本勇人の凄みだよ。"
+        )
+        with self._patch_genai(comment):
             out = xbg.build_quote_rt_comment("坂本勇人 サヨナラ", "坂本勇人", gemini_api_key="k")
-        self.assertEqual(out, "坂本勇人、サヨナラ最高だ！しびれた。")  # log NameError 回帰防止
+        self.assertEqual(out, comment)  # log NameError 回帰防止
 
     def test_hallucinated_number_rejected(self):
         from src import x_post_branding_gen as xbg
@@ -3652,7 +3780,11 @@ class ReplyCandidateRuntimeConfigTests(unittest.TestCase):
             },
             clear=False,
         ):
-            self.assertEqual(run_x_post_mail._reply_target_handles(), ["hochi_giants"])
+            # 469: 読売巨人軍公式 TokyoGiants は env に依らず常時補完される
+            self.assertEqual(
+                run_x_post_mail._reply_target_handles(),
+                ["hochi_giants", "TokyoGiants"],
+            )
             self.assertEqual(run_x_post_mail._reply_candidates_max_per_run(), 3)
             self.assertTrue(run_x_post_mail._reply_llm_enabled())
 
@@ -3668,9 +3800,10 @@ class ReplyCandidateRuntimeConfigTests(unittest.TestCase):
             },
             clear=False,
         ):
+            # 469: env override しても公式 TokyoGiants は末尾に補完される
             self.assertEqual(
                 run_x_post_mail._reply_target_handles(),
-                ["hochi_giants", "Sanspo_Giants"],
+                ["hochi_giants", "Sanspo_Giants", "TokyoGiants"],
             )
             self.assertEqual(run_x_post_mail._reply_candidates_max_per_run(), 5)
             self.assertTrue(run_x_post_mail._reply_llm_enabled())

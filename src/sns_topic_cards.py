@@ -334,6 +334,7 @@ def build_reply_candidates(
     handles: Optional[list[str]] = None,
     require_event: bool = True,
     skip_on_empty_comment: bool = False,
+    avoid_player_names: Optional[set[str]] = None,
 ) -> list[dict]:
     """大手巨人アカ投稿への『リプライ候補』。 ヨシラバーボイスのリプ文 + 大手投稿URL/tweet_id。
 
@@ -348,9 +349,16 @@ def build_reply_candidates(
     ``require_event=False``: 出来事語ゲートを外す (ファンアカ フーガ/缶詰 のカジュアル反応文用)。
     ``skip_on_empty_comment=True``: comment_fn (LLM voice) が空/門番落ちした投稿は
     deterministic テンプレ fallback を使わず候補ごとスキップ (空虚な同調リプを送らない)。
+    ``avoid_player_names``: 正規化済み/未正規化どちらでも可。直近便に出た選手を
+    Gemini comment_fn 実行前に除外し、試合中15分便の重複と無駄な LLM 呼び出しを抑える。
     Returns [{player, reply, url, tweet_id, headline}]。
     """
     import re as _re2
+    avoid_players = {
+        _normalize_name_for_dedupe(name)
+        for name in (avoid_player_names or set())
+        if _normalize_name_for_dedupe(name)
+    }
     if detect_player_fn is None:
         from src.x_post_mail_lane import detect_giants_player_name, _load_giants_player_aliases
         _am = _load_giants_player_aliases()
@@ -371,6 +379,8 @@ def build_reply_candidates(
             break
         player, events, url = kw["player"], kw["events"], kw.get("url", "")
         title = kw.get("title", "")
+        if _normalize_name_for_dedupe(player) in avoid_players:
+            continue
         if player in used or not url or not _is_giants(db_path, player):
             continue
         m = _re2.search(r"/status/(\d+)", url)

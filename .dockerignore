@@ -1,9 +1,11 @@
 *
 !.dockerignore
+!Dockerfile.data_site_publisher
 !Dockerfile.draft_body_editor
 !Dockerfile.publish_notice
 !Dockerfile.insight_nightly
 !Dockerfile.kobayashi_meigen_mail
+!Dockerfile.rotation_updater
 !bin/
 !bin/**
 !requirements.txt

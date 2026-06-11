@@ -228,11 +228,64 @@ def _reply_candidates_max_per_run() -> int:
     return _resolve_int_env("X_POST_REPLY_CANDIDATES_MAX", 3, min_value=0)
 
 
+_OFFICIAL_REPLY_HANDLE = "TokyoGiants"
+_DEFAULT_REPLY_TARGET_HANDLES = ("hochi_giants",)
+
+
+def _unique_reply_handles(handles: list[str]) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for handle in handles:
+        clean = (handle or "").strip().lstrip("@")
+        if not clean:
+            continue
+        key = clean.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(clean)
+    return out
+
+
 def _reply_target_handles() -> list[str]:
-    """リプライ候補の対象 X handle。 default は user 方針の報知巨人班。"""
-    raw = (os.environ.get("X_POST_REPLY_TARGET_HANDLES") or "hochi_giants").strip()
+    """リプライ候補の対象 X handle。
+
+    既存 env / default はそのまま維持し、読売巨人軍公式 ``TokyoGiants`` を
+    repo 側で補完する。Cloud Run env や Scheduler を変えずに、mail の手動リプ
+    候補だけを追加するための narrow hook。
+    """
+    raw = (os.environ.get("X_POST_REPLY_TARGET_HANDLES") or "").strip()
     handles = [h.strip().lstrip("@") for h in raw.split(",") if h.strip()]
-    return handles or ["hochi_giants"]
+    if not handles:
+        handles = list(_DEFAULT_REPLY_TARGET_HANDLES)
+    return _unique_reply_handles([*handles, _OFFICIAL_REPLY_HANDLE])
+
+
+def _reply_candidate_mail_labels(handle: str) -> tuple[str, str, str, str, tuple[str, ...]]:
+    lower = (handle or "").strip().lstrip("@").lower()
+    if lower == "hochi_giants":
+        return (
+            "報知リプ候補",
+            "報知投稿への返信=リアルタイムの返信欄で露出",
+            "hochi_reply",
+            lane._HOCHI_REPLY_METRIC,
+            ("reply:hochi", "manual_only"),
+        )
+    if lower == _OFFICIAL_REPLY_HANDLE.lower():
+        return (
+            "公式リプ候補",
+            "読売巨人軍公式投稿への返信=公式投稿の返信欄で露出",
+            "official_reply",
+            lane._REPLY_CANDIDATE_METRIC,
+            ("reply:official", "manual_only"),
+        )
+    return (
+        "リプライ候補",
+        "大手投稿に返信=インプ近道",
+        "reply_candidate",
+        lane._REPLY_CANDIDATE_METRIC,
+        ("manual_only",),
+    )
 
 
 def _fan_reply_enabled() -> bool:
@@ -383,9 +436,73 @@ def _is_fan_voice_fire_window(now_jst: datetime) -> bool:
     """
     if now_jst.tzinfo is None:
         return False
+    if lane.is_extra_game_window(now_jst):
+        return True
     minutes_since_midnight = now_jst.hour * 60 + now_jst.minute
     # 19:00 - 23:59 を試合進行〜試合直後 window とする
     return 19 * 60 <= minutes_since_midnight <= 23 * 60 + 59
+
+
+def _monday_game_window_skip_enabled() -> bool:
+    """月曜の試合系 dense window を止める cost guard。
+
+    user 2026-06-07: 「月曜日は試合がない」。祝日などで月曜開催がある時だけ
+    X_POST_MAIL_ALLOW_MONDAY_GAME_WINDOWS=1 で一時解除する。
+    """
+    raw = (os.environ.get("X_POST_MAIL_ALLOW_MONDAY_GAME_WINDOWS") or "").strip().lower()
+    return raw not in {"1", "true", "yes", "on"}
+
+
+def _before_7am_skip_enabled() -> bool:
+    """user-facing X post mail は 7:00 JST から。
+
+    Scheduler 側の反映漏れや手動 fire で早朝に起動しても、通常は何も送らない。
+    必要な検証時だけ X_POST_MAIL_ALLOW_BEFORE_7AM=1 で解除する。
+    """
+    raw = (os.environ.get("X_POST_MAIL_ALLOW_BEFORE_7AM") or "").strip().lower()
+    return raw not in {"1", "true", "yes", "on"}
+
+
+def _live_duplicate_player_cooldown_hours() -> int:
+    """試合中15分便の同一選手重複を抑える短時間 cooldown。
+
+    既存の 168h player history はDB候補の広い分散用。こちらは試合中の
+    reply/video/fan reply だけに使い、直近便で出た同じ選手の LLM 生成を
+    先に止める。0 で無効化。
+    """
+    return _resolve_int_env("X_POST_MAIL_LIVE_DUPLICATE_PLAYER_COOLDOWN_HOURS", 1, min_value=0)
+
+
+def _live_duplicate_player_cooldown_active(now_jst: datetime) -> bool:
+    return (
+        lane.x_impression_timing_label(now_jst)
+        == lane._X_IMPRESSION_TIMING_LABELS["in_game_strong"]
+    )
+
+
+def _is_before_7am_jst(now_jst: datetime) -> bool:
+    if now_jst.tzinfo is None:
+        now_jst = now_jst.replace(tzinfo=ZoneInfo("Asia/Tokyo"))
+    else:
+        now_jst = now_jst.astimezone(ZoneInfo("Asia/Tokyo"))
+    return now_jst.hour < 7
+
+
+def _is_monday_game_window(now_jst: datetime) -> bool:
+    if now_jst.tzinfo is None:
+        now_jst = now_jst.replace(tzinfo=ZoneInfo("Asia/Tokyo"))
+    else:
+        now_jst = now_jst.astimezone(ZoneInfo("Asia/Tokyo"))
+    if now_jst.weekday() != 0:  # Monday
+        return False
+    label = lane.x_impression_timing_label(now_jst)
+    game_labels = {
+        lane._X_IMPRESSION_TIMING_LABELS["pregame_db"],
+        lane._X_IMPRESSION_TIMING_LABELS["lineup"],
+        lane._X_IMPRESSION_TIMING_LABELS["in_game_strong"],
+        lane._X_IMPRESSION_TIMING_LABELS["postgame_peak"],
+    }
+    return label in game_labels
 
 
 def _resolve_int_env(name: str, default: int, *, min_value: int = 0) -> int:
@@ -1597,6 +1714,23 @@ def main(argv: Sequence[str] | None = None) -> int:
             "(queue drain is inlined later in this function)."
         )
 
+    now_jst = datetime.now(ZoneInfo("Asia/Tokyo"))
+    if _before_7am_skip_enabled() and _is_before_7am_jst(now_jst):
+        LOG.info(
+            "x-post mail early skip: reason=before_user_morning_start now=%s "
+            "override_env=X_POST_MAIL_ALLOW_BEFORE_7AM",
+            now_jst.isoformat(),
+        )
+        return 0
+    if _monday_game_window_skip_enabled() and _is_monday_game_window(now_jst):
+        LOG.info(
+            "x-post mail early skip: reason=monday_no_game_window now=%s "
+            "timing=%s override_env=X_POST_MAIL_ALLOW_MONDAY_GAME_WINDOWS",
+            now_jst.isoformat(),
+            lane.x_impression_timing_label(now_jst),
+        )
+        return 0
+
     LOG.info("Downloading insight.db cache (read-only)…")
     db_path: str | None = None
     try:
@@ -1606,7 +1740,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     except Exception as exc:  # noqa: BLE001
         LOG.exception("ensure_local_db failed: %r", exc)
         return 3
-    now_jst = datetime.now(ZoneInfo("Asia/Tokyo"))
     if not db_path:
         LOG.error("insight.db cache unavailable: %s", db_info)
         return 3
@@ -1640,6 +1773,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     dedup_set: set[str] | None = None
     recent_player_counts: dict[str, int] = {}
     cooldown_players: set[str] = set()
+    live_duplicate_players: set[str] = set()
+    dedup_records: list[dict] = []
     bucket_name = os.environ.get("INSIGHT_GCS_BUCKET") or ""
     dedup_disabled = (os.environ.get("X_POST_MAIL_DEDUP_DISABLED") or "").strip()
     history_hours = _resolve_int_env(
@@ -1678,10 +1813,24 @@ def main(argv: Sequence[str] | None = None) -> int:
                 gemini_player_cooldown_hours,
                 len(cooldown_players),
             )
+            live_duplicate_cooldown_hours = _live_duplicate_player_cooldown_hours()
+            if (
+                live_duplicate_cooldown_hours > 0
+                and _live_duplicate_player_cooldown_active(now_jst)
+            ):
+                live_duplicate_players = lane._players_within_cooldown(
+                    dedup_records, now_jst, live_duplicate_cooldown_hours
+                )
+                LOG.info(
+                    "Live duplicate player cooldown (%dh): %d players blocked from reply/video/fan generation",
+                    live_duplicate_cooldown_hours,
+                    len(live_duplicate_players),
+                )
         except Exception as exc:  # noqa: BLE001
             LOG.warning("dedup load failed (continuing without dedup): %r", exc)
             dedup_set = set()
             recent_player_counts = {}
+            live_duplicate_players = set()
     else:
         LOG.info("Dedup disabled (bucket=%s, disabled_env=%s)",
                  bool(bucket_name), dedup_disabled)
@@ -1859,6 +2008,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     max_count=vr_max,
                     dedup_set=dedup_set,
                     comment_fn=vr_comment_fn,
+                    avoid_player_names=live_duplicate_players,
                 )
             except Exception as _vr_exc:  # noqa: BLE001
                 LOG.warning("video_radar build failed: %r", _vr_exc)
@@ -1930,6 +2080,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     max_replies=rep_max,
                     comment_fn=rep_comment_fn,
                     handles=target_handles,
+                    avoid_player_names=live_duplicate_players,
                 )
             except Exception as _rep_exc:  # noqa: BLE001
                 LOG.warning("reply_candidates build failed: %r", _rep_exc)
@@ -1937,11 +2088,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             rep_cands = []
             for r in reps:
                 handle = str(r.get("handle") or "").strip().lstrip("@")
-                is_hochi = handle.lower() == "hochi_giants"
                 sig = f"reply_cand|{handle or 'unknown'}|{r['tweet_id']}"
                 if dedup_set is not None and sig in dedup_set:
                     continue
-                label = "報知リプ候補" if is_hochi else "リプライ候補"
+                label, why_now, source_material_type, metric, reason_tags = _reply_candidate_mail_labels(handle)
                 draft = (
                     f"返信先({label}): {r['url']}\n"
                     f"対象handle: @{handle or 'unknown'}\n"
@@ -1950,7 +2100,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "大手の返信欄に露出=インプ近道。自動投稿はしない。"
                     + ("" if rep_comment_fn else "\n※ 生成: LLM不使用 (追加費用なし)。")
                 )
-                metric = lane._HOCHI_REPLY_METRIC if is_hochi else lane._REPLY_CANDIDATE_METRIC
                 rep_cands.append(lane.Candidate(
                     title=f"💬 {label}: {r['player']} {r['headline']}",
                     metric=metric,
@@ -1961,9 +2110,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                     post_text=r["reply"],
                     focus_player=r["player"],
                     reply_to_id=r["tweet_id"],
-                    why_now="報知投稿への返信=リアルタイムの返信欄で露出" if is_hochi else "大手投稿に返信=インプ近道",
-                    source_material_type="hochi_reply" if is_hochi else "reply_candidate",
-                    reason_tags=("reply:hochi", "manual_only") if is_hochi else ("manual_only",),
+                    why_now=why_now,
+                    source_material_type=source_material_type,
+                    reason_tags=reason_tags,
                 ))
             if rep_cands:
                 before = len(candidates)
@@ -1975,6 +2124,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                     len(rep_cands),
                     len(candidates),
                     ",".join(target_handles),
+                )
+            else:
+                LOG.info(
+                    "reply_candidates empty: handles=%s raw=%d reason=no_eligible_post_or_dedup",
+                    ",".join(target_handles),
+                    len(reps),
                 )
 
     # 2026-06-05 user GO: ファンアカ (フーガ @EH87EazmV9D2eSw / 缶詰 @kandume92) の試合反応への
@@ -2011,6 +2166,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     handles=fan_handles,
                     require_event=False,
                     skip_on_empty_comment=True,
+                    avoid_player_names=live_duplicate_players,
                 )
             except Exception as _fan_exc:  # noqa: BLE001
                 LOG.warning("fan_reply build failed: %r", _fan_exc)

@@ -6,8 +6,9 @@ URL モデル: **permanent 2 URL** (Yahoo リアルタイム検索式)
 - `giants-sns-realtime-1gun` — 一軍 投稿 上位 15 件
 - `giants-sns-realtime-farm` — 二軍 上位 5 + 三軍 上位 5 = 最大 10 件
 
-source = 巨人専門 / 球団公式 X 4 account を RSSHub 経由で取得。
-1 日 4 fire (10/13/17/21 JST) を内部 time gate で発火。
+source = 巨人専門 / 球団公式 / 主要スポーツ紙 X account を RSSHub 経由で取得。
+10:00 / 12:00 / 15:00-17:00 / 22:00 は毎時、試合中 18:00-21:15 は
+15分に1回の内部 time gate で発火。
 
 enhancement (a) + (b):
 - (a) 急上昇 marker: 昨日の言及回数 (GCS、 page 別 nested dict) と diff
@@ -18,6 +19,7 @@ enhancement (a) + (b):
 from __future__ import annotations
 
 import logging
+import os
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Tuple
@@ -60,9 +62,13 @@ SOURCE_HANDLES = GIANTS_SPECIALIST_HANDLES + MAJOR_GENERAL_HANDLES
 GIANTS_FILTER_HANDLES = set(MAJOR_GENERAL_HANDLES)
 JST = timezone(timedelta(hours=9))
 # 2026-06-03 user: 朝(10,12)+ 15時から毎時 (練習シーン増・試合・試合後)。
-# /run は giants-* trigger が該当時刻 :00 に発火済み (6-16 hourly + 17-21 0,30 + 22)。
+# 2026-06-07 user: 試合中SNSは15分に1回、21:15まででよい。
+# /run は giants-* trigger が該当時刻に発火済み
+# (6-16 hourly + 17-21 0,30 + 18-21 15,45 + 22/23)。
 # Gemini 不使用ページなので頻度UPしてもコスト増ほぼ無し (RSSHub+Cloud Runのみ)。
-FIRE_SLOTS = {10, 12, 15, 16, 17, 18, 19, 20, 21, 22}
+REGULAR_FIRE_HOURS = {10, 12, 15, 16, 17, 22}
+GAME_FIRE_HOURS = {18, 19, 20, 21}
+FIRE_SLOTS = REGULAR_FIRE_HOURS | GAME_FIRE_HOURS
 SLOT_MINUTE_WINDOW = 5
 RSSHUB_TIMEOUT_SECONDS = 20
 WP_TIMEOUT_SECONDS = 30
@@ -93,11 +99,119 @@ PAGE_FARM = {
 }
 PAGES = (PAGE_1GUN, PAGE_FARM)
 SOURCE_LABEL = "巨人公式・専門メディア・主要スポーツ紙X"
+EXTRA_GAME_DATE_ENV = "SNS_REALTIME_EXTRA_GAME_DATE"
+EXTRA_GAME_START_ENV = "SNS_REALTIME_EXTRA_GAME_START"
+EXTRA_GAME_END_ENV = "SNS_REALTIME_EXTRA_GAME_END"
+
+
+def _minute_in_slot_window(minute: int, slot_start: int) -> bool:
+    return slot_start <= minute < min(slot_start + SLOT_MINUTE_WINDOW, 60)
+
+
+def _parse_hhmm(value: str) -> Optional[int]:
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    match = re.fullmatch(r"(\d{1,2}):(\d{2})", raw)
+    if not match:
+        return None
+    hour = int(match.group(1))
+    minute = int(match.group(2))
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        return None
+    return hour * 60 + minute
+
+
+def _extra_game_window_minutes(now: datetime) -> Optional[tuple[int, int]]:
+    if now.tzinfo is None:
+        now_jst = now.replace(tzinfo=JST)
+    else:
+        now_jst = now.astimezone(JST)
+    game_date = (os.environ.get(EXTRA_GAME_DATE_ENV) or "").strip()
+    if not game_date or game_date != now_jst.date().isoformat():
+        return None
+    start = _parse_hhmm(os.environ.get(EXTRA_GAME_START_ENV, ""))
+    end = _parse_hhmm(os.environ.get(EXTRA_GAME_END_ENV, ""))
+    if start is None or end is None or end < start:
+        return None
+    return start, end
+
+
+def _extra_game_fire_minute_slots(now: datetime) -> tuple[int, ...]:
+    if now.tzinfo is None:
+        now_jst = now.replace(tzinfo=JST)
+    else:
+        now_jst = now.astimezone(JST)
+    window = _extra_game_window_minutes(now)
+    if window is None:
+        return ()
+    start, end = window
+    hour_base = now_jst.hour * 60
+    slots = []
+    for slot in (0, 15, 30, 45):
+        minute_of_day = hour_base + slot
+        if start <= minute_of_day <= end:
+            slots.append(slot)
+    return tuple(slots)
+
+
+def _is_extra_game_fire_slot(now: datetime) -> bool:
+    if now.tzinfo is None:
+        now_jst = now.replace(tzinfo=JST)
+    else:
+        now_jst = now.astimezone(JST)
+    return any(_minute_in_slot_window(now_jst.minute, start) for start in _extra_game_fire_minute_slots(now_jst))
+
+
+def _game_fire_minute_slots(hour: int) -> tuple[int, ...]:
+    if hour == 21:
+        return (0, 15)
+    return (0, 15, 30, 45)
 
 
 def should_run_now(now: Optional[datetime] = None) -> bool:
     now = now or datetime.now(JST)
-    return now.hour in FIRE_SLOTS and now.minute < SLOT_MINUTE_WINDOW
+    if now.tzinfo is None:
+        now_jst = now.replace(tzinfo=JST)
+    else:
+        now_jst = now.astimezone(JST)
+    if _is_extra_game_fire_slot(now_jst):
+        return True
+    if now_jst.hour in GAME_FIRE_HOURS:
+        return any(_minute_in_slot_window(now_jst.minute, start) for start in _game_fire_minute_slots(now_jst.hour))
+    return now_jst.hour in REGULAR_FIRE_HOURS and now_jst.minute < SLOT_MINUTE_WINDOW
+
+
+def is_sns_only_game_dense_slot(now: Optional[datetime] = None) -> bool:
+    """試合中 15分更新のうち、重い RSS 記事生成を走らせない SNS 専用 slot。
+
+    :00 は従来の fetcher 本線に残す。:15/:30/:45 は SNS ページ更新だけにして、
+    Cloud Run fire は維持しつつ Gemini / article draft path を避ける。
+    """
+    now = now or datetime.now(JST)
+    if now.tzinfo is None:
+        now_jst = now.replace(tzinfo=JST)
+    else:
+        now_jst = now.astimezone(JST)
+    extra_slots = _extra_game_fire_minute_slots(now)
+    if extra_slots:
+        if any(_minute_in_slot_window(now_jst.minute, start) for start in extra_slots if start > 0):
+            return True
+    if now_jst.hour not in GAME_FIRE_HOURS:
+        return False
+    return any(_minute_in_slot_window(now_jst.minute, start) for start in _game_fire_minute_slots(now_jst.hour) if start > 0)
+
+
+def is_redundant_after_game_dense_slot(now: Optional[datetime] = None) -> bool:
+    """Scheduler が残っていても 21:15 後の dense fire は何もしない。"""
+    now = now or datetime.now(JST)
+    if now.tzinfo is None:
+        now_jst = now.replace(tzinfo=JST)
+    else:
+        now_jst = now.astimezone(JST)
+    if now_jst.hour != 21:
+        return False
+    return any(_minute_in_slot_window(now_jst.minute, start) for start in (30, 45))
 
 
 def _strip_feed_text(value: str) -> str:

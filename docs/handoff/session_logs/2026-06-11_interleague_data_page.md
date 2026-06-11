@@ -15,3 +15,8 @@
 ## TODO (期限つき)
 
 - **2026 交流戦終了後 (閉幕 2026-06-21 頃以降)**: 2026 確定値 (rank/W/L/D/avg/hr/sb/era/home/visitor/vs) を config/giants_interleague.json に final:true で焼き込む。焼き込まないと 2027 開幕後 (npb.jp の 2027 ページに 2026 交流戦表が無くなった時点) に 2026 年行がページから消える。avg/era 等は次回更新時にベンチマーク inter.htm の 2026 行から取得可
+
+## 追記: 変更なしスキップ (user 指摘「交流戦以外は動かないデータ」対応)
+
+- 13:48 JST | commit | d7f77475 | daily refresh _upsert に raw content 比較スキップ追加 (test 3本) | push 済 (並走レーン rebase 込み)
+- 13:52 JST | execute | rotation-updater-2tqnz | 4ページ全て unchanged; skip 確認 (revision 肥大・無駄 write 解消) | 完了

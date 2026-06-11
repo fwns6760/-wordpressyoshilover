@@ -1889,7 +1889,11 @@ def build_video_radar_candidates(
             buzz_players=buzz_players,
             min_score=min_score,
             now=now,
-            max_age_hours=phase_freshness_max_age_hours(now),
+            # 2026-06-11 user「DAZNの動画試合中のポストをしたい」: 動画クリップは
+            # 編集遅延で投稿が 30 分超になりがちで、 試合中窓 0.5h だと DAZN/日テレの
+            # 試合中ハイライトがほぼ全滅していた (6/10 実測: 試合中便 built 0 連発)。
+            # 動画 lane だけ floor 2h を敷く。 news/fan_voice lane の 0.5h は不変。
+            max_age_hours=max(2.0, phase_freshness_max_age_hours(now)),
             handles=handles,
         )
     except Exception as exc:  # noqa: BLE001

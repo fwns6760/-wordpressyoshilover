@@ -3809,3 +3809,57 @@ class VideoRadarSourceNarrowingTests(unittest.TestCase):
     def test_off_game_uses_all_sources(self):
         # 10:00 = 試合外 → 全8ソース
         self.assertEqual(len(self._handles_hit(10)), 8)
+
+
+class VideoRadarInGameFreshnessFloorTests(unittest.TestCase):
+    """2026-06-11: 試合中でも動画 lane は floor 2h (DAZN クリップの編集遅延対策)。"""
+
+    def _feed(self, pub_rfc: str) -> str:
+        return (
+            "<rss><channel>"
+            "<item><title>坂本勇人 サヨナラ満塁ホームラン</title>"
+            "<description>坂本勇人 サヨナラ満塁ホームラン "
+            "&lt;img src=&quot;https://pbs.twimg.com/amplify_video_thumb/111/img/abc.jpg&quot;&gt;</description>"
+            f"<link>https://x.com/DAZNJPNBaseball/status/111</link><pubDate>{pub_rfc}</pubDate></item>"
+            "</channel></rss>"
+        )
+
+    def test_in_game_keeps_clip_older_than_30min(self):
+        from datetime import datetime, timedelta
+        from zoneinfo import ZoneInfo
+        from unittest import mock
+
+        from src import x_post_mail_lane as lane
+
+        # 試合中 (in_game_strong 帯: 19:30 JST)、 クリップは 90 分前 (旧窓 0.5h なら除外)
+        now = datetime(2026, 6, 10, 19, 30, tzinfo=ZoneInfo("Asia/Tokyo"))
+        pub = (now - timedelta(minutes=90)).strftime("%a, %d %b %Y %H:%M:%S %z")
+        self.assertEqual(lane.phase_freshness_max_age_hours(now), 0.5)  # 帯の前提確認
+        with mock.patch(
+            "src.x_post_mail_lane.detect_giants_player_name",
+            side_effect=lambda t, alias_map=None: "坂本勇人" if "坂本" in str(t) else "",
+        ):
+            cands = lane.build_video_radar_candidates(
+                db_path=None, max_count=3, now=now,
+                fetch_fn=lambda url: self._feed(pub),
+            )
+        self.assertEqual(len(cands), 1)  # floor 2h で生存
+
+    def test_in_game_still_drops_clip_older_than_2h(self):
+        from datetime import datetime, timedelta
+        from zoneinfo import ZoneInfo
+        from unittest import mock
+
+        from src import x_post_mail_lane as lane
+
+        now = datetime(2026, 6, 10, 19, 30, tzinfo=ZoneInfo("Asia/Tokyo"))
+        pub = (now - timedelta(hours=3)).strftime("%a, %d %b %Y %H:%M:%S %z")
+        with mock.patch(
+            "src.x_post_mail_lane.detect_giants_player_name",
+            side_effect=lambda t, alias_map=None: "坂本勇人" if "坂本" in str(t) else "",
+        ):
+            cands = lane.build_video_radar_candidates(
+                db_path=None, max_count=3, now=now,
+                fetch_fn=lambda url: self._feed(pub),
+            )
+        self.assertEqual(cands, [])  # 3h 前は試合中候補にしない

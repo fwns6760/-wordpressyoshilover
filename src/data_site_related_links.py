@@ -15,6 +15,7 @@ CLUSTER_URL = "https://yoshilover.com/data"
 _DATA_PAGES = [
     ("rotation", "先発ローテーション成績"),
     ("open-games", "オープン戦成績"),
+    ("interleague", "交流戦成績"),
     ("roster-moves", "出場選手登録・抹消"),
     ("batting-ranking", "打撃成績ランキング"),
     ("pitching-ranking", "投手成績ランキング"),

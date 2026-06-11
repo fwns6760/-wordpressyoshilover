@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Yoshilover 063 Frontend (topic hub / SNS reactions / Phase 1 noindex)
  * Description: 062 contract §2 §3 §5 の front impl。topic hub / SNS block / noindex を基盤に、トップ速報帯・記事下回遊束・右カラム rail・上部密集ナビ・人気記事導線まで含めて SWELL front を高密度化する。既存 SWELL コメント欄は触らない。
- * Version: 0.22.1
+ * Version: 0.22.2
  * Author: yoshilover
  */
 
@@ -172,6 +172,7 @@ function yoshilover_063_render_home_data_hub() {
         array( 'href' => '/data/pitching-ranking', 'ic' => '⚾', 't' => '投手成績ランキング', 's' => '防御率・勝利・奪三振' ),
         array( 'href' => '/data#ys-player-search', 'ic' => '👤', 't' => '選手別 個人成績',     's' => '全選手のデータを検索' ),
         array( 'href' => '/data/team',             'ic' => '📊', 't' => 'セ・リーグ順位表',   's' => '順位・ゲーム差・日程' ),
+        array( 'href' => '/data/interleague',      'ic' => '⚔️', 't' => 'セ・パ交流戦',       's' => '今年の結果・歴代成績' ),
         array( 'href' => '/data/farm',             'ic' => '🌱', 't' => '2軍試合日程・結果',  's' => 'ファーム予定・成績' ),
         array( 'href' => '/data/jersey-numbers',   'ic' => '🔢', 't' => '歴代背番号',         's' => '永久欠番・番号変遷' ),
         array( 'href' => '/data/draft',            'ic' => '📋', 't' => '歴代ドラフト',       's' => '指名選手・育成・外れ1位' ),

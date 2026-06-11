@@ -1,0 +1,30 @@
+# 効果学習 v0 — Cloud Run Job image for X engagement collect + weekly report.
+# RSSHub feed + X syndication endpoint のみ (LLM なし、X API write なし、
+# WP 書き込みなし)。GCS read/write + Gmail SMTP via mail_delivery_bridge。
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app
+
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt ./requirements.txt
+RUN python3 -m pip install --no-cache-dir --upgrade pip \
+    && python3 -m pip install --no-cache-dir -r requirements.txt
+
+COPY src/ ./src/
+
+RUN useradd --create-home --home-dir /home/appuser --shell /usr/sbin/nologin appuser \
+    && chown -R appuser:appuser /app /home/appuser
+
+USER appuser
+
+# ENTRYPOINT 形式: Cloud Run jobs の --args は CMD のみ置換するため
+# --mode=report 等を渡しても正常起動できる。default (no args) = auto mode。
+ENTRYPOINT ["python3", "-m", "src.tools.run_x_post_engagement"]
+CMD []

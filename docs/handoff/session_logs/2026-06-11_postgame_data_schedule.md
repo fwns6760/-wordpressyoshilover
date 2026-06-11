@@ -27,3 +27,10 @@ user 観察「データを知りたいのは試合後。最新化されたデー
 - 翌日以降、22時台 mail の候補が「当日確定データ」になっているか実物 verify
 - デーゲーム (土日 13/14時開始、~17時終了) は 17:00 ETL + 17:05 flush で概ね cover、不足が見えたら 16:30 ETL 追加を検討
 - rollback: 新規 2 trigger delete + flush cron 戻しで即時復元可
+
+## 2026-06-11 PM 追記 — user 調整で最終形へ
+
+- user「費用は上げたくない。試合後に代わるものだから1日1回でいい」「ポスト(配信)は何回でもいい」
+- 最終形: 試合後 ETL = `data-insight-postgame-2240` (22:40) の **1日1回のみ**。`data-insight-postgame-2155` と `data-insight-during-game-trigger` (21:00) は削除済 (実環境 verify 済)。ETL 構成 = 5/10/12/15/17/20/22:40 の 7 本 (件数ネットゼロ)
+- 配信側は変更なし維持: `x-post-mail-flush` = `5 7,9,11,13,15,16,17,22,23`。なお `x-post-mail-flush-game-2` / `-lineup` は PAUSED 状態 (本件と別管理)
+- チェーン: 試合終了 → ETL 22:40 → flush 23:05 で当日確定データ着弾。10:00 既存便は「翌朝復習」枠として併存

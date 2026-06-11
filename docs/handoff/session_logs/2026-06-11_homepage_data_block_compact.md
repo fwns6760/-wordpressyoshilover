@@ -6,3 +6,4 @@
 - 13:55 JST | デスクトップ追加調査 | user「デスクトップにおいて」 | WP REST read-only | 真因2=sidebar-1のwidget 0個(30個全部wp_inactive_widgets落ち、テーマ更新等でwidget外れの典型)→ <aside id=sidebar>が空のまま右280pxが全面空白。rail自動注入hookはdynamic_sidebar()未発火で不発
 - 13:58 JST | 修正 | 063 plugin | v0.22.1 | buffer fallback: 空aside検出時のみad slot+railを直接注入(dedup=rail class)。注入regexはlive HTML実物でマッチ検証済。zip再ビルド済(build/063-v22-wp-admin)
 - 残課題 | wp_inactive_widgetsの30 widget復元(WP側設定変更=user判断領域)は未実施。railで埋まるため必須ではない。widget手動復元時もdedupで二重表示なし
+- 14:05 JST | 追加 | 063 plugin | v0.22.2 | user指示「交流戦の導線をトップにおく」→ データカード4枚目に ⚔️セ・パ交流戦 (/data/interleague、正規URL=スラッシュなし200確認) 追加、計15枚。コンパクト維持(速報帯ファーストビュー内)をプレビュー検証済。zip再ビルド済

@@ -33,6 +33,10 @@ DEFAULT_LOW_COST_AI_CATEGORIES = {"試合速報", "選手情報", "首脳陣"}
 # 2026-06-09: X-post lane を gemini-3.5-flash に統一(user 決定、無料枠・post 量少)。
 # revert は env X_POST_GEMINI_MODEL=gemini-3.1-flash-lite で rebuild 無し。無印 gemini-3.1-flash は 404。
 GEMINI_FLASH_MODEL = os.environ.get("X_POST_GEMINI_MODEL", "gemini-3.5-flash")
+GEMINI_FALLBACK_MODEL = os.environ.get("X_POST_GEMINI_FALLBACK_MODEL", "gemini-3.1-flash-lite")
+# 2026-06-11 (user 決定): 3.5-flash 無料枠は 20回/日(リセット JST 16時頃)。試合時間帯
+# (既定 JST 17:00〜22:59)だけ 3.5 を使い、それ以外は最初から fallback(lite)で枠を温存する。
+X_POST_GEMINI_PRIME_HOURS_JST = os.environ.get("X_POST_GEMINI_PRIME_HOURS_JST", "17-23")
 GEMINI_FLASH_THINKING_BUDGET = 0
 X_POST_AI_ALLOWED_MODES = {"auto", "grok", "gemini", "none"}
 X_POST_GEMINI_TIMEOUT_SECONDS = 8
@@ -295,6 +299,24 @@ def generate_with_gemini(
     return result if return_meta else result["text"]
 
 
+def _x_post_in_prime_hours(now=None) -> bool:
+    """JST 現在時刻が X_POST_GEMINI_PRIME_HOURS_JST の窓内か。parse 不能時は安全側で True。"""
+    spec = X_POST_GEMINI_PRIME_HOURS_JST.strip()
+    if not spec:
+        return True
+    try:
+        start_s, end_s = spec.split("-", 1)
+        start, end = int(start_s), int(end_s)
+    except ValueError:
+        return True
+    from datetime import datetime, timezone, timedelta
+
+    hour = (now or datetime.now(timezone(timedelta(hours=9)))).hour
+    if start <= end:
+        return start <= hour < end
+    return hour >= start or hour < end
+
+
 def _generate_with_gemini_response(
     title: str,
     category: str,
@@ -393,9 +415,11 @@ def _generate_with_gemini_response(
         },
     }).encode("utf-8")
     last_error = "empty_response"
+    # 試合時間帯外は 3.5 の 20回/日 枠を温存して最初から fallback(lite)を使う
+    model = GEMINI_FLASH_MODEL if _x_post_in_prime_hours() else GEMINI_FALLBACK_MODEL
     for _attempt in range(X_POST_GEMINI_MAX_ATTEMPTS):
         try:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_FLASH_MODEL}:generateContent?key={api_key}"
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
             req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
             with urllib.request.urlopen(req, timeout=X_POST_GEMINI_TIMEOUT_SECONDS) as res:
                 data = json.load(res)
@@ -405,6 +429,10 @@ def _generate_with_gemini_response(
             last_error = "empty_response"
         except urllib.error.HTTPError as exc:
             last_error = f"http_{exc.code}"
+            # 無料枠上限(429)で primary が落ちたら fallback モデルで再試行
+            if exc.code == 429 and model != GEMINI_FALLBACK_MODEL:
+                model = GEMINI_FALLBACK_MODEL
+                continue
         except urllib.error.URLError as exc:
             last_error = "timeout" if isinstance(getattr(exc, "reason", None), TimeoutError) else "request_error"
         except TimeoutError:

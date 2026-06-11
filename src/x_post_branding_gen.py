@@ -131,6 +131,28 @@ _GEMINI_FLASH_LITE_MODEL = _os.environ.get("X_POST_GEMINI_MODEL", "gemini-3.5-fl
 _X_POST_GEMINI_FALLBACK_MODEL = _os.environ.get(
     "X_POST_GEMINI_FALLBACK_MODEL", "gemini-3.1-flash-lite"
 )
+# 2026-06-11 (user 決定): 3.5-flash の無料枠は 20回/日(project 単位、リセット JST 16時頃)。
+# 試合時間帯(既定 JST 17:00〜22:59)だけ primary(3.5)を使い、それ以外は最初から
+# fallback(lite)を使って枠を試合中の投稿に温存する。空文字で常時 primary。跨日窓(例 22-2)対応。
+_X_POST_GEMINI_PRIME_HOURS_JST = _os.environ.get("X_POST_GEMINI_PRIME_HOURS_JST", "17-23")
+
+
+def _x_post_in_prime_hours(now=None) -> bool:
+    """JST 現在時刻が X_POST_GEMINI_PRIME_HOURS_JST の窓内か。parse 不能時は安全側で True。"""
+    spec = _X_POST_GEMINI_PRIME_HOURS_JST.strip()
+    if not spec:
+        return True
+    try:
+        start_s, end_s = spec.split("-", 1)
+        start, end = int(start_s), int(end_s)
+    except ValueError:
+        return True
+    from datetime import datetime, timezone, timedelta
+
+    hour = (now or datetime.now(timezone(timedelta(hours=9)))).hour
+    if start <= end:
+        return start <= hour < end
+    return hour >= start or hour < end
 
 
 def _x_post_model_unavailable(exc: Exception) -> bool:
@@ -154,7 +176,10 @@ def _x_post_model_unavailable(exc: Exception) -> bool:
 
 def _x_post_generate_content(client, *, model, contents, config):
     """X-post 用 generate_content。primary が無料枠上限/一時不可で落ちたら
-    fallback モデル(既定 gemini-3.1-flash-lite)へ自動切替。それ以外の例外は再送。"""
+    fallback モデル(既定 gemini-3.1-flash-lite)へ自動切替。それ以外の例外は再送。
+    試合時間帯外は primary を使わず fallback を直接使う(3.5 の 20回/日 枠温存)。"""
+    if model != _X_POST_GEMINI_FALLBACK_MODEL and not _x_post_in_prime_hours():
+        model = _X_POST_GEMINI_FALLBACK_MODEL
     try:
         return client.models.generate_content(model=model, contents=contents, config=config)
     except Exception as exc:  # noqa: BLE001 - fallback handling

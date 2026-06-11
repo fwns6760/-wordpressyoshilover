@@ -36,6 +36,60 @@ if not hasattr(_google_genai, "Client"):
 import src.x_post_branding_gen as xbg  # noqa: E402
 
 
+class PrimeHoursTests(unittest.TestCase):
+    """3.5-flash 温存窓 (X_POST_GEMINI_PRIME_HOURS_JST) の判定と model 差替え。"""
+
+    def _jst(self, hour: int):
+        from datetime import datetime, timezone, timedelta
+
+        return datetime(2026, 6, 11, hour, 30, tzinfo=timezone(timedelta(hours=9)))
+
+    def test_inside_window_true(self) -> None:
+        with patch.object(xbg, "_X_POST_GEMINI_PRIME_HOURS_JST", "17-23"):
+            self.assertTrue(xbg._x_post_in_prime_hours(self._jst(17)))
+            self.assertTrue(xbg._x_post_in_prime_hours(self._jst(22)))
+
+    def test_outside_window_false(self) -> None:
+        with patch.object(xbg, "_X_POST_GEMINI_PRIME_HOURS_JST", "17-23"):
+            self.assertFalse(xbg._x_post_in_prime_hours(self._jst(16)))
+            self.assertFalse(xbg._x_post_in_prime_hours(self._jst(23)))
+            self.assertFalse(xbg._x_post_in_prime_hours(self._jst(7)))
+
+    def test_cross_midnight_window(self) -> None:
+        with patch.object(xbg, "_X_POST_GEMINI_PRIME_HOURS_JST", "22-2"):
+            self.assertTrue(xbg._x_post_in_prime_hours(self._jst(23)))
+            self.assertTrue(xbg._x_post_in_prime_hours(self._jst(1)))
+            self.assertFalse(xbg._x_post_in_prime_hours(self._jst(3)))
+
+    def test_empty_or_invalid_spec_always_true(self) -> None:
+        with patch.object(xbg, "_X_POST_GEMINI_PRIME_HOURS_JST", ""):
+            self.assertTrue(xbg._x_post_in_prime_hours(self._jst(3)))
+        with patch.object(xbg, "_X_POST_GEMINI_PRIME_HOURS_JST", "garbage"):
+            self.assertTrue(xbg._x_post_in_prime_hours(self._jst(3)))
+
+    def test_generate_content_uses_fallback_outside_window(self) -> None:
+        client = MagicMock()
+        with patch.object(xbg, "_x_post_in_prime_hours", return_value=False):
+            xbg._x_post_generate_content(
+                client, model="gemini-3.5-flash", contents="p", config={}
+            )
+        self.assertEqual(
+            client.models.generate_content.call_args.kwargs["model"],
+            xbg._X_POST_GEMINI_FALLBACK_MODEL,
+        )
+
+    def test_generate_content_keeps_primary_inside_window(self) -> None:
+        client = MagicMock()
+        with patch.object(xbg, "_x_post_in_prime_hours", return_value=True):
+            xbg._x_post_generate_content(
+                client, model="gemini-3.5-flash", contents="p", config={}
+            )
+        self.assertEqual(
+            client.models.generate_content.call_args.kwargs["model"],
+            "gemini-3.5-flash",
+        )
+
+
 class TavilySearchTests(unittest.TestCase):
     def test_empty_query_returns_empty(self) -> None:
         self.assertEqual(xbg._tavily_search("", "key"), [])

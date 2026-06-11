@@ -3763,6 +3763,42 @@ class VideoRadarImpressionPolicyTests(unittest.TestCase):
         self.assertEqual(dropped, [])
 
 
+class DbRankingKillSwitchTests(unittest.TestCase):
+    """2026-06-12: 驚きのない DB ランキング候補 (直近N日打率等) の kill switch。
+
+    効果学習 v0 実測 (直近7日打率 voice ♥0-1 vs 【】驚き角度 ♥3-5) を受けて、
+    prod は X_POST_MAIL_DB_RANKING_ENABLED=0 で pick_candidates を止める。
+    """
+
+    def test_disabled_returns_empty_without_querying(self):
+        query_mock = MagicMock()
+        with patch.dict(
+            "os.environ", {"X_POST_MAIL_DB_RANKING_ENABLED": "0"}, clear=False
+        ):
+            cands = pick_candidates(
+                query_mock,
+                now=datetime(2026, 6, 12, 7, 0, tzinfo=JST),
+                max_candidates=3,
+                min_sample=1,
+            )
+        self.assertEqual(cands, [])
+        query_mock.assert_not_called()
+
+    def test_default_keeps_legacy_behaviour(self):
+        # env 未設定 (または "1") では従来どおり combo を query する
+        query_mock = MagicMock(return_value={"rows": []})
+        with patch.dict(
+            "os.environ", {"X_POST_MAIL_DB_RANKING_ENABLED": ""}, clear=False
+        ):
+            pick_candidates(
+                query_mock,
+                now=datetime(2026, 6, 12, 7, 0, tzinfo=JST),
+                max_candidates=1,
+                min_sample=1,
+            )
+        self.assertGreater(query_mock.call_count, 0)
+
+
 class ReplyCandidateRuntimeConfigTests(unittest.TestCase):
     """報知リプ候補は費用を増やさない設定を default にする。"""
 

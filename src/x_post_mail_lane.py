@@ -3762,6 +3762,16 @@ def pick_candidates(
         mails. Players that already appeared in the lookback window are
         avoided before news/opinion fallback is needed.
     """
+    # 2026-06-12 user 方針「驚きのない数字は出す意味がない」(効果学習 v0 実測:
+    # 直近7日打率 voice 投稿 ♥0-1 vs 【】驚き角度 ♥3-5)。 DB ランキング combo 系
+    # 候補 (直近N日/N試合 打率等) を env で止める kill switch。 驚き gate を持つ
+    # data_angles (キラー/歴代チェイス/勝利相関) は別 builder のため影響しない。
+    # default "1" = 従来挙動 (テスト互換)、 prod job env は "0" で停止。
+    if (os.environ.get("X_POST_MAIL_DB_RANKING_ENABLED") or "1").strip() == "0":
+        LOG.info(
+            "db_ranking candidates disabled via X_POST_MAIL_DB_RANKING_ENABLED=0"
+        )
+        return []
     if now is None:
         now = datetime.now(JST)
     player_cap = max(1, int(max_per_player or _DEFAULT_PLAYER_MAX_PER_MAIL))

@@ -4,6 +4,8 @@
 
 /* Google Fonts: Oswald */
 @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&display=swap');
+/* Google Fonts: Noto Sans JP (v0.23 洗練レイヤー: 本文書体を游ゴシックから昇格) */
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap');
 
 /* CSS変数 */
 :root {
@@ -8278,47 +8280,6 @@ button.cta:hover,
   }
 }
 
-/* 388 (2026-05-20): H1 (c-headLogo) 内に real DOM の span で site title を併記、
-   その直下に H2 を subtitle として配置。 SWELL の SEO 構造 (H1 + alt) を維持しつつ、
-   mobile で「画像だけ」 になる問題を解消、 自然な見た目に整える。 */
-.c-headLogo__link {
-  display: inline-flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 10px;
-  text-decoration: none;
-  flex-wrap: wrap;
-}
-.yoshi-headLogo__text {
-  font-size: 18px;
-  font-weight: 700;
-  color: #ffffff;
-  letter-spacing: 0.5px;
-  line-height: 1.3;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
-}
-.yoshi-headLogo__subtitle {
-  font-size: 13px;
-  font-weight: 700;
-  color: #f5811f;
-  letter-spacing: 0.3px;
-  line-height: 1.3;
-  margin: 4px 0 0;
-  padding: 0;
-  border: none;
-  background: transparent;
-}
-@media (max-width: 600px) {
-  .yoshi-headLogo__text {
-    font-size: 14px;
-    letter-spacing: 0;
-  }
-  .yoshi-headLogo__subtitle {
-    font-size: 11px;
-    margin-top: 3px;
-  }
-}
-
 /* 388 bottom variant (2026-05-20): 記事末に rank 31-60 player を出す nav。 */
 .yoshi-dense-nav--bottom {
   margin: 28px 0 18px;
@@ -9571,5 +9532,193 @@ aside.nomotoke-source-excerpt {
   }
   .nomotoke-source-excerpt__attr {
     font-size: 11px;
+  }
+}
+
+/* ============================================================
+   v0.23 REFINEMENT LAYER (2026-06-12)
+   目的: サイト全体の「洗練」— 書体 / 余白リズム / 角丸・影・色数の統一
+   方針: 既存ルールの後段 override のみ。構造(PHP/HTML)変更なし、可逆。
+   token: --yl-r(カード角丸) / --yl-r-sm(内側要素) / --yl-bd(罫線) / --yl-sh(影)
+   ============================================================ */
+
+:root {
+  --yl-r: 12px;
+  --yl-r-sm: 8px;
+  --yl-bd: #E9E6DE;
+  --yl-sh: 0 1px 2px rgba(26, 26, 26, 0.04), 0 6px 18px rgba(26, 26, 26, 0.05);
+  --yl-sh-hover: 0 2px 4px rgba(26, 26, 26, 0.05), 0 10px 26px rgba(245, 129, 31, 0.13);
+}
+
+/* ── 1. タイポグラフィ: Noto Sans JP へ昇格 + レンダリング改善 ── */
+body {
+  font-family: 'Noto Sans JP', '游ゴシック体', 'Yu Gothic', YuGothic,
+    'Hiragino Kaku Gothic ProN', 'Hiragino Sans', Meiryo, sans-serif !important;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+h1, h2, h3, h4,
+.yoshi-home-data__t,
+.yoshi-breaking-strip__title,
+.yoshi-topic-hub__title,
+.yoshi-today-giants__title,
+.yoshi-sidebar-rail__popular-title {
+  font-feature-settings: 'palt';
+  letter-spacing: 0.02em;
+}
+.post_content {
+  letter-spacing: 0.015em;
+  line-height: 1.85;
+}
+
+/* ── 2. ホーム: セクション間の呼吸(余白リズム統一) ── */
+.w-frontTop .c-widget,
+.w-frontTop > section,
+.yoshi-home-data,
+.yoshi-breaking-strip,
+.yoshi-topic-hub,
+.yoshi-brand-about {
+  margin-top: 0;
+  margin-bottom: 28px !important;
+}
+
+/* ── 3. カード様式統一: 角丸・罫線・影を 1 トーンに ── */
+.yoshi-home-data,
+.yoshi-breaking-strip,
+.yoshi-topic-hub,
+.yoshi-brand-about,
+.yoshi-today-giants,
+.yoshi-sidebar-rail__section {
+  border-radius: var(--yl-r) !important;
+  border-color: var(--yl-bd) !important;
+  box-shadow: var(--yl-sh) !important;
+  overflow: hidden;
+}
+
+/* ── 4. データハブ: 絵文字アイコンを「意図したデザイン」に見せる ── */
+.yoshi-home-data__card {
+  border-radius: var(--yl-r-sm) !important;
+  border: 1px solid var(--yl-bd) !important;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+.yoshi-home-data__card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--yl-sh-hover) !important;
+  border-color: rgba(245, 129, 31, 0.45) !important;
+}
+.yoshi-home-data__ic {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  background: var(--orange-light);
+  border-radius: 10px;
+  font-size: 16px;
+  line-height: 1;
+}
+
+/* ── 5. 最近の投稿: 詰まった白帯の壁 → 呼吸のあるリスト ── */
+.w-frontTop .widget_recent_entries > ul {
+  gap: 8px;
+}
+.w-frontTop .widget_recent_entries > ul > li {
+  border-radius: var(--yl-r-sm);
+  border-color: var(--yl-bd);
+  border-left-width: 3px;
+  transition: border-color 0.18s, background 0.18s, transform 0.18s, box-shadow 0.18s;
+}
+.w-frontTop .widget_recent_entries > ul > li:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--yl-sh-hover);
+}
+.w-frontTop .widget_recent_entries > ul > li > a {
+  padding: 13px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.6;
+  color: #222222 !important;
+}
+
+/* ── 6. 速報帯 / 今週の話題 / 今日の巨人: 内側アイテムの角丸統一 ── */
+.yoshi-breaking-strip__link,
+.yoshi-topic-hub__link,
+.yoshi-today-giants__link,
+.yoshi-sidebar-rail__popular-link,
+.yoshi-sidebar-rail__topic-link {
+  border-radius: var(--yl-r-sm) !important;
+  transition: background 0.18s, border-color 0.18s;
+}
+
+/* ── 7. チップ・バッジの色数規律: 彩度の強いベタ塗りを淡色化 ── */
+.yoshi-breaking-strip__chip,
+.yoshi-today-giants__chip,
+.yoshi-sidebar-rail__category-chip {
+  border-radius: 999px !important;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+/* ── 8. dense-nav: 高密度チップ → 静かなピル型 ── */
+.yoshi-dense-nav__link {
+  background: var(--white) !important;
+  border: 1px solid var(--yl-bd) !important;
+  border-radius: 999px !important;
+  transition: background 0.18s, border-color 0.18s, color 0.18s;
+}
+.yoshi-dense-nav__link:hover {
+  background: var(--orange-light) !important;
+  border-color: rgba(245, 129, 31, 0.45) !important;
+}
+
+/* ── 9. サイドバー: 行間と密度を読みやすさ側へ ── */
+.yoshi-sidebar-rail__popular-title,
+.yoshi-sidebar-rail__topic-title,
+.yoshi-today-giants__title {
+  line-height: 1.55 !important;
+}
+.yoshi-sidebar-rail__popular-item + .yoshi-sidebar-rail__popular-item,
+.yoshi-today-giants__item + .yoshi-today-giants__item {
+  margin-top: 6px;
+}
+
+/* ── 10. 記事本文: 画像・埋め込み・テーブルの角の統一 ── */
+.post_content img,
+.post_content .wp-block-embed,
+.post_content table {
+  border-radius: var(--yl-r-sm);
+}
+.post_content table {
+  overflow: hidden;
+}
+
+/* ── 11. アクセシビリティ兼質感: キーボードフォーカスリング統一 ── */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible {
+  outline: 2px solid rgba(245, 129, 31, 0.8);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ── 12. モバイル: 余白と角丸を画面幅に合わせて微調整 ── */
+@media (max-width: 600px) {
+  :root {
+    --yl-r: 10px;
+    --yl-r-sm: 7px;
+  }
+  .w-frontTop .c-widget,
+  .yoshi-home-data,
+  .yoshi-breaking-strip,
+  .yoshi-topic-hub {
+    margin-bottom: 20px !important;
+  }
+  .w-frontTop .widget_recent_entries > ul {
+    gap: 6px;
+  }
+  .w-frontTop .widget_recent_entries > ul > li > a {
+    padding: 12px 14px;
+    font-size: 13.5px;
   }
 }

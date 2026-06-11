@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Yoshilover 063 Frontend (topic hub / SNS reactions / Phase 1 noindex)
  * Description: 062 contract §2 §3 §5 の front impl。topic hub / SNS block / noindex を基盤に、トップ速報帯・記事下回遊束・右カラム rail・上部密集ナビ・人気記事導線まで含めて SWELL front を高密度化する。既存 SWELL コメント欄は触らない。
- * Version: 0.22.3
+ * Version: 0.22.4
  * Author: yoshilover
  */
 
@@ -353,7 +353,8 @@ function yoshilover_063_buffer_inject_header_titles( $buffer ) {
     // 2026-06-02: グローバルナビに「📊 データ」項目を注入 (全ページ、「すべて」の隣)。
     // データサイト (/data/) を速報カテゴリと対等な header ボタンにする。各 menu copy
     // (PC / モバイル / fix header) の cat-all (すべて) li の直後に挿入。dedup は class で判定。
-    if ( strpos( $buffer, 'yoshi-data-nav' ) === false ) {
+    // dedup は markup 限定文字列で判定 (素の class 名だと追加CSS内のセレクタに誤反応する)
+    if ( strpos( $buffer, 'yoshi-data-nav">' ) === false ) {
         $data_li = '<li class="menu-item menu-item-type-custom menu-item-object-custom yoshi-data-nav">'
             . '<a href="' . esc_url( home_url( '/data' ) ) . '">📊 データ</a></li>';
         $buffer = preg_replace(
@@ -367,7 +368,7 @@ function yoshilover_063_buffer_inject_header_titles( $buffer ) {
     // データサイト (/data/) を速報フィードの上に出し、速報⇄データの2本柱導線にする。
     // is_front_page のみ。dedup は section class で判定。速報フィード自体は不変。
     // <main> が見つからなければ無注入 (buffer そのまま) で無害。
-    if ( is_front_page() && strpos( $buffer, 'yoshi-home-data' ) === false ) {
+    if ( is_front_page() && strpos( $buffer, '<section class="yoshi-home-data"' ) === false ) {
         if ( preg_match( '/<main\b[^>]*>/', $buffer, $m, PREG_OFFSET_CAPTURE ) ) {
             $insert_pos = $m[0][1] + strlen( $m[0][0] );
             $buffer = substr_replace( $buffer, yoshilover_063_render_home_data_hub(), $insert_pos, 0 );

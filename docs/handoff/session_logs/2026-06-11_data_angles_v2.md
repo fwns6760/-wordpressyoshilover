@@ -24,3 +24,9 @@ user「ファンが驚く機械学習的なデータはとれるの？」「そ�
 - 歴代「年度別シーズン形比較」(今の○○は2007年の△△と同型) は OB 年度別データの新規 scrape が必要 → needs-ticket (今日は通算チェイスまで)
 - RSSHub fetch が topical boost で +5/fire 増 (自前 Cloud Run、課金影響なし) — 負荷気になれば video_radar と fetch 共有化
 - rollback: env 3 flag を 0 に戻すだけで既存挙動完全復元 (image 据え置き可)
+
+## 追記: DAZN 試合中動画が出ない件 (user 指摘 → 構造要因特定 → fix)
+
+- 14:00 JST | diagnose | DAZN feed 生存確認 (当日投稿+video marker) / 6/10 ログ実測: 試合中便 x_buzz built 0 連発、21時以降のみ built 1-2 | - | 原因=試合中鮮度窓 0.5h × クリップ編集遅延 20-40分
+- 14:10 JST | fix | 動画 lane gather に floor 2h (`max(2.0, phase窓)`)、news/fan_voice の 0.5h 不変 | `ea24cbcc` | build
+- 14:12 JST | deploy | Cloud Build `b675436c` SUCCESS、image `video-ingame-floor-ea24cbcc`、Job gen `177` | - | 今夜の試合中便で DAZN 引用RT候補の復活を verify

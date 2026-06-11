@@ -34,6 +34,7 @@ TEMPLATE_KEYS = frozenset(
         "podium_top3",
         "focus_duel",
         "dark_hero",
+        "win_split",
     }
 )
 

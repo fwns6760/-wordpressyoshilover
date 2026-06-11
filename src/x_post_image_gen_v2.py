@@ -1514,6 +1514,78 @@ def _render_dark_hero(data: dict[str, Any], size: int = DEFAULT_SIZE):
     return canvas
 
 
+def _render_win_split(data: dict[str, Any], size: int = DEFAULT_SIZE):
+    """勝利相関カード: 条件あり (orange) vs なし (dark) の勝率対比。
+
+    2026-06-11 角度 v2。 「選手が活躍した試合、 巨人は強い」を 1 枚で。
+    data: player_name / cond_label / a_label / a_record / a_rate /
+          b_label / b_record / b_rate / diff_label。
+    """
+    from PIL import Image, ImageDraw
+
+    canvas = Image.new("RGBA", (size, size), COLOR_CANVAS)
+    draw = ImageDraw.Draw(canvas)
+    _draw_header_block(canvas, draw, str(data.get("title", "")),
+                       str(data.get("subtitle", "")),
+                       str(data.get("hook_line", "")), size=size, header_h=160)
+
+    player_name = str(data.get("player_name", ""))
+    if player_name:
+        _draw_crisp_text(draw, (size // 2, 300), player_name, size=60,
+                         fill=COLOR_TEXT, anchor="ms")
+    cond_label = str(data.get("cond_label", ""))
+    if cond_label:
+        _pill_chip(canvas, (size // 2, 366), cond_label, size=27,
+                   bg=_hex_to_rgb("#262422") + (255,), fg=COLOR_GOLD)
+
+    card_y, card_b = 430, 880
+    half_w = (size - 80 - 24) // 2
+    lx, rx = 40, 40 + half_w + 24
+    _rounded_gradient_card(canvas, (lx, card_y, lx + half_w, card_b),
+                           radius=26, shadow=True)
+    _rounded_card(canvas, (rx, card_y, rx + half_w, card_b),
+                  fill=COLOR_NIGHT_CARD, radius=26,
+                  border=COLOR_NIGHT_BORDER, shadow=True)
+    draw = ImageDraw.Draw(canvas)
+    sides = (
+        (data.get("a_label", "あり"), data.get("a_record", ""),
+         data.get("a_rate", ""), lx + half_w // 2,
+         COLOR_WHITE, (255, 235, 220, 255), COLOR_WHITE),
+        (data.get("b_label", "なし"), data.get("b_record", ""),
+         data.get("b_rate", ""), rx + half_w // 2,
+         COLOR_NIGHT_TEXT, COLOR_NIGHT_SUB, COLOR_GOLD),
+    )
+    for label, record, rate, cx, main_c, sub_c, rate_c in sides:
+        font_l, _ = _find_font(size=32)
+        draw.text((cx, 510), str(label), font=font_l, fill=sub_c, anchor="ms")
+        _draw_crisp_text(draw, (cx, 600), str(record), size=52,
+                         fill=main_c, anchor="ms")
+        _draw_crisp_text(draw, (cx, 770), str(rate), size=104,
+                         fill=rate_c, anchor="ms")
+        font_cap, _ = _find_font(size=24)
+        draw.text((cx, 830), "勝率", font=font_cap, fill=sub_c, anchor="ms")
+
+    # 中央 VS 円 + 下部 差分 chip
+    vs_layer = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+    vd = ImageDraw.Draw(vs_layer)
+    vs_cy = (card_y + card_b) // 2
+    vd.ellipse((size // 2 - 42, vs_cy - 42, size // 2 + 42, vs_cy + 42),
+               fill=_hex_to_rgb("#23211E") + (255,))
+    canvas.alpha_composite(vs_layer)
+    draw = ImageDraw.Draw(canvas)
+    _draw_crisp_text(draw, (size // 2, vs_cy + 2), "VS", size=32,
+                     fill=COLOR_GOLD, anchor="mm")
+    diff_label = str(data.get("diff_label", ""))
+    if diff_label:
+        _pill_chip(canvas, (size // 2, 940), diff_label, size=30,
+                   bg=(0, 0, 0, 200), fg=COLOR_GOLD)
+        draw = ImageDraw.Draw(canvas)
+
+    _draw_footer_block(canvas, draw, str(data.get("footer_handle", DEFAULT_FOOTER_HANDLE)),
+                       str(data.get("footer_meta", DEFAULT_FOOTER_META)), size=size)
+    return canvas
+
+
 # 各 template_key → render function dispatch table
 TEMPLATE_RENDERERS = {
     "ranking_table": _render_ranking_table,
@@ -1530,6 +1602,7 @@ TEMPLATE_RENDERERS = {
     "podium_top3": _render_podium_top3,
     "focus_duel": _render_focus_duel,
     "dark_hero": _render_dark_hero,
+    "win_split": _render_win_split,
 }
 
 
@@ -1688,6 +1761,42 @@ def build_12team_bar_data(
         "subtitle": subtitle,
         "hook_line": hook_line,
         "teams": teams,
+        "footer_handle": footer_handle,
+        "footer_meta": footer_meta,
+    }
+
+
+def build_win_split_data(
+    *,
+    title: str,
+    subtitle: str,
+    hook_line: str,
+    player_name: str,
+    cond_label: str,
+    a_label: str = "あり",
+    a_record: str = "",
+    a_rate: str = "",
+    b_label: str = "なし",
+    b_record: str = "",
+    b_rate: str = "",
+    diff_label: str = "",
+    footer_handle: str = DEFAULT_FOOTER_HANDLE,
+    footer_meta: str = DEFAULT_FOOTER_META,
+) -> dict[str, Any]:
+    """勝利相関 (win_split) data。 a 側=条件成立 (orange)、 b 側=不成立 (dark)。"""
+    return {
+        "title": title,
+        "subtitle": subtitle,
+        "hook_line": hook_line,
+        "player_name": player_name,
+        "cond_label": cond_label,
+        "a_label": a_label,
+        "a_record": a_record,
+        "a_rate": a_rate,
+        "b_label": b_label,
+        "b_record": b_record,
+        "b_rate": b_rate,
+        "diff_label": diff_label,
         "footer_handle": footer_handle,
         "footer_meta": footer_meta,
     }

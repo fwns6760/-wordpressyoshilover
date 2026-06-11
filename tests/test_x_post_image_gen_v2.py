@@ -325,3 +325,30 @@ def test_dark_hero_canvas_is_dark():
     # 左端 (card / glow が無い領域) の pixel
     sample = img.getpixel((30, 600))
     assert sum(sample) < 240, f"canvas not dark: {sample}"
+
+
+def test_win_split_template_renders_valid_png():
+    """勝利相関 (win_split) template が 1080x1080 PNG を返す。"""
+    from src.x_post_image_gen_v2 import build_win_split_data
+    data = build_win_split_data(
+        title="キャベッジ 勝利相関", subtitle="今季42試合", hook_line="★ 打点を挙げた試合、巨人は強い ★",
+        player_name="キャベッジ", cond_label="打点を挙げた試合",
+        a_record="9勝2敗", a_rate=".818", b_record="14勝17敗", b_rate=".452",
+        diff_label="勝率差 +.367",
+    )
+    png = generate_png("win_split", data)
+    assert png is not None
+    w, h = _png_size_from_bytes(png)
+    assert (w, h) == (1080, 1080)
+    assert len(png) <= PNG_MAX_BYTES
+
+
+def test_build_win_split_data_passthrough():
+    from src.x_post_image_gen_v2 import build_win_split_data
+    d = build_win_split_data(
+        title="t", subtitle="s", hook_line="h", player_name="p",
+        cond_label="c", a_record="1勝0敗", a_rate="1.000",
+        b_record="0勝1敗", b_rate=".000", diff_label="差 1.000",
+    )
+    assert d["player_name"] == "p" and d["a_rate"] == "1.000"
+    assert d["footer_handle"]  # default 充填

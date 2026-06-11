@@ -172,6 +172,30 @@ def _data_split_max_per_run() -> int:
     return _resolve_int_env("X_POST_DATA_SPLIT_MAX", 2, min_value=0)
 
 
+def _data_angles_enabled() -> bool:
+    """2026-06-11 角度 v2 (勝利相関 / 対戦別split / 歴代通算チェイス) の env flag。
+
+    Default OFF。 ON 時のみ pick_candidates 後に角度候補を append する。
+    flag OFF では既存挙動完全不変 (rollback 余地)。
+    """
+    raw = (os.environ.get("ENABLE_X_POST_DATA_ANGLES") or "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _data_angles_max_per_run() -> int:
+    """角度 v2 候補数 / fire の上限 (default 3 = 各角度 1 本)。"""
+    return _resolve_int_env("X_POST_DATA_ANGLES_MAX", 3, min_value=0)
+
+
+def _topical_boost_enabled() -> bool:
+    """2026-06-11 ①話題選手連動: RSSHub 巨人系 X 言及数で候補を先頭寄せする env flag。
+
+    Default OFF。 並び替えと why_now 追記のみで、 本文・数字は変えない。
+    """
+    raw = (os.environ.get("ENABLE_X_POST_TOPICAL_BOOST") or "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
 def _video_radar_enabled() -> bool:
     """451: env flag for 動画レーダー (公式/OB/メディア YouTube の懐かし/ファン動画候補)。
 
@@ -1764,6 +1788,36 @@ def main(argv: Sequence[str] | None = None) -> int:
                     before, len(ds_new), len(candidates),
                 )
 
+    # 2026-06-11 角度 v2 (user 全部GO): 勝利相関 (条件付き勝率) / 対戦カード別 split /
+    # 歴代通算チェイス。 各角度 1 本ずつ、 カード PNG は builder 側で直接添付
+    # (image_bytes)。 公開 X 自動投稿はしない (候補=メールまで)。 flag OFF で既存不変。
+    if _data_angles_enabled() and db_path:
+        da_max = _data_angles_max_per_run()
+        if da_max > 0:
+            try:
+                from src import x_post_data_angles as _angles
+
+                da_candidates = (
+                    _angles.build_win_correlation_candidates(
+                        db_path, now=now_jst, max_count=1, dedup_set=dedup_set)
+                    + _angles.build_opponent_split_candidates(
+                        db_path, now=now_jst, max_count=1, dedup_set=dedup_set)
+                    + _angles.build_alltime_chase_candidates(
+                        now=now_jst, max_count=1, dedup_set=dedup_set)
+                )[:da_max]
+            except Exception as _da_exc:  # noqa: BLE001
+                LOG.warning("data_angles build failed: %r", _da_exc)
+                da_candidates = []
+            _existing_sigs = {getattr(c, "signature", "") for c in candidates}
+            da_new = [c for c in da_candidates if c.signature not in _existing_sigs]
+            if da_new:
+                before = len(candidates)
+                candidates = candidates + da_new
+                LOG.info(
+                    "data_angles appended: base=%d angles=%d total=%d",
+                    before, len(da_new), len(candidates),
+                )
+
     # 451: flag ON 時、 公式/OB/メディア YouTube の「懐かし・ファン反応」動画候補を append。
     # 転載しない (URL 紹介のみ)、 公開 X 自動投稿はしない (候補=メールまで)。 flag OFF で既存不変。
     if _video_radar_enabled():
@@ -2225,6 +2279,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             lane._NEWS_OPINION_METRIC, lane._FAN_VOICE_METRIC, lane._GEMINI_BRANDING_METRIC,
             lane._HOCHI_REPLY_METRIC, lane._REPLY_CANDIDATE_METRIC, lane._VIDEO_RADAR_METRIC,
             lane._PLAYER_COMMENT_METRIC, lane._COMMENT_DB_METRIC, "quote_caption",
+            # 2026-06-11 角度 v2 (user 全部GO): たんぱく事実型 pattern① として許可。
+            # 2026-06-04 の voice-only は「DB ランキング表の生データ枠」を落とす意図で、
+            # 驚き角度 (勝利相関/対戦別/歴代チェイス) は 2-pattern 設計の①に該当する。
+            "勝利相関", "対戦別split", "歴代通算チェイス",
         }
         _before_voice = len(candidates)
         _voice_candidates = [c for c in candidates if c.metric in _VOICE_ONLY_METRICS]
@@ -2242,6 +2300,19 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "keeping data candidates as floor so the scheduled mail still sends.",
                 _before_voice,
             )
+
+    # 2026-06-11 ①話題選手連動 (user「その試合で話題になった選手がインプとれそう」):
+    # RSSHub 巨人系 X の直近言及数で候補を先頭寄せ (本文・数字は不変、 並びと why_now のみ)。
+    # 下の policy gate は順序保持で先頭から cap するため、 boost はこの位置で効く。
+    if _topical_boost_enabled() and candidates:
+        try:
+            from src import x_post_data_angles as _angles
+
+            _buzz = _angles.fetch_topical_counts()
+            if _buzz:
+                candidates = _angles.boost_topical_candidates(candidates, _buzz)
+        except Exception as _tb_exc:  # noqa: BLE001
+            LOG.info("topical boost skip: %r", _tb_exc)
 
     # 2026-05-27 x-impression-plan: final API-free policy gate.
     # Keep the 437 media/share path unchanged; only prune same-mail

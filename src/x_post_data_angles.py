@@ -339,9 +339,11 @@ def build_opponent_split_candidates(
                 player_team="巨人",
                 metric_label=f"対{opp} 打率 ({oh}安打/{oab}打数)",
                 hero_value=_fmt3(oavg),
-                sub_stats=[
-                    {"label": "シーズン打率", "value": _fmt3(savg)},
-                    {"label": f"対{opp}差", "value": f"+{_fmt3(gap)}"},
+                as_of=f"{now.month}/{now.day}",
+                compare_bars=[
+                    {"label": f"対{opp}", "value": oavg,
+                     "display": _fmt3(oavg), "highlight": True},
+                    {"label": "シーズン", "value": savg, "display": _fmt3(savg)},
                 ],
             ))
         out.append(Candidate(
@@ -446,11 +448,14 @@ def build_alltime_chase_candidates(
                 hook_line=f"★ あと{remaining}{unit}で {above['name']} に並ぶ ★",
                 player_name=name,
                 player_team=f"歴代 {rank}位",
-                metric_label=f"NPB通算{label}",
+                metric_label=f"NPB通算{label} あと{remaining}{unit}",
                 hero_value=str(row["value"]),
-                sub_stats=[
-                    {"label": f"次 {above['rank']}位 {above['name']}", "value": str(above["value"])},
-                    {"label": "あと", "value": f"{remaining}{unit}"},
+                as_of=f"{now.month}/{now.day}",
+                compare_bars=[
+                    {"label": str(above["name"]), "value": float(above["value"]),
+                     "display": str(above["value"])},
+                    {"label": str(name), "value": float(row["value"]),
+                     "display": str(row["value"]), "highlight": True},
                 ],
             ))
         out.append(Candidate(
@@ -682,6 +687,7 @@ def build_weekly_mvp_candidates(
                 player_team="巨人",
                 metric_label=f"週間打率 ({h}安打/{ab}打数)",
                 hero_value=_fmt3(avg),
+                as_of=f"{now.month}/{now.day}",
                 sub_stats=[
                     {"label": "本塁打", "value": str(hr)},
                     {"label": "打点", "value": str(rbi)},
@@ -905,10 +911,14 @@ def build_legend_age_compare_candidates(
                 player_team="巨人",
                 metric_label=f"{age}歳時点 通算本塁打",
                 hero_value=f"{cum}本",
-                sub_stats=[
-                    {"label": f"{beaten_name} ({age}歳時点)", "value": f"{beaten_cum}本"},
-                ] + ([{"label": f"{above_pair[1]} ({age}歳時点)",
-                       "value": f"{above_pair[0]}本"}] if above_pair else []),
+                as_of=f"{now.month}/{now.day}",
+                compare_bars=[
+                    {"label": name, "value": float(cum),
+                     "display": f"{cum}本", "highlight": True},
+                    {"label": beaten_name, "value": float(beaten_cum),
+                     "display": f"{beaten_cum}本"},
+                ] + ([{"label": str(above_pair[1]), "value": float(above_pair[0]),
+                       "display": f"{above_pair[0]}本"}] if above_pair else []),
             ))
         out.append(Candidate(
             title=f"{name} {age}歳時点{cum}本 ({beaten_name}超え)",

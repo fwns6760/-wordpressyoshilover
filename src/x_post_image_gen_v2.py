@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_SIZE = 1080
 PNG_MAX_BYTES = 500 * 1024  # 500KB — X / WP 帯域圧迫を回避
 DEFAULT_FOOTER_HANDLE = "@yoshilover6760"
-DEFAULT_FOOTER_META = "巨人データ"
+DEFAULT_FOOTER_META = "yoshilover.com/data"
 
 # CJK 描画が確実な TTF を優先順に探索する。 production の Cloud Run image は
 # `fonts-noto-cjk` (実 bold 字形) を主、 `fonts-ipafont-gothic` を fallback と
@@ -631,8 +631,59 @@ def _draw_footer_block(canvas, draw, handle: str, meta: str, *, size: int = DEFA
     draw.text((start_x + hw + sw_, base_y), meta, font=font_meta, fill="#B9B3AB", anchor="ls")
 
 
+def _draw_hero_number(draw, center, text: str, *, size: int, fill, baseline_y: int):
+    """hero 数字を字間詰めで描く。 '.' の前後 advance を約 45% 詰めて間延びを消す。"""
+    font, _ = _find_font(size=size)
+    widths = [draw.textlength(ch, font=font) for ch in text]
+    advances = []
+    for i, ch in enumerate(text):
+        w = widths[i]
+        if ch in ".,":
+            w *= 0.55
+        elif i + 1 < len(text) and text[i + 1] in ".,":
+            w *= 0.92
+        advances.append(w)
+    total = sum(advances)
+    x = center - total / 2
+    for ch, adv, w in zip(text, advances, widths):
+        # 文字自体は左詰めで描き、 advance だけ詰める
+        draw.text((x, baseline_y), ch, font=font, fill=fill, anchor="ls")
+        x += adv
+
+
+def _draw_compare_bars(canvas, draw, bars: list[dict], *, size: int, top: int):
+    """横棒の比較 chart (最大3本)。 bars[i] = {label, value(float), display, highlight?}。"""
+    bars = bars[:3]
+    vmax = max((float(b.get("value") or 0) for b in bars), default=0.0)
+    if vmax <= 0:
+        return
+    # 3本時は行高を詰めて hero card (下端 960) からはみ出さないようにする
+    bar_x = 320
+    bar_h, row_h = (28, 48) if len(bars) >= 3 else (34, 64)
+    bar_w_max = size - bar_x - 230
+    font_lb, _ = _find_font(size=26)
+    for i, b in enumerate(bars):
+        y = top + i * row_h
+        v = float(b.get("value") or 0)
+        w = max(10, int(bar_w_max * v / vmax))
+        hl = bool(b.get("highlight"))
+        draw.text((bar_x - 18, y + bar_h // 2), str(b.get("label", ""))[:9],
+                  font=font_lb, fill=COLOR_TEXT if hl else COLOR_TEXT_SUB, anchor="rm")
+        fill = _hex_to_rgb(COLOR_GIANTS_ROW_LEFT) + (255,) if hl else (210, 206, 200, 255)
+        draw.rounded_rectangle((bar_x, y, bar_x + w, y + bar_h), radius=bar_h // 2,
+                               fill=fill)
+        _draw_crisp_text(draw, (bar_x + w + 16, y + bar_h // 2 + 12),
+                         str(b.get("display", "")), size=30,
+                         fill=COLOR_TEXT if hl else COLOR_TEXT_SUB, anchor="ls")
+
+
 def _render_player_spotlight(data: dict[str, Any], size: int = DEFAULT_SIZE):
-    """1 選手の hero stat を巨大表示 (白 hero card に集約)。"""
+    """1 選手の hero stat を巨大表示 (白 hero card に集約)。
+
+    2026-06-12 洗練版: hero 数字の字間詰め / 「◯/◯時点」日付チップ /
+    compare_bars (明示指定時のみ横棒比較 chart、 旧 sub_stats と排他) / 巨人 pill は
+    全カード共通情報のため非表示既定 (player_team='巨人' の時 skip)。
+    """
     from PIL import Image, ImageDraw
 
     canvas = Image.new("RGBA", (size, size), COLOR_CANVAS)
@@ -646,6 +697,13 @@ def _render_player_spotlight(data: dict[str, Any], size: int = DEFAULT_SIZE):
     _rounded_card(canvas, (70, 280, size - 70, 960), radius=26, shadow=True)
     draw = ImageDraw.Draw(canvas)
 
+    # 日付チップ (データ鮮度の明示)
+    as_of = str(data.get("as_of", ""))
+    if as_of:
+        font_dt, _ = _find_font(size=24)
+        draw.text((size - 100, 330), f"{as_of}時点", font=font_dt,
+                  fill=COLOR_TEXT_SUB, anchor="rs")
+
     player_name = str(data.get("player_name", ""))
     player_team = str(data.get("player_team", ""))
     if player_name:
@@ -657,33 +715,39 @@ def _render_player_spotlight(data: dict[str, Any], size: int = DEFAULT_SIZE):
                   anchor="ls", stroke_width=sw, stroke_fill=COLOR_TEXT)
         _draw_crisp_text(draw, (nx + name_w + 18, 400), "★", size=40,
                          fill=COLOR_MEDAL_GOLD, anchor="ls")
-    if player_team:
+    # 「巨人」は全カード共通で情報量ゼロのため pill を出さない (それ以外は従来通り)
+    if player_team and player_team != "巨人":
         _pill_chip(canvas, (size // 2, 465), player_team, size=26,
                    bg=_hex_to_rgb(COLOR_GIANTS_ROW_LEFT) + (255,), fg=COLOR_WHITE)
         draw = ImageDraw.Draw(canvas)
 
     metric_label = str(data.get("metric_label", ""))
     if metric_label:
-        _pill_chip(canvas, (size // 2, 555), metric_label, size=30,
+        _pill_chip(canvas, (size // 2, 535), metric_label, size=30,
                    bg=_hex_to_rgb("#262422") + (255,), fg=COLOR_GOLD)
         draw = ImageDraw.Draw(canvas)
 
+    compare_bars = data.get("compare_bars") or []
     hero_value = str(data.get("hero_value", ""))
     if hero_value:
-        _draw_crisp_text(draw, (size // 2, 805), hero_value, size=230,
-                         fill=COLOR_GIANTS_ROW_LEFT, anchor="ms")
+        hero_y = 770 if compare_bars else 805
+        _draw_hero_number(draw, size // 2, hero_value, size=230,
+                          fill=COLOR_GIANTS_ROW_LEFT, baseline_y=hero_y)
 
-    sub_stats = (data.get("sub_stats", []) or [])[:2]
-    if sub_stats:
-        draw.line(((220, 838), (size - 220, 838)), fill=COLOR_CARD_BORDER, width=2)
-        col_w = (size - 140) // len(sub_stats)
-        for i, s in enumerate(sub_stats):
-            x_center = 70 + col_w * i + col_w // 2
-            font_sl, _ = _find_font(size=26)
-            draw.text((x_center, 882), str(s.get("label", "")), font=font_sl,
-                      fill=COLOR_TEXT_SUB, anchor="ms")
-            _draw_crisp_text(draw, (x_center, 938), str(s.get("value", "")),
-                             size=48, fill=COLOR_TEXT, anchor="ms")
+    if compare_bars:
+        _draw_compare_bars(canvas, draw, compare_bars, size=size, top=812)
+    else:
+        sub_stats = (data.get("sub_stats", []) or [])[:2]
+        if sub_stats:
+            draw.line(((220, 838), (size - 220, 838)), fill=COLOR_CARD_BORDER, width=2)
+            col_w = (size - 140) // len(sub_stats)
+            for i, s in enumerate(sub_stats):
+                x_center = 70 + col_w * i + col_w // 2
+                font_sl, _ = _find_font(size=26)
+                draw.text((x_center, 882), str(s.get("label", "")), font=font_sl,
+                          fill=COLOR_TEXT_SUB, anchor="ms")
+                _draw_crisp_text(draw, (x_center, 938), str(s.get("value", "")),
+                                 size=48, fill=COLOR_TEXT, anchor="ms")
 
     _draw_footer_block(
         canvas, draw,
@@ -1685,9 +1749,13 @@ def build_player_spotlight_data(
     metric_label: str,
     hero_value: str,
     sub_stats: list[dict[str, Any]] | None = None,
+    compare_bars: list[dict[str, Any]] | None = None,
+    as_of: str = "",
     footer_handle: str = DEFAULT_FOOTER_HANDLE,
     footer_meta: str = DEFAULT_FOOTER_META,
 ) -> dict[str, Any]:
+    """compare_bars[i] = {label, value(float), display, highlight?} 最大3本。
+    指定時は sub_stats の代わりに横棒比較 chart を描く。 as_of 例 '6/12'。"""
     return {
         "title": title,
         "subtitle": subtitle,
@@ -1697,6 +1765,8 @@ def build_player_spotlight_data(
         "metric_label": metric_label,
         "hero_value": hero_value,
         "sub_stats": sub_stats or [],
+        "compare_bars": compare_bars or [],
+        "as_of": as_of,
         "footer_handle": footer_handle,
         "footer_meta": footer_meta,
     }

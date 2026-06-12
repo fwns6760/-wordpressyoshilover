@@ -72,3 +72,4 @@ status: 設計確定(2026-06-12 user GO)、実装未着手
 ## user作業(1件のみ)
 
 - YouTubeチャンネルの新規開設(ブランドアカウント推奨)。Phase 1はmail+手動アップロードなので、実装と並行で間に合えばOK
+- **完了(2026-06-12)**: チャンネル開設済 = 「BaseBall Academy ヨシラバー」 https://www.youtube.com/@baseballacademy9623

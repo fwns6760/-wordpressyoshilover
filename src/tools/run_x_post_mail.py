@@ -2719,11 +2719,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
             candidates = _voice_candidates
         elif _data_dropped:
+            # 2026-06-12 user「データ記事は驚きのもの以外は送らないで」: voice 0 件でも
+            # 生データ候補を floor として送らない。 mail skip (「少なくてもよい」方針)。
             LOG.warning(
-                "voice-only filter would empty the mail (%d data candidates, 0 voice); "
-                "keeping data candidates as floor so the scheduled mail still sends.",
+                "voice-only filter emptied the mail (%d data candidates, 0 voice); "
+                "skipping send per user policy (no raw-data floor).",
                 _before_voice,
             )
+            return 0
 
     # 2026-06-11 ①話題選手連動 (user「その試合で話題になった選手がインプとれそう」):
     # RSSHub 巨人系 X の直近言及数で候補を先頭寄せ (本文・数字は不変、 並びと why_now のみ)。

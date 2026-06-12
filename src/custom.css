@@ -9995,3 +9995,169 @@ div.bbp-template-notice {
 #bbpress-forums .bbp-breadcrumb {
   display: none !important;
 }
+
+/* ============================================================
+   v0.23.2 トピックページ: ヤフコメ風コメントフィード (2026-06-12)
+   テーブル型 (ヘッダ帯+著者列+本文) → フラットなコメントカードへ。
+   レス番号 / 小型アバター / 「共感した」ボタン (plugin v0.23.2 と対)
+   ============================================================ */
+
+/* 列ヘッダ行 (投稿者/投稿) は撤去 */
+#bbpress-forums ul.bbp-replies li.bbp-header {
+  display: none !important;
+}
+
+/* メタ帯: 帯感をなくし「レス番号 + 日時 + 返信」の1行に */
+#bbpress-forums ul.bbp-replies {
+  counter-reset: ylres 0;
+}
+#bbpress-forums ul.bbp-replies li.bbp-body > div.bbp-reply-header {
+  counter-increment: ylres;
+  background: transparent !important;
+  border: none !important;
+  border-top: 1px solid var(--yl-bd) !important;
+  margin: 0 !important;
+  padding: 12px 16px 0 !important;
+}
+#bbpress-forums ul.bbp-replies li.bbp-body > div.bbp-reply-header:first-child {
+  border-top: none !important;
+}
+#bbpress-forums ul.bbp-replies .bbp-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11.5px;
+  color: #9A958C;
+}
+#bbpress-forums ul.bbp-replies a.bbp-reply-permalink {
+  order: 0;
+  font-size: 0 !important;
+  text-decoration: none;
+}
+#bbpress-forums ul.bbp-replies a.bbp-reply-permalink::before {
+  content: counter(ylres);
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #C45F00;
+  background: var(--orange-light);
+  border-radius: 6px;
+  padding: 1px 8px;
+  line-height: 1.5;
+  display: inline-block;
+}
+#bbpress-forums ul.bbp-replies span.bbp-reply-post-date {
+  order: 1;
+  margin-left: auto;
+}
+#bbpress-forums ul.bbp-replies span.bbp-admin-links {
+  order: 2;
+}
+#bbpress-forums ul.bbp-replies span.bbp-admin-links a {
+  color: var(--mid-gray);
+  text-decoration: none;
+}
+#bbpress-forums ul.bbp-replies span.bbp-admin-links a:hover {
+  color: var(--orange);
+}
+
+/* 投稿ブロック: 著者列の float 解除、奇偶背景の撤去 */
+#bbpress-forums ul.bbp-replies li.bbp-body > div:not(.bbp-reply-header) {
+  background: var(--white) !important;
+  border: none !important;
+  margin: 0 !important;
+  padding: 6px 16px 14px !important;
+  display: block;
+}
+#bbpress-forums ul.bbp-replies div.bbp-reply-author {
+  float: none !important;
+  width: auto !important;
+  min-height: 0 !important;
+  margin: 0 0 4px !important;
+  padding: 0 !important;
+  text-align: left !important;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+#bbpress-forums ul.bbp-replies div.bbp-reply-author a.bbp-author-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  text-decoration: none;
+}
+#bbpress-forums ul.bbp-replies div.bbp-reply-author img.avatar {
+  width: 30px !important;
+  height: 30px !important;
+  border-radius: 50% !important;
+  margin: 0 !important;
+  border: 1px solid var(--yl-bd);
+}
+#bbpress-forums ul.bbp-replies div.bbp-reply-author .bbp-author-name {
+  font-weight: 700;
+  color: var(--black);
+}
+#bbpress-forums ul.bbp-replies div.bbp-author-role {
+  font-size: 10px !important;
+  font-style: normal !important;
+  background: rgba(245, 129, 31, 0.12);
+  color: #C45F00;
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+#bbpress-forums ul.bbp-replies div.bbp-reply-content {
+  margin: 0 !important;
+  padding: 0 !important;
+  font-size: 14.5px;
+  line-height: 1.75;
+}
+#bbpress-forums ul.bbp-replies div.bbp-reply-content p {
+  margin: 0 0 8px;
+}
+
+/* 共感ボタン (ヤフコメ風) */
+.yoshi-board-like {
+  margin-top: 8px;
+}
+.yoshi-board-like__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--white);
+  border: 1px solid var(--yl-bd);
+  border-radius: 999px;
+  padding: 4px 14px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--mid-gray);
+  cursor: pointer;
+  transition: background 0.18s, border-color 0.18s, color 0.18s;
+}
+.yoshi-board-like__btn:hover {
+  border-color: rgba(245, 129, 31, 0.5);
+  color: #C45F00;
+  background: var(--orange-light);
+}
+.yoshi-board-like__btn.is-liked {
+  border-color: rgba(245, 129, 31, 0.5);
+  color: #C45F00;
+  background: var(--orange-light);
+}
+.yoshi-board-like__btn:disabled {
+  cursor: default;
+  opacity: 0.85;
+}
+.yoshi-board-like__count {
+  font-weight: 700;
+}
+.yoshi-board-like__count:empty {
+  display: none;
+}
+
+/* ヤフコメ風 仕上げ: リスト下端の列フッタ撤去 + 旧 border-left 残党除去 */
+#bbpress-forums li.bbp-footer {
+  display: none !important;
+}
+#bbpress-forums ul.bbp-replies div.bbp-reply-content {
+  border-left: none !important;
+}

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Yoshilover 063 Frontend (topic hub / SNS reactions / Phase 1 noindex)
  * Description: 062 contract §2 §3 §5 の front impl。topic hub / SNS block / noindex を基盤に、トップ速報帯・記事下回遊束・右カラム rail・上部密集ナビ・人気記事導線まで含めて SWELL front を高密度化する。既存 SWELL コメント欄は触らない。
- * Version: 0.23.1
+ * Version: 0.23.2
  * Author: yoshilover
  */
 
@@ -5233,8 +5233,108 @@ function yoshilover_063_bbp_relabel( $translation, $text, $domain ) {
             return 'ニックネーム（空欄なら「匿名の巨人ファン」）:';
         case 'Submit':
             return '書き込む';
+        case 'Reply To: %s':
+            return 'コメントを書く';
+        case 'Reply':
+            return '返信する';
     }
     return $translation;
+}
+
+/* ── ヤフコメ風「共感した」ボタン (2026-06-12 v0.23.2) ──
+   公開 REST (post_id への +1 のみ、IP throttle 30/min)。
+   count は cosmetic であり厳密性は求めない。 */
+
+add_action( 'rest_api_init', 'yoshilover_063_register_board_like_route' );
+function yoshilover_063_register_board_like_route() {
+    register_rest_route(
+        'yoshilover-063/v1',
+        '/board-like',
+        array(
+            'methods'             => 'POST',
+            'callback'            => 'yoshilover_063_rest_board_like',
+            'permission_callback' => '__return_true',
+            'args'                => array(
+                'post_id' => array( 'type' => 'integer', 'required' => true ),
+            ),
+        )
+    );
+}
+
+function yoshilover_063_rest_board_like( $request ) {
+    $post_id = (int) $request->get_param( 'post_id' );
+    $post    = get_post( $post_id );
+    $types   = function_exists( 'bbp_get_reply_post_type' )
+        ? array( bbp_get_reply_post_type(), bbp_get_topic_post_type() )
+        : array( 'reply', 'topic' );
+    if ( ! $post || ! in_array( $post->post_type, $types, true ) || $post->post_status !== 'publish' ) {
+        return new WP_Error( 'yoshilover_063_board_like_invalid', 'invalid post.', array( 'status' => 404 ) );
+    }
+    $ip  = isset( $_SERVER['REMOTE_ADDR'] ) ? (string) $_SERVER['REMOTE_ADDR'] : '';
+    $key = 'yoshi_bl_' . md5( $ip );
+    $n   = (int) get_transient( $key );
+    if ( $n >= 30 ) {
+        return new WP_Error( 'yoshilover_063_board_like_throttled', 'too many requests.', array( 'status' => 429 ) );
+    }
+    set_transient( $key, $n + 1, MINUTE_IN_SECONDS );
+    $count = (int) get_post_meta( $post_id, '_yoshi_like_count', true ) + 1;
+    update_post_meta( $post_id, '_yoshi_like_count', $count );
+    return array( 'status' => 'ok', 'post_id' => $post_id, 'count' => $count );
+}
+
+// 各レス本文の下に「共感した」ボタンを出す (topic lead もレス loop を通るので両方に出る)
+add_action( 'bbp_theme_after_reply_content', 'yoshilover_063_board_like_button' );
+function yoshilover_063_board_like_button() {
+    $post_id = function_exists( 'bbp_get_reply_id' ) ? bbp_get_reply_id() : 0;
+    if ( ! $post_id && function_exists( 'bbp_get_topic_id' ) ) {
+        $post_id = bbp_get_topic_id();
+    }
+    if ( ! $post_id ) {
+        return;
+    }
+    $count = (int) get_post_meta( $post_id, '_yoshi_like_count', true );
+    echo '<div class="yoshi-board-like">'
+        . '<button type="button" class="yoshi-board-like__btn" data-yl-like="' . (int) $post_id . '">'
+        . '<span aria-hidden="true">👍</span> 共感した'
+        . '<span class="yoshi-board-like__count" data-yl-count="' . (int) $post_id . '">'
+        . ( $count > 0 ? (int) $count : '' ) . '</span>'
+        . '</button></div>';
+}
+
+add_action( 'wp_footer', 'yoshilover_063_board_like_js' );
+function yoshilover_063_board_like_js() {
+    if ( ! function_exists( 'is_bbpress' ) || ! is_bbpress() ) {
+        return;
+    }
+    $endpoint = esc_url_raw( rest_url( 'yoshilover-063/v1/board-like' ) );
+    ?>
+<script id="yoshi-board-like-js">
+(function(){
+  function markLiked(btn){ btn.classList.add('is-liked'); btn.disabled = true; }
+  document.querySelectorAll('[data-yl-like]').forEach(function(b){
+    try { if (localStorage.getItem('yl_liked_' + b.getAttribute('data-yl-like'))) { markLiked(b); } } catch(e){}
+  });
+  document.addEventListener('click', function(e){
+    var btn = e.target.closest('[data-yl-like]');
+    if (!btn || btn.disabled) { return; }
+    var id = btn.getAttribute('data-yl-like');
+    btn.disabled = true;
+    fetch(<?php echo wp_json_encode( $endpoint ); ?>, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ post_id: parseInt(id, 10) })
+    }).then(function(r){ return r.json(); }).then(function(d){
+      if (d && d.count) {
+        var c = document.querySelector('[data-yl-count="' + id + '"]');
+        if (c) { c.textContent = d.count; }
+        try { localStorage.setItem('yl_liked_' + id, '1'); } catch(e){}
+        markLiked(btn);
+      } else { btn.disabled = false; }
+    }).catch(function(){ btn.disabled = false; });
+  });
+})();
+</script>
+    <?php
 }
 
 /* ------------------------------------------------------------

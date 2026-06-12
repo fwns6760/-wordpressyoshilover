@@ -679,6 +679,7 @@ def _build_notable_more_records_html() -> str:
         ("/data", "全選手の個人データ"),
         ("/data/batting-ranking", "打撃ランキング"),
         ("/data/pitching-ranking", "投手ランキング"),
+        ("/data/salary/salary-value", "💰年俸コスパ"),
     ]
     anchors = " ・ ".join(
         f'<a href="{href}" style="color:#1976d2;font-weight:700;text-decoration:none;">{_esc(label)}</a>'
@@ -692,6 +693,7 @@ _NOTABLE_RELATED_LINKS = [
     ("/data/team", "チーム成績"),
     ("/data/leaders", "リーダーボード"),
     ("/data/ranking", "リーグ上位ランキング"),
+    ("/data/salary/salary-value", "年俸コスパ分析"),
     ("/data/schedule", "試合日程"),
 ]
 

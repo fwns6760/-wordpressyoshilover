@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Yoshilover 063 Frontend (topic hub / SNS reactions / Phase 1 noindex)
  * Description: 062 contract §2 §3 §5 の front impl。topic hub / SNS block / noindex を基盤に、トップ速報帯・記事下回遊束・右カラム rail・上部密集ナビ・人気記事導線まで含めて SWELL front を高密度化する。既存 SWELL コメント欄は触らない。
- * Version: 0.23.3
+ * Version: 0.23.4
  * Author: yoshilover
  */
 
@@ -5374,8 +5374,9 @@ function yoshilover_063_get_board_hot_topic() {
     return $result;
 }
 
-function yoshilover_063_render_board_cta() {
-    $html  = '<aside class="yoshi-board-cta" aria-label="掲示板への誘導">';
+function yoshilover_063_render_board_cta( $variant = 'bottom' ) {
+    $variant = ( $variant === 'inline' ) ? 'inline' : 'bottom';
+    $html  = '<aside class="yoshi-board-cta yoshi-board-cta--' . $variant . '" aria-label="掲示板への誘導">';
     $html .= '<div class="yoshi-board-cta__body">';
     $html .= '<div class="yoshi-board-cta__title">💬 この話題、巨人ファン掲示板で語ろう</div>';
     $html .= '<div class="yoshi-board-cta__lead">登録不要・ニックネームだけで今すぐ書き込めます。</div>';
@@ -5400,12 +5401,30 @@ function yoshilover_063_auto_inject_board_cta( $content ) {
     if ( ! is_singular( 'post' ) ) {
         return $content;
     }
-    if ( strpos( (string) $content, 'yoshi-board-cta' ) !== false ) {
+    if ( strpos( (string) $content, 'yoshi-board-cta--bottom' ) !== false ) {
         return $content;
     }
-    return $content . yoshilover_063_render_board_cta();
+    return $content . yoshilover_063_render_board_cta( 'bottom' );
 }
 add_filter( 'the_content', 'yoshilover_063_auto_inject_board_cta', 22 );
+
+/*
+ * 本文が終わった直後 (SNS反応 / 回遊束 / Xシェアより前 = priority 19) にも
+ * 同じ CTA を 1 個置く。読了直後が反応の動く位置のため (user 指示 2026-06-12)。
+ */
+function yoshilover_063_auto_inject_board_cta_inline( $content ) {
+    if ( is_admin() || ! in_the_loop() || ! is_main_query() ) {
+        return $content;
+    }
+    if ( ! is_singular( 'post' ) ) {
+        return $content;
+    }
+    if ( strpos( (string) $content, 'yoshi-board-cta--inline' ) !== false ) {
+        return $content;
+    }
+    return $content . yoshilover_063_render_board_cta( 'inline' );
+}
+add_filter( 'the_content', 'yoshilover_063_auto_inject_board_cta_inline', 19 );
 
 /* ------------------------------------------------------------
  * 5) deploy / smoke helper (admin only)

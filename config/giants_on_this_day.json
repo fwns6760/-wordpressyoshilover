@@ -1,0 +1,76 @@
+{
+ "_source": "各イベントは 2026-06-12 に web 一次寄りソースで個別裏取り (source URL 併記)",
+ "_note": "角度③ あの日の巨人 (on this day)。日付キー MM-DD。イベントが無い日は ob_legends_full.json の誕生日 fallback (builder 側)。追記時も必ず 1 件ずつ裏取りし、source を書く (推測で埋めない)。",
+ "events": {
+  "03-18": [
+   {
+    "year": 1988,
+    "text": "東京ドーム開場。日本初の屋根付き球場、こけら落としは巨人-阪神のオープン戦",
+    "source": "https://www.nikkei.com/article/DGKKZO70048410X10C21A3EAC000/"
+   }
+  ],
+  "05-18": [
+   {
+    "year": 1994,
+    "text": "槙原寛己が福岡ドームの広島戦で完全試合を達成。史上15人目、平成では唯一",
+    "source": "https://www.nippon.com/ja/japan-topics/today05180/"
+   }
+  ],
+  "06-25": [
+   {
+    "year": 1959,
+    "text": "プロ野球史上唯一の天覧試合 (後楽園・対阪神)。9回裏に長嶋茂雄がサヨナラ本塁打",
+    "source": "https://www.bbm-japan.com/_ct/17091734"
+   }
+  ],
+  "08-13": [
+   {
+    "year": 2017,
+    "text": "阿部慎之助が通算2000安打を達成 (マツダスタジアム・対広島)。史上49人目",
+    "source": "https://ja.wikipedia.org/wiki/阿部慎之助"
+   }
+  ],
+  "09-03": [
+   {
+    "year": 1977,
+    "text": "王貞治が通算756号本塁打 (後楽園・対ヤクルト)。ハンク・アーロンを抜く世界新記録",
+    "source": "https://www.jiji.com/jc/daily?d=0903"
+   }
+  ],
+  "10-08": [
+   {
+    "year": 1994,
+    "text": "10.8決戦 (ナゴヤ球場・対中日)。史上初の同率首位直接対決を制してリーグ優勝",
+    "source": "https://ja.wikipedia.org/wiki/10.8決戦"
+   }
+  ],
+  "10-10": [
+   {
+    "year": 2002,
+    "text": "松井秀喜が日本最終年の50号本塁打 (東京ドーム・対ヤクルト、本拠地最終戦)",
+    "source": "https://number.bunshun.jp/articles/-/845497"
+   }
+  ],
+  "10-14": [
+   {
+    "year": 1974,
+    "text": "長嶋茂雄の引退試合 (後楽園・対中日)。「わが巨人軍は永久に不滅です」",
+    "source": "https://www.nippon.com/ja/japan-topics/today10140/"
+   }
+  ],
+  "11-08": [
+   {
+    "year": 2020,
+    "text": "坂本勇人が通算2000安打を達成 (東京ドーム・対ヤクルト)。右打者として史上最速",
+    "source": "https://meikyukai.jp/news/sakamoto-2000/"
+   }
+  ],
+  "12-26": [
+   {
+    "year": 1934,
+    "text": "巨人軍創立記念日。前身の大日本東京野球倶楽部が創立総会 (プロ野球誕生の日)",
+    "source": "https://ja.wikipedia.org/wiki/読売ジャイアンツ"
+   }
+  ]
+ }
+}

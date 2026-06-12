@@ -924,3 +924,151 @@ def build_legend_age_compare_candidates(
         ))
     logger.info("legend_compare: built %d candidates (max=%d)", len(out), max_count)
     return out
+
+
+# ─── 7. あの日の巨人 (on this day) ───────────────────────────────────
+
+
+_ON_THIS_DAY_METRIC = "あの日の巨人"
+
+
+def _load_on_this_day() -> dict:
+    """config/giants_on_this_day.json (web 裏取り済み bake-in) を読む。無ければ {}。"""
+    import json as _json
+    from pathlib import Path as _Path
+    path = _Path(__file__).resolve().parent.parent / "config" / "giants_on_this_day.json"
+    try:
+        return (_json.loads(path.read_text(encoding="utf-8")) or {}).get("events") or {}
+    except Exception as exc:  # noqa: BLE001
+        logger.info("giants_on_this_day unavailable: %r", exc)
+        return {}
+
+
+def _load_ob_legends() -> dict:
+    """config/ob_legends_full.json を読む。無ければ {}。"""
+    import json as _json
+    from pathlib import Path as _Path
+    path = _Path(__file__).resolve().parent.parent / "config" / "ob_legends_full.json"
+    try:
+        return _json.loads(path.read_text(encoding="utf-8")) or {}
+    except Exception as exc:  # noqa: BLE001
+        logger.info("ob_legends unavailable: %r", exc)
+        return {}
+
+
+def build_on_this_day_candidates(
+    *,
+    now: Optional[datetime] = None,
+    max_count: int = 1,
+    dedup_set: Optional[set[str]] = None,
+    with_image: bool = False,
+    events: Optional[dict] = None,
+    legends: Optional[dict] = None,
+) -> list:
+    """【あの日の巨人】歴史 on this day。 在庫無限・毎日安定供給の枠 (角度③)。
+
+    優先順: ①当日 MM-DD の裏取り済みイベント (giants_on_this_day.json) →
+    ②OBレジェンドの「生まれた日」(ob_legends_full.json、 order 上位優先)。
+    故人配慮で誕生日は「生まれた日」表記・年齢なし (祝い文言を入れない)。
+    LLM 不使用・追加課金なし。 default は画像なし (歴史事実はテキストで十分)。
+    """
+    if now is None:
+        now = datetime.now(JST)
+    Candidate = _candidate_cls()
+    md = f"{now.month:02d}-{now.day:02d}"
+    label_date = f"{now.month}月{now.day}日"
+    if events is None:
+        events = _load_on_this_day()
+    if legends is None:
+        legends = _load_ob_legends()
+
+    out: list = []
+
+    def _emit(signature: str, headline: str, body_line: str, why: str,
+              source_type: str, fact: str) -> None:
+        if dedup_set is not None and signature in dedup_set:
+            logger.info("on_this_day dedup skip %s", signature)
+            return
+        post = (
+            f"【{label_date}】{headline}\n"
+            + (f"{body_line}\n" if body_line else "")
+            + "#巨人 #ジャイアンツ"
+        )
+        draft = "\n".join([
+            "【根拠: あの日の巨人 (on this day、裏取り済み bake-in)】",
+            fact,
+            "出典: config/giants_on_this_day.json (source URL 併記) / "
+            "ob_legends_full.json (NPB公式由来)",
+            "参照: https://yoshilover.com/data/",
+            "",
+            "【X 投稿案 (user が手で投稿)】",
+            post,
+        ])
+        out.append(Candidate(
+            title=f"あの日の巨人 {label_date}",
+            metric=_ON_THIS_DAY_METRIC,
+            period_label=label_date,
+            draft_text=draft,
+            char_count=len(post),
+            signature=signature,
+            post_text=post,
+            focus_player="",
+            db_fact_line=fact,
+            team_level="first",
+            sample_size=0,
+            sample_label="歴史枠",
+            why_now=why,
+            source_material_type=source_type,
+            image_bytes=b"",
+        ))
+
+    # ① 裏取り済みイベント
+    for ev in (events.get(md) or []):
+        if len(out) >= max_count:
+            break
+        year, text = ev.get("year"), str(ev.get("text") or "").strip()
+        if not year or not text:
+            continue
+        _emit(
+            signature=f"on_this_day|{md}|{year}",
+            headline=f"{year}年のきょう",
+            body_line=text,
+            why="歴史 on this day は毎日安定供給できる定番枠",
+            source_type="on_this_day_event",
+            fact=f"{year}年{label_date}: {text}",
+        )
+
+    # ② 誕生日 fallback (order 上位優先、 故人配慮で「生まれた日」・年齢なし)
+    if len(out) < max_count:
+        stats = (legends or {}).get("stats") or {}
+        order = (legends or {}).get("order") or list(stats)
+        suffix = f"-{md}"
+        for name in order:
+            if len(out) >= max_count:
+                break
+            v = stats.get(name) or {}
+            birth = str(v.get("birth") or "")
+            if not birth.endswith(suffix):
+                continue
+            npb = v.get("npb") or {}
+            parts = []
+            if npb.get("games"):
+                parts.append(f"通算{npb['games']}試合")
+            if npb.get("hr"):
+                parts.append(f"{npb['hr']}本塁打")
+            if npb.get("avg"):
+                parts.append(f"打率{npb['avg']}")
+            if npb.get("win"):
+                parts.append(f"{npb['win']}勝")
+            body = "・".join(parts[:3])
+            _emit(
+                signature=f"on_this_day|{md}|birth|{name}",
+                headline=f"{birth[:4]}年、{name}が生まれた日",
+                body_line=body,
+                why="レジェンドの生まれた日 (歴史レジェンド層に刺さる枠)",
+                source_type="on_this_day_birth",
+                fact=f"{name} 生年月日 {birth} (NPB公式由来)" + (f" ｜ {body}" if body else ""),
+            )
+
+    logger.info("on_this_day: built %d candidates (max=%d)", len(out), max_count)
+    return out

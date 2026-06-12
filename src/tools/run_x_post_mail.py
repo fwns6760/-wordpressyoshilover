@@ -187,6 +187,15 @@ def _data_angles_max_per_run() -> int:
     return _resolve_int_env("X_POST_DATA_ANGLES_MAX", 3, min_value=0)
 
 
+def _on_this_day_enabled() -> bool:
+    """2026-06-12 角度③ あの日の巨人 (on this day 歴史枠) の env flag。
+
+    Default OFF。 flag OFF では既存挙動完全不変 (rollback 余地)。
+    """
+    raw = (os.environ.get("ENABLE_X_POST_ON_THIS_DAY") or "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
 def _legend_compare_enabled() -> bool:
     """2026-06-12 角度① 新旧比較 (同年齢レジェンド対比) の env flag。
 
@@ -1997,6 +2006,26 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "data_angles appended: base=%d angles=%d total=%d",
                     before, len(da_new), len(candidates),
                 )
+
+    # 2026-06-12 角度③ あの日の巨人: 裏取り済みイベント or レジェンドの生まれた日。
+    # 毎日安定供給の歴史枠。 候補=メールまで。 flag OFF で既存不変。
+    if _on_this_day_enabled():
+        try:
+            from src import x_post_data_angles as _od_angles
+            od_candidates = _od_angles.build_on_this_day_candidates(
+                now=now_jst, max_count=1, dedup_set=dedup_set)
+        except Exception as _od_exc:  # noqa: BLE001
+            LOG.warning("on_this_day build failed: %r", _od_exc)
+            od_candidates = []
+        _existing_sigs = {getattr(c, "signature", "") for c in candidates}
+        od_new = [c for c in od_candidates if c.signature not in _existing_sigs]
+        if od_new:
+            before = len(candidates)
+            candidates = candidates + od_new
+            LOG.info(
+                "on_this_day appended: base=%d otd=%d total=%d",
+                before, len(od_new), len(candidates),
+            )
 
     # 2026-06-12 角度① 新旧比較: 同年齢シーズン時点の通算本塁打で若手×レジェンド対比。
     # 驚きゲート (レジェンド同年齢時点を上回る時のみ)。 候補=メールまで。 flag OFF で既存不変。

@@ -503,3 +503,57 @@ def test_legend_compare_excludes_self():
     assert angles.build_legend_age_compare_candidates(
         "", now=now, career_cache=cache, legends=legends,
         with_image=False) == []
+
+
+# ─── あの日の巨人 (on this day) ──────────────────────────────────────
+
+
+_OTD_EVENTS = {
+    "06-25": [{"year": 1959, "text": "プロ野球史上唯一の天覧試合", "source": "https://example.com"}],
+}
+_OTD_LEGENDS = {
+    "order": ["大物レジェンド", "中堅レジェンド"],
+    "stats": {
+        "大物レジェンド": {"birth": "1936-02-20",
+                     "npb": {"games": 2186, "hr": 444, "avg": ".305"}},
+        "中堅レジェンド": {"birth": "1950-02-20", "npb": {"games": 800}},
+    },
+}
+
+
+def _otd(now_md, **kw):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    m, d = now_md
+    now = datetime(2026, m, d, 12, 0, tzinfo=ZoneInfo("Asia/Tokyo"))
+    return angles.build_on_this_day_candidates(
+        now=now, events=_OTD_EVENTS, legends=_OTD_LEGENDS, **kw)
+
+
+def test_on_this_day_event_first():
+    out = _otd((6, 25))
+    assert len(out) == 1
+    c = out[0]
+    assert "【6月25日】1959年のきょう" in c.post_text
+    assert "天覧試合" in c.post_text
+    assert c.signature == "on_this_day|06-25|1959"
+
+
+def test_on_this_day_birthday_fallback_order_first():
+    """イベント無し日は誕生日 fallback、 order 上位 (大物) を採用、 年齢は出さない。"""
+    out = _otd((2, 20))
+    assert len(out) == 1
+    c = out[0]
+    assert "【2月20日】1936年、大物レジェンドが生まれた日" in c.post_text
+    assert "通算2186試合・444本塁打・打率.305" in c.post_text
+    assert "歳" not in c.post_text and "誕生日" not in c.post_text
+    assert c.signature == "on_this_day|02-20|birth|大物レジェンド"
+
+
+def test_on_this_day_empty_when_no_match():
+    assert _otd((1, 31)) == []
+
+
+def test_on_this_day_respects_dedup():
+    assert _otd((6, 25), dedup_set={"on_this_day|06-25|1959"}) == []

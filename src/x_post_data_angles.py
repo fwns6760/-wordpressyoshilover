@@ -1812,3 +1812,108 @@ def build_rarity_candidates(
         ))
     logger.info("rarity: built %d candidates (max=%d)", len(out), max_count)
     return out
+
+
+# ─── 11. 出場選手登録・抹消 速報 (Tigers_140609型、 巨人のみ) ────────
+
+
+_ROSTER_MOVE_METRIC = "登録抹消"
+
+
+def build_roster_move_candidates(
+    *,
+    now: Optional[datetime] = None,
+    max_count: int = 1,
+    max_age_days: int = 1,
+    dedup_set: Optional[set[str]] = None,
+    moves_fn: Optional[Callable[[int], Optional[dict]]] = None,
+) -> list:
+    """【巨人】出場選手登録・抹消の当日/前日速報 (NPB公示ベース)。
+
+    2026-06-12 user 採用 (@Tigers_140609 分析の借用①、 巨人のみ)。
+    live scrape (roster_moves_scraper) 優先、 失敗時は baked fallback。
+    公示が無い日は 0 件 (それが正常)。
+    """
+    if now is None:
+        now = datetime.now(JST)
+    Candidate = _candidate_cls()
+    data = None
+    try:
+        if moves_fn is None:
+            from src import roster_moves_scraper as _rms
+            moves_fn = _rms.scrape_year
+        data = moves_fn(now.year)
+    except Exception as exc:  # noqa: BLE001
+        logger.info("roster moves live scrape failed: %r", exc)
+    if not data:
+        import json as _json
+        from pathlib import Path as _Path
+        path = _Path(__file__).resolve().parent.parent / "config" / "giants_roster_moves.json"
+        try:
+            raw = _json.loads(path.read_text(encoding="utf-8"))
+            years = raw if isinstance(raw, list) else (raw.get("years") or [])
+            data = next((y for y in years if int(y.get("year") or 0) == now.year), None)
+        except Exception as exc:  # noqa: BLE001
+            logger.info("roster moves baked unavailable: %r", exc)
+            return []
+    if not data:
+        return []
+
+    valid_dates = set()
+    for back in range(max_age_days + 1):
+        d = now.date() - timedelta(days=back)
+        valid_dates.add(f"{d.month}/{d.day}")
+
+    out: list = []
+    for mv in (data.get("moves") or []):
+        if len(out) >= max_count:
+            break
+        md = str(mv.get("date") or "")
+        if md not in valid_dates:
+            continue
+        reg = [_norm_name(n) for n in (mv.get("reg") or []) if n]
+        rem = [_norm_name(n) for n in (mv.get("out") or []) if n]
+        if not reg and not rem:
+            continue
+        signature = f"roster|{now.year}|{md}|" + ",".join(sorted(reg + rem))
+        if dedup_set is not None and signature in dedup_set:
+            logger.info("roster_move dedup skip %s", signature)
+            continue
+        lines = []
+        if reg:
+            lines.append("登録: " + "、".join(reg))
+        if rem:
+            lines.append("抹消: " + "、".join(rem))
+        post = (
+            f"【巨人】{md} 出場選手登録・抹消\n"
+            + "\n".join(lines) + "\n#巨人 #ジャイアンツ"
+        )
+        fact = f"{now.year}年{md} 公示 ｜ " + " ｜ ".join(lines)
+        draft = "\n".join([
+            "【根拠: NPB 出場選手登録・抹消 公示 (roster_moves scrape)】",
+            fact,
+            "出典: NPB公式 公示",
+            "参照: https://yoshilover.com/data/roster-moves",
+            "",
+            "【X 投稿案 (user が手で投稿)】",
+            post,
+        ])
+        out.append(Candidate(
+            title=f"巨人 {md} 登録・抹消公示",
+            metric=_ROSTER_MOVE_METRIC,
+            period_label=md,
+            draft_text=draft,
+            char_count=len(post),
+            signature=signature,
+            post_text=post,
+            focus_player=(rem[0] if rem else (reg[0] if reg else "")),
+            db_fact_line=fact,
+            team_level="first",
+            sample_size=len(reg) + len(rem),
+            sample_label="公示",
+            why_now="登録・抹消は怪我/入替の一次速報でファン関心が最も高い",
+            source_material_type="roster_move",
+            image_bytes=b"",
+        ))
+    logger.info("roster_move: built %d candidates (max=%d)", len(out), max_count)
+    return out

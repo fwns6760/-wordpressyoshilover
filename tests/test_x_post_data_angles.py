@@ -849,3 +849,47 @@ def test_milestone_no_crossing_no_post(tmp_path):
         {"年度": "2025", "本塁打": "50"}]}}}}
     assert angles.build_milestone_candidates(
         db, now=_rare_now(), career_cache=cache) == []
+
+
+# ─── 登録抹消速報 (Tigers型) ─────────────────────────────────────────
+
+
+def _moves_payload(year=2026):
+    return {"year": year, "moves": [
+        {"date": "6/12", "reg": ["新戦力"], "out": ["故障 太郎"]},
+        {"date": "6/8", "reg": [], "out": ["過去の人"]},
+    ]}
+
+
+def test_roster_move_today(tmp_path):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    now = datetime(2026, 6, 12, 13, 0, tzinfo=ZoneInfo("Asia/Tokyo"))
+    out = angles.build_roster_move_candidates(
+        now=now, moves_fn=lambda y: _moves_payload(y))
+    assert len(out) == 1
+    c = out[0]
+    assert "【巨人】6/12 出場選手登録・抹消" in c.post_text
+    assert "登録: 新戦力" in c.post_text and "抹消: 故障太郎" in c.post_text
+    assert "過去の人" not in c.post_text  # 古い公示は出さない
+    assert c.signature == "roster|2026|6/12|故障太郎,新戦力"
+
+
+def test_roster_move_no_recent_no_post():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    now = datetime(2026, 6, 20, 13, 0, tzinfo=ZoneInfo("Asia/Tokyo"))
+    assert angles.build_roster_move_candidates(
+        now=now, moves_fn=lambda y: _moves_payload(y)) == []
+
+
+def test_roster_move_dedup():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    now = datetime(2026, 6, 12, 13, 0, tzinfo=ZoneInfo("Asia/Tokyo"))
+    assert angles.build_roster_move_candidates(
+        now=now, moves_fn=lambda y: _moves_payload(y),
+        dedup_set={"roster|2026|6/12|故障太郎,新戦力"}) == []

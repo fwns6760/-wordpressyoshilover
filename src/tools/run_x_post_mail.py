@@ -187,6 +187,12 @@ def _data_angles_max_per_run() -> int:
     return _resolve_int_env("X_POST_DATA_ANGLES_MAX", 3, min_value=0)
 
 
+def _roster_move_enabled() -> bool:
+    """2026-06-12 登録抹消速報 (Tigers型、 NPB公示) の env flag。 Default OFF。"""
+    raw = (os.environ.get("ENABLE_X_POST_ROSTER_MOVES") or "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
 def _milestone_enabled() -> bool:
     """2026-06-12 節目達成🎉 (chikupn型、 通算節目の跨ぎ検出) の env flag。 Default OFF。"""
     raw = (os.environ.get("ENABLE_X_POST_MILESTONE") or "").strip().lower()
@@ -2048,12 +2054,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                         preferred_players=_preferred,
                         opponents={_pregame_opp})[:da_max]
                 else:
+                    # 2026-06-12 user「手動mailを増やしたい」: 勝利相関/対戦split 各2本へ増量
                     da_candidates = (
                         _angles.build_win_correlation_candidates(
-                            db_path, now=now_jst, max_count=1, dedup_set=dedup_set,
+                            db_path, now=now_jst, max_count=2, dedup_set=dedup_set,
                             preferred_players=_preferred)
                         + _angles.build_opponent_split_candidates(
-                            db_path, now=now_jst, max_count=1, dedup_set=dedup_set,
+                            db_path, now=now_jst, max_count=2, dedup_set=dedup_set,
                             preferred_players=_preferred)
                         + _angles.build_alltime_chase_candidates(
                             now=now_jst, max_count=1, dedup_set=dedup_set)
@@ -2127,6 +2134,23 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "legend_compare appended: base=%d legend=%d total=%d",
                 before, len(lc_new), len(candidates),
             )
+
+    # 2026-06-12 Tigers型: 出場選手登録・抹消の速報 (公示があった日のみ、 巨人のみ)。
+    if _roster_move_enabled() and _generic_angle_window:
+        try:
+            from src import x_post_data_angles as _rm_angles
+            rm_candidates = _rm_angles.build_roster_move_candidates(
+                now=now_jst, max_count=1, dedup_set=dedup_set)
+        except Exception as _rm_exc:  # noqa: BLE001
+            LOG.warning("roster_move build failed: %r", _rm_exc)
+            rm_candidates = []
+        _existing_sigs = {getattr(c, "signature", "") for c in candidates}
+        rm_new = [c for c in rm_candidates if c.signature not in _existing_sigs]
+        if rm_new:
+            before = len(candidates)
+            candidates = candidates + rm_new
+            LOG.info("roster_move appended: base=%d rm=%d total=%d",
+                     before, len(rm_new), len(candidates))
 
     # 2026-06-12 chikupn型①: 今季初・以来 (希少事象)。 直近巨人戦で事象があった時のみ。
     if _rarity_enabled() and db_path and _generic_angle_window:
@@ -2681,8 +2705,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             "試合前見どころ",
             # 2026-06-12 年俸コスパ (データ×年俸クロス、 バーゲン型のみ)。
             "年俸コスパ",
-            # 2026-06-12 chikupn型 (節目達成 / 今季初・以来)。
-            "節目達成", "今季初・以来",
+            # 2026-06-12 chikupn型 (節目達成 / 今季初・以来) + Tigers型 (登録抹消)。
+            "節目達成", "今季初・以来", "登録抹消",
         }
         _before_voice = len(candidates)
         _voice_candidates = [c for c in candidates if c.metric in _VOICE_ONLY_METRICS]

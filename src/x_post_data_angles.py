@@ -243,10 +243,13 @@ def build_opponent_split_candidates(
     dedup_set: Optional[set[str]] = None,
     with_image: bool = True,
     preferred_players: Optional[set[str]] = None,
+    opponents: Optional[set[str]] = None,
 ) -> list:
     """「対○○キラー」対戦カード別打率の驚き候補 (シーズン比 +min_gap 以上)。
 
     ``preferred_players`` (今夜の話題選手 等) は閾値を満たす限り gap より優先。
+    ``opponents`` を渡すとそのカードに限定 (試合前枠 = 今日の相手のみ、
+    2026-06-12 user「試合前は関係あるものだけ」)。
     """
     if now is None:
         now = datetime.now(JST)
@@ -285,6 +288,8 @@ def build_opponent_split_candidates(
         season_avg = sh / sab
         gap = opp_avg - season_avg
         if gap < min_gap:
+            continue
+        if opponents is not None and str(opp) not in opponents:
             continue
         scored.append((gap, canon, str(opp), oab, oh, orbi, opp_avg, season_avg))
 
@@ -1072,3 +1077,168 @@ def build_on_this_day_candidates(
 
     logger.info("on_this_day: built %d candidates (max=%d)", len(out), max_count)
     return out
+
+
+# ─── 8. 試合前見どころ (今日の試合プレビュー) ────────────────────────
+
+
+_PREGAME_METRIC = "試合前見どころ"
+
+
+def build_pregame_preview_candidates(
+    db_path: str,
+    *,
+    now: Optional[datetime] = None,
+    max_count: int = 1,
+    dedup_set: Optional[set[str]] = None,
+    with_image: bool = False,
+    upcoming_fn: Optional[Callable[[], list]] = None,
+) -> list:
+    """【今日の巨人】試合前プレビュー。 今日の試合に直結する数字だけを出す。
+
+    2026-06-12 user「試合前はファンにためになるものだけ。 関係がないものを
+    出すくらいなら出さない」。 gate:
+    ①今日 (JST) に巨人戦がある ②試合開始前 ③insight.db の数字が 1 つ以上作れる
+    — 全部満たさなければ空 list (埋め草を出さない)。
+    日程/予告先発 = NPB公式 (data_site_query.fetch_giants_upcoming、 459/C 既存)。
+    """
+    if now is None:
+        now = datetime.now(JST)
+    if not db_path:
+        return []
+    Candidate = _candidate_cls()
+    try:
+        if upcoming_fn is None:
+            from src.data_site_query import fetch_giants_upcoming
+            upcoming_fn = fetch_giants_upcoming
+        games = upcoming_fn() or []
+    except Exception as exc:  # noqa: BLE001
+        logger.info("pregame upcoming unavailable: %r", exc)
+        return []
+    if not games:
+        return []
+    g0 = games[0]
+    if str(g0.get("date") or "") != now.date().isoformat():
+        return []  # 今日の試合でない
+    # 試合開始前のみ (time 例 '18:00'。 不明は 18:00 扱い)
+    try:
+        hh, mm = (str(g0.get("time") or "18:00").split(":") + ["0"])[:2]
+        start = now.replace(hour=int(hh), minute=int(mm), second=0, microsecond=0)
+    except (TypeError, ValueError):
+        start = now.replace(hour=18, minute=0, second=0, microsecond=0)
+    if now >= start:
+        return []
+    opp = str(g0.get("opp") or "").strip()
+    if not opp:
+        return []
+    starter_g = _norm_name(str(g0.get("starter_g") or ""))
+    starter_o = _norm_name(str(g0.get("starter_o") or ""))
+
+    lines: list[str] = []
+    facts: list[str] = []
+
+    def _match_canon(rows: list, name: str) -> Optional[str]:
+        for (canon,) in rows:
+            c = _norm_name(canon or "")
+            if c and (c == name or c.startswith(name) or name.startswith(c)):
+                return canon
+        return None
+
+    try:
+        with _sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
+            if starter_g:
+                canon_rows = conn.execute(
+                    "SELECT DISTINCT player_canonical FROM pitching_logs "
+                    "WHERE team_name='巨人' AND player_canonical IS NOT NULL",
+                ).fetchall()
+                canon = _match_canon(canon_rows, starter_g)
+                if canon:
+                    n, w, l, k, ip, er = conn.execute(
+                        "SELECT COUNT(*), "
+                        " SUM(CASE WHEN result_mark='○' THEN 1 ELSE 0 END), "
+                        " SUM(CASE WHEN result_mark='●' THEN 1 ELSE 0 END), "
+                        " SUM(COALESCE(K,0)), SUM(COALESCE(IP,0)), SUM(COALESCE(ER,0)) "
+                        "FROM pitching_logs WHERE team_name='巨人' "
+                        " AND player_canonical=? AND appearance_order=1",
+                        (canon,),
+                    ).fetchone()
+                    if int(n or 0) > 0:
+                        seg = f"今季{n}先発 {int(w or 0)}勝{int(l or 0)}敗"
+                        if float(ip or 0) > 0:
+                            seg += f"・防御率{9 * float(er or 0) / float(ip):.2f}"
+                        seg += f"・{int(k or 0)}奪三振"
+                        lines.append(f"先発 {canon}: {seg}")
+                        facts.append(f"{canon} {seg}")
+                        ow, ol = conn.execute(
+                            "SELECT SUM(CASE WHEN p.result_mark='○' THEN 1 ELSE 0 END), "
+                            " SUM(CASE WHEN p.result_mark='●' THEN 1 ELSE 0 END) "
+                            "FROM pitching_logs p JOIN games g USING(game_id) "
+                            "WHERE p.team_name='巨人' AND p.player_canonical=? "
+                            " AND p.appearance_order=1 AND g.opponent=?",
+                            (canon, opp),
+                        ).fetchone()
+                        if int(ow or 0) + int(ol or 0) > 0:
+                            lines.append(f"対{opp} 今季{int(ow or 0)}勝{int(ol or 0)}敗")
+                            facts.append(f"対{opp} {int(ow or 0)}勝{int(ol or 0)}敗")
+            # 打線: 対今日の相手 今季打率トップ (10打数以上)
+            top = conn.execute(
+                "SELECT b.player_canonical, SUM(COALESCE(b.AB,0)), "
+                " SUM(COALESCE(b.H,0)) "
+                "FROM batting_logs b JOIN games g USING(game_id) "
+                "WHERE b.team_name='巨人' AND b.player_canonical IS NOT NULL "
+                " AND g.opponent=? GROUP BY b.player_canonical "
+                "HAVING SUM(COALESCE(b.AB,0)) >= 10 "
+                "ORDER BY CAST(SUM(COALESCE(b.H,0)) AS REAL)"
+                "/SUM(COALESCE(b.AB,0)) DESC LIMIT 1",
+                (opp,),
+            ).fetchone()
+            if top:
+                canon_b, ab, h = top[0], int(top[1]), int(top[2])
+                lines.append(f"対{opp}キーマン {canon_b}: 打率{_fmt3(h / ab)} ({h}安打/{ab}打数)")
+                facts.append(f"{canon_b} 対{opp} {_fmt3(h / ab)} ({h}/{ab})")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("pregame preview query failed: %r", exc)
+        return []
+
+    if not lines:
+        logger.info("pregame preview: no relevant numbers — skip (埋め草を出さない)")
+        return []
+
+    vs_line = f"予告先発 {starter_g or '未発表'}" + (f" vs {starter_o}" if starter_o else "")
+    place = str(g0.get("place") or "").strip()
+    time_s = str(g0.get("time") or "").strip()
+    head = f"今日の巨人 vs {opp}" + (f" ({place} {time_s})" if place or time_s else "")
+    signature = f"pregame|{now.date().isoformat()}|{opp}"
+    if dedup_set is not None and signature in dedup_set:
+        logger.info("pregame dedup skip %s", signature)
+        return []
+    post = (
+        f"【{head}】\n" + vs_line + "\n" + "\n".join(lines[:3]) + "\n#巨人 #ジャイアンツ"
+    )
+    draft = "\n".join([
+        "【根拠: 試合前見どころ (今日の試合に直結する数字のみ)】",
+        " ｜ ".join(facts),
+        "出典: NPB公式 日程・予告先発 + insight.db 今季集計",
+        "参照: https://yoshilover.com/data/",
+        "",
+        "【X 投稿案 (user が手で投稿)】",
+        post,
+    ])
+    logger.info("pregame preview: built 1 candidate (opp=%s lines=%d)", opp, len(lines))
+    return [Candidate(
+        title=f"今日の巨人 vs {opp} 試合前見どころ",
+        metric=_PREGAME_METRIC,
+        period_label="今日の試合",
+        draft_text=draft,
+        char_count=len(post),
+        signature=signature,
+        post_text=post,
+        focus_player="",
+        db_fact_line=" ｜ ".join(facts),
+        team_level="first",
+        sample_size=len(lines),
+        sample_label="試合前枠",
+        why_now=f"今日の{opp}戦に直結 (試合前はためになる情報のみ)",
+        source_material_type="pregame_preview",
+        image_bytes=b"",
+    )][:max_count]

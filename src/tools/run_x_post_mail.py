@@ -187,6 +187,15 @@ def _data_angles_max_per_run() -> int:
     return _resolve_int_env("X_POST_DATA_ANGLES_MAX", 3, min_value=0)
 
 
+def _pregame_preview_enabled() -> bool:
+    """2026-06-12 試合前見どころ (今日の試合プレビュー) の env flag。
+
+    Default OFF。 flag OFF では既存挙動完全不変 (rollback 余地)。
+    """
+    raw = (os.environ.get("ENABLE_X_POST_PREGAME_PREVIEW") or "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
 def _on_this_day_enabled() -> bool:
     """2026-06-12 角度③ あの日の巨人 (on this day 歴史枠) の env flag。
 
@@ -1970,6 +1979,32 @@ def main(argv: Sequence[str] | None = None) -> int:
     # (image_bytes)。 公開 X 自動投稿はしない (候補=メールまで)。 flag OFF で既存不変。
     # 話題選手 counts はここで 1 回だけ取得し、 角度の優先選手 (今夜の主役の驚きを
     # 先に出す、 user「色々なデータを試合あとは知りたい」) と後段 boost で共用する。
+    # 2026-06-12 試合前見どころ: 今日の巨人戦 (NPB公式 日程+予告先発) に直結する
+    # 数字だけのプレビュー。 builder 側 gate = 今日試合あり+開始前+数字あり、
+    # 満たさなければ 0 件 (user「関係がないものを出すくらいなら出さない」)。
+    # built 時は _pregame_opp を立て、 下の data_angles を今日の相手限定に切替える。
+    _pregame_opp: str | None = None
+    if _pregame_preview_enabled() and db_path:
+        try:
+            from src import x_post_data_angles as _pg_angles
+            pg_candidates = _pg_angles.build_pregame_preview_candidates(
+                db_path, now=now_jst, max_count=1, dedup_set=dedup_set)
+        except Exception as _pg_exc:  # noqa: BLE001
+            LOG.warning("pregame preview build failed: %r", _pg_exc)
+            pg_candidates = []
+        if pg_candidates:
+            sig_parts = (pg_candidates[0].signature or "").split("|")
+            _pregame_opp = sig_parts[2] if len(sig_parts) >= 3 else None
+            _existing_sigs = {getattr(c, "signature", "") for c in candidates}
+            pg_new = [c for c in pg_candidates if c.signature not in _existing_sigs]
+            if pg_new:
+                before = len(candidates)
+                candidates = candidates + pg_new
+                LOG.info(
+                    "pregame preview appended: base=%d pregame=%d total=%d opp=%s",
+                    before, len(pg_new), len(candidates), _pregame_opp,
+                )
+
     topical_counts: dict[str, int] | None = None
     if _data_angles_enabled() and db_path:
         da_max = _data_angles_max_per_run()
@@ -1984,16 +2019,36 @@ def main(argv: Sequence[str] | None = None) -> int:
                 }
                 if _preferred:
                     LOG.info("data_angles preferred (今夜の話題): %s", sorted(_preferred))
-                da_candidates = (
-                    _angles.build_win_correlation_candidates(
+                if _pregame_opp:
+                    # 試合前枠 (2026-06-12 user「関係あるものだけ」): 汎用角度を止め、
+                    # 今日の相手カードの split だけに絞る。
+                    da_candidates = _angles.build_opponent_split_candidates(
                         db_path, now=now_jst, max_count=1, dedup_set=dedup_set,
-                        preferred_players=_preferred)
-                    + _angles.build_opponent_split_candidates(
-                        db_path, now=now_jst, max_count=1, dedup_set=dedup_set,
-                        preferred_players=_preferred)
-                    + _angles.build_alltime_chase_candidates(
-                        now=now_jst, max_count=1, dedup_set=dedup_set)
-                )[:da_max]
+                        preferred_players=_preferred,
+                        opponents={_pregame_opp})[:da_max]
+                else:
+                    da_candidates = (
+                        _angles.build_win_correlation_candidates(
+                            db_path, now=now_jst, max_count=1, dedup_set=dedup_set,
+                            preferred_players=_preferred)
+                        + _angles.build_opponent_split_candidates(
+                            db_path, now=now_jst, max_count=1, dedup_set=dedup_set,
+                            preferred_players=_preferred)
+                        + _angles.build_alltime_chase_candidates(
+                            now=now_jst, max_count=1, dedup_set=dedup_set)
+                    )[:da_max]
+                if now_jst.hour >= 21:
+                    # 試合後枠 (22時便): 今夜の話題選手に関係する候補のみ。
+                    # 関係ゼロなら出さない (埋め草禁止)。
+                    _before_rel = len(da_candidates)
+                    da_candidates = [
+                        c for c in da_candidates
+                        if (getattr(c, "focus_player", "") or "") in _preferred
+                    ]
+                    if _before_rel and len(da_candidates) < _before_rel:
+                        LOG.info(
+                            "postgame relevance gate: %d -> %d angle candidates "
+                            "(今夜の話題選手のみ)", _before_rel, len(da_candidates))
             except Exception as _da_exc:  # noqa: BLE001
                 LOG.warning("data_angles build failed: %r", _da_exc)
                 da_candidates = []
@@ -2007,9 +2062,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                     before, len(da_new), len(candidates),
                 )
 
+    # 2026-06-12 user「試合前と試合後は今日の試合に関係あるものだけ」:
+    # 試合非連動の汎用枠 (あの日の巨人 / 新旧比較 / 週間MVP) は朝〜昼便 (〜13時台)
+    # のみに退避する。 15時以降の便 (試合前 15/16/17時・試合後 22時) には出さない。
+    _generic_angle_window = now_jst.hour <= 13
+
     # 2026-06-12 角度③ あの日の巨人: 裏取り済みイベント or レジェンドの生まれた日。
     # 毎日安定供給の歴史枠。 候補=メールまで。 flag OFF で既存不変。
-    if _on_this_day_enabled():
+    if _on_this_day_enabled() and _generic_angle_window:
         try:
             from src import x_post_data_angles as _od_angles
             od_candidates = _od_angles.build_on_this_day_candidates(
@@ -2029,7 +2089,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     # 2026-06-12 角度① 新旧比較: 同年齢シーズン時点の通算本塁打で若手×レジェンド対比。
     # 驚きゲート (レジェンド同年齢時点を上回る時のみ)。 候補=メールまで。 flag OFF で既存不変。
-    if _legend_compare_enabled() and db_path:
+    if _legend_compare_enabled() and db_path and _generic_angle_window:
         try:
             from src import x_post_data_angles as _lc_angles
             lc_candidates = _lc_angles.build_legend_age_compare_candidates(
@@ -2049,7 +2109,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     # 2026-06-12 角度⑤ 週間MVP: 月曜限定の定番企画 (先週 月〜日 の巨人打者集計トップ)。
     # 公開 X 自動投稿はしない (候補=メールまで)。 flag OFF で既存不変。
-    if _weekly_mvp_enabled() and db_path:
+    if _weekly_mvp_enabled() and db_path and _generic_angle_window:
         try:
             from src import x_post_data_angles as _wm_angles
             wm_candidates = _wm_angles.build_weekly_mvp_candidates(
@@ -2542,6 +2602,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             # 2026-06-12 角度①③⑤ (新旧比較/あの日の巨人/週間MVP) も同じ
             # たんぱく事実型 pattern① (驚きゲート/裏取り済み bake-in 由来)。
             "新旧比較", "あの日の巨人", "週間MVP",
+            # 2026-06-12 試合前見どころ (今日の試合に直結する数字のみ)。
+            "試合前見どころ",
         }
         _before_voice = len(candidates)
         _voice_candidates = [c for c in candidates if c.metric in _VOICE_ONLY_METRICS]

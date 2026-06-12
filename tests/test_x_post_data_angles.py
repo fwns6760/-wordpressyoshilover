@@ -557,3 +557,114 @@ def test_on_this_day_empty_when_no_match():
 
 def test_on_this_day_respects_dedup():
     assert _otd((6, 25), dedup_set={"on_this_day|06-25|1959"}) == []
+
+
+# ─── 試合前見どころ (今日の試合プレビュー) ───────────────────────────
+
+
+def _pregame_db(tmp_path: Path) -> str:
+    db = tmp_path / "pregame.db"
+    conn = sqlite3.connect(db)
+    conn.executescript(
+        """
+        CREATE TABLE games (
+            game_id TEXT PRIMARY KEY, game_date TEXT, opponent TEXT,
+            result TEXT, giants_score INT, opp_score INT
+        );
+        CREATE TABLE batting_logs (
+            game_id TEXT, team_role TEXT, team_name TEXT,
+            player_canonical TEXT, AB INT, H INT, RBI INT
+        );
+        CREATE TABLE pitching_logs (
+            game_id TEXT, team_role TEXT, team_name TEXT,
+            player_canonical TEXT, appearance_order INT, result_mark TEXT,
+            K INT, IP REAL, ER INT
+        );
+        """
+    )
+    for i in range(4):
+        gid = f"2026-05-{i + 1:02d}:g"
+        conn.execute("INSERT INTO games VALUES (?,?,?,?,0,0)",
+                     (gid, f"2026-05-{i + 1:02d}", "阪神" if i < 3 else "広島", "win"))
+        conn.execute("INSERT INTO pitching_logs VALUES (?,?,?,?,?,?,?,?,?)",
+                     (gid, "giants", "巨人", "剛腕太郎", 1,
+                      "○" if i < 2 else "●", 7, 6.0, 2))
+        conn.execute("INSERT INTO batting_logs VALUES (?,?,?,?,?,?,?)",
+                     (gid, "giants", "巨人", "好打者", 4, 2, 1))
+    conn.commit()
+    conn.close()
+    return str(db)
+
+
+def _pregame_now(hour=13):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    return datetime(2026, 6, 12, hour, 0, tzinfo=ZoneInfo("Asia/Tokyo"))
+
+
+_TODAY_GAME = [{"date": "2026-06-12", "opp": "阪神", "home_away": "本拠地",
+                "time": "18:00", "place": "東京ドーム",
+                "starter_g": "剛腕太郎", "starter_o": "敵軍投手"}]
+
+
+def test_pregame_preview_builds_with_starter_and_keyman(tmp_path):
+    db = _pregame_db(tmp_path)
+    out = angles.build_pregame_preview_candidates(
+        db, now=_pregame_now(), upcoming_fn=lambda: list(_TODAY_GAME))
+    assert len(out) == 1
+    p = out[0].post_text
+    assert "【今日の巨人 vs 阪神 (東京ドーム 18:00)】" in p
+    assert "予告先発 剛腕太郎 vs 敵軍投手" in p
+    assert "今季4先発 2勝2敗・防御率3.00・28奪三振" in p
+    assert "対阪神 今季2勝1敗" in p
+    assert "対阪神キーマン 好打者: 打率.500" in p
+    assert out[0].signature == "pregame|2026-06-12|阪神"
+
+
+def test_pregame_preview_gates(tmp_path):
+    db = _pregame_db(tmp_path)
+    # 今日の試合でない
+    other = [dict(_TODAY_GAME[0], date="2026-06-13")]
+    assert angles.build_pregame_preview_candidates(
+        db, now=_pregame_now(), upcoming_fn=lambda: other) == []
+    # 試合開始後
+    assert angles.build_pregame_preview_candidates(
+        db, now=_pregame_now(hour=19), upcoming_fn=lambda: list(_TODAY_GAME)) == []
+    # 日程取得失敗 → graceful 空
+    assert angles.build_pregame_preview_candidates(
+        db, now=_pregame_now(), upcoming_fn=lambda: []) == []
+
+
+def test_pregame_preview_no_numbers_no_post(tmp_path):
+    """数字が 1 つも作れない時は出さない (埋め草禁止)。"""
+    db = tmp_path / "empty.db"
+    conn = sqlite3.connect(db)
+    conn.executescript(
+        """
+        CREATE TABLE games (game_id TEXT PRIMARY KEY, game_date TEXT, opponent TEXT,
+            result TEXT, giants_score INT, opp_score INT);
+        CREATE TABLE batting_logs (game_id TEXT, team_role TEXT, team_name TEXT,
+            player_canonical TEXT, AB INT, H INT, RBI INT);
+        CREATE TABLE pitching_logs (game_id TEXT, team_role TEXT, team_name TEXT,
+            player_canonical TEXT, appearance_order INT, result_mark TEXT,
+            K INT, IP REAL, ER INT);
+        """
+    )
+    conn.commit()
+    conn.close()
+    assert angles.build_pregame_preview_candidates(
+        str(db), now=_pregame_now(), upcoming_fn=lambda: list(_TODAY_GAME)) == []
+
+
+def test_opp_split_opponents_filter(tmp_path):
+    db = _make_db(tmp_path)
+    base = angles.build_opponent_split_candidates(
+        db, max_count=2, min_opp_ab=5, min_season_ab=10, min_gap=0.0,
+        with_image=False)
+    assert base  # filter なしでは候補あり
+    only_hiroshima = angles.build_opponent_split_candidates(
+        db, max_count=2, min_opp_ab=5, min_season_ab=10, min_gap=0.0,
+        with_image=False, opponents={"広島"})
+    for c in only_hiroshima:
+        assert "広島" in c.signature

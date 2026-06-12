@@ -1183,6 +1183,32 @@ def _build_career_history_html(player: PillarPlayerInfo) -> str:
     )
 
 
+@_functools.lru_cache(maxsize=1)
+def _salary_slugs() -> frozenset:
+    """年俸ページ (/data/salary/<slug>) を持つ slug 集合 (giants_salary.json 正本)。"""
+    path = _os.path.join(_os.path.dirname(__file__), "..", "config",
+                         "giants_salary.json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = _json.load(f)
+        return frozenset(p["slug"] for p in data.get("players", []))
+    except Exception:
+        return frozenset()
+
+
+def _build_salary_link_html(player: PillarPlayerInfo) -> str:
+    """年俸推移ページへの cross link (トピクラ: pillar ↔ salary spoke 双方向)。"""
+    if player.slug not in _salary_slugs():
+        return ""
+    return (
+        '<div class="ys-card" style="font-size:13px;">'
+        f'<a href="/data/salary/{_esc(player.slug)}" '
+        'style="color:#e25400;font-weight:600;text-decoration:none;">'
+        f'💰 {_esc(player.name)}の年俸推移（契約金・通算年俸）はこちら</a>'
+        '</div>'
+    )
+
+
 def _build_datasite_nav_html() -> str:
     """データサイト内ナビ (トピクラ: pillar=中心 → hub/ranking/team spoke 回遊、 458 データ側)。"""
     return (
@@ -1260,6 +1286,7 @@ def render_pillar_html(player: PillarPlayerInfo) -> str:
         _build_prosports_html(player),
         _build_related_topic_html(player),
         _build_related_players_html(player),
+        _build_salary_link_html(player),
         _build_datasite_nav_html(),
         _build_back_link_html(),
         _build_jsonld(player),

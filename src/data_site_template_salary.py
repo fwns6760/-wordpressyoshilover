@@ -24,6 +24,22 @@ SLUG = "salary"
 _DATA_PATH = _os.path.join(
     _os.path.dirname(__file__), "..", "config", "giants_salary.json"
 )
+_PILLAR_SLUGS_PATH = _os.path.join(
+    _os.path.dirname(__file__), "..", "config", "data_site_player_slugs.json"
+)
+_PILLAR_SLUGS: set[str] | None = None
+
+
+def _pillar_exists(slug: str) -> bool:
+    """選手 pillar (/data/<slug>) が存在する slug のみ True (育成等は pillar 無し)。"""
+    global _PILLAR_SLUGS
+    if _PILLAR_SLUGS is None:
+        try:
+            with open(_PILLAR_SLUGS_PATH, encoding="utf-8") as f:
+                _PILLAR_SLUGS = set(_json.load(f).values())
+        except Exception:
+            _PILLAR_SLUGS = set()
+    return slug in _PILLAR_SLUGS
 
 _PAGE_STYLE = (
     "<style>"
@@ -447,6 +463,12 @@ def render_salary_player_html(p: dict) -> str:
         + _player_table(p)
         + _draft_section(p)
         + _notes_section(p)
+        + (
+            f'<p style="margin:14px 0 0;"><a href="{CLUSTER_URL}/{p["slug"]}" '
+            'style="font-size:13px;color:#1565c0;font-weight:700;">'
+            f"→ {_esc(p['name'])}の成績・選手データページへ</a></p>"
+            if _pillar_exists(p["slug"]) else ""
+        )
         + (
             f'<p style="margin:14px 0 0;"><a href="{CLUSTER_URL}/{SLUG}" '
             'style="font-size:13px;color:#1565c0;font-weight:700;">'

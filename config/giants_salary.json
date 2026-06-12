@@ -4879,6 +4879,2724 @@
           "salary_man": 450
         }
       ]
+    },
+    {
+      "name": "高橋由伸",
+      "slug": "takahashi-yoshinobu",
+      "kana": "たかはし よしのぶ",
+      "position": "",
+      "jersey": "",
+      "active": false,
+      "ob_note": "巨人一筋 1998-2015、監督 2016-2018",
+      "years": [
+        {
+          "year": 1998,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1300
+        },
+        {
+          "year": 1999,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 4000
+        },
+        {
+          "year": 2000,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 10000
+        },
+        {
+          "year": 2001,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 12000
+        },
+        {
+          "year": 2002,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 20000
+        },
+        {
+          "year": 2003,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 22000
+        },
+        {
+          "year": 2004,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 30000
+        },
+        {
+          "year": 2005,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 34000
+        },
+        {
+          "year": 2006,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 32000
+        },
+        {
+          "year": 2007,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 28800
+        },
+        {
+          "year": 2008,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 35000
+        },
+        {
+          "year": 2009,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 35000
+        },
+        {
+          "year": 2010,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 35000
+        },
+        {
+          "year": 2011,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 35000
+        },
+        {
+          "year": 2012,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 17000
+        },
+        {
+          "year": 2013,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 18000
+        },
+        {
+          "year": 2014,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 16000
+        },
+        {
+          "year": 2015,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 15000
+        }
+      ],
+      "shube_id": "19750004"
+    },
+    {
+      "name": "松井秀喜",
+      "slug": "matsui-hideki",
+      "kana": "",
+      "position": "",
+      "jersey": "",
+      "active": false,
+      "ob_note": "巨人 1993-2002、MLB ヤンキース",
+      "years": [
+        {
+          "year": 1993,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 720
+        },
+        {
+          "year": 1994,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 2100
+        },
+        {
+          "year": 1995,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 6200
+        },
+        {
+          "year": 1996,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 8000
+        },
+        {
+          "year": 1997,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 16000
+        },
+        {
+          "year": 1998,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 22000
+        },
+        {
+          "year": 1999,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 28000
+        },
+        {
+          "year": 2000,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 35000
+        },
+        {
+          "year": 2001,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 50000
+        },
+        {
+          "year": 2002,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 61000
+        }
+      ],
+      "shube_id": "19740007"
+    },
+    {
+      "name": "桑田真澄",
+      "slug": "kuwata-masumi",
+      "kana": "",
+      "position": "",
+      "jersey": "",
+      "active": false,
+      "ob_note": "巨人 1986-2006、現コーチ",
+      "years": [
+        {
+          "year": 1986,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 480
+        },
+        {
+          "year": 1987,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 660
+        },
+        {
+          "year": 1988,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 2160
+        },
+        {
+          "year": 1989,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 2700
+        },
+        {
+          "year": 1990,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 5040
+        },
+        {
+          "year": 1991,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 7600
+        },
+        {
+          "year": 1992,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 7600
+        },
+        {
+          "year": 1993,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 8880
+        },
+        {
+          "year": 1994,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 8200
+        },
+        {
+          "year": 1995,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 14300
+        },
+        {
+          "year": 1997,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 12000
+        },
+        {
+          "year": 1998,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 10000
+        },
+        {
+          "year": 1999,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 25000
+        },
+        {
+          "year": 2000,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 20000
+        },
+        {
+          "year": 2001,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 16000
+        },
+        {
+          "year": 2002,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 14400
+        },
+        {
+          "year": 2003,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 24400
+        },
+        {
+          "year": 2004,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 21000
+        },
+        {
+          "year": 2005,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 21200
+        },
+        {
+          "year": 2006,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 15000
+        }
+      ],
+      "shube_id": "19680001"
+    },
+    {
+      "name": "江川卓",
+      "slug": "egawa-suguru",
+      "kana": "えがわ すぐる",
+      "position": "",
+      "jersey": "",
+      "active": false,
+      "ob_note": "巨人 1979-1987、解説者",
+      "years": [
+        {
+          "year": 1979,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 720
+        },
+        {
+          "year": 1980,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 960
+        },
+        {
+          "year": 1981,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1560
+        },
+        {
+          "year": 1982,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 3000
+        },
+        {
+          "year": 1983,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 4400
+        },
+        {
+          "year": 1984,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 4400
+        },
+        {
+          "year": 1985,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 4800
+        },
+        {
+          "year": 1986,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 4300
+        },
+        {
+          "year": 1987,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 6120
+        }
+      ],
+      "shube_id": "19550002"
+    },
+    {
+      "name": "清原和博",
+      "slug": "kiyohara-kazuhiro",
+      "kana": "",
+      "position": "",
+      "jersey": "",
+      "active": false,
+      "ob_note": "巨人 1997-2005 (FA移籍)、清ちゃんスポーツ YT",
+      "years": [
+        {
+          "year": 1986,
+          "team": "西武",
+          "league": "NPB",
+          "salary_man": 480
+        },
+        {
+          "year": 1987,
+          "team": "西武",
+          "league": "NPB",
+          "salary_man": 2200
+        },
+        {
+          "year": 1988,
+          "team": "西武",
+          "league": "NPB",
+          "salary_man": 3000
+        },
+        {
+          "year": 1989,
+          "team": "西武",
+          "league": "NPB",
+          "salary_man": 5300
+        },
+        {
+          "year": 1990,
+          "team": "西武",
+          "league": "NPB",
+          "salary_man": 6800
+        },
+        {
+          "year": 1991,
+          "team": "西武",
+          "league": "NPB",
+          "salary_man": 10000
+        },
+        {
+          "year": 1992,
+          "team": "西武",
+          "league": "NPB",
+          "salary_man": 10000
+        },
+        {
+          "year": 1993,
+          "team": "西武",
+          "league": "NPB",
+          "salary_man": 12800
+        },
+        {
+          "year": 1994,
+          "team": "西武",
+          "league": "NPB",
+          "salary_man": 16300
+        },
+        {
+          "year": 1995,
+          "team": "西武",
+          "league": "NPB",
+          "salary_man": 25000
+        },
+        {
+          "year": 1996,
+          "team": "西武",
+          "league": "NPB",
+          "salary_man": 23000
+        },
+        {
+          "year": 1997,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 36000
+        },
+        {
+          "year": 1998,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 33000
+        },
+        {
+          "year": 1999,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 33000
+        },
+        {
+          "year": 2000,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 26000
+        },
+        {
+          "year": 2001,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 30000
+        },
+        {
+          "year": 2002,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 45000
+        },
+        {
+          "year": 2003,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 45000
+        },
+        {
+          "year": 2004,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 45000
+        },
+        {
+          "year": 2005,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 38000
+        },
+        {
+          "year": 2006,
+          "team": "オリックス",
+          "league": "NPB",
+          "salary_man": 25000
+        },
+        {
+          "year": 2007,
+          "team": "オリックス",
+          "league": "NPB",
+          "salary_man": 25000
+        },
+        {
+          "year": 2008,
+          "team": "オリックス",
+          "league": "NPB",
+          "salary_man": 11000
+        }
+      ],
+      "shube_id": "19670001"
+    },
+    {
+      "name": "高橋尚成",
+      "slug": "takahashi-hisanori",
+      "kana": "たかはし ひさのり",
+      "position": "",
+      "jersey": "",
+      "active": false,
+      "ob_note": "巨人 2000-2009、HISA YT",
+      "years": [
+        {
+          "year": 2000,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1300
+        },
+        {
+          "year": 2001,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 4000
+        },
+        {
+          "year": 2002,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 5000
+        },
+        {
+          "year": 2003,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 8200
+        },
+        {
+          "year": 2004,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 7600
+        },
+        {
+          "year": 2005,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 6500
+        },
+        {
+          "year": 2006,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 7300
+        },
+        {
+          "year": 2007,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 7300
+        },
+        {
+          "year": 2008,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 14600
+        },
+        {
+          "year": 2009,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 13500
+        },
+        {
+          "year": 2014,
+          "team": "DeNA",
+          "league": "NPB",
+          "salary_man": 6000
+        },
+        {
+          "year": 2015,
+          "team": "DeNA",
+          "league": "NPB",
+          "salary_man": 6000
+        }
+      ],
+      "shube_id": "19750009"
+    },
+    {
+      "name": "上原浩治",
+      "slug": "uehara-koji",
+      "kana": "うえはら こうじ",
+      "position": "",
+      "jersey": "",
+      "active": false,
+      "ob_note": "巨人 1999-2008 (FA MLB)、雑談魂 YT",
+      "years": [
+        {
+          "year": 1999,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1300
+        },
+        {
+          "year": 2000,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 6600
+        },
+        {
+          "year": 2001,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 7600
+        },
+        {
+          "year": 2002,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 10600
+        },
+        {
+          "year": 2003,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 21000
+        },
+        {
+          "year": 2004,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 30000
+        },
+        {
+          "year": 2005,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 35000
+        },
+        {
+          "year": 2006,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 34000
+        },
+        {
+          "year": 2007,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 31000
+        },
+        {
+          "year": 2008,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 40000
+        },
+        {
+          "year": 2009,
+          "team": "ボルティモア・オリオールズ",
+          "league": "MLB",
+          "salary_man": 50000
+        },
+        {
+          "year": 2011,
+          "team": "ボルティモア・オリオールズ",
+          "league": "MLB",
+          "salary_man": 30000
+        },
+        {
+          "year": 2012,
+          "team": "テキサス・レンジャーズ",
+          "league": "MLB",
+          "salary_man": 40000
+        },
+        {
+          "year": 2013,
+          "team": "ボストン・レッドソックス",
+          "league": "MLB",
+          "salary_man": 42500
+        },
+        {
+          "year": 2014,
+          "team": "ボストン・レッドソックス",
+          "league": "MLB",
+          "salary_man": 42500
+        },
+        {
+          "year": 2015,
+          "team": "ボストン・レッドソックス",
+          "league": "MLB",
+          "salary_man": 90000
+        },
+        {
+          "year": 2016,
+          "team": "ボストン・レッドソックス",
+          "league": "MLB",
+          "salary_man": 90000
+        },
+        {
+          "year": 2017,
+          "team": "シカゴ・カブス",
+          "league": "MLB",
+          "salary_man": 60000
+        },
+        {
+          "year": 2018,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 20000
+        },
+        {
+          "year": 2019,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 5000
+        }
+      ],
+      "shube_id": "19750029"
+    },
+    {
+      "name": "元木大介",
+      "slug": "motoki-daisuke",
+      "kana": "",
+      "position": "",
+      "jersey": "",
+      "active": false,
+      "ob_note": "巨人一筋 1991-2005、元木大介ch YT",
+      "years": [
+        {
+          "year": 1992,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 860
+        },
+        {
+          "year": 1993,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 980
+        },
+        {
+          "year": 2000,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 7000
+        },
+        {
+          "year": 2001,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 8800
+        },
+        {
+          "year": 2002,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 12000
+        },
+        {
+          "year": 2003,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 11200
+        },
+        {
+          "year": 2004,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 10000
+        },
+        {
+          "year": 2005,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 10000
+        }
+      ],
+      "shube_id": "19710005"
+    },
+    {
+      "name": "工藤公康",
+      "slug": "kudoh-kimiyasu",
+      "kana": "",
+      "position": "",
+      "jersey": "",
+      "active": false,
+      "ob_note": "巨人 2000-2006、後ソフトバンク監督",
+      "years": [
+        {
+          "year": 1982,
+          "team": "西武",
+          "league": "NPB",
+          "salary_man": 400
+        },
+        {
+          "year": 1983,
+          "team": "西武",
+          "league": "NPB",
+          "salary_man": 600
+        },
+        {
+          "year": 1984,
+          "team": "西武",
+          "league": "NPB",
+          "salary_man": 680
+        },
+        {
+          "year": 1985,
+          "team": "西武",
+          "league": "NPB",
+          "salary_man": 560
+        },
+        {
+          "year": 1986,
+          "team": "西武",
+          "league": "NPB",
+          "salary_man": 1520
+        },
+        {
+          "year": 1987,
+          "team": "西武",
+          "league": "NPB",
+          "salary_man": 2900
+        },
+        {
+          "year": 1988,
+          "team": "西武",
+          "league": "NPB",
+          "salary_man": 5300
+        },
+        {
+          "year": 1989,
+          "team": "西武",
+          "league": "NPB",
+          "salary_man": 5500
+        },
+        {
+          "year": 1990,
+          "team": "西武",
+          "league": "NPB",
+          "salary_man": 4600
+        },
+        {
+          "year": 1991,
+          "team": "西武",
+          "league": "NPB",
+          "salary_man": 5600
+        },
+        {
+          "year": 1992,
+          "team": "西武",
+          "league": "NPB",
+          "salary_man": 8500
+        },
+        {
+          "year": 1993,
+          "team": "西武",
+          "league": "NPB",
+          "salary_man": 9500
+        },
+        {
+          "year": 1994,
+          "team": "西武",
+          "league": "NPB",
+          "salary_man": 16000
+        },
+        {
+          "year": 1995,
+          "team": "ダイエー",
+          "league": "NPB",
+          "salary_man": 16000
+        },
+        {
+          "year": 1996,
+          "team": "ダイエー",
+          "league": "NPB",
+          "salary_man": 16000
+        },
+        {
+          "year": 1997,
+          "team": "ダイエー",
+          "league": "NPB",
+          "salary_man": 14500
+        },
+        {
+          "year": 1998,
+          "team": "ダイエー",
+          "league": "NPB",
+          "salary_man": 16000
+        },
+        {
+          "year": 1999,
+          "team": "ダイエー",
+          "league": "NPB",
+          "salary_man": 15000
+        },
+        {
+          "year": 2000,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 15000
+        },
+        {
+          "year": 2001,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 30000
+        },
+        {
+          "year": 2002,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 24000
+        },
+        {
+          "year": 2003,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 30000
+        },
+        {
+          "year": 2004,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 28000
+        },
+        {
+          "year": 2005,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 29000
+        },
+        {
+          "year": 2006,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 29000
+        },
+        {
+          "year": 2007,
+          "team": "横浜",
+          "league": "NPB",
+          "salary_man": 9000
+        },
+        {
+          "year": 2008,
+          "team": "横浜",
+          "league": "NPB",
+          "salary_man": 11000
+        },
+        {
+          "year": 2009,
+          "team": "横浜",
+          "league": "NPB",
+          "salary_man": 5000
+        },
+        {
+          "year": 2010,
+          "team": "西武",
+          "league": "NPB",
+          "salary_man": 3000
+        }
+      ],
+      "shube_id": "19630001"
+    },
+    {
+      "name": "阿部慎之助",
+      "slug": "abe-shinnosuke",
+      "kana": "",
+      "position": "",
+      "jersey": "",
+      "active": false,
+      "ob_note": "巨人一筋 2001-2019、現監督",
+      "years": [
+        {
+          "year": 2001,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1300
+        },
+        {
+          "year": 2002,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 3800
+        },
+        {
+          "year": 2003,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 7800
+        },
+        {
+          "year": 2004,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 7500
+        },
+        {
+          "year": 2005,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 12000
+        },
+        {
+          "year": 2006,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 14000
+        },
+        {
+          "year": 2007,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 14000
+        },
+        {
+          "year": 2008,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 24000
+        },
+        {
+          "year": 2009,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 27000
+        },
+        {
+          "year": 2010,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 35000
+        },
+        {
+          "year": 2011,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 40000
+        },
+        {
+          "year": 2012,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 40000
+        },
+        {
+          "year": 2013,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 57000
+        },
+        {
+          "year": 2014,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 60000
+        },
+        {
+          "year": 2015,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 51000
+        },
+        {
+          "year": 2016,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 32600
+        },
+        {
+          "year": 2017,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 26000
+        },
+        {
+          "year": 2018,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 21000
+        },
+        {
+          "year": 2019,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 16000
+        }
+      ],
+      "shube_id": "19790007"
+    },
+    {
+      "name": "内海哲也",
+      "slug": "utsumi-tetsuya",
+      "kana": "",
+      "position": "",
+      "jersey": "",
+      "active": false,
+      "ob_note": "巨人 2004-2018 (人的補償西武)",
+      "years": [
+        {
+          "year": 2004,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1500
+        },
+        {
+          "year": 2005,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1500
+        },
+        {
+          "year": 2006,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1800
+        },
+        {
+          "year": 2007,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 3600
+        },
+        {
+          "year": 2008,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 8400
+        },
+        {
+          "year": 2009,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 12000
+        },
+        {
+          "year": 2010,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 14000
+        },
+        {
+          "year": 2011,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 12000
+        },
+        {
+          "year": 2012,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 22000
+        },
+        {
+          "year": 2013,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 40000
+        },
+        {
+          "year": 2014,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 40000
+        },
+        {
+          "year": 2015,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 40000
+        },
+        {
+          "year": 2016,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 40000
+        },
+        {
+          "year": 2017,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 20000
+        },
+        {
+          "year": 2018,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 10000
+        },
+        {
+          "year": 2019,
+          "team": "西武",
+          "league": "NPB",
+          "salary_man": 10000
+        },
+        {
+          "year": 2020,
+          "team": "西武",
+          "league": "NPB",
+          "salary_man": 7500
+        },
+        {
+          "year": 2021,
+          "team": "西武",
+          "league": "NPB",
+          "salary_man": 5625
+        },
+        {
+          "year": 2022,
+          "team": "西武",
+          "league": "NPB",
+          "salary_man": 4500
+        }
+      ],
+      "shube_id": "19820026"
+    },
+    {
+      "name": "沢村拓一",
+      "slug": "sawamura-hirokazu",
+      "kana": "さわむら ひろかず",
+      "position": "",
+      "jersey": "",
+      "active": false,
+      "ob_note": "巨人 2011-2019",
+      "years": [
+        {
+          "year": 2011,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1500
+        },
+        {
+          "year": 2012,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 5200
+        },
+        {
+          "year": 2013,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 6500
+        },
+        {
+          "year": 2014,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 6000
+        },
+        {
+          "year": 2015,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 4800
+        },
+        {
+          "year": 2016,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 10000
+        },
+        {
+          "year": 2017,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 15000
+        },
+        {
+          "year": 2018,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 15000
+        },
+        {
+          "year": 2019,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 12150
+        },
+        {
+          "year": 2020,
+          "team": "ロッテ",
+          "league": "NPB",
+          "salary_man": 15400
+        },
+        {
+          "year": 2023,
+          "team": "ロッテ",
+          "league": "NPB",
+          "salary_man": 20000
+        },
+        {
+          "year": 2024,
+          "team": "ロッテ",
+          "league": "NPB",
+          "salary_man": 20000
+        },
+        {
+          "year": 2025,
+          "team": "ロッテ",
+          "league": "NPB",
+          "salary_man": 20000
+        }
+      ],
+      "shube_id": "19880042"
+    },
+    {
+      "name": "杉内俊哉",
+      "slug": "sugiuchi-toshiya",
+      "kana": "",
+      "position": "",
+      "jersey": "",
+      "active": false,
+      "ob_note": "巨人 2012-2018 (FA移籍)",
+      "years": [
+        {
+          "year": 2002,
+          "team": "ダイエー",
+          "league": "NPB",
+          "salary_man": 1500
+        },
+        {
+          "year": 2003,
+          "team": "ダイエー",
+          "league": "NPB",
+          "salary_man": 1500
+        },
+        {
+          "year": 2004,
+          "team": "ダイエー",
+          "league": "NPB",
+          "salary_man": 5300
+        },
+        {
+          "year": 2005,
+          "team": "ソフトバンク",
+          "league": "NPB",
+          "salary_man": 4000
+        },
+        {
+          "year": 2006,
+          "team": "ソフトバンク",
+          "league": "NPB",
+          "salary_man": 15000
+        },
+        {
+          "year": 2007,
+          "team": "ソフトバンク",
+          "league": "NPB",
+          "salary_man": 12000
+        },
+        {
+          "year": 2008,
+          "team": "ソフトバンク",
+          "league": "NPB",
+          "salary_man": 19000
+        },
+        {
+          "year": 2009,
+          "team": "ソフトバンク",
+          "league": "NPB",
+          "salary_man": 23000
+        },
+        {
+          "year": 2010,
+          "team": "ソフトバンク",
+          "league": "NPB",
+          "salary_man": 30000
+        },
+        {
+          "year": 2011,
+          "team": "ソフトバンク",
+          "league": "NPB",
+          "salary_man": 35000
+        },
+        {
+          "year": 2012,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 35000
+        },
+        {
+          "year": 2013,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 50000
+        },
+        {
+          "year": 2014,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 50000
+        },
+        {
+          "year": 2015,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 50000
+        },
+        {
+          "year": 2016,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 5000
+        },
+        {
+          "year": 2017,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 5000
+        },
+        {
+          "year": 2018,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 2500
+        }
+      ],
+      "shube_id": "19800019"
+    },
+    {
+      "name": "村田修一",
+      "slug": "murata-shuichi",
+      "kana": "",
+      "position": "",
+      "jersey": "",
+      "active": false,
+      "ob_note": "巨人 2012-2017 (FA移籍)",
+      "years": [
+        {
+          "year": 2003,
+          "team": "横浜",
+          "league": "NPB",
+          "salary_man": 1500
+        },
+        {
+          "year": 2004,
+          "team": "横浜",
+          "league": "NPB",
+          "salary_man": 3500
+        },
+        {
+          "year": 2005,
+          "team": "横浜",
+          "league": "NPB",
+          "salary_man": 3150
+        },
+        {
+          "year": 2006,
+          "team": "横浜",
+          "league": "NPB",
+          "salary_man": 4150
+        },
+        {
+          "year": 2007,
+          "team": "横浜",
+          "league": "NPB",
+          "salary_man": 9000
+        },
+        {
+          "year": 2008,
+          "team": "横浜",
+          "league": "NPB",
+          "salary_man": 16000
+        },
+        {
+          "year": 2009,
+          "team": "横浜",
+          "league": "NPB",
+          "salary_man": 26000
+        },
+        {
+          "year": 2010,
+          "team": "横浜",
+          "league": "NPB",
+          "salary_man": 26000
+        },
+        {
+          "year": 2011,
+          "team": "横浜",
+          "league": "NPB",
+          "salary_man": 22000
+        },
+        {
+          "year": 2012,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 22000
+        },
+        {
+          "year": 2013,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 22000
+        },
+        {
+          "year": 2014,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 30000
+        },
+        {
+          "year": 2015,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 30000
+        },
+        {
+          "year": 2016,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 30000
+        },
+        {
+          "year": 2017,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 22000
+        }
+      ],
+      "shube_id": "19800020"
+    },
+    {
+      "name": "菅野智之",
+      "slug": "sugano-tomoyuki",
+      "kana": "",
+      "position": "",
+      "jersey": "",
+      "active": false,
+      "ob_note": "巨人 2013-2024、2025年MLB移籍",
+      "years": [
+        {
+          "year": 2013,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1500
+        },
+        {
+          "year": 2014,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 7000
+        },
+        {
+          "year": 2015,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 11000
+        },
+        {
+          "year": 2016,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 13200
+        },
+        {
+          "year": 2017,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 23000
+        },
+        {
+          "year": 2018,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 45000
+        },
+        {
+          "year": 2019,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 65000
+        },
+        {
+          "year": 2020,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 65000
+        },
+        {
+          "year": 2021,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 80000
+        },
+        {
+          "year": 2022,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 60000
+        },
+        {
+          "year": 2023,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 50000
+        },
+        {
+          "year": 2024,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 40000
+        }
+      ],
+      "shube_id": "19890049"
+    },
+    {
+      "name": "アレックス・ラミレス",
+      "slug": "alex-ramirez",
+      "kana": "",
+      "position": "",
+      "jersey": "",
+      "active": false,
+      "ob_note": "巨人 2008-2011、後 DeNA 監督",
+      "years": [
+        {
+          "year": 2001,
+          "team": "ヤクルト",
+          "league": "NPB",
+          "salary_man": 5400
+        },
+        {
+          "year": 2002,
+          "team": "ヤクルト",
+          "league": "NPB",
+          "salary_man": 11700
+        },
+        {
+          "year": 2003,
+          "team": "ヤクルト",
+          "league": "NPB",
+          "salary_man": 14500
+        },
+        {
+          "year": 2004,
+          "team": "ヤクルト",
+          "league": "NPB",
+          "salary_man": 20000
+        },
+        {
+          "year": 2005,
+          "team": "ヤクルト",
+          "league": "NPB",
+          "salary_man": 30000
+        },
+        {
+          "year": 2006,
+          "team": "ヤクルト",
+          "league": "NPB",
+          "salary_man": 30000
+        },
+        {
+          "year": 2007,
+          "team": "ヤクルト",
+          "league": "NPB",
+          "salary_man": 30000
+        },
+        {
+          "year": 2008,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 50000
+        },
+        {
+          "year": 2009,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 50000
+        },
+        {
+          "year": 2010,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 50000
+        },
+        {
+          "year": 2011,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 50000
+        },
+        {
+          "year": 2012,
+          "team": "DeNA",
+          "league": "NPB",
+          "salary_man": 35000
+        },
+        {
+          "year": 2013,
+          "team": "DeNA",
+          "league": "NPB",
+          "salary_man": 35000
+        }
+      ],
+      "shube_id": "19740004"
+    },
+    {
+      "name": "小田幸平",
+      "slug": "oda-kouhei",
+      "kana": "",
+      "position": "",
+      "jersey": "",
+      "active": false,
+      "ob_note": "巨人 1995-2004、後 中日、はげch YT",
+      "years": [
+        {
+          "year": 1998,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1000
+        },
+        {
+          "year": 1999,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1000
+        },
+        {
+          "year": 2000,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1050
+        },
+        {
+          "year": 2001,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1050
+        },
+        {
+          "year": 2002,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1170
+        },
+        {
+          "year": 2003,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1400
+        },
+        {
+          "year": 2004,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1500
+        },
+        {
+          "year": 2005,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 2000
+        },
+        {
+          "year": 2006,
+          "team": "中日",
+          "league": "NPB",
+          "salary_man": 2300
+        },
+        {
+          "year": 2007,
+          "team": "中日",
+          "league": "NPB",
+          "salary_man": 3600
+        },
+        {
+          "year": 2008,
+          "team": "中日",
+          "league": "NPB",
+          "salary_man": 2900
+        },
+        {
+          "year": 2009,
+          "team": "中日",
+          "league": "NPB",
+          "salary_man": 3100
+        },
+        {
+          "year": 2010,
+          "team": "中日",
+          "league": "NPB",
+          "salary_man": 2600
+        },
+        {
+          "year": 2011,
+          "team": "中日",
+          "league": "NPB",
+          "salary_man": 3300
+        },
+        {
+          "year": 2012,
+          "team": "中日",
+          "league": "NPB",
+          "salary_man": 3600
+        },
+        {
+          "year": 2013,
+          "team": "中日",
+          "league": "NPB",
+          "salary_man": 3600
+        },
+        {
+          "year": 2014,
+          "team": "中日",
+          "league": "NPB",
+          "salary_man": 2700
+        }
+      ],
+      "shube_id": "19770011"
+    },
+    {
+      "name": "今成亮太",
+      "slug": "imanari-ryouta",
+      "kana": "いまなり りょうた",
+      "position": "",
+      "jersey": "",
+      "active": false,
+      "ob_note": "巨人 2009-2010、後阪神/日ハム、DIAMOND ALLIANS YT",
+      "years": [
+        {
+          "year": 2006,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 480
+        },
+        {
+          "year": 2007,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 480
+        },
+        {
+          "year": 2008,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 500
+        },
+        {
+          "year": 2009,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 590
+        },
+        {
+          "year": 2010,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 590
+        },
+        {
+          "year": 2011,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 590
+        },
+        {
+          "year": 2012,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 620
+        },
+        {
+          "year": 2013,
+          "team": "阪神",
+          "league": "NPB",
+          "salary_man": 720
+        },
+        {
+          "year": 2014,
+          "team": "阪神",
+          "league": "NPB",
+          "salary_man": 2000
+        },
+        {
+          "year": 2015,
+          "team": "阪神",
+          "league": "NPB",
+          "salary_man": 3600
+        },
+        {
+          "year": 2016,
+          "team": "阪神",
+          "league": "NPB",
+          "salary_man": 4000
+        },
+        {
+          "year": 2017,
+          "team": "阪神",
+          "league": "NPB",
+          "salary_man": 3800
+        },
+        {
+          "year": 2018,
+          "team": "阪神",
+          "league": "NPB",
+          "salary_man": 3000
+        }
+      ],
+      "shube_id": "19870037"
+    },
+    {
+      "name": "大田泰示",
+      "slug": "ota-taishi",
+      "kana": "",
+      "position": "",
+      "jersey": "",
+      "active": false,
+      "ob_note": "巨人 2008-2016 (トレード日ハム)",
+      "years": [
+        {
+          "year": 2009,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1200
+        },
+        {
+          "year": 2010,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1200
+        },
+        {
+          "year": 2011,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1000
+        },
+        {
+          "year": 2012,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 950
+        },
+        {
+          "year": 2013,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1500
+        },
+        {
+          "year": 2014,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1200
+        },
+        {
+          "year": 2015,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1900
+        },
+        {
+          "year": 2016,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 2100
+        },
+        {
+          "year": 2017,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 2100
+        },
+        {
+          "year": 2018,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 4300
+        },
+        {
+          "year": 2019,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 6500
+        },
+        {
+          "year": 2020,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 10000
+        },
+        {
+          "year": 2021,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 13000
+        },
+        {
+          "year": 2022,
+          "team": "DeNA",
+          "league": "NPB",
+          "salary_man": 5000
+        },
+        {
+          "year": 2023,
+          "team": "DeNA",
+          "league": "NPB",
+          "salary_man": 5000
+        },
+        {
+          "year": 2024,
+          "team": "DeNA",
+          "league": "NPB",
+          "salary_man": 5000
+        }
+      ],
+      "shube_id": "19900037"
+    },
+    {
+      "name": "鈴木尚広",
+      "slug": "suzuki-naohiro",
+      "kana": "",
+      "position": "",
+      "jersey": "",
+      "active": false,
+      "ob_note": "巨人一筋 1997-2016、 走塁スペシャリスト、 後巨人コーチ",
+      "years": [
+        {
+          "year": 2000,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 580
+        },
+        {
+          "year": 2002,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 672
+        },
+        {
+          "year": 2003,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1200
+        },
+        {
+          "year": 2004,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 2400
+        },
+        {
+          "year": 2005,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 2200
+        },
+        {
+          "year": 2006,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 2400
+        },
+        {
+          "year": 2007,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 2800
+        },
+        {
+          "year": 2008,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 3000
+        },
+        {
+          "year": 2009,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 4500
+        },
+        {
+          "year": 2010,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 4200
+        },
+        {
+          "year": 2011,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 4000
+        },
+        {
+          "year": 2012,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 4000
+        },
+        {
+          "year": 2013,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 4000
+        },
+        {
+          "year": 2014,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 4000
+        },
+        {
+          "year": 2015,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 5000
+        },
+        {
+          "year": 2016,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 6000
+        }
+      ],
+      "shube_id": "19780008"
+    },
+    {
+      "name": "河原純一",
+      "slug": "kawahara-jyunichi",
+      "kana": "",
+      "position": "",
+      "jersey": "",
+      "active": false,
+      "ob_note": "巨人 1996-2007、 抑え、 解説者",
+      "years": [
+        {
+          "year": 1995,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1200
+        },
+        {
+          "year": 1996,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 2600
+        },
+        {
+          "year": 1997,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 2000
+        },
+        {
+          "year": 1999,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1920
+        },
+        {
+          "year": 2000,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1920
+        },
+        {
+          "year": 2001,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 3000
+        },
+        {
+          "year": 2002,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 3900
+        },
+        {
+          "year": 2003,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 7500
+        },
+        {
+          "year": 2004,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 6000
+        },
+        {
+          "year": 2005,
+          "team": "西武",
+          "league": "NPB",
+          "salary_man": 4940
+        },
+        {
+          "year": 2006,
+          "team": "西武",
+          "league": "NPB",
+          "salary_man": 4400
+        },
+        {
+          "year": 2007,
+          "team": "西武",
+          "league": "NPB",
+          "salary_man": 3800
+        },
+        {
+          "year": 2009,
+          "team": "中日",
+          "league": "NPB",
+          "salary_man": 600
+        },
+        {
+          "year": 2010,
+          "team": "中日",
+          "league": "NPB",
+          "salary_man": 3000
+        },
+        {
+          "year": 2011,
+          "team": "中日",
+          "league": "NPB",
+          "salary_man": 2250
+        }
+      ],
+      "shube_id": "19730013"
+    },
+    {
+      "name": "久保裕也",
+      "slug": "kubo-yuya",
+      "kana": "",
+      "position": "",
+      "jersey": "",
+      "active": false,
+      "ob_note": "巨人 1995-2008、 後楽天、 解説者",
+      "years": [
+        {
+          "year": 2003,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1500
+        },
+        {
+          "year": 2004,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 3000
+        },
+        {
+          "year": 2005,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 4000
+        },
+        {
+          "year": 2006,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 6000
+        },
+        {
+          "year": 2007,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 5000
+        },
+        {
+          "year": 2008,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 1400
+        },
+        {
+          "year": 2009,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 3000
+        },
+        {
+          "year": 2010,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 2700
+        },
+        {
+          "year": 2011,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 6500
+        },
+        {
+          "year": 2012,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 15000
+        },
+        {
+          "year": 2013,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 10000
+        },
+        {
+          "year": 2014,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 5000
+        },
+        {
+          "year": 2015,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 5000
+        },
+        {
+          "year": 2016,
+          "team": "DeNA",
+          "league": "NPB",
+          "salary_man": 1500
+        },
+        {
+          "year": 2017,
+          "team": "楽天",
+          "league": "NPB",
+          "salary_man": 600
+        },
+        {
+          "year": 2018,
+          "team": "楽天",
+          "league": "NPB",
+          "salary_man": 1500
+        },
+        {
+          "year": 2019,
+          "team": "楽天",
+          "league": "NPB",
+          "salary_man": 1700
+        },
+        {
+          "year": 2020,
+          "team": "楽天",
+          "league": "NPB",
+          "salary_man": 1800
+        }
+      ],
+      "shube_id": "19800018"
+    },
+    {
+      "name": "広澤克実",
+      "slug": "hirosawa-katsumi",
+      "kana": "ひろさわ かつみ",
+      "position": "",
+      "jersey": "",
+      "active": false,
+      "ob_note": "巨人 1994-1996 (ヤクルト/阪神 経由)、 解説者",
+      "years": [
+        {
+          "year": 1985,
+          "team": "ヤクルト",
+          "league": "NPB",
+          "salary_man": 600
+        },
+        {
+          "year": 1986,
+          "team": "ヤクルト",
+          "league": "NPB",
+          "salary_man": 980
+        },
+        {
+          "year": 1987,
+          "team": "ヤクルト",
+          "league": "NPB",
+          "salary_man": 1100
+        },
+        {
+          "year": 1988,
+          "team": "ヤクルト",
+          "league": "NPB",
+          "salary_man": 2400
+        },
+        {
+          "year": 1989,
+          "team": "ヤクルト",
+          "league": "NPB",
+          "salary_man": 4260
+        },
+        {
+          "year": 1990,
+          "team": "ヤクルト",
+          "league": "NPB",
+          "salary_man": 4000
+        },
+        {
+          "year": 1991,
+          "team": "ヤクルト",
+          "league": "NPB",
+          "salary_man": 6300
+        },
+        {
+          "year": 1992,
+          "team": "ヤクルト",
+          "league": "NPB",
+          "salary_man": 9250
+        },
+        {
+          "year": 1993,
+          "team": "ヤクルト",
+          "league": "NPB",
+          "salary_man": 12500
+        },
+        {
+          "year": 1994,
+          "team": "ヤクルト",
+          "league": "NPB",
+          "salary_man": 18000
+        },
+        {
+          "year": 1995,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 18000
+        },
+        {
+          "year": 1996,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 16500
+        },
+        {
+          "year": 1997,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 13200
+        },
+        {
+          "year": 1998,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 13200
+        },
+        {
+          "year": 1999,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 12000
+        },
+        {
+          "year": 2000,
+          "team": "阪神",
+          "league": "NPB",
+          "salary_man": 5000
+        },
+        {
+          "year": 2001,
+          "team": "阪神",
+          "league": "NPB",
+          "salary_man": 3000
+        },
+        {
+          "year": 2002,
+          "team": "阪神",
+          "league": "NPB",
+          "salary_man": 5000
+        },
+        {
+          "year": 2003,
+          "team": "阪神",
+          "league": "NPB",
+          "salary_man": 4200
+        }
+      ],
+      "shube_id": "19620005"
+    },
+    {
+      "name": "山口俊",
+      "slug": "yamaguchi-shun",
+      "kana": "",
+      "position": "",
+      "jersey": "",
+      "active": false,
+      "ob_note": "巨人 2017-2019、 後 MLB Blue Jays、 後 ロッテ",
+      "years": [
+        {
+          "year": 2006,
+          "team": "横浜",
+          "league": "NPB",
+          "salary_man": 870
+        },
+        {
+          "year": 2007,
+          "team": "横浜",
+          "league": "NPB",
+          "salary_man": 950
+        },
+        {
+          "year": 2008,
+          "team": "横浜",
+          "league": "NPB",
+          "salary_man": 880
+        },
+        {
+          "year": 2009,
+          "team": "横浜",
+          "league": "NPB",
+          "salary_man": 1000
+        },
+        {
+          "year": 2010,
+          "team": "横浜",
+          "league": "NPB",
+          "salary_man": 3000
+        },
+        {
+          "year": 2011,
+          "team": "横浜",
+          "league": "NPB",
+          "salary_man": 5400
+        },
+        {
+          "year": 2012,
+          "team": "DeNA",
+          "league": "NPB",
+          "salary_man": 10000
+        },
+        {
+          "year": 2013,
+          "team": "DeNA",
+          "league": "NPB",
+          "salary_man": 10000
+        },
+        {
+          "year": 2014,
+          "team": "DeNA",
+          "league": "NPB",
+          "salary_man": 8000
+        },
+        {
+          "year": 2015,
+          "team": "DeNA",
+          "league": "NPB",
+          "salary_man": 8800
+        },
+        {
+          "year": 2016,
+          "team": "DeNA",
+          "league": "NPB",
+          "salary_man": 8000
+        },
+        {
+          "year": 2017,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 8000
+        },
+        {
+          "year": 2018,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 23000
+        },
+        {
+          "year": 2019,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 23000
+        },
+        {
+          "year": 2020,
+          "team": "トロント・ブルージェイズ",
+          "league": "MLB",
+          "salary_man": 35000
+        },
+        {
+          "year": 2022,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 6000
+        }
+      ],
+      "shube_id": "19870051"
+    },
+    {
+      "name": "陽岱鋼",
+      "slug": "yoh",
+      "kana": "",
+      "position": "",
+      "jersey": "",
+      "active": false,
+      "ob_note": "巨人 2017-2022 (日ハム経由)、 後 BC リーグ",
+      "years": [
+        {
+          "year": 2006,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 1000
+        },
+        {
+          "year": 2007,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 1000
+        },
+        {
+          "year": 2008,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 1250
+        },
+        {
+          "year": 2009,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 1200
+        },
+        {
+          "year": 2010,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 1100
+        },
+        {
+          "year": 2011,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 2100
+        },
+        {
+          "year": 2012,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 4600
+        },
+        {
+          "year": 2013,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 9200
+        },
+        {
+          "year": 2014,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 18000
+        },
+        {
+          "year": 2015,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 18000
+        },
+        {
+          "year": 2016,
+          "team": "日本ハム",
+          "league": "NPB",
+          "salary_man": 16000
+        },
+        {
+          "year": 2017,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 16000
+        },
+        {
+          "year": 2018,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 30000
+        },
+        {
+          "year": 2019,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 30000
+        },
+        {
+          "year": 2020,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 30000
+        },
+        {
+          "year": 2021,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 30000
+        }
+      ],
+      "shube_id": "19870006"
     }
   ]
 }

@@ -258,7 +258,11 @@ def _peak(p: dict) -> dict:
 def _player_pills(p: dict) -> str:
     latest = _latest(p)
     peak = _peak(p)
-    pills = _stat_pill(f"{int(latest['year'])}年 推定年俸", _fmt_man_yen(latest["salary_man"]))
+    first_label = (
+        f"最終年俸（{int(latest['year'])}年）" if p.get("active") is False
+        else f"{int(latest['year'])}年 推定年俸"
+    )
+    pills = _stat_pill(first_label, _fmt_man_yen(latest["salary_man"]))
     pills += _stat_pill("通算推定年俸", f"約{_fmt_man(_total_man(p))}円", "#137333")
     kin = (p.get("draft") or {}).get("keiyakukin_man")
     if kin:
@@ -378,6 +382,8 @@ def _career_span(p: dict) -> str:
 # ──────────────────────────── 選手別ページ ────────────────────────────
 
 def render_salary_player_title(p: dict) -> str:
+    if p.get("active") is False:
+        return f"{p['name']}の年俸推移【現役時代】契約金・通算年俸 | 巨人データ"
     latest = _latest(p)
     return (
         f"{p['name']}の年俸推移【{int(latest['year'])}年最新】契約金・通算年俸 | 巨人データ"
@@ -389,6 +395,14 @@ def render_salary_player_excerpt(p: dict) -> str:
     total = _fmt_man(_total_man(p))
     kin = (p.get("draft") or {}).get("keiyakukin_man")
     kin_txt = f"契約金は{_fmt_man_yen(kin)}。" if kin else ""
+    if p.get("active") is False:
+        peak = _peak(p)
+        return (
+            f"{p['name']}の現役時代の推定年俸推移（掲載期間 {_career_span(p)}）。"
+            f"最高年俸は{_fmt_man_yen(peak['salary_man'])}（{int(peak['year'])}年）、"
+            f"通算推定年俸は約{total}円。{kin_txt}"
+            "年度別推定年俸を棒グラフ・折れ線グラフと一覧表でまとめた巨人データです。"
+        )
     return (
         f"{p['name']}の{int(latest['year'])}年推定年俸は{_fmt_man_yen(latest['salary_man'])}、"
         f"通算推定年俸は約{total}円。{kin_txt}"
@@ -408,12 +422,18 @@ def render_salary_player_html(p: dict) -> str:
         f'<a href="{CLUSTER_URL}/{SLUG}" style="color:#666;">年俸ランキング</a> › '
         f"<span>{_esc(p['name'])}の年俸推移</span></nav>"
     )
+    is_ob = p.get("active") is False
+    prof = "・".join(t for t in (p.get("kana") or "", p.get("position") or "") if t)
+    span_phrase = (
+        f"現役時代の推定年俸を年度別にまとめました（掲載期間 {_esc(_career_span(p))}）。"
+        if is_ob else
+        f"推定年俸を入団から{int(latest['year'])}年まで年度別にまとめました。"
+    )
     intro = (
         f'<h1 id="top" style="font-size:21px;margin:0 0 4px;">'
         f"{_esc(p['name'])}の年俸推移（{_esc(_career_span(p))}・契約金・通算年俸）</h1>"
         '<p style="font-size:13px;color:#666;margin:0 0 12px;line-height:1.7;">'
-        f"{_esc(p['name'])}（{_esc(p.get('kana') or '')}・{_esc(p.get('position') or '')}）の"
-        f"推定年俸を入団から{int(latest['year'])}年まで年度別にまとめました。"
+        f"{_esc(p['name'])}{f'（{_esc(prof)}）' if prof else ''}の{span_phrase}"
         "年度別の棒グラフ、通算年俸の積み上がりが分かる折れ線グラフ、"
         "前年比付きの一覧表、契約金・ドラフト情報を掲載しています。</p>"
     )
@@ -499,9 +519,11 @@ def render_salary_index_html(data: dict | None = None) -> str:
     def latest_for(p):
         return max(p["years"], key=lambda y: int(y["year"]))
 
-    players.sort(key=lambda p: -int(latest_for(p)["salary_man"]))
+    actives = [p for p in players if p.get("active") is not False]
+    obs = [p for p in players if p.get("active") is False]
+    actives.sort(key=lambda p: -int(latest_for(p)["salary_man"]))
     rows = []
-    for i, p in enumerate(players, start=1):
+    for i, p in enumerate(actives, start=1):
         latest = latest_for(p)
         rows.append(
             f"<tr><td>{i}</td>"
@@ -518,13 +540,38 @@ def render_salary_index_html(data: dict | None = None) -> str:
             'style="font-size:12px;color:#e25400;font-weight:700;">推移を見る →</a></td></tr>'
         )
     table = (
-        '<h2 id="sl-ranking">推定年俸ランキング</h2>'
+        '<h2 id="sl-ranking">推定年俸ランキング（現役）</h2>'
         '<p style="font-size:12px;color:#666;margin:0 0 8px;">'
         "金額はメディア報道に基づく推定値。通算はMLB在籍年の円換算（当時レート推定）を含む単純合算。</p>"
         '<div class="ys-sl__scroll"><table><thead><tr>'
         "<th>順位</th><th>選手</th><th>推定年俸</th><th>通算推定年俸</th><th>掲載期間</th><th></th>"
         f"</tr></thead><tbody>{''.join(rows)}</tbody></table></div>"
     )
+    if obs:
+        obs.sort(key=lambda p: -_total_man(p))
+        ob_rows = []
+        for p in obs:
+            peak = _peak(p)
+            ob_rows.append(
+                f'<tr><td style="text-align:left;">'
+                f'<a href="{CLUSTER_URL}/{SLUG}/{_esc(p["slug"])}" '
+                f'style="color:#1565c0;font-weight:700;">{_esc(p["name"])}</a></td>'
+                f"<td>{_esc(_fmt_man_yen(peak['salary_man']))}"
+                f'<br><span style="font-size:10px;color:#999;">{int(peak["year"])}年</span></td>'
+                f"<td>約{_esc(_fmt_man(_total_man(p)))}円</td>"
+                f'<td style="font-size:12px;">{_esc(_career_span(p))}</td>'
+                f'<td><a href="{CLUSTER_URL}/{SLUG}/{_esc(p["slug"])}" '
+                'style="font-size:12px;color:#e25400;font-weight:700;">推移を見る →</a></td></tr>'
+            )
+        table += (
+            '<h2 id="sl-ob">OB・歴代選手の年俸推移</h2>'
+            '<p style="font-size:12px;color:#666;margin:0 0 8px;">'
+            "巨人OB・歴代選手の現役時代の推定年俸。通算推定年俸の多い順。"
+            "年俸が公表されていない時代の選手は、確認できた年のみ掲載しています。</p>"
+            '<div class="ys-sl__scroll"><table><thead><tr>'
+            "<th>選手</th><th>最高年俸</th><th>通算推定年俸</th><th>現役期間</th><th></th>"
+            f"</tr></thead><tbody>{''.join(ob_rows)}</tbody></table></div>"
+        )
     return (
         breadcrumb_jsonld("巨人 年俸ランキング", SLUG)
         + dataset_jsonld(

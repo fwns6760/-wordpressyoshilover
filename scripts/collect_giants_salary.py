@@ -7,10 +7,17 @@
 - 年俸が 1 年も取れない選手は JSON に入れない (推測で埋めない)
 - 既に JSON にいる選手 (手動検証済) は上書きしない
 
+OB モード (--ob <urls.json>):
+- urls.json = {name: {nenshuu: url|null, shube: url|null}} (agent 調査結果)
+- config/giants_ob_roster.json にいる選手のみ対象 (canonical first)
+- nenshuu と週べONLINE の両方があれば年俸を突合し、食い違う年は bake せず報告
+- 片方しか無ければその値を採用 (出典は entry の source に記録)
+
 usage:
   python scripts/collect_giants_salary.py            # dry-run (report のみ)
   python scripts/collect_giants_salary.py --write    # JSON へ merge
   python scripts/collect_giants_salary.py --limit 3  # 先頭 N 人だけ (検証用)
+  python scripts/collect_giants_salary.py --ob /tmp/ob_urls.json --write
 """
 from __future__ import annotations
 
@@ -257,10 +264,149 @@ def parse_player_page(html: str) -> dict:
     return out
 
 
+def parse_shube_salary_page(html: str) -> list[dict]:
+    """週刊ベースボールONLINE /player/salary/<id>/ → years。
+    行形式は 2 種が混在する:
+    - [2026, 10000, 読売ジャイアンツ] (1 行完結)
+    - [1987, -, 読売ジャイアンツ] + [1987, 6120, ''] (チーム行と年俸行が別 <tr>)
+    年単位で salary と team をマージし、両方揃った年のみ採用する。"""
+    sal: dict[int, int] = {}
+    team: dict[int, str] = {}
+    for row in table_rows(html):
+        if len(row) < 2:
+            continue
+        if not re.fullmatch(r"(19|20)\d{2}", (row[0] or "").strip()):
+            continue
+        year = int(row[0])
+        sal_txt = row[1].replace(",", "").replace("，", "").strip()
+        if sal_txt.isdigit() and year not in sal:
+            sal[year] = int(sal_txt)
+        if len(row) >= 3:
+            team_raw = row[2].strip()
+            if team_raw and team_raw != "-" and year not in team:
+                team[year] = team_raw
+    out = []
+    for y, s in sal.items():
+        if y not in team:
+            continue
+        raw = team[y]
+        # TEAM_SHORT 未収載かつ漢字を含まない球団名 (レッドソックス 等) は MLB
+        is_mlb = raw not in TEAM_SHORT and not re.search(r"[一-鿿]", raw)
+        out.append({
+            "year": y,
+            "team": TEAM_SHORT.get(raw, raw),
+            "league": "MLB" if is_mlb else "NPB",
+            "salary_man": s,
+        })
+    out.sort(key=lambda y: y["year"])
+    return out
+
+
+def collect_ob(urls_path: str, write: bool) -> int:
+    ob_roster = json.loads((ROOT / "config" / "giants_ob_roster.json")
+                           .read_text(encoding="utf-8"))
+    urls = json.loads(Path(urls_path).read_text(encoding="utf-8"))
+    data = json.loads(SALARY_JSON.read_text(encoding="utf-8"))
+    existing = {norm_name(p["name"]) for p in data.get("players", [])}
+    used_slugs = {p["slug"] for p in data.get("players", [])}
+    report = {"added": [], "no_url": [], "no_years": [], "mismatch": [],
+              "slug_fallback": []}
+    added = []
+
+    for p in ob_roster:
+        key = norm_name(p["name"])
+        if key in existing:
+            continue
+        u = urls.get(p["name"]) or urls.get(key) or {}
+        n_url = u.get("nenshuu") or ""
+        s_url = u.get("shube") or ""
+        if not (n_url or s_url):
+            report["no_url"].append(p["name"])
+            continue
+        page = {"years": [], "kana": ""}
+        shube_years: list[dict] = []
+        if n_url:
+            time.sleep(SLEEP_SEC)
+            try:
+                page = parse_player_page(fetch(n_url))
+            except Exception as exc:  # noqa: BLE001
+                print(f"WARN nenshuu fail {p['name']}: {exc!r}", file=sys.stderr)
+        if s_url:
+            time.sleep(SLEEP_SEC)
+            try:
+                shube_years = parse_shube_salary_page(fetch(s_url))
+            except Exception as exc:  # noqa: BLE001
+                print(f"WARN shube fail {p['name']}: {exc!r}", file=sys.stderr)
+        n_by_year = {y["year"]: y for y in page["years"]}
+        s_by_year = {y["year"]: y for y in shube_years}
+        years, mismatched = [], []
+        for yr in sorted(set(n_by_year) | set(s_by_year)):
+            ny, sy = n_by_year.get(yr), s_by_year.get(yr)
+            if ny and sy and ny["salary_man"] != sy["salary_man"]:
+                mismatched.append(
+                    f"{yr}: nenshuu={ny['salary_man']} shube={sy['salary_man']}")
+                continue  # 食い違いは bake しない
+            years.append(ny or sy)
+        if mismatched:
+            report["mismatch"].append(f"{p['name']}: " + " / ".join(mismatched))
+        if not years:
+            report["no_years"].append(p["name"])
+            continue
+        kana = page.get("kana") or u.get("kana") or ""
+        slug = slug_for(p["name"], kana)
+        if not slug or not re.fullmatch(r"[a-z0-9-]+", slug):
+            report["slug_fallback"].append(f"{p['name']} (kana={kana!r})")
+            continue
+        if slug in used_slugs:
+            slug = f"{slug}-ob"
+        used_slugs.add(slug)
+        entry = {
+            "name": key,
+            "slug": slug,
+            "kana": kana,
+            "position": "",
+            "jersey": "",
+            "active": False,
+            "ob_note": p.get("note") or "",
+            "years": years,
+        }
+        if n_url:
+            entry["nenshuu_id"] = re.search(r"name=(\d+)", n_url).group(1) if re.search(r"name=(\d+)", n_url) else ""
+        if s_url:
+            entry["shube_id"] = re.search(r"salary/(\d+)", s_url).group(1) if re.search(r"salary/(\d+)", s_url) else ""
+        if page.get("draft_desc") or page.get("keiyakukin_man"):
+            entry["draft"] = {}
+            if page.get("draft_desc"):
+                entry["draft"]["desc"] = page["draft_desc"]
+            if page.get("keiyakukin_man"):
+                entry["draft"]["keiyakukin_man"] = page["keiyakukin_man"]
+        added.append(entry)
+        report["added"].append(
+            f"{p['name']} slug={slug} years={years[0]['year']}-{years[-1]['year']}"
+            f" ({len(years)})")
+        print(f"OK {p['name']} ({len(years)} years)")
+
+    print("\n===== OB report =====")
+    for k, v in report.items():
+        print(f"{k}: {len(v)}")
+        for line in v:
+            print("  -", line)
+    if write and added:
+        data["players"].extend(added)
+        SALARY_JSON.write_text(
+            json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        print(f"\nwrote {len(added)} OB players -> {SALARY_JSON}")
+    elif added:
+        print("\n(dry-run: --write で JSON へ反映)")
+    return 0
+
+
 # ───────────────────── main ─────────────────────
 
 def main() -> int:
     write = "--write" in sys.argv
+    if "--ob" in sys.argv:
+        return collect_ob(sys.argv[sys.argv.index("--ob") + 1], write)
     limit = 0
     if "--limit" in sys.argv:
         limit = int(sys.argv[sys.argv.index("--limit") + 1])

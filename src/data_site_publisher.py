@@ -109,6 +109,12 @@ from src.data_site_template_cleanup_hitters import (
     render_cleanup_hitters_excerpt,
 )
 from src.data_site_jersey_source import fetch_jersey_rows
+from src.mlb_alumni_fetch import fetch_mlb_alumni_data
+from src.data_site_template_mlb import (
+    render_mlb_html,
+    render_mlb_title,
+    render_mlb_excerpt,
+)
 from src.data_site_template_jersey import (
     render_jersey_numbers_excerpt,
     render_jersey_numbers_html,
@@ -998,6 +1004,42 @@ def publish_notable_data_only() -> dict[str, object]:
     return summary
 
 
+def _upsert_mlb_page(parent_page_id: int) -> UpsertResult | None:
+    """巨人発メジャーリーガー page。 取得 0 人なら skip して前回内容を維持する。"""
+    mlb_data = fetch_mlb_alumni_data()
+    if not mlb_data.get("players"):
+        LOG.warning("mlb alumni data empty; skip /data/mlb upsert")
+        return None
+    return _upsert_page(
+        slug="mlb",
+        title=render_mlb_title(),
+        content_html=render_mlb_html(mlb_data),
+        parent=parent_page_id,
+        excerpt=render_mlb_excerpt(mlb_data),
+    )
+
+
+def publish_mlb_only() -> dict[str, object]:
+    """Update only the /data/mlb page (巨人発メジャーリーガー)."""
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    page = _get_page_for_edit_by_slug("data", parent=0)
+    if not page:
+        return {"status": "abort", "reason": "data_page_not_found", "mode": "mlb_only"}
+    result = _upsert_mlb_page(int(page.get("id") or 0))
+    if result is None:
+        return {"status": "abort", "reason": "mlb_data_unavailable", "mode": "mlb_only"}
+    summary = {
+        "status": "ok" if result.action != "error" else "error",
+        "dry_run": _dry_run_enabled(),
+        "mode": "mlb_only",
+        "mlb_page_id": result.page_id,
+        "mlb_action": result.action,
+    }
+    _save_hash_ledger()
+    LOG.info("mlb only publisher done: %s", _json.dumps(summary, ensure_ascii=False))
+    return summary
+
+
 def publish_phase1(only_slugs: set[str] | None = None) -> dict[str, object]:
     """Phase 1.0 main: 3 Pillar + 1 Cluster upsert.
 
@@ -1134,6 +1176,14 @@ def publish_phase1(only_slugs: set[str] | None = None) -> dict[str, object]:
     )
     LOG.info("notable data upsert slug=notable page_id=%s action=%s items=%d",
              notable_result.page_id, notable_result.action, len(notable_data.get("items") or []))
+
+    # 巨人発メジャーリーガー page — parent=cluster → /data/mlb/ (取得失敗時は skip)
+    try:
+        mlb_result = _upsert_mlb_page(cluster_page_id)
+        if mlb_result:
+            LOG.info("mlb upsert slug=mlb page_id=%s action=%s", mlb_result.page_id, mlb_result.action)
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("mlb upsert failed (continue): %r", exc)
 
     pillar_results: list[UpsertResult] = []
     for info in pillar_infos:
@@ -1431,6 +1481,13 @@ def main() -> int:
     if "--only-notable-data" in argv:
         try:
             summary = publish_notable_data_only()
+        except Exception as exc:  # noqa: BLE001
+            LOG.exception("publisher fatal: %r", exc)
+            return 1
+        return 0 if summary.get("status") == "ok" else 1
+    if "--only-mlb" in argv:
+        try:
+            summary = publish_mlb_only()
         except Exception as exc:  # noqa: BLE001
             LOG.exception("publisher fatal: %r", exc)
             return 1

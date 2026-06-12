@@ -792,9 +792,9 @@ def test_rarity_detects_giants_latest_game_only(tmp_path):
     out = angles.build_rarity_candidates(db, now=_rare_now(), max_count=3)
     assert out
     assert all("ロッテ" not in c.post_text for c in out)
-    assert any("3本塁打" in c.post_text and "今季初" in c.post_text and "阪神" in c.post_text
-               for c in out)
-    assert any("1イニング6得点" in c.post_text for c in out)
+    assert any("1試合3本塁打！" in c.post_text and "今季初" in c.post_text
+               and "阪神" in c.post_text for c in out)
+    assert any("1イニング6得点！" in c.post_text for c in out)
 
 
 def test_rarity_complete_game_since(tmp_path):
@@ -803,8 +803,9 @@ def test_rarity_complete_game_since(tmp_path):
         {"date": "09月15日", "pitcher": "往年エース", "ip": "9", "runs": "2"}]}]
     out = angles.build_rarity_candidates(
         db, now=_rare_now(), max_count=5, rotation_years=rotation)
-    cg = [c for c in out if "完投" in c.post_text]
+    cg = [c for c in out if "完投！" in c.post_text]
     assert cg and "2025年09月15日 往年エース以来" in cg[0].post_text
+    assert "9回10奪三振1失点" in cg[0].post_text
 
 
 def test_rarity_no_event_no_post(tmp_path):
@@ -837,8 +838,8 @@ def test_milestone_crossing_detected(tmp_path):
     assert len(out) == 1
     c = out[0]
     assert c.focus_player == "大暴れ"
-    assert "NPB通算100本 達成🎉" in c.post_text
-    assert "通算101本" in c.post_text
+    assert "【巨人】大暴れ　NPB通算100本 達成！" in c.post_text
+    assert "通算101本" in c.post_text and "今季3本" in c.post_text
     assert c.signature == "milestone|大暴れ|本塁打|100"
 
 

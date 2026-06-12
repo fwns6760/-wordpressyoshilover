@@ -1555,9 +1555,10 @@ def build_milestone_candidates(
             continue
         unit = "勝" if stat == "勝利" else ("本" if stat == "本塁打" else
                                           ("安打" if stat == "安打" else "奪三振"))
+        u = unit if stat != "安打" else "安打"
         post = (
-            f"【{name}】NPB通算{m}{unit if stat != '安打' else '安打'} 達成🎉\n"
-            f"通算{total}{unit if stat != '安打' else '安打'} (今季{s_tot})\n"
+            f"【巨人】{name}　NPB通算{m}{u} 達成！\n"
+            f"現在 通算{total}{u}　今季{s_tot}{u}\n"
             f"#巨人 #ジャイアンツ"
         )
         fact = f"通算{stat} {total} (今季{s_tot}) ｜ 節目 {m} を直近試合で跨いだ"
@@ -1695,8 +1696,8 @@ def build_rarity_candidates(
                     nth_label = "今季初" if nth == 1 else f"今季{nth}度目"
                     found.append({
                         "key": f"team_hr{last_hr}",
-                        "head": f"巨人、1試合{last_hr}本塁打",
-                        "body": f"{label_d} {latest_opp}戦 — {nth_label}",
+                        "head": f"巨人　{label_d} {latest_opp}戦で1試合{last_hr}本塁打！",
+                        "body": f"{nth_label}",
                         "fact": f"{latest} 対{latest_opp} チーム{last_hr}本塁打 ({nth_label})",
                     })
 
@@ -1721,8 +1722,8 @@ def build_rarity_candidates(
                     nth_label = "今季初" if nth == 1 else f"今季{nth}度目"
                     found.append({
                         "key": f"big_inning{last_big}",
-                        "head": f"巨人、1イニング{last_big}得点のビッグイニング",
-                        "body": f"{label_d} {latest_opp}戦 — {nth_label}",
+                        "head": f"巨人　{label_d} {latest_opp}戦で1イニング{last_big}得点！",
+                        "body": f"ビッグイニングは{nth_label}",
                         "fact": f"{latest} 対{latest_opp} 1イニング{last_big}得点 ({nth_label})",
                     })
 
@@ -1735,6 +1736,7 @@ def build_rarity_candidates(
             ).fetchone()
             if row and float(row[1] or 0) >= 9.0:
                 canon, _ip, runs_allowed, _k = row[0], row[1], int(row[2]), row[3]
+                ip_disp = int(float(_ip)) if float(_ip) == int(float(_ip)) else float(_ip)
                 shutout = runs_allowed == 0
                 # 今季の前回完投
                 prev = conn.execute(
@@ -1755,13 +1757,14 @@ def build_rarity_candidates(
                         and (not shutout or str(g.get("runs") or "") == "0"),
                         before_year=now.year)
                     since = (f"{occ[0]}年{occ[1]} {occ[2]}以来" if occ else "")
-                word = "完封勝利" if shutout else "完投"
+                word = "完封勝利！" if shutout else "完投！"
                 found.append({
                     "key": f"complete_game|{_norm_name(canon)}",
-                    "head": f"{canon}、{word}",
-                    "body": (f"巨人投手の{word}は{since}" if since
-                             else f"{label_d} {latest_opp}戦"),
-                    "fact": f"{latest} 対{latest_opp} {canon} {word}"
+                    "head": f"{canon}　{label_d} {latest_opp}戦 "
+                            f"{ip_disp}回{int(_k or 0)}奪三振{runs_allowed}失点で{word}",
+                    "body": (f"巨人投手の{word.rstrip('！')}は{since}" if since else ""),
+                    "fact": f"{latest} 対{latest_opp} {canon} {word.rstrip('！')} "
+                            f"({ip_disp}回{int(_k or 0)}K{runs_allowed}失点)"
                             + (f" ｜ 前回={since}" if since else ""),
                 })
     except Exception as exc:  # noqa: BLE001
@@ -1777,7 +1780,9 @@ def build_rarity_candidates(
             logger.info("rarity dedup skip %s", signature)
             continue
         post = (
-            f"【{ev['head']}】\n{ev['body']}\n#巨人 #ジャイアンツ"
+            f"【{ev['head']}】\n"
+            + (f"{ev['body']}\n" if ev.get("body") else "")
+            + "#巨人 #ジャイアンツ"
         )
         draft = "\n".join([
             "【根拠: 今季初・以来 (希少性、 insight.db + rotation 2007〜の遡り)】",

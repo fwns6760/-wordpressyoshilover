@@ -674,6 +674,19 @@ def _build_notable_leaders_html(leaders: dict) -> str:
     )
 
 
+def _build_notable_more_records_html() -> str:
+    links = [
+        ("/data", "全選手の個人データ"),
+        ("/data/batting-ranking", "打撃ランキング"),
+        ("/data/pitching-ranking", "投手ランキング"),
+    ]
+    anchors = " ・ ".join(
+        f'<a href="{href}" style="color:#1976d2;font-weight:700;text-decoration:none;">{_esc(label)}</a>'
+        for href, label in links
+    )
+    return f'<p style="font-size:13px;margin:14px 0 0;">他の選手の記録はこちら → {anchors}</p>'
+
+
 _NOTABLE_RELATED_LINKS = [
     ("/data", "巨人選手データ"),
     ("/data/team", "チーム成績"),
@@ -715,6 +728,7 @@ def render_notable_data_page_html(notable_data: dict | None) -> str:
         '<h1 style="font-size:24px;margin:0 0 4px;color:#e25400;">巨人 注目データ</h1>'
         '<p style="font-size:12px;color:#999;margin:0;">'
         f'{("基準日 " + _esc(as_of) + " 試合終了時点 ・ ") if as_of else ""}毎試合更新</p>'
+        f'{_build_notable_more_records_html()}'
         f'{streak_html}{form_html}{empty}'
         f'{standings_html}'
         f'{leaders_html}'

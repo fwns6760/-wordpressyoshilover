@@ -72,6 +72,7 @@ from src.data_site_query import (
     find_player_featured_media_id,
     load_phase1_player_names,
     load_data_site_target_names,
+    mapped_player_media_id,
     load_ikusei_entries,
     shihai_position_group,
     related_shihai_players,
@@ -679,6 +680,14 @@ def _name_to_slug(name: str) -> str:
 _NOTABLE_CLEAR_METRIC_TOKENS = ("OPS", "出塁率", "長打率", "防御率", "K/9", "守備率")
 
 
+def _notable_featured_media_id() -> int | None:
+    """notable page の eyecatch。X 固定ポスト導線用に坂本勇人 (user 指定 2026-06-12)。"""
+    try:
+        return mapped_player_media_id("坂本勇人") or None
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _serialize_notable_leaders(top_n: int = 3) -> dict[str, list[dict]]:
     """チーム内リーダー上位を notable page 用に軽量 serialize する。"""
     try:
@@ -963,6 +972,7 @@ def publish_notable_data_only() -> dict[str, object]:
     notable_result = _upsert_page(
         slug="notable",
         title=render_notable_data_title(),
+        featured_media_id=_notable_featured_media_id(),
         content_html=render_notable_data_page_html(notable_data),
         parent=page_id,
         excerpt=render_notable_data_excerpt(notable_data),
@@ -1117,6 +1127,7 @@ def publish_phase1(only_slugs: set[str] | None = None) -> dict[str, object]:
     notable_result = _upsert_page(
         slug="notable",
         title=render_notable_data_title(),
+        featured_media_id=_notable_featured_media_id(),
         content_html=render_notable_data_page_html(notable_data),
         parent=cluster_page_id,
         excerpt=render_notable_data_excerpt(notable_data),

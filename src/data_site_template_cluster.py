@@ -122,6 +122,8 @@ def _build_intro_html() -> str:
         '　/　'
         '<a href="/data/draft" style="color:#e25400;font-weight:600;text-decoration:none;">📋 歴代ドラフト</a>'
         '　/　'
+        '<a href="/data/salary" style="color:#e25400;font-weight:600;text-decoration:none;">💰 年俸ランキング</a>'
+        '　/　'
         '<a href="/data/fa" style="color:#e25400;font-weight:600;text-decoration:none;">🤝 FA選手</a>'
         '　/　'
         '<a href="/data/trade" style="color:#e25400;font-weight:600;text-decoration:none;">🔄 トレード/移籍</a>'

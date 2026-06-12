@@ -211,13 +211,44 @@ def refresh_interleague(base, auth, cluster_id, cur) -> bool:
                    excerpt=render_interleague_excerpt(data), parent=cluster_id)
 
 
+def refresh_salary_value(base, auth, cluster_id, cur) -> bool:
+    """年俸コスパ分析 (1ページ、 salary 一覧の子)。 2026-06-12 user GO。
+
+    insight.db (GCS cache) が取れない日は skip (他ページ更新を止めない)。
+    規定到達者が少なすぎる時期も skip = 薄いまま公開しない (品質基準⑤)。
+    """
+    from src import manual_intake_insight_query as miq
+    from src.data_site_template_salary_value import (
+        is_thin,
+        load_salary_value_data,
+        render_salary_value_excerpt,
+        render_salary_value_html,
+        render_salary_value_title,
+    )
+    db_info = miq.ensure_local_db()
+    if not db_info.get("ok"):
+        print(f"[salary-value] insight.db unavailable; skip: {db_info}", file=sys.stderr)
+        return False
+    data = load_salary_value_data(str(db_info.get("path")))
+    if not data or is_thin(data):
+        print(f"[salary-value] thin data (batters={len((data or {}).get('batters') or [])}); "
+              "skip (低品質のまま出さない)", file=sys.stderr)
+        return False
+    parent = _find_page_id(base, auth, "salary", parent=cluster_id) or cluster_id
+    print(f"[salary-value] batters={len(data['batters'])} pitchers={len(data['pitchers'])}")
+    return _upsert(base, auth, slug="salary-value",
+                   title=render_salary_value_title(data),
+                   content=render_salary_value_html(data),
+                   excerpt=render_salary_value_excerpt(data), parent=parent)
+
+
 def main() -> int:
     base, auth = _creds()
     cluster_id = _find_page_id(base, auth, "data", parent=0)
     cur = datetime.now(timezone.utc).year
     ok = []
     for fn in (refresh_rotation, refresh_roster_moves, refresh_open_games,
-               refresh_interleague):
+               refresh_interleague, refresh_salary_value):
         try:
             ok.append(fn(base, auth, cluster_id, cur))
         except Exception as exc:  # noqa: BLE001

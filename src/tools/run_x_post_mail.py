@@ -2539,6 +2539,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             # 2026-06-04 の voice-only は「DB ランキング表の生データ枠」を落とす意図で、
             # 驚き角度 (勝利相関/対戦別/歴代チェイス) は 2-pattern 設計の①に該当する。
             "勝利相関", "対戦別split", "歴代通算チェイス",
+            # 2026-06-12 角度①③⑤ (新旧比較/あの日の巨人/週間MVP) も同じ
+            # たんぱく事実型 pattern① (驚きゲート/裏取り済み bake-in 由来)。
+            "新旧比較", "あの日の巨人", "週間MVP",
         }
         _before_voice = len(candidates)
         _voice_candidates = [c for c in candidates if c.metric in _VOICE_ONLY_METRICS]

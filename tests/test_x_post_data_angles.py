@@ -743,3 +743,108 @@ def test_salary_value_gates():
     # 規定安打未満 → 対象外 (min_hits=25 > 20)
     assert angles.build_salary_value_candidates(
         db, now=now, salary_map=dict(_SALARY_MAP), min_hits=25) == []
+
+
+# ─── chikupn型: 節目達成 / 今季初・以来 ─────────────────────────────
+
+
+def _rarity_db(tmp_path: Path, *, with_event=True, cg=False) -> str:
+    db = tmp_path / "rare.db"
+    conn = sqlite3.connect(db)
+    conn.executescript(
+        """
+        CREATE TABLE games (game_id TEXT PRIMARY KEY, game_date TEXT, opponent TEXT,
+            result TEXT, giants_score INT, opp_score INT);
+        CREATE TABLE batting_logs (game_id TEXT, team_role TEXT, team_name TEXT,
+            player_canonical TEXT, AB INT, H INT, RBI INT, atbats_json TEXT);
+        CREATE TABLE pitching_logs (game_id TEXT, team_role TEXT, team_name TEXT,
+            player_canonical TEXT, appearance_order INT, result_mark TEXT,
+            K INT, IP REAL, R INT, ER INT);
+        CREATE TABLE inning_scores (game_id TEXT, team_role TEXT,
+            inning_json TEXT, total INT);
+        """
+    )
+    # 巨人戦 2 試合 + 他球団戦 1 試合 (混入チェック: 日付がより新しい)
+    conn.execute("INSERT INTO games VALUES ('g1','2026-06-10','阪神','win',6,2)")
+    conn.execute("INSERT INTO games VALUES ('g2','2026-06-11','阪神','win',8,1)")
+    conn.execute("INSERT INTO games VALUES ('x1','2026-06-12','ロッテ','win',NULL,5)")
+    aj_hr = '["右越本①", "中越本①", "左越本②", "三 振"]' if with_event else '["中前安","-","-","-"]'
+    conn.execute("INSERT INTO batting_logs VALUES ('g1','giants','巨人','普通の日',4,1,0,'[\"中前安\"]')")
+    conn.execute(f"INSERT INTO batting_logs VALUES ('g2','giants','巨人','大暴れ',4,3,3,'{aj_hr}')")
+    conn.execute("INSERT INTO pitching_logs VALUES ('g2','giants','巨人','剛腕完投',1,'○',10,9.0,1,1)" if cg
+                 else "INSERT INTO pitching_logs VALUES ('g2','giants','巨人','普通先発',1,'○',5,6.0,1,1)")
+    conn.execute("INSERT INTO inning_scores VALUES ('g2','giants','[\"0\",\"6\",\"0\",\"2\",\"0\",\"0\",\"0\",\"0\",\"x\"]',8)")
+    conn.commit()
+    conn.close()
+    return str(db)
+
+
+def _rare_now():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    return datetime(2026, 6, 12, 9, 0, tzinfo=ZoneInfo("Asia/Tokyo"))
+
+
+def test_rarity_detects_giants_latest_game_only(tmp_path):
+    """他球団戦 (6/12 ロッテ) でなく最新の巨人戦 (6/11 阪神) を対象にする。"""
+    db = _rarity_db(tmp_path)
+    out = angles.build_rarity_candidates(db, now=_rare_now(), max_count=3)
+    assert out
+    assert all("ロッテ" not in c.post_text for c in out)
+    assert any("3本塁打" in c.post_text and "今季初" in c.post_text and "阪神" in c.post_text
+               for c in out)
+    assert any("1イニング6得点" in c.post_text for c in out)
+
+
+def test_rarity_complete_game_since(tmp_path):
+    db = _rarity_db(tmp_path, cg=True)
+    rotation = [{"year": 2025, "games": [
+        {"date": "09月15日", "pitcher": "往年エース", "ip": "9", "runs": "2"}]}]
+    out = angles.build_rarity_candidates(
+        db, now=_rare_now(), max_count=5, rotation_years=rotation)
+    cg = [c for c in out if "完投" in c.post_text]
+    assert cg and "2025年09月15日 往年エース以来" in cg[0].post_text
+
+
+def test_rarity_no_event_no_post(tmp_path):
+    db = _rarity_db(tmp_path, with_event=False)
+    out = angles.build_rarity_candidates(db, now=_rare_now(), max_count=3)
+    assert all("本塁打" not in c.post_text for c in out)
+
+
+def test_rarity_stale_db_silent(tmp_path):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    db = _rarity_db(tmp_path)
+    later = datetime(2026, 6, 20, 9, 0, tzinfo=ZoneInfo("Asia/Tokyo"))
+    assert angles.build_rarity_candidates(db, now=later, max_count=3) == []
+
+
+def test_milestone_crossing_detected(tmp_path):
+    """通算 98 + 直近試合 3 本 = 101 で 100号を跨ぐ。 跨がない選手は出ない。"""
+    db = _rarity_db(tmp_path)
+    cache = {
+        "ids": {"大暴れ": "1", "普通の日": "2"},
+        "players": {
+            "1": {"batting": {"years": [{"年度": "2025", "本塁打": "98"}]}},
+            "2": {"batting": {"years": [{"年度": "2025", "本塁打": "10"}]}},
+        },
+    }
+    out = angles.build_milestone_candidates(
+        db, now=_rare_now(), career_cache=cache)
+    assert len(out) == 1
+    c = out[0]
+    assert c.focus_player == "大暴れ"
+    assert "NPB通算100本 達成🎉" in c.post_text
+    assert "通算101本" in c.post_text
+    assert c.signature == "milestone|大暴れ|本塁打|100"
+
+
+def test_milestone_no_crossing_no_post(tmp_path):
+    db = _rarity_db(tmp_path)
+    cache = {"ids": {"大暴れ": "1"}, "players": {"1": {"batting": {"years": [
+        {"年度": "2025", "本塁打": "50"}]}}}}
+    assert angles.build_milestone_candidates(
+        db, now=_rare_now(), career_cache=cache) == []

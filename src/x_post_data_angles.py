@@ -1385,3 +1385,425 @@ def build_salary_value_candidates(
         ))
     logger.info("salary_value: built %d candidates (max=%d)", len(out), max_count)
     return out
+
+
+# ─── 10. 節目達成 + 今季初・以来 (chikupn型、 2026-06-12 user「入れます」) ──
+
+
+_MILESTONE_METRIC = "節目達成"
+_RARITY_METRIC = "今季初・以来"
+
+# 通算節目 (丸い数字のみ。 到達した瞬間だけ祝う)
+_MILESTONES = {
+    "本塁打": (50, 100, 150, 200, 250, 300, 350, 400, 450, 500),
+    "安打": (500, 1000, 1500, 2000, 2500),
+    "勝利": (50, 100, 150, 200),
+    "奪三振": (500, 1000, 1500, 2000),
+}
+
+
+def _career_prior_totals(career_cache: dict, *, before_year: int) -> dict[str, dict[str, int]]:
+    """npb_career cache から {正規化名: {本塁打/安打/勝利/奪三振: before_year より前の通算}}。"""
+    out: dict[str, dict[str, int]] = {}
+    ids = (career_cache or {}).get("ids") or {}
+    players = (career_cache or {}).get("players") or {}
+    name_by_id = {str(v): k for k, v in ids.items()}
+    for npb_id, payload in players.items():
+        name = _norm_name(name_by_id.get(str(npb_id), ""))
+        if not name:
+            continue
+        tot = {"本塁打": 0, "安打": 0, "勝利": 0, "奪三振": 0}
+        for r in ((payload or {}).get("batting") or {}).get("years") or []:
+            try:
+                if int(r.get("年度")) >= before_year:
+                    continue
+            except (TypeError, ValueError):
+                continue
+            for col, key in (("本塁打", "本塁打"), ("安打", "安打")):
+                try:
+                    tot[key] += int(str(r.get(col) or "0").replace(",", "") or 0)
+                except (TypeError, ValueError):
+                    pass
+        for r in ((payload or {}).get("pitching") or {}).get("years") or []:
+            try:
+                if int(r.get("年度")) >= before_year:
+                    continue
+            except (TypeError, ValueError):
+                continue
+            for col, key in (("勝利", "勝利"), ("三振", "奪三振")):
+                try:
+                    tot[key] += int(str(r.get(col) or "0").replace(",", "") or 0)
+                except (TypeError, ValueError):
+                    pass
+        out[name] = tot
+    return out
+
+
+def build_milestone_candidates(
+    db_path: str,
+    *,
+    now: Optional[datetime] = None,
+    max_count: int = 1,
+    max_age_days: int = 2,
+    dedup_set: Optional[set[str]] = None,
+    with_image: bool = False,
+    career_cache: Optional[dict] = None,
+) -> list:
+    """【通算◯◯達成🎉】直近試合で丸い節目を跨いだ巨人選手を祝う (chikupn 高梨50勝型)。
+
+    判定 = 通算(過去年度 npb_career + 今季 insight.db) が直近試合の寄与で節目を跨いだ
+    時のみ。 跨ぎ検出なので毎日は出ない (出ない日が正常)。
+    """
+    if now is None:
+        now = datetime.now(JST)
+    if not db_path:
+        return []
+    Candidate = _candidate_cls()
+    if career_cache is None:
+        try:
+            from src.analysis.career_milestone import load_career_cache
+            career_cache = load_career_cache()
+        except Exception as exc:  # noqa: BLE001
+            logger.info("milestone career cache unavailable: %r", exc)
+            return []
+    prior = _career_prior_totals(career_cache, before_year=now.year)
+    if not prior:
+        return []
+
+    import json as _json
+    try:
+        with _sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
+            latest = conn.execute("SELECT (SELECT MAX(g.game_date) FROM games g WHERE EXISTS(SELECT 1 FROM batting_logs b2 WHERE b2.game_id=g.game_id AND b2.team_name='巨人'))").fetchone()[0]
+            if not latest:
+                return []
+            age = (now.date() - datetime.strptime(latest, "%Y-%m-%d").date()).days
+            if age > max_age_days:
+                return []
+            season: dict[str, dict[str, int]] = {}
+            last: dict[str, dict[str, int]] = {}
+            for canon, gd, aj, h in conn.execute(
+                "SELECT b.player_canonical, g.game_date, b.atbats_json, "
+                " COALESCE(b.H,0) FROM batting_logs b JOIN games g USING(game_id) "
+                "WHERE b.team_name='巨人' AND b.player_canonical IS NOT NULL",
+            ):
+                n = _norm_name(canon)
+                hr = 0
+                try:
+                    hr = sum(1 for c in _json.loads(aj or "[]") if "本" in str(c))
+                except Exception:  # noqa: BLE001
+                    pass
+                season.setdefault(n, {"本塁打": 0, "安打": 0})
+                season[n]["本塁打"] += hr
+                season[n]["安打"] += int(h or 0)
+                if gd == latest:
+                    last.setdefault(n, {"本塁打": 0, "安打": 0})
+                    last[n]["本塁打"] += hr
+                    last[n]["安打"] += int(h or 0)
+            p_season: dict[str, dict[str, int]] = {}
+            p_last: dict[str, dict[str, int]] = {}
+            for canon, gd, mark, k in conn.execute(
+                "SELECT p.player_canonical, g.game_date, p.result_mark, "
+                " COALESCE(p.K,0) FROM pitching_logs p JOIN games g USING(game_id) "
+                "WHERE p.team_name='巨人' AND p.player_canonical IS NOT NULL",
+            ):
+                n = _norm_name(canon)
+                w = 1 if mark == "○" else 0
+                p_season.setdefault(n, {"勝利": 0, "奪三振": 0})
+                p_season[n]["勝利"] += w
+                p_season[n]["奪三振"] += int(k or 0)
+                if gd == latest:
+                    p_last.setdefault(n, {"勝利": 0, "奪三振": 0})
+                    p_last[n]["勝利"] += w
+                    p_last[n]["奪三振"] += int(k or 0)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("milestone query failed: %r", exc)
+        return []
+
+    display_by_norm: dict[str, str] = {}
+    try:
+        with _sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
+            for (c,) in conn.execute(
+                "SELECT DISTINCT player_canonical FROM batting_logs WHERE team_name='巨人' "
+                "UNION SELECT DISTINCT player_canonical FROM pitching_logs WHERE team_name='巨人'"):
+                if c:
+                    display_by_norm[_norm_name(c)] = c
+    except Exception:  # noqa: BLE001
+        pass
+
+    hits: list[tuple] = []
+    for n, pr in prior.items():
+        for stat, season_map, last_map in (
+                ("本塁打", season, last), ("安打", season, last),
+                ("勝利", p_season, p_last), ("奪三振", p_season, p_last)):
+            s_tot = (season_map.get(n) or {}).get(stat, 0)
+            l_tot = (last_map.get(n) or {}).get(stat, 0)
+            if l_tot <= 0:
+                continue
+            total = pr.get(stat, 0) + s_tot
+            before = total - l_tot
+            for m in _MILESTONES[stat]:
+                if before < m <= total:
+                    hits.append((m, stat, n, total, s_tot))
+    out: list = []
+    for m, stat, n, total, s_tot in sorted(hits, reverse=True):
+        if len(out) >= max_count:
+            break
+        name = display_by_norm.get(n, n)
+        signature = f"milestone|{n}|{stat}|{m}"
+        if dedup_set is not None and signature in dedup_set:
+            logger.info("milestone dedup skip %s", signature)
+            continue
+        unit = "勝" if stat == "勝利" else ("本" if stat == "本塁打" else
+                                          ("安打" if stat == "安打" else "奪三振"))
+        post = (
+            f"【{name}】NPB通算{m}{unit if stat != '安打' else '安打'} 達成🎉\n"
+            f"通算{total}{unit if stat != '安打' else '安打'} (今季{s_tot})\n"
+            f"#巨人 #ジャイアンツ"
+        )
+        fact = f"通算{stat} {total} (今季{s_tot}) ｜ 節目 {m} を直近試合で跨いだ"
+        draft = "\n".join([
+            "【根拠: 通算節目達成 (npb_career 通算 + insight.db 今季の跨ぎ検出)】",
+            fact,
+            "出典: NPB公式 通算 + 公式box今季集計",
+            "参照: https://yoshilover.com/data/",
+            "",
+            "【X 投稿案 (user が手で投稿)】",
+            post,
+        ])
+        out.append(Candidate(
+            title=f"{name} 通算{m}{stat} 達成",
+            metric=_MILESTONE_METRIC,
+            period_label="通算",
+            draft_text=draft,
+            char_count=len(post),
+            signature=signature,
+            post_text=post,
+            focus_player=name,
+            db_fact_line=fact,
+            team_level="first",
+            sample_size=total,
+            sample_label=f"通算{total}",
+            why_now="節目達成は当日が一番伸びる祝い枠",
+            source_material_type="milestone",
+            image_bytes=b"",
+        ))
+    logger.info("milestone: built %d candidates (max=%d)", len(out), max_count)
+    return out
+
+
+def _parse_rot_ip(s: str) -> float:
+    """rotation の ip 表記 ('9' / '61/3' = 6 1/3) を float に。"""
+    s = str(s or "").strip()
+    if not s:
+        return 0.0
+    try:
+        if s.endswith(("0/3", "1/3", "2/3")) and len(s) >= 3:
+            whole = s[:-3] or "0"
+            return float(whole) + int(s[-3]) / 3.0
+        return float(s)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _load_rotation_years() -> list:
+    """config/starter_rotation_2007_2026.json (baked、 20年分) を読む。無ければ []。"""
+    import json as _json
+    from pathlib import Path as _Path
+    path = _Path(__file__).resolve().parent.parent / "config" / "starter_rotation_2007_2026.json"
+    try:
+        d = _json.loads(path.read_text(encoding="utf-8"))
+        return d if isinstance(d, list) else (d.get("years") or [])
+    except Exception as exc:  # noqa: BLE001
+        logger.info("rotation history unavailable: %r", exc)
+        return []
+
+
+def _last_rotation_occurrence(years: list, pred, *, before_year: int) -> Optional[tuple]:
+    """rotation 年度別 games から pred を満たす直近の (年, '06月05日', 投手) を返す。"""
+    import re as _re
+    for y in sorted(years, key=lambda v: -int(v.get("year") or 0)):
+        yr = int(y.get("year") or 0)
+        if yr >= before_year:
+            continue
+        for g in reversed(y.get("games") or []):
+            try:
+                if pred(g):
+                    return (yr, str(g.get("date") or ""), str(g.get("pitcher") or ""))
+            except Exception:  # noqa: BLE001
+                continue
+    return None
+
+
+def build_rarity_candidates(
+    db_path: str,
+    *,
+    now: Optional[datetime] = None,
+    max_count: int = 1,
+    max_age_days: int = 2,
+    max_nth: int = 3,
+    dedup_set: Optional[set[str]] = None,
+    with_image: bool = False,
+    rotation_years: Optional[list] = None,
+) -> list:
+    """「今季初・今季◯度目・◯◯以来」希少性 angle (chikupn の驚きの正体)。
+
+    直近試合で起きた事象だけを対象に:
+    - チーム 1試合3本塁打以上 → 今季◯度目 (max_nth 度目まで = 希少な内だけ)
+    - 1イニング5得点以上 → 今季◯度目
+    - 先発の完投 / 完封 → 前回を今季 insight.db → rotation 20年資産で遡って「以来」
+    巨人限定。 事象が無い日は 0 件 (それが正常)。
+    """
+    if now is None:
+        now = datetime.now(JST)
+    if not db_path:
+        return []
+    Candidate = _candidate_cls()
+    import json as _json
+
+    found: list[dict] = []
+    try:
+        with _sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
+            latest, latest_opp = (conn.execute(
+                "SELECT g.game_date, g.opponent FROM games g WHERE EXISTS("
+                "SELECT 1 FROM batting_logs b2 WHERE b2.game_id=g.game_id"
+                " AND b2.team_name='巨人') ORDER BY g.game_date DESC LIMIT 1"
+            ).fetchone() or (None, None))
+            if not latest:
+                return []
+            age = (now.date() - datetime.strptime(latest, "%Y-%m-%d").date()).days
+            if age > max_age_days:
+                return []
+            label_d = f"{int(latest[5:7])}/{int(latest[8:10])}"
+
+            # A. チーム 1試合3本塁打以上 (atbats_json「本」cell/試合)
+            hr_by_game: dict[str, int] = {}
+            for gid, gd, aj in conn.execute(
+                "SELECT b.game_id, g.game_date, b.atbats_json "
+                "FROM batting_logs b JOIN games g USING(game_id) "
+                "WHERE b.team_name='巨人' AND b.atbats_json IS NOT NULL",
+            ):
+                try:
+                    hr_by_game[gd] = hr_by_game.get(gd, 0) + sum(
+                        1 for c in _json.loads(aj) if "本" in str(c))
+                except Exception:  # noqa: BLE001
+                    pass
+            last_hr = hr_by_game.get(latest, 0)
+            if last_hr >= 3:
+                nth = sum(1 for gd, v in hr_by_game.items()
+                          if v >= last_hr and gd <= latest)
+                if nth <= max_nth:
+                    nth_label = "今季初" if nth == 1 else f"今季{nth}度目"
+                    found.append({
+                        "key": f"team_hr{last_hr}",
+                        "head": f"巨人、1試合{last_hr}本塁打",
+                        "body": f"{label_d} {latest_opp}戦 — {nth_label}",
+                        "fact": f"{latest} 対{latest_opp} チーム{last_hr}本塁打 ({nth_label})",
+                    })
+
+            # B. 1イニング5得点以上 (inning_scores giants 行)
+            big_by_game: dict[str, int] = {}
+            for gd, ij in conn.execute(
+                "SELECT g.game_date, i.inning_json FROM inning_scores i "
+                "JOIN games g USING(game_id) WHERE i.team_role='giants'",
+            ):
+                try:
+                    runs = [int(x) for x in _json.loads(ij or "[]")
+                            if str(x).isdigit()]
+                except Exception:  # noqa: BLE001
+                    continue
+                if runs:
+                    big_by_game[gd] = max(big_by_game.get(gd, 0), max(runs))
+            last_big = big_by_game.get(latest, 0)
+            if last_big >= 5:
+                nth = sum(1 for gd, v in big_by_game.items()
+                          if v >= last_big and gd <= latest)
+                if nth <= max_nth:
+                    nth_label = "今季初" if nth == 1 else f"今季{nth}度目"
+                    found.append({
+                        "key": f"big_inning{last_big}",
+                        "head": f"巨人、1イニング{last_big}得点のビッグイニング",
+                        "body": f"{label_d} {latest_opp}戦 — {nth_label}",
+                        "fact": f"{latest} 対{latest_opp} 1イニング{last_big}得点 ({nth_label})",
+                    })
+
+            # C. 先発の完投 / 完封 → 「◯◯以来」 (今季 → rotation 20年遡り)
+            row = conn.execute(
+                "SELECT p.player_canonical, p.IP, COALESCE(p.R,0), COALESCE(p.K,0) "
+                "FROM pitching_logs p JOIN games g USING(game_id) "
+                "WHERE p.team_name='巨人' AND p.appearance_order=1 "
+                " AND g.game_date=?", (latest,),
+            ).fetchone()
+            if row and float(row[1] or 0) >= 9.0:
+                canon, _ip, runs_allowed, _k = row[0], row[1], int(row[2]), row[3]
+                shutout = runs_allowed == 0
+                # 今季の前回完投
+                prev = conn.execute(
+                    "SELECT g.game_date, p.player_canonical "
+                    "FROM pitching_logs p JOIN games g USING(game_id) "
+                    "WHERE p.team_name='巨人' AND p.appearance_order=1 "
+                    " AND COALESCE(p.IP,0) >= 9 AND g.game_date < ? "
+                    "ORDER BY g.game_date DESC LIMIT 1", (latest,),
+                ).fetchone()
+                if prev:
+                    since = f"{int(prev[0][5:7])}/{int(prev[0][8:10])}の{prev[1]}以来 (今季)"
+                else:
+                    if rotation_years is None:
+                        rotation_years = _load_rotation_years()
+                    occ = _last_rotation_occurrence(
+                        rotation_years,
+                        lambda g: _parse_rot_ip(g.get("ip")) >= 9.0
+                        and (not shutout or str(g.get("runs") or "") == "0"),
+                        before_year=now.year)
+                    since = (f"{occ[0]}年{occ[1]} {occ[2]}以来" if occ else "")
+                word = "完封勝利" if shutout else "完投"
+                found.append({
+                    "key": f"complete_game|{_norm_name(canon)}",
+                    "head": f"{canon}、{word}",
+                    "body": (f"巨人投手の{word}は{since}" if since
+                             else f"{label_d} {latest_opp}戦"),
+                    "fact": f"{latest} 対{latest_opp} {canon} {word}"
+                            + (f" ｜ 前回={since}" if since else ""),
+                })
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("rarity query failed: %r", exc)
+        return []
+
+    out: list = []
+    for ev in found:
+        if len(out) >= max_count:
+            break
+        signature = f"rarity|{ev['key']}|{latest}"
+        if dedup_set is not None and signature in dedup_set:
+            logger.info("rarity dedup skip %s", signature)
+            continue
+        post = (
+            f"【{ev['head']}】\n{ev['body']}\n#巨人 #ジャイアンツ"
+        )
+        draft = "\n".join([
+            "【根拠: 今季初・以来 (希少性、 insight.db + rotation 2007〜の遡り)】",
+            ev["fact"],
+            "出典: NPB公式box (insight.db) / 先発ローテ20年資産",
+            "参照: https://yoshilover.com/data/",
+            "",
+            "【X 投稿案 (user が手で投稿)】",
+            post,
+        ])
+        out.append(Candidate(
+            title=ev["head"],
+            metric=_RARITY_METRIC,
+            period_label="直近試合",
+            draft_text=draft,
+            char_count=len(post),
+            signature=signature,
+            post_text=post,
+            focus_player="",
+            db_fact_line=ev["fact"],
+            team_level="first",
+            sample_size=0,
+            sample_label="希少事象",
+            why_now="「今季初/◯◯以来」の希少性は数字単体より刺さる (chikupn型)",
+            source_material_type="rarity",
+            image_bytes=b"",
+        ))
+    logger.info("rarity: built %d candidates (max=%d)", len(out), max_count)
+    return out

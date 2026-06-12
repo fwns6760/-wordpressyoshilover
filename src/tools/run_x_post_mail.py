@@ -187,6 +187,18 @@ def _data_angles_max_per_run() -> int:
     return _resolve_int_env("X_POST_DATA_ANGLES_MAX", 3, min_value=0)
 
 
+def _milestone_enabled() -> bool:
+    """2026-06-12 節目達成🎉 (chikupn型、 通算節目の跨ぎ検出) の env flag。 Default OFF。"""
+    raw = (os.environ.get("ENABLE_X_POST_MILESTONE") or "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _rarity_enabled() -> bool:
+    """2026-06-12 今季初・以来 (chikupn型、 希少事象) の env flag。 Default OFF。"""
+    raw = (os.environ.get("ENABLE_X_POST_RARITY") or "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
 def _salary_value_enabled() -> bool:
     """2026-06-12 年俸コスパ (データ×年俸クロス、 バーゲン型のみ) の env flag。
 
@@ -2116,6 +2128,40 @@ def main(argv: Sequence[str] | None = None) -> int:
                 before, len(lc_new), len(candidates),
             )
 
+    # 2026-06-12 chikupn型①: 今季初・以来 (希少事象)。 直近巨人戦で事象があった時のみ。
+    if _rarity_enabled() and db_path and _generic_angle_window:
+        try:
+            from src import x_post_data_angles as _ra_angles
+            ra_candidates = _ra_angles.build_rarity_candidates(
+                db_path, now=now_jst, max_count=1, dedup_set=dedup_set)
+        except Exception as _ra_exc:  # noqa: BLE001
+            LOG.warning("rarity build failed: %r", _ra_exc)
+            ra_candidates = []
+        _existing_sigs = {getattr(c, "signature", "") for c in candidates}
+        ra_new = [c for c in ra_candidates if c.signature not in _existing_sigs]
+        if ra_new:
+            before = len(candidates)
+            candidates = candidates + ra_new
+            LOG.info("rarity appended: base=%d ra=%d total=%d",
+                     before, len(ra_new), len(candidates))
+
+    # 2026-06-12 chikupn型②: 通算節目達成🎉。 直近巨人戦で節目を跨いだ時のみ。
+    if _milestone_enabled() and db_path and _generic_angle_window:
+        try:
+            from src import x_post_data_angles as _ms_angles
+            ms_candidates = _ms_angles.build_milestone_candidates(
+                db_path, now=now_jst, max_count=1, dedup_set=dedup_set)
+        except Exception as _ms_exc:  # noqa: BLE001
+            LOG.warning("milestone build failed: %r", _ms_exc)
+            ms_candidates = []
+        _existing_sigs = {getattr(c, "signature", "") for c in candidates}
+        ms_new = [c for c in ms_candidates if c.signature not in _existing_sigs]
+        if ms_new:
+            before = len(candidates)
+            candidates = candidates + ms_new
+            LOG.info("milestone appended: base=%d ms=%d total=%d",
+                     before, len(ms_new), len(candidates))
+
     # 2026-06-12 年俸コスパ: データ×年俸クロス (user「これいいね」)。 割安バーゲン型のみ
     # (年俸絡みの negative は炎上リスクのため出さない)。 候補=メールまで。 flag OFF で既存不変。
     if _salary_value_enabled() and db_path and _generic_angle_window:
@@ -2635,6 +2681,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             "試合前見どころ",
             # 2026-06-12 年俸コスパ (データ×年俸クロス、 バーゲン型のみ)。
             "年俸コスパ",
+            # 2026-06-12 chikupn型 (節目達成 / 今季初・以来)。
+            "節目達成", "今季初・以来",
         }
         _before_voice = len(candidates)
         _voice_candidates = [c for c in candidates if c.metric in _VOICE_ONLY_METRICS]

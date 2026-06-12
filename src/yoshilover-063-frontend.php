@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Yoshilover 063 Frontend (topic hub / SNS reactions / Phase 1 noindex)
  * Description: 062 contract §2 §3 §5 の front impl。topic hub / SNS block / noindex を基盤に、トップ速報帯・記事下回遊束・右カラム rail・上部密集ナビ・人気記事導線まで含めて SWELL front を高密度化する。既存 SWELL コメント欄は触らない。
- * Version: 0.23.2
+ * Version: 0.23.3
  * Author: yoshilover
  */
 
@@ -5336,6 +5336,76 @@ function yoshilover_063_board_like_js() {
 </script>
     <?php
 }
+
+/*
+ * 4.9-d) 記事下→掲示板 誘導 CTA (2026-06-12 v0.23.3)
+ * 記事末尾に「巨人ファン掲示板で語ろう」を 1 回だけ注入する。
+ * 直近で動いたトピック 1 件を添えて誘導する (1 時間 transient cache)。
+ */
+function yoshilover_063_get_board_hot_topic() {
+    $cached = get_transient( 'yoshilover_063_board_hot_topic_v1' );
+    if ( is_array( $cached ) ) {
+        return $cached;
+    }
+    $result = array();
+    if ( post_type_exists( 'topic' ) ) {
+        $q = new WP_Query(
+            array(
+                'post_type'      => 'topic',
+                'post_status'    => 'publish',
+                'posts_per_page' => 1,
+                'orderby'        => 'modified',
+                'order'          => 'DESC',
+                'no_found_rows'  => true,
+            )
+        );
+        if ( ! empty( $q->posts ) ) {
+            $t       = $q->posts[0];
+            $replies = function_exists( 'bbp_get_topic_reply_count' ) ? (int) bbp_get_topic_reply_count( $t->ID ) : 0;
+            $result  = array(
+                'title'   => (string) get_the_title( $t ),
+                'url'     => (string) get_permalink( $t ),
+                'replies' => $replies,
+            );
+        }
+        wp_reset_postdata();
+    }
+    set_transient( 'yoshilover_063_board_hot_topic_v1', $result, HOUR_IN_SECONDS );
+    return $result;
+}
+
+function yoshilover_063_render_board_cta() {
+    $html  = '<aside class="yoshi-board-cta" aria-label="掲示板への誘導">';
+    $html .= '<div class="yoshi-board-cta__body">';
+    $html .= '<div class="yoshi-board-cta__title">💬 この話題、巨人ファン掲示板で語ろう</div>';
+    $html .= '<div class="yoshi-board-cta__lead">登録不要・ニックネームだけで今すぐ書き込めます。</div>';
+    $topic = yoshilover_063_get_board_hot_topic();
+    if ( ! empty( $topic['url'] ) && ! empty( $topic['title'] ) ) {
+        $label = $topic['title'];
+        if ( ! empty( $topic['replies'] ) ) {
+            $label .= '(' . (int) $topic['replies'] . 'コメント)';
+        }
+        $html .= '<a class="yoshi-board-cta__topic" href="' . esc_url( $topic['url'] ) . '">' . esc_html( $label ) . '</a>';
+    }
+    $html .= '</div>';
+    $html .= '<a class="yoshi-board-cta__btn" href="' . esc_url( home_url( '/forums' ) ) . '">掲示板を見る</a>';
+    $html .= '</aside>';
+    return $html;
+}
+
+function yoshilover_063_auto_inject_board_cta( $content ) {
+    if ( is_admin() || ! in_the_loop() || ! is_main_query() ) {
+        return $content;
+    }
+    if ( ! is_singular( 'post' ) ) {
+        return $content;
+    }
+    if ( strpos( (string) $content, 'yoshi-board-cta' ) !== false ) {
+        return $content;
+    }
+    return $content . yoshilover_063_render_board_cta();
+}
+add_filter( 'the_content', 'yoshilover_063_auto_inject_board_cta', 22 );
 
 /* ------------------------------------------------------------
  * 5) deploy / smoke helper (admin only)

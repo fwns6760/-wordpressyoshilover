@@ -10161,3 +10161,57 @@ div.bbp-template-notice {
 #bbpress-forums ul.bbp-replies div.bbp-reply-content {
   border-left: none !important;
 }
+
+/* ── 4.9-d 記事下→掲示板 CTA (063 v0.23.3) ── */
+.yoshi-board-cta {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: var(--white);
+  border: 1px solid var(--yl-bd);
+  border-left: 5px solid var(--orange);
+  border-radius: var(--yl-r);
+  box-shadow: var(--yl-sh);
+  padding: 14px 18px;
+  margin: 20px 0;
+}
+.yoshi-board-cta__body { flex: 1; min-width: 0; }
+.yoshi-board-cta__title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--black);
+  margin: 0 0 4px;
+}
+.yoshi-board-cta__lead {
+  font-size: 12px;
+  color: var(--mid-gray);
+  margin: 0;
+}
+.yoshi-board-cta__topic {
+  display: inline-block;
+  font-size: 13px;
+  color: var(--dark-gray);
+  margin-top: 6px;
+  text-decoration: underline;
+}
+.yoshi-board-cta__btn {
+  flex-shrink: 0;
+  background: var(--orange);
+  color: var(--white) !important;
+  font-family: 'Oswald', sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  font-size: 12px;
+  padding: 8px 18px !important;
+  border-radius: 999px;
+  text-decoration: none !important;
+  transition: transform 0.18s, opacity 0.18s;
+}
+.yoshi-board-cta__btn:hover {
+  transform: translateY(-1px);
+  opacity: 0.92;
+}
+@media (max-width: 600px) {
+  .yoshi-board-cta { flex-direction: column; align-items: flex-start; }
+  .yoshi-board-cta__btn { align-self: stretch; text-align: center; }
+}

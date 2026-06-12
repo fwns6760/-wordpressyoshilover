@@ -499,9 +499,17 @@ def _notable_items(notable_data: dict | None) -> tuple[str, list[dict]]:
     return str(payload.get("as_of") or "").strip(), list(payload.get("items") or [])
 
 
-def _build_notable_data_cards_html(items: list[dict], *, include_player_links: bool) -> str:
+def _notable_item_category(item: dict) -> str:
+    category = str(item.get("category") or "").strip()
+    if category:
+        return category
+    # 旧payload互換: 連続系label は streak 扱い
+    return "streak" if str(item.get("label") or "").startswith("連続") else "form"
+
+
+def _build_notable_data_cards_html(items: list[dict], *, include_player_links: bool, limit: int = 8) -> str:
     rows = []
-    for item in items[:8]:
+    for item in items[:limit]:
         player = str(item.get("player") or "").strip()
         slug = str(item.get("slug") or "").strip()
         label = str(item.get("label") or "").strip()
@@ -509,24 +517,20 @@ def _build_notable_data_cards_html(items: list[dict], *, include_player_links: b
         note = str(item.get("note") or "").strip()
         if not label or not value:
             continue
-        title = f"{player}の{label}" if player else label
-        player_text = f"この記録の選手: {player}" if player else ""
-        player_html = _esc(player_text)
+        player_html = _esc(player)
         if include_player_links and player and slug:
             player_html = (
-                'この記録の選手: '
-                f'<a href="/data/{_esc(slug)}" style="color:#1976d2;font-weight:700;text-decoration:none;">'
+                f'<a href="/data/{_esc(slug)}" style="color:#1a1a1a;font-weight:700;text-decoration:none;">'
                 f'{_esc(player)}</a>'
             )
+        note_html = f'<span style="color:#999;"> ・ {_esc(note)}</span>' if note else ""
         rows.append(
             '<article style="background:#fff;border:1px solid #ffd9bf;border-radius:10px;'
-            'padding:12px;">'
-            f'<h3 style="font-size:15px;margin:0 0 6px;color:#5d4037;">{_esc(title)}</h3>'
-            f'<div style="font-size:24px;font-weight:900;color:#e25400;'
+            'padding:10px 12px;">'
+            f'<p style="font-size:12px;margin:0 0 2px;color:#5d4037;font-weight:600;">{_esc(label)}</p>'
+            f'<div style="font-size:26px;font-weight:900;color:#e25400;'
             f'font-variant-numeric:tabular-nums;line-height:1.2;">{_esc(value)}</div>'
-            f'<p style="font-size:12px;color:#666;margin:6px 0 0;line-height:1.55;">'
-            f'{player_html}'
-            f'{(" / " + _esc(note)) if note else ""}</p>'
+            f'<p style="font-size:13px;margin:4px 0 0;">{player_html}{note_html}</p>'
             '</article>'
         )
     return "".join(rows)
@@ -543,7 +547,10 @@ def _notable_schema(notable_data: dict | None) -> str:
         "url": NOTABLE_DATA_URL,
         "creator": {"@type": "Organization", "name": "ヨシラバー"},
         "about": {"@type": "SportsTeam", "name": "読売ジャイアンツ"},
-        "variableMeasured": ["最新試合日", "連続試合安打", "連続得点関与", "好調指標"],
+        "variableMeasured": [
+            "最新試合日", "連続試合安打", "連続得点関与", "好調指標",
+            "セ・リーグ順位", "チーム内リーダー",
+        ],
         "dateModified": as_of or None,
     }
     dataset = {k: v for k, v in dataset.items() if v is not None}
@@ -566,7 +573,7 @@ def _notable_schema(notable_data: dict | None) -> str:
                     if str(item.get("slug") or "").strip() else NOTABLE_DATA_URL
                 ),
             }
-            for i, item in enumerate(items[:8])
+            for i, item in enumerate(items[:16])
             if str(item.get("label") or "").strip() and str(item.get("value") or "").strip()
         ],
     }
@@ -577,36 +584,157 @@ def _notable_schema(notable_data: dict | None) -> str:
     )
 
 
+def _build_notable_card_section_html(items: list[dict], *, heading: str) -> str:
+    cards = _build_notable_data_cards_html(items, include_player_links=True, limit=16)
+    if not cards:
+        return ""
+    return (
+        f'<h2 style="font-size:18px;margin:18px 0 10px;color:#e25400;">{_esc(heading)}</h2>'
+        '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;">'
+        f'{cards}</div>'
+    )
+
+
+def _build_notable_standings_html(standings: list[dict]) -> str:
+    rows = []
+    for s in standings or []:
+        team = str(s.get("team") or "").strip()
+        if not team:
+            continue
+        is_g = bool(s.get("is_giants"))
+        style = "background:#fff3e0;font-weight:700;" if is_g else ""
+        rows.append(
+            f'<tr style="{style}">'
+            f'<td style="padding:5px 8px;text-align:center;">{_esc(str(s.get("rank") or ""))}</td>'
+            f'<td style="padding:5px 8px;">{_esc(team)}</td>'
+            f'<td style="padding:5px 8px;text-align:center;">{_esc(str(s.get("w") or ""))}勝'
+            f'{_esc(str(s.get("l") or ""))}敗{_esc(str(s.get("t") or ""))}分</td>'
+            f'<td style="padding:5px 8px;text-align:center;">{_esc(str(s.get("pct") or ""))}</td>'
+            f'<td style="padding:5px 8px;text-align:center;">{_esc(str(s.get("gb") or ""))}</td>'
+            '</tr>'
+        )
+    if not rows:
+        return ""
+    return (
+        '<h2 style="font-size:18px;margin:18px 0 6px;color:#e25400;">セ・リーグ順位表</h2>'
+        '<table style="width:100%;border-collapse:collapse;font-size:13px;background:#fff;'
+        'border:1px solid #ffd9bf;border-radius:10px;overflow:hidden;">'
+        '<thead><tr style="background:#fff0e6;color:#5d4037;">'
+        '<th style="padding:6px 8px;">順位</th><th style="padding:6px 8px;text-align:left;">球団</th>'
+        '<th style="padding:6px 8px;">勝敗</th><th style="padding:6px 8px;">勝率</th>'
+        '<th style="padding:6px 8px;">ゲーム差</th></tr></thead>'
+        f'<tbody>{"".join(rows)}</tbody></table>'
+        '<p style="font-size:12px;margin:6px 0 0;">'
+        '<a href="/data/team" style="color:#1976d2;font-weight:700;text-decoration:none;">'
+        'チーム成績の詳細を見る →</a></p>'
+    )
+
+
+_NOTABLE_LEADER_ORDER = ["本塁打", "打点", "打率", "安打", "盗塁", "勝利", "防御率", "奪三振"]
+
+
+def _build_notable_leaders_html(leaders: dict) -> str:
+    cells = []
+    for stat in _NOTABLE_LEADER_ORDER:
+        rows = (leaders or {}).get(stat) or []
+        if not rows:
+            continue
+        top = rows[0]
+        name = str(top.get("player") or "").strip()
+        slug = str(top.get("slug") or "").strip()
+        disp = str(top.get("display") or "").strip()
+        if not name or not disp:
+            continue
+        name_html = (
+            f'<a href="/data/{_esc(slug)}" style="color:#1a1a1a;font-weight:700;text-decoration:none;">{_esc(name)}</a>'
+            if slug else f'<strong>{_esc(name)}</strong>'
+        )
+        chase = "・".join(
+            f'{i + 2}位 {str(r.get("player") or "").strip()} {str(r.get("display") or "").strip()}'
+            for i, r in enumerate(rows[1:2])
+            if str(r.get("player") or "").strip()
+        )
+        chase_html = f'<p style="font-size:11px;color:#888;margin:4px 0 0;">{_esc(chase)}</p>' if chase else ""
+        cells.append(
+            '<article style="background:#fff;border:1px solid #ffd9bf;border-radius:10px;padding:10px 12px;">'
+            f'<p style="font-size:12px;color:#5d4037;margin:0 0 4px;font-weight:600;">{_esc(stat)}</p>'
+            f'<p style="font-size:15px;margin:0;">{name_html} '
+            f'<span style="color:#e25400;font-weight:900;font-variant-numeric:tabular-nums;">{_esc(disp)}</span></p>'
+            f'{chase_html}</article>'
+        )
+    if not cells:
+        return ""
+    return (
+        '<h2 style="font-size:18px;margin:18px 0 10px;color:#e25400;">チーム内リーダー</h2>'
+        '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;">'
+        f'{"".join(cells)}</div>'
+        '<p style="font-size:12px;margin:6px 0 0;">'
+        '<a href="/data/leaders" style="color:#1976d2;font-weight:700;text-decoration:none;">'
+        '全部門リーダーボードを見る →</a></p>'
+    )
+
+
+_NOTABLE_RELATED_LINKS = [
+    ("/data", "巨人選手データ"),
+    ("/data/team", "チーム成績"),
+    ("/data/leaders", "リーダーボード"),
+    ("/data/ranking", "リーグ上位ランキング"),
+    ("/data/schedule", "試合日程"),
+]
+
+
+def _build_notable_related_links_html() -> str:
+    chips = "".join(
+        f'<a href="{href}" style="display:inline-block;background:#fff;border:1px solid #ffd9bf;'
+        'border-radius:16px;padding:5px 12px;margin:0 6px 6px 0;font-size:12px;color:#1976d2;'
+        f'font-weight:600;text-decoration:none;">{_esc(label)}</a>'
+        for href, label in _NOTABLE_RELATED_LINKS
+    )
+    return (
+        '<p style="font-size:12px;color:#777;margin:18px 0 6px;font-weight:600;">あわせて見る</p>'
+        f'<div>{chips}</div>'
+    )
+
+
 def render_notable_data_page_html(notable_data: dict | None) -> str:
     as_of, items = _notable_items(notable_data)
-    cards = _build_notable_data_cards_html(items, include_player_links=True)
-    empty = '<p style="font-size:13px;color:#777;margin:0;">注目データは集計中です。</p>' if not cards else ""
+    payload = notable_data or {}
+    streak_items = [it for it in items if _notable_item_category(it) == "streak"]
+    form_items = [it for it in items if _notable_item_category(it) != "streak"]
+    streak_html = _build_notable_card_section_html(streak_items, heading="🔥 継続中の連続記録")
+    form_html = _build_notable_card_section_html(form_items, heading="📊 いま好調な選手")
+    standings_html = _build_notable_standings_html(list(payload.get("standings") or []))
+    leaders_html = _build_notable_leaders_html(dict(payload.get("leaders") or {}))
+    empty = (
+        '<p style="font-size:13px;color:#777;margin:12px 0 0;">注目データは集計中です。</p>'
+        if not (streak_html or form_html) else ""
+    )
     return (
         '<section class="ys-notable-page" style="background:#fff8f2;border:1px solid #ffd9bf;'
         'border-radius:12px;padding:16px;margin:0 0 18px;">'
-        '<h1 style="font-size:24px;margin:0 0 8px;color:#e25400;">巨人 注目データ</h1>'
-        '<p style="font-size:13px;color:#666;line-height:1.7;margin:0 0 12px;">'
-        '連続試合安打、連続得点関与、好調指標を、選手名とセットで確認できるページです。'
-        '個人ページの一覧ではなく、「誰のどの記録か」をニュース確認用にまとめています。'
-        f'{(" 基準日: " + _esc(as_of) + " 試合終了時点。") if as_of else ""}</p>'
-        f'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;">'
-        f'{cards}</div>{empty}'
-        '<p style="font-size:12px;color:#777;line-height:1.6;margin:12px 0 0;">'
-        '<a href="/data" style="color:#1976d2;font-weight:700;text-decoration:none;">巨人選手データへ戻る</a>'
-        '</p>'
+        '<h1 style="font-size:24px;margin:0 0 4px;color:#e25400;">巨人 注目データ</h1>'
+        '<p style="font-size:12px;color:#999;margin:0;">'
+        f'{("基準日 " + _esc(as_of) + " 試合終了時点 ・ ") if as_of else ""}毎試合更新</p>'
+        f'{streak_html}{form_html}{empty}'
+        f'{standings_html}'
+        f'{leaders_html}'
+        f'{_build_notable_related_links_html()}'
         f'{_notable_schema(notable_data)}'
         '</section>'
     )
 
 
 def render_notable_data_title() -> str:
-    return "巨人 注目データ - 誰の記録か分かる連続記録・好調指標 | ヨシラバー"
+    return "巨人 注目データ - 連続記録・好調指標・順位表を毎試合更新 | ヨシラバー"
 
 
 def render_notable_data_excerpt(notable_data: dict | None) -> str:
     as_of, items = _notable_items(notable_data)
     suffix = f"{as_of}試合終了時点。" if as_of else "最新試合終了時点。"
-    return f"巨人の連続記録・好調指標を、選手名と記録名が分かる形で掲載。{suffix}掲載件数 {len(items)} 件。"
+    return (
+        "巨人の連続記録・好調指標・セ・リーグ順位・チーム内リーダーを毎試合更新。"
+        f"{suffix}掲載件数 {len(items)} 件。"
+    )
 
 
 def render_cluster_html(

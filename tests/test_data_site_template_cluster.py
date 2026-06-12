@@ -108,15 +108,31 @@ class RenderClusterHtmlTests(unittest.TestCase):
                     "value": "6試合",
                     "note": "現在進行中。",
                 }
-            ]
+            ],
+            "standings": [
+                {"rank": 1, "team": "巨人", "g": "60", "w": "35", "l": "23",
+                 "t": "2", "pct": ".603", "gb": "-", "is_giants": True},
+            ],
+            "leaders": {
+                "本塁打": [
+                    {"player": "岡本和真", "display": "15本", "slug": "okamoto-kazuma"},
+                    {"player": "吉川尚輝", "display": "8本", "slug": "yoshikawa-naoki"},
+                ],
+            },
         }
         html = render_notable_data_page_html(notable)
         self.assertIn("巨人 注目データ", html)
-        self.assertIn("吉川尚輝の連続試合安打", html)
+        self.assertIn("連続試合安打", html)
+        self.assertIn("吉川尚輝", html)
         self.assertIn("6試合", html)
-        self.assertIn("この記録の選手", html)
+        self.assertIn("継続中の連続記録", html)
         self.assertIn("/data/yoshikawa-naoki", html)
-        self.assertIn("誰のどの記録か", html)
+        self.assertIn("基準日 2026-06-07", html)
+        self.assertIn("セ・リーグ順位表", html)
+        self.assertIn("/data/team", html)
+        self.assertIn("チーム内リーダー", html)
+        self.assertIn("岡本和真", html)
+        self.assertIn("/data/leaders", html)
         self.assertIn("dataset-notable-data", html)
         self.assertIn('"@type": "Dataset"', html)
         forbidden = [

@@ -131,13 +131,15 @@ class NotableDataOnlyTests(unittest.TestCase):
         self.assertEqual(updated.count('/data/notable'), 3)
         self.assertIn("注目データ", updated)
 
+    @mock.patch("src.data_site_publisher.fetch_npb_cl_standings", return_value=[])
+    @mock.patch("src.data_site_publisher.fetch_team_leaders", return_value={})
     @mock.patch("src.data_site_publisher.fetch_surprise_stats", return_value=[])
     @mock.patch("src.data_site_publisher.fetch_contribution_streak")
     @mock.patch("src.data_site_publisher.fetch_hit_streak")
     @mock.patch("src.data_site_publisher.fetch_player_latest_game_date")
     @mock.patch("src.data_site_publisher.fetch_latest_giants_game_date", return_value="2026-06-07")
     def test_build_notable_data_uses_latest_game_date(
-        self, m_latest, m_player_latest, m_hit, m_contrib, m_surprise
+        self, m_latest, m_player_latest, m_hit, m_contrib, m_surprise, m_leaders, m_standings
     ):
         m_player_latest.side_effect = lambda name, table="batting_logs": {
             "吉川尚輝": "2026-06-07",
@@ -163,7 +165,8 @@ class NotableDataOnlyTests(unittest.TestCase):
         self.assertEqual(data["as_of"], "2026-06-07")
         self.assertEqual(len(data["items"]), 1)
         self.assertEqual(data["items"][0]["player"], "吉川尚輝")
-        self.assertIn("2026-06-07の試合終了時点", data["items"][0]["note"])
+        self.assertEqual(data["items"][0]["note"], "今季最長6試合")
+        self.assertEqual(data["items"][0]["category"], "streak")
         self.assertNotIn("平山功太", str(data))
 
     @mock.patch("src.data_site_publisher._update_page_content")

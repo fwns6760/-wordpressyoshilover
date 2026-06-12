@@ -675,7 +675,35 @@ def _name_to_slug(name: str) -> str:
     return player_slug(name)
 
 
-def _build_notable_data(cluster_entries: list[ClusterPlayerEntry], limit: int = 8) -> dict[str, object]:
+# /data/notable に出す好調指標は「読者がすぐ分かる指標」のみ(BABIP/FIP 等のサバメ指数は出さない)
+_NOTABLE_CLEAR_METRIC_TOKENS = ("OPS", "出塁率", "長打率", "防御率", "K/9", "守備率")
+
+
+def _serialize_notable_leaders(top_n: int = 3) -> dict[str, list[dict]]:
+    """チーム内リーダー上位を notable page 用に軽量 serialize する。"""
+    try:
+        leaders = fetch_team_leaders(top_n=top_n)
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("notable leaders fetch failed: %r", exc)
+        return {}
+    if not leaders:
+        return {}
+    targets = set(load_data_site_target_names())
+    out: dict[str, list[dict]] = {}
+    for stat, entries in (leaders or {}).items():
+        rows = []
+        for entry in entries:
+            rows.append({
+                "player": entry.player,
+                "display": entry.display,
+                "slug": _name_to_slug(entry.player) if entry.player in targets else "",
+            })
+        if rows:
+            out[stat] = rows
+    return out
+
+
+def _build_notable_data(cluster_entries: list[ClusterPlayerEntry], limit: int = 16) -> dict[str, object]:
     """Build metric-first notable data items for the dedicated page and hub teaser."""
     latest_game_date = fetch_latest_giants_game_date()
     if not latest_game_date:
@@ -683,7 +711,8 @@ def _build_notable_data(cluster_entries: list[ClusterPlayerEntry], limit: int = 
     items: list[dict] = []
     seen: set[tuple[str, str]] = set()
 
-    def add(player: str, slug: str, label: str, value: str, note: str, priority: float) -> None:
+    def add(player: str, slug: str, label: str, value: str, note: str, priority: float,
+            category: str = "form") -> None:
         key = (player, label)
         if not player or not label or not value or key in seen:
             return
@@ -695,6 +724,7 @@ def _build_notable_data(cluster_entries: list[ClusterPlayerEntry], limit: int = 
             "value": value,
             "note": note,
             "priority": priority,
+            "category": category,
         })
 
     for entry in cluster_entries:
@@ -709,17 +739,17 @@ def _build_notable_data(cluster_entries: list[ClusterPlayerEntry], limit: int = 
         except Exception as exc:  # noqa: BLE001
             LOG.warning("notable streak fetch failed player=%s: %r", entry.name, exc)
             continue
-        as_of = f"{latest_game_date}の試合終了時点。" if latest_game_date else "最新試合終了時点。"
         if hit.active >= 3:
             add(
                 entry.name, entry.slug, "連続試合安打", f"{hit.active}試合",
-                f"{as_of}現在進行中。今季最長は{hit.season_max}試合。", 120 + hit.active,
+                f"今季最長{hit.season_max}試合", 120 + hit.active,
+                category="streak",
             )
         if contrib.active >= 3:
             add(
                 entry.name, entry.slug, "連続得点関与", f"{contrib.active}試合",
-                f"{as_of}得点または打点に絡んだ試合が継続中。今季最長は{contrib.season_max}試合。",
-                110 + contrib.active,
+                f"今季最長{contrib.season_max}試合", 110 + contrib.active,
+                category="streak",
             )
 
     if len(items) < limit:
@@ -730,18 +760,23 @@ def _build_notable_data(cluster_entries: list[ClusterPlayerEntry], limit: int = 
             "奪三振力（K/9）",
             "制球と奪三振（K/BB）",
         }
-        for row in fetch_surprise_stats(top_n=limit * 2):
+        for row in fetch_surprise_stats(top_n=limit * 3):
+            if not any(tok in row.label for tok in _NOTABLE_CLEAR_METRIC_TOKENS):
+                continue
             table = "pitching_logs" if row.label in pitcher_labels else "batting_logs"
             player_game_date = fetch_player_latest_game_date(row.player, table)
             if latest_game_date and player_game_date != latest_game_date:
                 continue
-            as_of = f"{latest_game_date}の試合終了時点。" if latest_game_date else ""
+            # 表示は短く: label は指標名のみ、 note は「今季・リーグN位」だけに圧縮
+            label_m = re.search(r"（(.+?)）", row.label)
+            rank_m = re.search(r"リーグ(\d+)/\d+位", row.note or "")
+            scope = (row.note or "").split("・", 1)[0]
             add(
                 row.player,
                 _name_to_slug(row.player),
-                row.label,
+                label_m.group(1) if label_m else row.label,
                 row.value,
-                f"{as_of}{row.note}",
+                f"{scope}・リーグ{rank_m.group(1)}位" if rank_m and scope else "",
                 row.priority,
             )
             if len(items) >= limit:
@@ -750,10 +785,20 @@ def _build_notable_data(cluster_entries: list[ClusterPlayerEntry], limit: int = 
     items.sort(key=lambda item: (-float(item.get("priority") or 0), item.get("player") or ""))
     for item in items:
         item.pop("priority", None)
-    return {"as_of": latest_game_date, "items": items[:limit]}
+    try:
+        standings = fetch_npb_cl_standings()
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("notable standings fetch failed: %r", exc)
+        standings = []
+    return {
+        "as_of": latest_game_date,
+        "items": items[:limit],
+        "leaders": _serialize_notable_leaders(top_n=3),
+        "standings": standings,
+    }
 
 
-def _build_notable_data_from_targets(limit: int = 8) -> dict[str, object]:
+def _build_notable_data_from_targets(limit: int = 16) -> dict[str, object]:
     """Build notable data without building or updating player pages."""
     entries: list[ClusterPlayerEntry] = []
     for name in load_data_site_target_names():

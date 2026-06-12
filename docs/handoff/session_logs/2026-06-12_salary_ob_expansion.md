@@ -25,3 +25,9 @@
 ## 追記 (同日)
 - 梶原昂希 gate skip は正当と確定 (2026-06 現在も DeNA、NPB.jp/nenshuu で確認)。現役は 105/105 で完了
 - /data ハブ特集 nav に 💰年俸ランキング追加 (template `17552b25` + live WP REST patch page 73526)。トップページのデータチップには既に salary あり
+
+## 追記2 (同日 トピクラ横リンク)
+- 縦(hub→一覧→選手、パンくず、WP親子)は当初から接続済み。横(pillar↔salary)が双方向未接続だったため接続
+- salary→pillar: pillar実在slug(90/130)のみ成績ページへリンク、再公開131/131 ok
+- pillar→salary: _build_salary_link_html追加(a75b83f1)、image salary-crosslink-a75b83f1 build+job update+実行(qk6sf成功)
+- live verify: 田中/坂本/松井/阿部=💰リンクあり、王貞治(salaryページなし)=リンクなし(gate正常)

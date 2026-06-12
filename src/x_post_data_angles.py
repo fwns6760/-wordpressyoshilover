@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3 as _sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Callable, Optional
 from zoneinfo import ZoneInfo
 
@@ -32,6 +32,8 @@ JST = ZoneInfo("Asia/Tokyo")
 _WIN_CORR_METRIC = "勝利相関"
 _OPP_SPLIT_METRIC = "対戦別split"
 _ALLTIME_METRIC = "歴代通算チェイス"
+_WEEKLY_MVP_METRIC = "週間MVP"
+_LEGEND_COMPARE_METRIC = "新旧比較"
 
 # alltime_ranking.STAT_SPECS のうち X 候補にする stat と単位表記
 _ALLTIME_UNITS = {"hr": "本", "hits": "本", "rbi": "打点", "win": "勝", "so": "個"}
@@ -560,3 +562,365 @@ def boost_topical_candidates(
     if n_boosted:
         logger.info("topical boost: %d/%d candidates boosted", n_boosted, len(boosted))
     return boosted
+
+
+# ─── 5. 週間MVP (月曜の定番企画) ─────────────────────────────────────
+
+
+def build_weekly_mvp_candidates(
+    db_path: str,
+    *,
+    now: Optional[datetime] = None,
+    max_count: int = 1,
+    min_ab: int = 10,
+    dedup_set: Optional[set[str]] = None,
+    with_image: bool = True,
+    monday_only: bool = True,
+) -> list:
+    """月曜限定【週間MVP】= 先週 (月〜日) の巨人打者集計トップ。
+
+    「月曜はヨシラバー週間MVP」の定番企画 (2026-06-12 user 合意の角度⑤)。
+    驚きゲートではなく固定枠なので、 最低稼働 (min_ab) だけ gate する。
+    本塁打は列が無く atbats_json の「本」cell 数で導出
+    (data_site_query.fetch_batting_stats_season と同方式)。 insight.db read-only。
+    """
+    if now is None:
+        now = datetime.now(JST)
+    if monday_only and now.weekday() != 0:
+        return []
+    if not db_path:
+        return []
+    week_end = (now - timedelta(days=1)).date()    # 昨日 = 日曜
+    week_start = (now - timedelta(days=7)).date()  # 先週月曜
+    Candidate = _candidate_cls()
+    try:
+        with _sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
+            rows = conn.execute(
+                "SELECT b.player_canonical, COUNT(DISTINCT b.game_id), "
+                " SUM(COALESCE(b.AB,0)), SUM(COALESCE(b.H,0)), "
+                " SUM(COALESCE(b.RBI,0)), SUM(COALESCE(b.R,0)) "
+                "FROM batting_logs b JOIN games g USING(game_id) "
+                "WHERE b.team_name='巨人' AND b.player_canonical IS NOT NULL "
+                " AND g.game_date BETWEEN ? AND ? "
+                "GROUP BY b.player_canonical",
+                (week_start.isoformat(), week_end.isoformat()),
+            ).fetchall()
+            aj_rows = conn.execute(
+                "SELECT b.player_canonical, b.atbats_json "
+                "FROM batting_logs b JOIN games g USING(game_id) "
+                "WHERE b.team_name='巨人' AND b.player_canonical IS NOT NULL "
+                " AND b.atbats_json IS NOT NULL "
+                " AND g.game_date BETWEEN ? AND ?",
+                (week_start.isoformat(), week_end.isoformat()),
+            ).fetchall()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("weekly_mvp query failed: %r", exc)
+        return []
+
+    import json as _json
+    hr_by_player: dict[str, int] = {}
+    for canon, aj in aj_rows:
+        try:
+            hr_by_player[canon] = hr_by_player.get(canon, 0) + sum(
+                1 for c in _json.loads(aj) if "本" in str(c))
+        except Exception:  # noqa: BLE001
+            pass
+
+    scored: list[tuple] = []
+    for canon, games, ab, h, rbi, r in rows:
+        ab, h, rbi, r = int(ab or 0), int(h or 0), int(rbi or 0), int(r or 0)
+        if ab < min_ab:
+            continue
+        hr = hr_by_player.get(canon, 0)
+        # 選定スコアは内部のみ (表示しない)。 打点・本塁打・安打の貢献量ベース。
+        scored.append((rbi * 2 + hr * 3 + h + r, canon, int(games), ab, h, rbi, r, hr))
+
+    out: list = []
+    label_range = f"{week_start.month}/{week_start.day}〜{week_end.month}/{week_end.day}"
+    for score, canon, games, ab, h, rbi, r, hr in sorted(scored, reverse=True):
+        if len(out) >= max_count:
+            break
+        signature = f"weekly_mvp|{week_start.isoformat()}|{canon}"
+        if dedup_set is not None and signature in dedup_set:
+            logger.info("weekly_mvp dedup skip %s", signature)
+            continue
+        avg = h / ab
+        hr_part = f"・{hr}本塁打" if hr else ""
+        post = (
+            f"【週間MVP】{canon}\n"
+            f"先週の巨人 ({label_range}・{games}試合)\n"
+            f"打率{_fmt3(avg)} ({h}安打/{ab}打数){hr_part}・{rbi}打点\n"
+            + _streak_line(db_path, canon)
+            + "#巨人 #ジャイアンツ"
+        )
+        fact = (
+            f"週間 ({label_range}) 打率{_fmt3(avg)} ({h}安打/{ab}打数) ｜ "
+            f"本塁打{hr} ｜ 打点{rbi} ｜ 得点{r}"
+        )
+        draft = "\n".join([
+            "【根拠: 週間MVP (先週 月〜日 の巨人打者集計トップ)】",
+            fact,
+            "出典: insight.db (NPB公式box 週間集計)",
+            "参照: https://yoshilover.com/data/",
+            "",
+            "【X 投稿案 (user が手で投稿)】",
+            post,
+        ])
+        image = b""
+        if with_image:
+            from src.x_post_image_gen_v2 import build_player_spotlight_data
+            image = _try_png("player_spotlight", build_player_spotlight_data(
+                title="ヨシラバー週間MVP",
+                subtitle=f"{label_range} ・ NPB公式box週間集計",
+                hook_line=f"★ 先週の巨人 MVP ★",
+                player_name=canon,
+                player_team="巨人",
+                metric_label=f"週間打率 ({h}安打/{ab}打数)",
+                hero_value=_fmt3(avg),
+                sub_stats=[
+                    {"label": "本塁打", "value": str(hr)},
+                    {"label": "打点", "value": str(rbi)},
+                ],
+            ))
+        out.append(Candidate(
+            title=f"{canon} 週間MVP ({label_range})",
+            metric=_WEEKLY_MVP_METRIC,
+            period_label="先週 (月〜日)",
+            draft_text=draft,
+            char_count=len(post),
+            signature=signature,
+            post_text=post,
+            focus_player=canon,
+            db_fact_line=fact,
+            team_level="first",
+            sample_size=ab,
+            sample_label=f"週間{ab}打数",
+            why_now="月曜定番企画 (フォロワーに待つ習慣を作る枠)",
+            source_material_type="weekly_mvp",
+            image_bytes=image,
+        ))
+    logger.info("weekly_mvp: built %d candidates (max=%d)", len(out), max_count)
+    return out
+
+
+# ─── 6. 新旧比較 (同年齢レジェンド対比) ──────────────────────────────
+
+
+def _birth_year(raw: str) -> Optional[int]:
+    """'1996年6月30日' / '1996-06-30' → 1996。 取れなければ None。"""
+    import re as _re
+    m = _re.search(r"(19|20)\d{2}", str(raw or ""))
+    return int(m.group(0)) if m else None
+
+
+def _norm_name(s: str) -> str:
+    return str(s or "").replace("　", "").replace(" ", "")
+
+
+def _load_legend_age_seasons() -> dict:
+    """config/legend_age_seasons.json (NPB公式 verify 済み bake-in) を読む。無ければ {}。"""
+    import json as _json
+    from pathlib import Path as _Path
+    path = _Path(__file__).resolve().parent.parent / "config" / "legend_age_seasons.json"
+    try:
+        return (_json.loads(path.read_text(encoding="utf-8")) or {}).get("stats") or {}
+    except Exception as exc:  # noqa: BLE001
+        logger.info("legend_age_seasons unavailable: %r", exc)
+        return {}
+
+
+def _season_hr_by_player(db_path: str) -> dict[str, int]:
+    """今季の選手別本塁打 (atbats_json「本」cell 数、 既存 board と同方式)。"""
+    import json as _json
+    out: dict[str, int] = {}
+    try:
+        with _sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
+            rows = conn.execute(
+                "SELECT player_canonical, atbats_json FROM batting_logs "
+                "WHERE team_name='巨人' AND player_canonical IS NOT NULL "
+                " AND atbats_json IS NOT NULL",
+            ).fetchall()
+    except Exception as exc:  # noqa: BLE001
+        logger.info("season hr query skip: %r", exc)
+        return {}
+    for canon, aj in rows:
+        try:
+            out[_norm_name(canon)] = out.get(_norm_name(canon), 0) + sum(
+                1 for c in _json.loads(aj) if "本" in str(c))
+        except Exception:  # noqa: BLE001
+            pass
+    return out
+
+
+def build_legend_age_compare_candidates(
+    db_path: str,
+    *,
+    now: Optional[datetime] = None,
+    max_count: int = 1,
+    max_age: int = 26,
+    min_career_hr: int = 5,
+    dedup_set: Optional[set[str]] = None,
+    with_image: bool = True,
+    career_cache: Optional[dict] = None,
+    legends: Optional[dict] = None,
+) -> list:
+    """「同年齢シーズン時点の通算本塁打」で現役若手 × レジェンドを対比する驚き候補。
+
+    角度① 新旧比較 (2026-06-12 user 合意)。 年齢=その年に迎える満年齢 (年度-生年)
+    で両者同一ルール比較。 現役側 = npb_career cache の過去年度 + insight.db の今季
+    (career page の今季行は使わない = 二重計上防止)。 レジェンド側 =
+    config/legend_age_seasons.json (NPB公式 verify 済み bake-in)。
+
+    驚きゲート: 「レジェンドの同年齢時点 (>0本) を上回っている」若手だけ通す。
+    cache 未取得環境では空 list (graceful)。
+    """
+    if now is None:
+        now = datetime.now(JST)
+    Candidate = _candidate_cls()
+    if legends is None:
+        legends = _load_legend_age_seasons()
+    if career_cache is None:
+        try:
+            from src.analysis.career_milestone import load_career_cache
+            career_cache = load_career_cache()
+        except Exception as exc:  # noqa: BLE001
+            logger.info("legend_compare career cache unavailable: %r", exc)
+            career_cache = {}
+    players = (career_cache or {}).get("players") or {}
+    ids = (career_cache or {}).get("ids") or {}
+    if not legends or not players:
+        logger.info("legend_compare data unavailable (legends=%d players=%d)",
+                    len(legends or {}), len(players))
+        return []
+
+    season_hr = _season_hr_by_player(db_path) if db_path else {}
+
+    # レジェンド側: {name: {age: 同年齢シーズン終了時点の通算HR}} を事前計算
+    legend_cum: dict[str, dict[int, int]] = {}
+    for lname, payload in legends.items():
+        by = _birth_year((payload or {}).get("birthdate") or "")
+        rows = (payload or {}).get("seasons") or []
+        if not by or not rows:
+            continue
+        cum: dict[int, int] = {}
+        total = 0
+        for r in sorted(rows, key=lambda r: str(r.get("年度") or "")):
+            try:
+                year = int(r.get("年度"))
+                total += int(str(r.get("本塁打") or "0").replace(",", "") or 0)
+            except (TypeError, ValueError):
+                continue
+            cum[year - by] = total
+        legend_cum[lname] = cum
+
+    def _cum_at(lname: str, age: int) -> int:
+        ages = legend_cum.get(lname) or {}
+        hit = [v for a, v in ages.items() if a <= age]
+        return max(hit) if hit else 0
+
+    scored: list[tuple] = []
+    name_by_id = {str(v): k for k, v in ids.items()}
+    for npb_id, payload in players.items():
+        name = _norm_name(name_by_id.get(str(npb_id), ""))
+        if not name:
+            continue
+        profile = (payload or {}).get("profile") or {}
+        by = _birth_year(profile.get("birthdate") or "")
+        if not by:
+            continue
+        age = now.year - by
+        if age > max_age:
+            continue
+        prior = 0
+        for r in ((payload or {}).get("batting") or {}).get("years") or []:
+            try:
+                if int(r.get("年度")) < now.year:
+                    prior += int(str(r.get("本塁打") or "0").replace(",", "") or 0)
+            except (TypeError, ValueError):
+                continue
+        cum = prior + season_hr.get(name, 0)
+        if cum < min_career_hr:
+            continue
+        beaten = [
+            (lc, ln) for ln in legend_cum
+            if _norm_name(ln) != name and 0 < (lc := _cum_at(ln, age)) <= cum
+        ]
+        if not beaten:
+            continue
+        beaten_cum, beaten_name = max(beaten)
+        above = [
+            (lc, ln) for ln in legend_cum
+            if _norm_name(ln) != name and (lc := _cum_at(ln, age)) > cum
+        ]
+        above_pair = min(above) if above else None
+        scored.append((beaten_cum, name, age, cum, beaten_name, above_pair))
+
+    out: list = []
+    for beaten_cum, name, age, cum, beaten_name, above_pair in sorted(
+            scored, reverse=True):
+        if len(out) >= max_count:
+            break
+        signature = f"legend_compare|{name}|{age}|{cum}"
+        if dedup_set is not None and signature in dedup_set:
+            logger.info("legend_compare dedup skip %s", signature)
+            continue
+        above_line = (
+            f"次は{above_pair[1]}の{age}歳時点 {above_pair[0]}本\n" if above_pair else ""
+        )
+        post = (
+            f"【{name}】{age}歳シーズン時点 通算{cum}本塁打\n"
+            f"{beaten_name}の{age}歳時点は{beaten_cum}本 — もう上回っている\n"
+            + above_line
+            + "#巨人 #ジャイアンツ"
+        )
+        fact = (
+            f"通算{cum}本塁打 ({age}歳シーズン時点) ｜ "
+            f"{beaten_name}の同年齢時点 {beaten_cum}本"
+            + (f" ｜ 次は{above_pair[1]} {above_pair[0]}本" if above_pair else "")
+        )
+        draft = "\n".join([
+            "【根拠: 新旧比較 (同年齢シーズン時点の通算本塁打)】",
+            fact,
+            "年齢=その年に迎える満年齢 (年度-生年)、 両者同一ルール",
+            "出典: NPB公式 個人年度別成績 (legend_age_seasons / npb_career cache)"
+            " + insight.db 今季分",
+            "参照: https://yoshilover.com/data/",
+            "",
+            "【X 投稿案 (user が手で投稿)】",
+            post,
+        ])
+        image = b""
+        if with_image:
+            from src.x_post_image_gen_v2 import build_player_spotlight_data
+            image = _try_png("player_spotlight", build_player_spotlight_data(
+                title=f"{age}歳シーズン時点 通算本塁打",
+                subtitle="新旧比較 ・ NPB公式 年度別成績",
+                hook_line=f"★ {beaten_name}の同年齢を上回る ★",
+                player_name=name,
+                player_team="巨人",
+                metric_label=f"{age}歳時点 通算本塁打",
+                hero_value=f"{cum}本",
+                sub_stats=[
+                    {"label": f"{beaten_name} ({age}歳時点)", "value": f"{beaten_cum}本"},
+                ] + ([{"label": f"{above_pair[1]} ({age}歳時点)",
+                       "value": f"{above_pair[0]}本"}] if above_pair else []),
+            ))
+        out.append(Candidate(
+            title=f"{name} {age}歳時点{cum}本 ({beaten_name}超え)",
+            metric=_LEGEND_COMPARE_METRIC,
+            period_label=f"{age}歳シーズン時点",
+            draft_text=draft,
+            char_count=len(post),
+            signature=signature,
+            post_text=post,
+            focus_player=name,
+            db_fact_line=fact,
+            team_level="first",
+            sample_size=cum,
+            sample_label=f"通算{cum}本塁打",
+            why_now=f"レジェンド同年齢超えは続報が効く成長ストーリー枠",
+            source_material_type="legend_compare",
+            image_bytes=image,
+        ))
+    logger.info("legend_compare: built %d candidates (max=%d)", len(out), max_count)
+    return out

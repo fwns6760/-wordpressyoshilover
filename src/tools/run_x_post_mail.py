@@ -187,6 +187,25 @@ def _data_angles_max_per_run() -> int:
     return _resolve_int_env("X_POST_DATA_ANGLES_MAX", 3, min_value=0)
 
 
+def _legend_compare_enabled() -> bool:
+    """2026-06-12 角度① 新旧比較 (同年齢レジェンド対比) の env flag。
+
+    Default OFF。 flag OFF では既存挙動完全不変 (rollback 余地)。
+    """
+    raw = (os.environ.get("ENABLE_X_POST_LEGEND_COMPARE") or "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _weekly_mvp_enabled() -> bool:
+    """2026-06-12 角度⑤ 週間MVP (月曜定番企画) の env flag。
+
+    Default OFF。 ON でも builder 側が月曜以外は空 list を返す。
+    flag OFF では既存挙動完全不変 (rollback 余地)。
+    """
+    raw = (os.environ.get("ENABLE_X_POST_WEEKLY_MVP") or "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
 def _topical_boost_enabled() -> bool:
     """2026-06-11 ①話題選手連動: RSSHub 巨人系 X 言及数で候補を先頭寄せする env flag。
 
@@ -1978,6 +1997,46 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "data_angles appended: base=%d angles=%d total=%d",
                     before, len(da_new), len(candidates),
                 )
+
+    # 2026-06-12 角度① 新旧比較: 同年齢シーズン時点の通算本塁打で若手×レジェンド対比。
+    # 驚きゲート (レジェンド同年齢時点を上回る時のみ)。 候補=メールまで。 flag OFF で既存不変。
+    if _legend_compare_enabled() and db_path:
+        try:
+            from src import x_post_data_angles as _lc_angles
+            lc_candidates = _lc_angles.build_legend_age_compare_candidates(
+                db_path, now=now_jst, max_count=1, dedup_set=dedup_set)
+        except Exception as _lc_exc:  # noqa: BLE001
+            LOG.warning("legend_compare build failed: %r", _lc_exc)
+            lc_candidates = []
+        _existing_sigs = {getattr(c, "signature", "") for c in candidates}
+        lc_new = [c for c in lc_candidates if c.signature not in _existing_sigs]
+        if lc_new:
+            before = len(candidates)
+            candidates = candidates + lc_new
+            LOG.info(
+                "legend_compare appended: base=%d legend=%d total=%d",
+                before, len(lc_new), len(candidates),
+            )
+
+    # 2026-06-12 角度⑤ 週間MVP: 月曜限定の定番企画 (先週 月〜日 の巨人打者集計トップ)。
+    # 公開 X 自動投稿はしない (候補=メールまで)。 flag OFF で既存不変。
+    if _weekly_mvp_enabled() and db_path:
+        try:
+            from src import x_post_data_angles as _wm_angles
+            wm_candidates = _wm_angles.build_weekly_mvp_candidates(
+                db_path, now=now_jst, max_count=1, dedup_set=dedup_set)
+        except Exception as _wm_exc:  # noqa: BLE001
+            LOG.warning("weekly_mvp build failed: %r", _wm_exc)
+            wm_candidates = []
+        _existing_sigs = {getattr(c, "signature", "") for c in candidates}
+        wm_new = [c for c in wm_candidates if c.signature not in _existing_sigs]
+        if wm_new:
+            before = len(candidates)
+            candidates = candidates + wm_new
+            LOG.info(
+                "weekly_mvp appended: base=%d mvp=%d total=%d",
+                before, len(wm_new), len(candidates),
+            )
 
     # 451: flag ON 時、 公式/OB/メディア YouTube の「懐かし・ファン反応」動画候補を append。
     # 転載しない (URL 紹介のみ)、 公開 X 自動投稿はしない (候補=メールまで)。 flag OFF で既存不変。

@@ -281,3 +281,225 @@ def test_preferred_player_wins_over_larger_gap(tmp_path):
         str(db), max_count=1, min_cond_games=3, min_total_games=10,
         min_gap=0.05, with_image=False, preferred_players={"話題選手"})
     assert pref[0].focus_player == "話題選手"  # 話題選手が先頭
+
+
+# ─── 週間MVP (月曜定番企画) ──────────────────────────────────────────
+
+
+def _make_weekly_db(tmp_path: Path) -> str:
+    """週間MVP 用 fixture: R / atbats_json 列込み。 先週 = 2026-06-08(月)〜06-14(日)。"""
+    db = tmp_path / "weekly.db"
+    conn = sqlite3.connect(db)
+    conn.executescript(
+        """
+        CREATE TABLE games (
+            game_id TEXT PRIMARY KEY, game_date TEXT, opponent TEXT,
+            result TEXT, giants_score INT, opp_score INT
+        );
+        CREATE TABLE batting_logs (
+            game_id TEXT, team_role TEXT, team_name TEXT,
+            player_canonical TEXT, AB INT, H INT, RBI INT, R INT,
+            atbats_json TEXT
+        );
+        """
+    )
+    # 週内 4 試合 + 週外 (前週) 1 試合
+    for i, d in enumerate(("2026-06-09", "2026-06-10", "2026-06-12", "2026-06-13")):
+        gid = f"{d}:g-t"
+        conn.execute("INSERT INTO games VALUES (?,?,?,?,0,0)", (gid, d, "阪神", "win"))
+        # MVP候補: 4試合 16打数8安打 (.500)、 HR2 (atbats_json「本」cell)、 6打点
+        conn.execute(
+            "INSERT INTO batting_logs VALUES (?,?,?,?,?,?,?,?,?)",
+            (gid, "giants", "巨人", "週間王", 4, 2, 1 if i < 2 else 2,
+             1, '["右越本①", "中前安", "三 振", "遊ゴロ"]' if i < 2
+             else '["中前安", "左前安", "三 振", "遊ゴロ"]'),
+        )
+        # 稼働不足 (AB 8 < min_ab 10) は対象外
+        conn.execute(
+            "INSERT INTO batting_logs VALUES (?,?,?,?,?,?,?,?,?)",
+            (gid, "giants", "巨人", "控え", 2, 1, 0, 0, '["中前安", "遊ゴロ"]'),
+        )
+    out_gid = "2026-06-07:g-t"
+    conn.execute("INSERT INTO games VALUES (?,?,?,?,0,0)",
+                 (out_gid, "2026-06-07", "広島", "win"))
+    conn.execute(
+        "INSERT INTO batting_logs VALUES (?,?,?,?,?,?,?,?,?)",
+        (out_gid, "giants", "巨人", "週間王", 4, 4, 4, 2,
+         '["右越本①", "右越本①", "右越本①", "右越本①"]'),
+    )
+    conn.commit()
+    conn.close()
+    return str(db)
+
+
+def test_weekly_mvp_numbers_exact(tmp_path):
+    """週内集計のみ (前週日曜 6/7 の 4HR は入らない)、 HR は atbats_json 由来。"""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    db = _make_weekly_db(tmp_path)
+    monday = datetime(2026, 6, 15, 12, 0, tzinfo=ZoneInfo("Asia/Tokyo"))
+    out = angles.build_weekly_mvp_candidates(db, now=monday, with_image=False)
+    assert len(out) == 1
+    c = out[0]
+    assert c.focus_player == "週間王"
+    assert "【週間MVP】週間王" in c.post_text
+    assert ".500" in c.post_text and "8安打/16打数" in c.post_text
+    assert "2本塁打" in c.post_text and "6打点" in c.post_text
+    assert "6/8〜6/14" in c.post_text and "4試合" in c.post_text
+    assert c.signature == "weekly_mvp|2026-06-08|週間王"
+
+
+def test_weekly_mvp_monday_only(tmp_path):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    db = _make_weekly_db(tmp_path)
+    tuesday = datetime(2026, 6, 16, 12, 0, tzinfo=ZoneInfo("Asia/Tokyo"))
+    assert angles.build_weekly_mvp_candidates(db, now=tuesday, with_image=False) == []
+    monday = datetime(2026, 6, 15, 12, 0, tzinfo=ZoneInfo("Asia/Tokyo"))
+    assert angles.build_weekly_mvp_candidates(
+        db, now=tuesday, with_image=False, monday_only=False) != []
+    assert angles.build_weekly_mvp_candidates(db, now=monday, with_image=False)
+
+
+def test_weekly_mvp_respects_dedup(tmp_path):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    db = _make_weekly_db(tmp_path)
+    monday = datetime(2026, 6, 15, 12, 0, tzinfo=ZoneInfo("Asia/Tokyo"))
+    dedup = {"weekly_mvp|2026-06-08|週間王"}
+    assert angles.build_weekly_mvp_candidates(
+        db, now=monday, with_image=False, dedup_set=dedup) == []
+
+
+# ─── 新旧比較 (同年齢レジェンド対比) ─────────────────────────────────
+
+
+_LEGENDS_FIXTURE = {
+    "往年の大砲": {
+        "npb_id": "1", "birthdate": "1979年3月20日",
+        "seasons": [
+            {"年度": "2001", "本塁打": "13"},
+            {"年度": "2002", "本塁打": "18"},
+        ],
+    },
+    "現役の壁": {
+        "npb_id": "2", "birthdate": "1996年6月30日",
+        "seasons": [
+            {"年度": "2016", "本塁打": "1"},
+            {"年度": "2018", "本塁打": "33"},
+        ],
+    },
+}
+
+
+def _young_cache(birth: str, years: list) -> dict:
+    return {
+        "ids": {"若手　太郎": "999"},
+        "players": {"999": {
+            "profile": {"birthdate": birth},
+            "batting": {"years": years},
+        }},
+    }
+
+
+def test_legend_compare_beats_one_legend():
+    """22歳 通算14本 → 往年の大砲の22歳時点 (13本) 超え、 次は現役の壁 (34本)。"""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    now = datetime(2026, 6, 12, 12, 0, tzinfo=ZoneInfo("Asia/Tokyo"))
+    cache = _young_cache("2004年1月1日", [
+        {"年度": "2024", "本塁打": "6"}, {"年度": "2025", "本塁打": "8"}])
+    out = angles.build_legend_age_compare_candidates(
+        "", now=now, career_cache=cache, legends=_LEGENDS_FIXTURE,
+        with_image=False)
+    assert len(out) == 1
+    c = out[0]
+    assert c.focus_player == "若手太郎"
+    assert "【若手太郎】22歳シーズン時点 通算14本塁打" in c.post_text
+    assert "往年の大砲の22歳時点は13本" in c.post_text
+    assert "次は現役の壁の22歳時点 34本" in c.post_text
+    assert c.signature == "legend_compare|若手太郎|22|14"
+
+
+def test_legend_compare_surprise_gate():
+    """誰の同年齢時点も超えない (12本 < 13本) → 候補なし。"""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    now = datetime(2026, 6, 12, 12, 0, tzinfo=ZoneInfo("Asia/Tokyo"))
+    cache = _young_cache("2004年1月1日", [{"年度": "2025", "本塁打": "12"}])
+    assert angles.build_legend_age_compare_candidates(
+        "", now=now, career_cache=cache, legends=_LEGENDS_FIXTURE,
+        with_image=False) == []
+
+
+def test_legend_compare_age_and_floor_gates():
+    """max_age 超え / min_career_hr 未満は対象外。"""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    now = datetime(2026, 6, 12, 12, 0, tzinfo=ZoneInfo("Asia/Tokyo"))
+    old = _young_cache("1995年1月1日", [{"年度": "2025", "本塁打": "40"}])
+    assert angles.build_legend_age_compare_candidates(
+        "", now=now, career_cache=old, legends=_LEGENDS_FIXTURE,
+        with_image=False) == []
+    rookie = _young_cache("2005年1月1日", [{"年度": "2025", "本塁打": "3"}])
+    assert angles.build_legend_age_compare_candidates(
+        "", now=now, career_cache=rookie, legends=_LEGENDS_FIXTURE,
+        with_image=False) == []
+
+
+def test_legend_compare_adds_current_season_from_db(tmp_path):
+    """今季分は insight.db atbats_json から加算 (career page 今季行は使わない)。"""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    db = tmp_path / "season.db"
+    conn = sqlite3.connect(db)
+    conn.executescript(
+        """
+        CREATE TABLE batting_logs (
+            game_id TEXT, team_role TEXT, team_name TEXT,
+            player_canonical TEXT, AB INT, H INT, RBI INT, R INT,
+            atbats_json TEXT
+        );
+        """
+    )
+    conn.execute(
+        "INSERT INTO batting_logs VALUES (?,?,?,?,?,?,?,?,?)",
+        ("g1", "giants", "巨人", "若手太郎", 4, 2, 2, 1,
+         '["右越本①", "中越本②", "三 振", "遊ゴロ"]'),
+    )
+    conn.commit()
+    conn.close()
+    now = datetime(2026, 6, 12, 12, 0, tzinfo=ZoneInfo("Asia/Tokyo"))
+    # 過去 12 本 + 今季 DB 2 本 = 14 本 → 13 本超え
+    cache = _young_cache("2004年1月1日", [
+        {"年度": "2025", "本塁打": "12"},
+        {"年度": "2026", "本塁打": "9"},  # 今季行は無視されること (二重計上防止)
+    ])
+    out = angles.build_legend_age_compare_candidates(
+        str(db), now=now, career_cache=cache, legends=_LEGENDS_FIXTURE,
+        with_image=False)
+    assert len(out) == 1
+    assert "通算14本塁打" in out[0].post_text
+
+
+def test_legend_compare_excludes_self():
+    """現役レジェンド本人 (同名) は比較対象から除外。"""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    now = datetime(2026, 6, 12, 12, 0, tzinfo=ZoneInfo("Asia/Tokyo"))
+    legends = {
+        "若手太郎": {"npb_id": "999", "birthdate": "2004年1月1日",
+                  "seasons": [{"年度": "2025", "本塁打": "8"}]},
+    }
+    cache = _young_cache("2004年1月1日", [{"年度": "2025", "本塁打": "8"}])
+    assert angles.build_legend_age_compare_candidates(
+        "", now=now, career_cache=cache, legends=legends,
+        with_image=False) == []

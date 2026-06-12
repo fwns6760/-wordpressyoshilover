@@ -1,0 +1,1081 @@
+{
+ "generated_at": null,
+ "years": [
+  {
+   "year": 2026,
+   "pitchers": [
+    {
+     "name": "井上",
+     "starts": 9
+    },
+    {
+     "name": "田中将",
+     "starts": 9
+    },
+    {
+     "name": "竹丸",
+     "starts": 9
+    },
+    {
+     "name": "ウィットリー",
+     "starts": 8
+    },
+    {
+     "name": "則本",
+     "starts": 7
+    },
+    {
+     "name": "戸郷",
+     "starts": 5
+    },
+    {
+     "name": "マタ",
+     "starts": 3
+    },
+    {
+     "name": "ハワード",
+     "starts": 2
+    },
+    {
+     "name": "西舘",
+     "starts": 2
+    },
+    {
+     "name": "又木",
+     "starts": 1
+    },
+    {
+     "name": "山城",
+     "starts": 1
+    },
+    {
+     "name": "森田",
+     "starts": 1
+    },
+    {
+     "name": "赤星",
+     "starts": 1
+    }
+   ]
+  },
+  {
+   "year": 2025,
+   "pitchers": [
+    {
+     "name": "山﨑",
+     "starts": 25
+    },
+    {
+     "name": "赤星",
+     "starts": 22
+    },
+    {
+     "name": "井上",
+     "starts": 21
+    },
+    {
+     "name": "戸郷",
+     "starts": 20
+    },
+    {
+     "name": "グリフィン",
+     "starts": 13
+    },
+    {
+     "name": "田中将",
+     "starts": 10
+    },
+    {
+     "name": "横川",
+     "starts": 8
+    },
+    {
+     "name": "森田",
+     "starts": 7
+    },
+    {
+     "name": "西舘",
+     "starts": 7
+    },
+    {
+     "name": "石川",
+     "starts": 4
+    },
+    {
+     "name": "堀田",
+     "starts": 3
+    },
+    {
+     "name": "又木",
+     "starts": 2
+    },
+    {
+     "name": "ケラー",
+     "starts": 1
+    }
+   ]
+  },
+  {
+   "year": 2024,
+   "pitchers": [
+    {
+     "name": "戸郷",
+     "starts": 26
+    },
+    {
+     "name": "山﨑伊",
+     "starts": 24
+    },
+    {
+     "name": "菅野",
+     "starts": 24
+    },
+    {
+     "name": "グリフィン",
+     "starts": 20
+    },
+    {
+     "name": "井上",
+     "starts": 15
+    },
+    {
+     "name": "赤星",
+     "starts": 9
+    },
+    {
+     "name": "高橋礼",
+     "starts": 9
+    },
+    {
+     "name": "堀田",
+     "starts": 7
+    },
+    {
+     "name": "又木",
+     "starts": 3
+    },
+    {
+     "name": "横川",
+     "starts": 3
+    },
+    {
+     "name": "メンデス",
+     "starts": 2
+    },
+    {
+     "name": "西舘",
+     "starts": 1
+    }
+   ]
+  },
+  {
+   "year": 2023,
+   "pitchers": [
+    {
+     "name": "戸郷",
+     "starts": 24
+    },
+    {
+     "name": "山﨑伊",
+     "starts": 23
+    },
+    {
+     "name": "グリフィン",
+     "starts": 20
+    },
+    {
+     "name": "メンデス",
+     "starts": 16
+    },
+    {
+     "name": "横川",
+     "starts": 16
+    },
+    {
+     "name": "菅野",
+     "starts": 14
+    },
+    {
+     "name": "赤星",
+     "starts": 12
+    },
+    {
+     "name": "ビーディ",
+     "starts": 6
+    },
+    {
+     "name": "井上",
+     "starts": 4
+    },
+    {
+     "name": "松井",
+     "starts": 3
+    },
+    {
+     "name": "髙橋",
+     "starts": 3
+    },
+    {
+     "name": "今村",
+     "starts": 1
+    },
+    {
+     "name": "平内",
+     "starts": 1
+    }
+   ]
+  },
+  {
+   "year": 2022,
+   "pitchers": [
+    {
+     "name": "戸郷",
+     "starts": 25
+    },
+    {
+     "name": "菅野",
+     "starts": 23
+    },
+    {
+     "name": "メルセデス",
+     "starts": 20
+    },
+    {
+     "name": "シューメーカー",
+     "starts": 18
+    },
+    {
+     "name": "山﨑伊",
+     "starts": 17
+    },
+    {
+     "name": "赤星",
+     "starts": 13
+    },
+    {
+     "name": "堀田",
+     "starts": 8
+    },
+    {
+     "name": "髙橋",
+     "starts": 6
+    },
+    {
+     "name": "アンドリース",
+     "starts": 5
+    },
+    {
+     "name": "井上",
+     "starts": 4
+    },
+    {
+     "name": "直江",
+     "starts": 3
+    },
+    {
+     "name": "横川",
+     "starts": 1
+    }
+   ]
+  },
+  {
+   "year": 2021,
+   "pitchers": [
+    {
+     "name": "戸郷",
+     "starts": 26
+    },
+    {
+     "name": "髙橋",
+     "starts": 26
+    },
+    {
+     "name": "菅野",
+     "starts": 19
+    },
+    {
+     "name": "メルセデス",
+     "starts": 17
+    },
+    {
+     "name": "山口",
+     "starts": 15
+    },
+    {
+     "name": "サンチェス",
+     "starts": 14
+    },
+    {
+     "name": "今村",
+     "starts": 10
+    },
+    {
+     "name": "畠",
+     "starts": 9
+    },
+    {
+     "name": "直江",
+     "starts": 3
+    },
+    {
+     "name": "横川",
+     "starts": 2
+    },
+    {
+     "name": "井納",
+     "starts": 1
+    },
+    {
+     "name": "野上",
+     "starts": 1
+    }
+   ]
+  },
+  {
+   "year": 2020,
+   "pitchers": [
+    {
+     "name": "菅野",
+     "starts": 20
+    },
+    {
+     "name": "戸郷",
+     "starts": 18
+    },
+    {
+     "name": "サンチェス",
+     "starts": 15
+    },
+    {
+     "name": "田口",
+     "starts": 14
+    },
+    {
+     "name": "畠",
+     "starts": 12
+    },
+    {
+     "name": "メルセデス",
+     "starts": 11
+    },
+    {
+     "name": "今村",
+     "starts": 11
+    },
+    {
+     "name": "桜井",
+     "starts": 8
+    },
+    {
+     "name": "髙橋",
+     "starts": 4
+    },
+    {
+     "name": "直江",
+     "starts": 3
+    },
+    {
+     "name": "ディプラン",
+     "starts": 1
+    },
+    {
+     "name": "宮國",
+     "starts": 1
+    },
+    {
+     "name": "横川",
+     "starts": 1
+    },
+    {
+     "name": "澤村",
+     "starts": 1
+    }
+   ]
+  },
+  {
+   "year": 2019,
+   "pitchers": [
+    {
+     "name": "山口",
+     "starts": 26
+    },
+    {
+     "name": "メルセデス",
+     "starts": 22
+    },
+    {
+     "name": "菅野",
+     "starts": 22
+    },
+    {
+     "name": "髙橋",
+     "starts": 18
+    },
+    {
+     "name": "桜井",
+     "starts": 17
+    },
+    {
+     "name": "今村",
+     "starts": 15
+    },
+    {
+     "name": "ヤングマン",
+     "starts": 10
+    },
+    {
+     "name": "畠",
+     "starts": 3
+    },
+    {
+     "name": "澤村",
+     "starts": 2
+    },
+    {
+     "name": "田口",
+     "starts": 2
+    },
+    {
+     "name": "クック",
+     "starts": 1
+    },
+    {
+     "name": "マシソン",
+     "starts": 1
+    },
+    {
+     "name": "古川",
+     "starts": 1
+    },
+    {
+     "name": "戸郷",
+     "starts": 1
+    },
+    {
+     "name": "野上",
+     "starts": 1
+    },
+    {
+     "name": "髙田",
+     "starts": 1
+    }
+   ]
+  },
+  {
+   "year": 2018,
+   "pitchers": [
+    {
+     "name": "菅野",
+     "starts": 27
+    },
+    {
+     "name": "山口俊",
+     "starts": 21
+    },
+    {
+     "name": "吉川光",
+     "starts": 18
+    },
+    {
+     "name": "田口",
+     "starts": 16
+    },
+    {
+     "name": "内海",
+     "starts": 14
+    },
+    {
+     "name": "メルセデス",
+     "starts": 13
+    },
+    {
+     "name": "今村",
+     "starts": 13
+    },
+    {
+     "name": "野上",
+     "starts": 9
+    },
+    {
+     "name": "鍬原",
+     "starts": 5
+    },
+    {
+     "name": "ヤングマン",
+     "starts": 4
+    },
+    {
+     "name": "大竹",
+     "starts": 2
+    },
+    {
+     "name": "髙田",
+     "starts": 1
+    }
+   ]
+  },
+  {
+   "year": 2017,
+   "pitchers": [
+    {
+     "name": "マイコラス",
+     "starts": 27
+    },
+    {
+     "name": "田口",
+     "starts": 26
+    },
+    {
+     "name": "菅野",
+     "starts": 25
+    },
+    {
+     "name": "大竹寛",
+     "starts": 13
+    },
+    {
+     "name": "内海",
+     "starts": 12
+    },
+    {
+     "name": "畠",
+     "starts": 12
+    },
+    {
+     "name": "宮國",
+     "starts": 9
+    },
+    {
+     "name": "吉川光",
+     "starts": 8
+    },
+    {
+     "name": "山口俊",
+     "starts": 4
+    },
+    {
+     "name": "池田",
+     "starts": 2
+    },
+    {
+     "name": "高木勇",
+     "starts": 2
+    },
+    {
+     "name": "中川",
+     "starts": 1
+    },
+    {
+     "name": "今村",
+     "starts": 1
+    },
+    {
+     "name": "谷岡",
+     "starts": 1
+    }
+   ]
+  },
+  {
+   "year": 2016,
+   "pitchers": [
+    {
+     "name": "田口",
+     "starts": 26
+    },
+    {
+     "name": "菅野",
+     "starts": 26
+    },
+    {
+     "name": "内海",
+     "starts": 18
+    },
+    {
+     "name": "高木勇",
+     "starts": 18
+    },
+    {
+     "name": "大竹寛",
+     "starts": 16
+    },
+    {
+     "name": "マイコラス",
+     "starts": 14
+    },
+    {
+     "name": "今村",
+     "starts": 14
+    },
+    {
+     "name": "ポレダ",
+     "starts": 5
+    },
+    {
+     "name": "江柄子",
+     "starts": 2
+    },
+    {
+     "name": "小山",
+     "starts": 1
+    },
+    {
+     "name": "平良",
+     "starts": 1
+    },
+    {
+     "name": "桜井",
+     "starts": 1
+    },
+    {
+     "name": "長谷川",
+     "starts": 1
+    }
+   ]
+  },
+  {
+   "year": 2015,
+   "pitchers": [
+    {
+     "name": "高木勇",
+     "starts": 26
+    },
+    {
+     "name": "菅野",
+     "starts": 25
+    },
+    {
+     "name": "ポレダ",
+     "starts": 24
+    },
+    {
+     "name": "マイコラス",
+     "starts": 21
+    },
+    {
+     "name": "杉内",
+     "starts": 17
+    },
+    {
+     "name": "田口",
+     "starts": 12
+    },
+    {
+     "name": "大竹",
+     "starts": 11
+    },
+    {
+     "name": "内海",
+     "starts": 5
+    },
+    {
+     "name": "小山",
+     "starts": 2
+    }
+   ]
+  },
+  {
+   "year": 2014,
+   "pitchers": [
+    {
+     "name": "杉内",
+     "starts": 26
+    },
+    {
+     "name": "菅野",
+     "starts": 23
+    },
+    {
+     "name": "内海",
+     "starts": 22
+    },
+    {
+     "name": "大竹",
+     "starts": 22
+    },
+    {
+     "name": "小山",
+     "starts": 16
+    },
+    {
+     "name": "澤村",
+     "starts": 11
+    },
+    {
+     "name": "セドン",
+     "starts": 10
+    },
+    {
+     "name": "今村",
+     "starts": 5
+    },
+    {
+     "name": "宮國",
+     "starts": 3
+    },
+    {
+     "name": "久保",
+     "starts": 2
+    },
+    {
+     "name": "江柄子",
+     "starts": 2
+    },
+    {
+     "name": "笠原",
+     "starts": 1
+    },
+    {
+     "name": "阿南",
+     "starts": 1
+    }
+   ]
+  },
+  {
+   "year": 2013,
+   "pitchers": [
+    {
+     "name": "菅野",
+     "starts": 26
+    },
+    {
+     "name": "内海",
+     "starts": 25
+    },
+    {
+     "name": "杉内",
+     "starts": 24
+    },
+    {
+     "name": "澤村",
+     "starts": 22
+    },
+    {
+     "name": "ホールトン",
+     "starts": 18
+    },
+    {
+     "name": "宮國",
+     "starts": 17
+    },
+    {
+     "name": "小山",
+     "starts": 5
+    },
+    {
+     "name": "今村",
+     "starts": 3
+    },
+    {
+     "name": "笠原",
+     "starts": 3
+    },
+    {
+     "name": "阿南",
+     "starts": 1
+    }
+   ]
+  },
+  {
+   "year": 2012,
+   "pitchers": [
+    {
+     "name": "内海",
+     "starts": 28
+    },
+    {
+     "name": "澤村",
+     "starts": 26
+    },
+    {
+     "name": "ホールトン",
+     "starts": 25
+    },
+    {
+     "name": "杉内",
+     "starts": 24
+    },
+    {
+     "name": "宮國",
+     "starts": 16
+    },
+    {
+     "name": "ゴンザレス",
+     "starts": 10
+    },
+    {
+     "name": "小山",
+     "starts": 6
+    },
+    {
+     "name": "江柄子",
+     "starts": 3
+    },
+    {
+     "name": "笠原",
+     "starts": 3
+    },
+    {
+     "name": "小野",
+     "starts": 1
+    },
+    {
+     "name": "東野",
+     "starts": 1
+    },
+    {
+     "name": "田原",
+     "starts": 1
+    }
+   ]
+  },
+  {
+   "year": 2011,
+   "pitchers": [
+    {
+     "name": "澤村",
+     "starts": 29
+    },
+    {
+     "name": "内海",
+     "starts": 26
+    },
+    {
+     "name": "東野",
+     "starts": 26
+    },
+    {
+     "name": "西村",
+     "starts": 16
+    },
+    {
+     "name": "ゴンザレス",
+     "starts": 11
+    },
+    {
+     "name": "グライシンガー",
+     "starts": 9
+    },
+    {
+     "name": "金刃",
+     "starts": 8
+    },
+    {
+     "name": "小野",
+     "starts": 7
+    },
+    {
+     "name": "トーレス",
+     "starts": 6
+    },
+    {
+     "name": "小山",
+     "starts": 3
+    },
+    {
+     "name": "福田",
+     "starts": 2
+    },
+    {
+     "name": "高木",
+     "starts": 1
+    }
+   ]
+  },
+  {
+   "year": 2010,
+   "pitchers": [
+    {
+     "name": "内海",
+     "starts": 26
+    },
+    {
+     "name": "東野",
+     "starts": 26
+    },
+    {
+     "name": "ゴンザレス",
+     "starts": 24
+    },
+    {
+     "name": "藤井",
+     "starts": 22
+    },
+    {
+     "name": "西村健",
+     "starts": 14
+    },
+    {
+     "name": "朝井",
+     "starts": 8
+    },
+    {
+     "name": "オビスポ",
+     "starts": 7
+    },
+    {
+     "name": "グライシンガー",
+     "starts": 6
+    },
+    {
+     "name": "福田",
+     "starts": 6
+    },
+    {
+     "name": "山口",
+     "starts": 2
+    },
+    {
+     "name": "黄志龍",
+     "starts": 2
+    },
+    {
+     "name": "高木",
+     "starts": 1
+    }
+   ]
+  },
+  {
+   "year": 2009,
+   "pitchers": [
+    {
+     "name": "内海",
+     "starts": 27
+    },
+    {
+     "name": "東野",
+     "starts": 26
+    },
+    {
+     "name": "グライシンガー",
+     "starts": 25
+    },
+    {
+     "name": "高橋尚",
+     "starts": 25
+    },
+    {
+     "name": "ゴンザレス",
+     "starts": 23
+    },
+    {
+     "name": "オビスポ",
+     "starts": 7
+    },
+    {
+     "name": "福田",
+     "starts": 6
+    },
+    {
+     "name": "久保",
+     "starts": 4
+    },
+    {
+     "name": "木佐貫",
+     "starts": 1
+    }
+   ]
+  },
+  {
+   "year": 2008,
+   "pitchers": [
+    {
+     "name": "グライシンガー",
+     "starts": 31
+    },
+    {
+     "name": "内海",
+     "starts": 29
+    },
+    {
+     "name": "高橋尚",
+     "starts": 22
+    },
+    {
+     "name": "バーンサイド",
+     "starts": 15
+    },
+    {
+     "name": "木佐貫",
+     "starts": 14
+    },
+    {
+     "name": "上原",
+     "starts": 12
+    },
+    {
+     "name": "野間口",
+     "starts": 9
+    },
+    {
+     "name": "金刃",
+     "starts": 5
+    },
+    {
+     "name": "栂野",
+     "starts": 3
+    },
+    {
+     "name": "久保",
+     "starts": 2
+    },
+    {
+     "name": "東野",
+     "starts": 2
+    }
+   ]
+  },
+  {
+   "year": 2007,
+   "pitchers": [
+    {
+     "name": "内海",
+     "starts": 28
+    },
+    {
+     "name": "高橋尚",
+     "starts": 27
+    },
+    {
+     "name": "木佐貫",
+     "starts": 25
+    },
+    {
+     "name": "金刃",
+     "starts": 20
+    },
+    {
+     "name": "福田",
+     "starts": 11
+    },
+    {
+     "name": "久保",
+     "starts": 9
+    },
+    {
+     "name": "パウエル",
+     "starts": 7
+    },
+    {
+     "name": "姜建銘",
+     "starts": 5
+    },
+    {
+     "name": "門倉",
+     "starts": 5
+    },
+    {
+     "name": "GG",
+     "starts": 4
+    },
+    {
+     "name": "野間口",
+     "starts": 2
+    },
+    {
+     "name": "西村",
+     "starts": 1
+    }
+   ]
+  }
+ ]
+}

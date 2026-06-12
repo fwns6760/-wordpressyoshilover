@@ -64,15 +64,25 @@ def _player_card(entry: dict) -> str:
         f'color:#e25400;font-weight:700;margin-right:6px;">直近</span>{_esc(last_line)}</p>'
         if last_line else ""
     )
+    slug = str(entry.get("slug") or "").strip()
+    name_html = (
+        f'<a href="{MLB_PATH}/{_esc(slug)}" style="color:#1a1a1a;text-decoration:none;">{_esc(entry.get("name", ""))}</a>'
+        if slug else _esc(entry.get("name", ""))
+    )
+    detail_link = (
+        f'<p style="font-size:12px;margin:8px 0 0;"><a href="{MLB_PATH}/{_esc(slug)}" '
+        'style="color:#1976d2;font-weight:700;text-decoration:none;">全試合・打席結果を見る →</a></p>'
+        if slug else ""
+    )
     return (
         '<article style="background:#fff;border:1px solid #ffd9bf;border-radius:10px;padding:12px 14px;">'
         f'<p style="font-size:12px;margin:0 0 2px;color:#5d4037;font-weight:600;">{_esc(entry.get("team", ""))}</p>'
-        f'<h2 style="font-size:19px;margin:0 0 6px;color:#1a1a1a;">{_esc(entry.get("name", ""))}</h2>'
+        f'<h2 style="font-size:19px;margin:0 0 6px;color:#1a1a1a;">{name_html}</h2>'
         f'<div style="font-size:26px;font-weight:900;color:#e25400;font-variant-numeric:tabular-nums;'
         f'line-height:1.2;">{_esc(hero_value)}'
         f'<span style="font-size:12px;font-weight:600;color:#999;margin-left:6px;">{_esc(hero_label)}</span></div>'
         f'<p style="font-size:13px;margin:6px 0 0;color:#444;">{_esc(_season_line(entry))}</p>'
-        f'{last_html}'
+        f'{last_html}{detail_link}'
         '</article>'
     )
 

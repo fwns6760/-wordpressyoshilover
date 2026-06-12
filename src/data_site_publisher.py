@@ -109,11 +109,16 @@ from src.data_site_template_cleanup_hitters import (
     render_cleanup_hitters_excerpt,
 )
 from src.data_site_jersey_source import fetch_jersey_rows
-from src.mlb_alumni_fetch import fetch_mlb_alumni_data
+from src.mlb_alumni_fetch import MLB_ALUMNI, fetch_mlb_alumni_data, fetch_mlb_player_detail
 from src.data_site_template_mlb import (
     render_mlb_html,
     render_mlb_title,
     render_mlb_excerpt,
+)
+from src.data_site_template_mlb_player import (
+    render_mlb_player_html,
+    render_mlb_player_title,
+    render_mlb_player_excerpt,
 )
 from src.data_site_template_jersey import (
     render_jersey_numbers_excerpt,
@@ -1005,18 +1010,38 @@ def publish_notable_data_only() -> dict[str, object]:
 
 
 def _upsert_mlb_page(parent_page_id: int) -> UpsertResult | None:
-    """巨人発メジャーリーガー page。 取得 0 人なら skip して前回内容を維持する。"""
+    """巨人発メジャーリーガー hub + 選手別 page。 取得 0 人なら skip して前回内容を維持する。"""
     mlb_data = fetch_mlb_alumni_data()
     if not mlb_data.get("players"):
         LOG.warning("mlb alumni data empty; skip /data/mlb upsert")
         return None
-    return _upsert_page(
+    hub_result = _upsert_page(
         slug="mlb",
         title=render_mlb_title(),
         content_html=render_mlb_html(mlb_data),
         parent=parent_page_id,
         excerpt=render_mlb_excerpt(mlb_data),
     )
+    mlb_page_id = hub_result.page_id or (_find_page_id_by_slug("mlb", parent=parent_page_id) or 0)
+    if not mlb_page_id:
+        LOG.warning("mlb hub page_id unresolved; skip player pages")
+        return hub_result
+    for spec in MLB_ALUMNI:
+        detail = fetch_mlb_player_detail(spec)
+        if not detail:
+            LOG.warning("mlb player detail empty; skip slug=%s", spec.get("slug"))
+            continue
+        result = _upsert_page(
+            slug=spec["slug"],
+            title=render_mlb_player_title(detail),
+            content_html=render_mlb_player_html(detail),
+            parent=mlb_page_id,
+            excerpt=render_mlb_player_excerpt(detail),
+        )
+        LOG.info("mlb player upsert slug=%s page_id=%s action=%s games=%d",
+                 spec["slug"], result.page_id, result.action,
+                 sum(len(s.get("games") or []) for s in detail.get("seasons") or []))
+    return hub_result
 
 
 def publish_mlb_only() -> dict[str, object]:

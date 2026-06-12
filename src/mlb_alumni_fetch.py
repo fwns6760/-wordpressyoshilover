@@ -20,9 +20,36 @@ _JST = timezone(timedelta(hours=9))
 
 # 元巨人 OB の MLB 現役 (mlb_id は statsapi people/search で確認済み 2026-06-12)
 MLB_ALUMNI = [
-    {"mlb_id": 672960, "name": "岡本和真", "group": "hitting"},
-    {"mlb_id": 608372, "name": "菅野智之", "group": "pitching"},
+    {"mlb_id": 672960, "name": "岡本和真", "group": "hitting", "slug": "okamoto-kazuma"},
+    {"mlb_id": 608372, "name": "菅野智之", "group": "pitching", "slug": "sugano-tomoyuki"},
 ]
+
+# playLog event code → 日本語 (statsapi の event 値、未知 code は raw 表示)
+_PA_EVENT_JA = {
+    "single": "単打",
+    "double": "二塁打",
+    "triple": "三塁打",
+    "home_run": "本塁打",
+    "walk": "四球",
+    "intent_walk": "敬遠",
+    "hit_by_pitch": "死球",
+    "strikeout": "三振",
+    "strikeout_double_play": "三振併殺",
+    "field_out": "凡退",
+    "force_out": "凡退",
+    "grounded_into_double_play": "併殺打",
+    "double_play": "併殺",
+    "sac_fly": "犠飛",
+    "sac_bunt": "犠打",
+    "field_error": "失策出塁",
+    "fielders_choice": "野選",
+    "fielders_choice_out": "野選",
+    "catcher_interf": "打撃妨害",
+}
+
+
+def pa_event_ja(code: str) -> str:
+    return _PA_EVENT_JA.get(str(code or "").strip(), str(code or "").strip())
 
 _TEAM_JA = {
     "New York Yankees": "ヤンキース",
@@ -86,6 +113,7 @@ def _extract_player(stats_payload: dict, info_payload: dict, spec: dict) -> dict
         return None
     entry: dict = {
         "name": spec["name"],
+        "slug": str(spec.get("slug") or ""),
         "group": spec["group"],
         "team": team_ja(team_en),
     }
@@ -125,6 +153,127 @@ def _extract_player(stats_payload: dict, info_payload: dict, spec: dict) -> dict
             last["hits"] = int(g.get("hits") or 0)
         entry["last_game"] = last
     return entry
+
+
+def _game_row(split: dict, group: str) -> dict:
+    g = split.get("stat") or {}
+    row: dict = {
+        "date": str(split.get("date") or ""),
+        "opponent": team_ja((split.get("opponent") or {}).get("name") or ""),
+        "home": bool(split.get("isHome")),
+    }
+    if group == "hitting":
+        row.update({
+            "ab": int(g.get("atBats") or 0),
+            "hits": int(g.get("hits") or 0),
+            "hr": int(g.get("homeRuns") or 0),
+            "rbi": int(g.get("rbi") or 0),
+        })
+    else:
+        decision = "○" if int(g.get("wins") or 0) else ("●" if int(g.get("losses") or 0) else "－")
+        row.update({
+            "ip": str(g.get("inningsPitched") or ""),
+            "hits": int(g.get("hits") or 0),
+            "runs": int(g.get("runs") or 0),
+            "so": int(g.get("strikeOuts") or 0),
+            "bb": int(g.get("baseOnBalls") or 0),
+            "pitches": int(g.get("numberOfPitches") or 0),
+            "decision": decision,
+        })
+    return row
+
+
+def _season_summary(stat: dict, group: str) -> dict:
+    if group == "hitting":
+        return {
+            "games": int(stat.get("gamesPlayed") or 0),
+            "avg": str(stat.get("avg") or ""),
+            "hr": int(stat.get("homeRuns") or 0),
+            "rbi": int(stat.get("rbi") or 0),
+            "ops": str(stat.get("ops") or ""),
+            "hits": int(stat.get("hits") or 0),
+        }
+    return {
+        "games": int(stat.get("gamesPlayed") or 0),
+        "wins": int(stat.get("wins") or 0),
+        "losses": int(stat.get("losses") or 0),
+        "era": str(stat.get("era") or ""),
+        "ip": str(stat.get("inningsPitched") or ""),
+        "so": int(stat.get("strikeOuts") or 0),
+    }
+
+
+def fetch_mlb_player_detail(spec: dict) -> dict | None:
+    """1選手のメジャー移籍後全試合 + 直近試合の打席ログ (打者のみ) を取得する。
+
+    返り値: {name, slug, group, team, debut, seasons: [{season, summary, games}] 新しい順,
+            pa_log: {date, opponent, events: [日本語結果]}}  (取得失敗は None)
+    """
+    group = spec["group"]
+    try:
+        info = _get_json(f"{_API_BASE}/people/{spec['mlb_id']}?hydrate=currentTeam")
+        person = (info.get("people") or [{}])[0]
+        debut = str(person.get("mlbDebutDate") or "")
+        team_en = (person.get("currentTeam") or {}).get("name") or ""
+        debut_year = int(debut[:4]) if len(debut) >= 4 else datetime.now(_JST).year
+        current_year = datetime.now(_JST).year
+        seasons: list[dict] = []
+        for year in range(current_year, debut_year - 1, -1):
+            d = _get_json(
+                f"{_API_BASE}/people/{spec['mlb_id']}/stats"
+                f"?stats=season,gameLog&group={group}&season={year}"
+            )
+            season_stat: dict = {}
+            games: list[dict] = []
+            for s in d.get("stats") or []:
+                type_name = ((s.get("type") or {}).get("displayName") or "")
+                splits = s.get("splits") or []
+                if type_name == "season" and splits:
+                    season_stat = splits[0].get("stat") or {}
+                elif type_name == "gameLog" and splits:
+                    games = [_game_row(sp, group) for sp in splits]
+            if games:
+                seasons.append({
+                    "season": year,
+                    "summary": _season_summary(season_stat, group),
+                    "games": list(reversed(games)),  # 新しい試合を上に
+                })
+        if not seasons:
+            return None
+        detail: dict = {
+            "name": spec["name"],
+            "slug": spec["slug"],
+            "group": group,
+            "team": team_ja(team_en),
+            "debut": debut,
+            "seasons": seasons,
+        }
+        if group == "hitting" and seasons[0]["games"]:
+            last_date = seasons[0]["games"][0]["date"]
+            try:
+                pl = _get_json(
+                    f"{_API_BASE}/people/{spec['mlb_id']}/stats"
+                    f"?stats=playLog&group=hitting&season={seasons[0]['season']}"
+                )
+                splits = ((pl.get("stats") or [{}])[0]).get("splits") or []
+                events = [
+                    pa_event_ja((((sp.get("stat") or {}).get("play") or {}).get("details") or {}).get("event") or "")
+                    for sp in splits
+                    if str(sp.get("date") or "") == last_date
+                ]
+                events = [e for e in events if e]
+                if events:
+                    detail["pa_log"] = {
+                        "date": last_date,
+                        "opponent": seasons[0]["games"][0]["opponent"],
+                        "events": events,
+                    }
+            except Exception as exc:  # noqa: BLE001
+                LOG.warning("mlb playLog fetch failed player=%s: %r", spec["name"], exc)
+        return detail
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("mlb player detail fetch failed player=%s: %r", spec["name"], exc)
+        return None
 
 
 def fetch_mlb_alumni_data(season: int | None = None) -> dict:

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Yoshilover 063 Frontend (topic hub / SNS reactions / Phase 1 noindex)
  * Description: 062 contract §2 §3 §5 の front impl。topic hub / SNS block / noindex を基盤に、トップ速報帯・記事下回遊束・右カラム rail・上部密集ナビ・人気記事導線まで含めて SWELL front を高密度化する。既存 SWELL コメント欄は触らない。
- * Version: 0.23.6
+ * Version: 0.23.7
  * Author: yoshilover
  */
 
@@ -181,7 +181,6 @@ function yoshilover_063_render_home_data_hub() {
                 array( 'href' => '/data/roster-moves',     'ic' => '🔁', 't' => '出場選手登録・抹消', 's' => '1軍登録メンバー・登録/抹消の動き' ),
                 array( 'href' => '/data/farm',             'ic' => '🌱', 't' => '2軍試合日程・結果',  's' => 'ファーム予定・成績' ),
                 array( 'href' => '/data/notable',          'ic' => '📈', 't' => '注目データ',         's' => '誰の記録か分かる一覧' ),
-                array( 'href' => '/data/mlb',              'ic' => '🌎', 't' => '巨人発メジャーリーガー', 's' => '岡本和真・菅野智之の現地成績' ),
                 array( 'href' => '/data/tickets',          'ic' => '🎟️', 't' => 'チケット情報',       's' => '公式・プレイガイド購入リンク' ),
             ),
         ),
@@ -254,6 +253,27 @@ function yoshilover_063_render_home_data_hub() {
     $html .= $grids_html;
     // 2026-06-09: トップの大きな「先発ローテ一覧」表セクションは廃止 (user 指示)。
     // 先発ローテはデータグリッドのカード → 専用ページ /data/rotation/ へ誘導する。
+    $html .= '</section>';
+
+    // 2026-06-12: 巨人発メジャーリーガー枠 (選手データ枠の外・直下に独立配置、user 指示)
+    $html .= '<section class="yoshi-home-data yoshi-home-mlb" aria-label="巨人発メジャーリーガー"'
+        . ' style="border-color:#b9cce8;box-shadow:0 4px 16px rgba(22,50,92,.12);">';
+    $html .= '<div class="yoshi-home-data__head" style="background:linear-gradient(135deg,#16325c,#0d2240);">'
+        . '<h2>🌎 巨人発メジャーリーガー</h2>'
+        . '<a class="yoshi-home-data__more" href="' . esc_url( home_url( '/data/mlb' ) ) . '">すべて見る ＞</a></div>';
+    $mlb_cards = array(
+        array( 'href' => '/data/mlb/okamoto-kazuma', 'ic' => '⚾', 't' => '岡本和真', 's' => 'ブルージェイズ 全試合・打席結果' ),
+        array( 'href' => '/data/mlb/sugano-tomoyuki', 'ic' => '🎯', 't' => '菅野智之', 's' => 'ロッキーズ 全登板・投球内容' ),
+    );
+    $mlb_cards_html = '';
+    foreach ( $mlb_cards as $c ) {
+        $mlb_cards_html .= '<a class="yoshi-home-data__card" href="' . esc_url( home_url( $c['href'] ) ) . '">'
+            . '<span class="yoshi-home-data__ic" aria-hidden="true">' . $c['ic'] . '</span>'
+            . '<h3 class="yoshi-home-data__t">' . esc_html( $c['t'] ) . '</h3>'
+            . '<span class="yoshi-home-data__s">' . esc_html( $c['s'] ) . '</span>'
+            . '</a>';
+    }
+    $html .= '<div class="yoshi-home-data__grid" style="padding-top:12px;">' . $mlb_cards_html . '</div>';
     $html .= '</section>';
     return $html;
 }

@@ -9,7 +9,12 @@ from src.data_site_template_mlb import (
     render_mlb_html,
     render_mlb_title,
 )
-from src.mlb_alumni_fetch import _extract_player, team_ja
+from src.data_site_template_mlb_player import (
+    render_mlb_player_excerpt,
+    render_mlb_player_html,
+    render_mlb_player_title,
+)
+from src.mlb_alumni_fetch import _extract_player, pa_event_ja, team_ja
 
 
 def _hitting_payload():
@@ -99,6 +104,75 @@ class RenderMlbTests(unittest.TestCase):
     def test_title_and_excerpt(self) -> None:
         self.assertIn("岡本和真・菅野智之", render_mlb_title())
         self.assertIn("岡本和真・菅野智之", render_mlb_excerpt(self._data()))
+
+
+class RenderMlbPlayerTests(unittest.TestCase):
+    def _hitter_detail(self):
+        return {
+            "name": "岡本和真", "slug": "okamoto-kazuma", "group": "hitting",
+            "team": "ブルージェイズ", "debut": "2026-03-26",
+            "seasons": [{
+                "season": 2026,
+                "summary": {"games": 67, "avg": ".230", "hr": 13, "rbi": 38,
+                            "ops": ".731", "hits": 56},
+                "games": [
+                    {"date": "2026-06-10", "opponent": "フィリーズ", "home": True,
+                     "ab": 3, "hits": 0, "hr": 0, "rbi": 1},
+                    {"date": "2026-06-09", "opponent": "フィリーズ", "home": True,
+                     "ab": 4, "hits": 2, "hr": 1, "rbi": 2},
+                ],
+            }],
+            "pa_log": {"date": "2026-06-10", "opponent": "フィリーズ",
+                       "events": ["三振", "四球", "犠飛"]},
+        }
+
+    def _pitcher_detail(self):
+        return {
+            "name": "菅野智之", "slug": "sugano-tomoyuki", "group": "pitching",
+            "team": "ロッキーズ", "debut": "2025-03-30",
+            "seasons": [
+                {"season": 2026,
+                 "summary": {"games": 13, "wins": 6, "losses": 4, "era": "4.08",
+                             "ip": "68.1", "so": 39},
+                 "games": [{"date": "2026-06-09", "opponent": "カブス", "home": True,
+                            "ip": "5.0", "hits": 6, "runs": 3, "so": 3, "bb": 1,
+                            "pitches": 88, "decision": "－"}]},
+                {"season": 2025,
+                 "summary": {"games": 30, "wins": 10, "losses": 10, "era": "4.64",
+                             "ip": "157.0", "so": 109},
+                 "games": [{"date": "2025-09-27", "opponent": "ヤンキース", "home": False,
+                            "ip": "4.1", "hits": 5, "runs": 4, "so": 3, "bb": 0,
+                            "pitches": 73, "decision": "●"}]},
+            ],
+        }
+
+    def test_render_hitter_page_with_pa_log(self) -> None:
+        html = render_mlb_player_html(self._hitter_detail())
+        self.assertIn("岡本和真 メジャー全成績", html)
+        self.assertIn("第1打席", html)
+        self.assertIn("三振", html)
+        self.assertIn("犠飛", html)
+        self.assertIn("2026年", html)
+        self.assertIn("6/9", html)
+        self.assertIn("2026年メジャーデビュー", html)
+
+    def test_render_pitcher_page_all_seasons(self) -> None:
+        html = render_mlb_player_html(self._pitcher_detail())
+        self.assertIn("菅野智之 メジャー全成績", html)
+        self.assertIn("2026年", html)
+        self.assertIn("2025年", html)
+        self.assertIn("ヤンキース", html)
+        self.assertIn("88球", html)
+        self.assertIn("●", html)
+
+    def test_player_title_and_excerpt(self) -> None:
+        self.assertIn("岡本和真", render_mlb_player_title(self._hitter_detail()))
+        self.assertIn("全2試合", render_mlb_player_excerpt(self._hitter_detail()))
+
+    def test_pa_event_ja_mapping(self) -> None:
+        self.assertEqual(pa_event_ja("home_run"), "本塁打")
+        self.assertEqual(pa_event_ja("strikeout"), "三振")
+        self.assertEqual(pa_event_ja("unknown_evt"), "unknown_evt")
 
 
 if __name__ == "__main__":

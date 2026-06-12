@@ -187,6 +187,15 @@ def _data_angles_max_per_run() -> int:
     return _resolve_int_env("X_POST_DATA_ANGLES_MAX", 3, min_value=0)
 
 
+def _salary_value_enabled() -> bool:
+    """2026-06-12 年俸コスパ (データ×年俸クロス、 バーゲン型のみ) の env flag。
+
+    Default OFF。 flag OFF では既存挙動完全不変 (rollback 余地)。
+    """
+    raw = (os.environ.get("ENABLE_X_POST_SALARY_VALUE") or "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
 def _pregame_preview_enabled() -> bool:
     """2026-06-12 試合前見どころ (今日の試合プレビュー) の env flag。
 
@@ -2107,6 +2116,26 @@ def main(argv: Sequence[str] | None = None) -> int:
                 before, len(lc_new), len(candidates),
             )
 
+    # 2026-06-12 年俸コスパ: データ×年俸クロス (user「これいいね」)。 割安バーゲン型のみ
+    # (年俸絡みの negative は炎上リスクのため出さない)。 候補=メールまで。 flag OFF で既存不変。
+    if _salary_value_enabled() and db_path and _generic_angle_window:
+        try:
+            from src import x_post_data_angles as _sv_angles
+            sv_candidates = _sv_angles.build_salary_value_candidates(
+                db_path, now=now_jst, max_count=1, dedup_set=dedup_set)
+        except Exception as _sv_exc:  # noqa: BLE001
+            LOG.warning("salary_value build failed: %r", _sv_exc)
+            sv_candidates = []
+        _existing_sigs = {getattr(c, "signature", "") for c in candidates}
+        sv_new = [c for c in sv_candidates if c.signature not in _existing_sigs]
+        if sv_new:
+            before = len(candidates)
+            candidates = candidates + sv_new
+            LOG.info(
+                "salary_value appended: base=%d sv=%d total=%d",
+                before, len(sv_new), len(candidates),
+            )
+
     # 2026-06-12 角度⑤ 週間MVP: 月曜限定の定番企画 (先週 月〜日 の巨人打者集計トップ)。
     # 公開 X 自動投稿はしない (候補=メールまで)。 flag OFF で既存不変。
     if _weekly_mvp_enabled() and db_path and _generic_angle_window:
@@ -2604,6 +2633,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             "新旧比較", "あの日の巨人", "週間MVP",
             # 2026-06-12 試合前見どころ (今日の試合に直結する数字のみ)。
             "試合前見どころ",
+            # 2026-06-12 年俸コスパ (データ×年俸クロス、 バーゲン型のみ)。
+            "年俸コスパ",
         }
         _before_voice = len(candidates)
         _voice_candidates = [c for c in candidates if c.metric in _VOICE_ONLY_METRICS]

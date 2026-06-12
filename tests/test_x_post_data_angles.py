@@ -668,3 +668,78 @@ def test_opp_split_opponents_filter(tmp_path):
         with_image=False, opponents={"広島"})
     for c in only_hiroshima:
         assert "広島" in c.signature
+
+
+# ─── 年俸コスパ (データ×年俸クロス) ──────────────────────────────────
+
+
+def _salary_db(tmp_path: Path) -> str:
+    db = tmp_path / "salary.db"
+    conn = sqlite3.connect(db)
+    conn.executescript(
+        """
+        CREATE TABLE batting_logs (
+            game_id TEXT, team_role TEXT, team_name TEXT,
+            player_canonical TEXT, AB INT, H INT, RBI INT
+        );
+        CREATE TABLE games (
+            game_id TEXT PRIMARY KEY, game_date TEXT, opponent TEXT,
+            result TEXT, giants_score INT, opp_score INT
+        );
+        """
+    )
+    # 3 選手: 安打20ずつ。 若手=400万 (単価20万)、 中堅=8000万、 主力=2億
+    for i, (name, _sal) in enumerate(
+            (("若手バーゲン", 400), ("中堅選手", 8000), ("高額主力", 20000))):
+        for j in range(10):
+            gid = f"g{i}-{j}"
+            conn.execute(
+                "INSERT OR IGNORE INTO games VALUES (?,?,?,?,0,0)",
+                (gid, f"2026-05-{j + 1:02d}", "阪神", "win"))
+            conn.execute(
+                "INSERT INTO batting_logs VALUES (?,?,?,?,?,?,?)",
+                (gid, "giants", "巨人", name, 4, 2, 1))
+    conn.commit()
+    conn.close()
+    return str(db)
+
+
+_SALARY_MAP = {"若手バーゲン": 400, "中堅選手": 8000, "高額主力": 20000}
+
+
+def test_salary_value_bargain_only():
+    """単価がチーム中央値の半分未満の若手だけ出る。"""
+    import pytest as _pytest
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    tmp = Path(__import__("tempfile").mkdtemp())
+    db = _salary_db(tmp)
+    now = datetime(2026, 6, 12, 9, 0, tzinfo=ZoneInfo("Asia/Tokyo"))
+    out = angles.build_salary_value_candidates(
+        db, now=now, salary_map=dict(_SALARY_MAP))
+    assert len(out) == 1
+    c = out[0]
+    assert c.focus_player == "若手バーゲン"
+    # 20安打 / 400万 = 単価20万、 中央値 = 8000/20 = 400万
+    assert "1安打あたり約20万円" in c.post_text
+    assert "推定年俸400万円" in c.post_text
+    assert "高額主力" not in c.post_text  # 割高側は一切出さない
+    assert c.signature == "salary_value|若手バーゲン|20"
+
+
+def test_salary_value_gates():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    tmp = Path(__import__("tempfile").mkdtemp())
+    db = _salary_db(tmp)
+    now = datetime(2026, 6, 12, 9, 0, tzinfo=ZoneInfo("Asia/Tokyo"))
+    # 年俸 map 空 → 0件
+    assert angles.build_salary_value_candidates(db, now=now, salary_map={}) == []
+    # 全員同単価 (中央値の半分未満が居ない) → 0件
+    flat = {"若手バーゲン": 8000, "中堅選手": 8000, "高額主力": 8000}
+    assert angles.build_salary_value_candidates(db, now=now, salary_map=flat) == []
+    # 規定安打未満 → 対象外 (min_hits=25 > 20)
+    assert angles.build_salary_value_candidates(
+        db, now=now, salary_map=dict(_SALARY_MAP), min_hits=25) == []

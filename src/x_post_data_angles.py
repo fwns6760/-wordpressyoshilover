@@ -1242,3 +1242,136 @@ def build_pregame_preview_candidates(
         source_material_type="pregame_preview",
         image_bytes=b"",
     )][:max_count]
+
+
+# ─── 9. 年俸コスパ (データ×年俸クロス、 バーゲン型のみ) ─────────────
+
+
+_SALARY_VALUE_METRIC = "年俸コスパ"
+
+
+def _load_giants_salary_2026() -> dict[str, int]:
+    """config/giants_salary.json から {正規化名: 2026年俸(万円)} (巨人現役のみ)。"""
+    import json as _json
+    from pathlib import Path as _Path
+    path = _Path(__file__).resolve().parent.parent / "config" / "giants_salary.json"
+    try:
+        d = _json.loads(path.read_text(encoding="utf-8")) or {}
+    except Exception as exc:  # noqa: BLE001
+        logger.info("giants_salary unavailable: %r", exc)
+        return {}
+    out: dict[str, int] = {}
+    for p in d.get("players") or []:
+        if not p.get("active"):
+            continue
+        for y in p.get("years") or []:
+            if y.get("year") == 2026 and y.get("team") == "巨人" and y.get("salary_man"):
+                out[_norm_name(p.get("name") or "")] = int(y["salary_man"])
+                break
+    return out
+
+
+def build_salary_value_candidates(
+    db_path: str,
+    *,
+    now: Optional[datetime] = None,
+    max_count: int = 1,
+    min_hits: int = 20,
+    bargain_ratio: float = 0.5,
+    dedup_set: Optional[set[str]] = None,
+    with_image: bool = False,
+    salary_map: Optional[dict[str, int]] = None,
+) -> list:
+    """【年俸コスパ】1安打あたり◯万円の「バーゲン」若手を出す驚き候補。
+
+    データ×年俸クロス (2026-06-12 user「これいいね」)。 **割安側のみ**:
+    高年俸×不振の「割高」型は炎上リスクのため出さない (年俸絡みの negative 禁止)。
+    驚きゲート: 規定 (min_hits 安打以上) の中で単価がチーム中央値の
+    bargain_ratio 倍未満の選手だけ。 年俸 = 検証済み giants_salary.json (推定・公表ベース)。
+    """
+    if now is None:
+        now = datetime.now(JST)
+    if not db_path:
+        return []
+    Candidate = _candidate_cls()
+    if salary_map is None:
+        salary_map = _load_giants_salary_2026()
+    if not salary_map:
+        return []
+    try:
+        with _sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
+            rows = conn.execute(
+                "SELECT player_canonical, SUM(COALESCE(AB,0)), SUM(COALESCE(H,0)), "
+                " SUM(COALESCE(RBI,0)) "
+                "FROM batting_logs WHERE team_name='巨人' "
+                " AND player_canonical IS NOT NULL GROUP BY player_canonical",
+            ).fetchall()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("salary_value query failed: %r", exc)
+        return []
+
+    priced: list[tuple] = []
+    for canon, ab, h, rbi in rows:
+        h, ab, rbi = int(h or 0), int(ab or 0), int(rbi or 0)
+        if h < min_hits:
+            continue
+        sal = salary_map.get(_norm_name(canon))
+        if not sal:
+            continue
+        priced.append((sal / h, canon, sal, h, ab, rbi))
+    if len(priced) < 3:  # 中央値が意味を持つ最低限
+        logger.info("salary_value: too few priced regulars (%d)", len(priced))
+        return []
+    priced.sort()
+    median_unit = priced[len(priced) // 2][0]
+
+    out: list = []
+    for unit, canon, sal, h, ab, rbi in priced:
+        if len(out) >= max_count:
+            break
+        if unit >= median_unit * bargain_ratio:
+            break  # 単価昇順なので以降は全部ゲート外
+        signature = f"salary_value|{canon}|{h}"
+        if dedup_set is not None and signature in dedup_set:
+            logger.info("salary_value dedup skip %s", signature)
+            continue
+        sal_disp = f"{sal / 10000:.1f}億円".replace(".0億", "億") if sal >= 10000 else f"{sal}万円"
+        post = (
+            f"【{canon}】今季{h}安打 (打率{_fmt3(h / ab)}・{rbi}打点)\n"
+            f"推定年俸{sal_disp} — 1安打あたり約{unit:,.0f}万円\n"
+            f"チーム中央値 (約{median_unit:,.0f}万円/安打) の半分以下のバーゲン\n"
+            + _streak_line(db_path, canon)
+            + "#巨人 #ジャイアンツ"
+        )
+        fact = (
+            f"今季{h}安打/{ab}打数・{rbi}打点 ｜ 推定年俸{sal_disp} ｜ "
+            f"1安打 約{unit:,.0f}万円 (チーム中央値 約{median_unit:,.0f}万円)"
+        )
+        draft = "\n".join([
+            "【根拠: 年俸コスパ (データ×年俸クロス、 割安側のみ)】",
+            fact,
+            "出典: giants_salary.json (推定年俸、 出典note付き検証済) + insight.db 今季",
+            "参照: https://yoshilover.com/data/",
+            "",
+            "【X 投稿案 (user が手で投稿)】",
+            post,
+        ])
+        out.append(Candidate(
+            title=f"{canon} 年俸コスパ (1安打{unit:,.0f}万円)",
+            metric=_SALARY_VALUE_METRIC,
+            period_label="今シーズン",
+            draft_text=draft,
+            char_count=len(post),
+            signature=signature,
+            post_text=post,
+            focus_player=canon,
+            db_fact_line=fact,
+            team_level="first",
+            sample_size=h,
+            sample_label=f"今季{h}安打",
+            why_now="若手バーゲンは球団の編成文脈でも語れる独自クロス",
+            source_material_type="salary_value",
+            image_bytes=b"",
+        ))
+    logger.info("salary_value: built %d candidates (max=%d)", len(out), max_count)
+    return out

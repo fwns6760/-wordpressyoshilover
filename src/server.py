@@ -5,6 +5,8 @@ GET  /health → ヘルスチェック
 GET  /unpublish → mail 1-click 非公開 (post_id + token、2026-05-14 user request)
 GET  /publish-and-tweet → mail 内「公開してX投稿画面へ」ボタンの confirmation page (379-OPS / GH #53)
 POST /publish-and-tweet → token 検証 + draft→publish flip + X intent URL に 302 redirect
+GET  /yt-shorts-publish → mail 内「YouTube Shorts公開」ボタンの confirmation page
+POST /yt-shorts-publish → token 検証 + YouTube privacyStatus=public
 """
 import json
 import logging
@@ -529,6 +531,23 @@ def _run_publish_and_tweet(
     )
 
 
+def _run_yt_shorts_publish(method: str, video_id: str, token: str) -> tuple[int, str, dict]:
+    """YouTube Shorts approval button handler.
+
+    GET is read-only confirmation; POST changes only the target YouTube
+    video's privacy status to public.
+    """
+    log = logging.getLogger("server.yt_shorts_publish")
+    try:
+        from src.yt_shorts_publish_handler import handle_get, handle_post
+    except Exception as exc:  # noqa: BLE001
+        log.warning("yt_shorts_publish_handler_import_failed err=%s", exc)
+        return 500, "<h2>内部エラー</h2><p>handler import 失敗</p>", {}
+    if method == "GET":
+        return handle_get(video_id=video_id, token=token)
+    return handle_post(video_id=video_id, token=token)
+
+
 def _run_share_x_get(
     post_id_raw: str,
     token: str,
@@ -855,6 +874,13 @@ class Handler(BaseHTTPRequestHandler):
             token = (qs.get("token", [""])[0] or "").strip()
             code, body, extra_headers = _run_publish_and_tweet("GET", post_id_raw, token)
             self._respond(code, body, content_type="text/html; charset=utf-8", extra_headers=extra_headers)
+        elif parsed.path == "/yt-shorts-publish":
+            # YouTube Shorts Phase 1.5: mail 内「公開する」ボタン confirmation page。
+            qs = parse_qs(parsed.query or "")
+            video_id = (qs.get("video_id", [""])[0] or "").strip()
+            token = (qs.get("token", [""])[0] or "").strip()
+            code, body, extra_headers = _run_yt_shorts_publish("GET", video_id, token)
+            self._respond(code, body, content_type="text/html; charset=utf-8", extra_headers=extra_headers)
         elif parsed.path == "/share-x":
             # 437 Phase 2A (2026-05-26): Web Share API page (Pixel / Android で
             # eyecatch を X app に画像つきで直接転送するための endpoint)。
@@ -984,6 +1010,16 @@ class Handler(BaseHTTPRequestHandler):
                 )
             else:
                 self._respond(code, body, content_type="text/html; charset=utf-8", extra_headers=extra_headers)
+            return
+        if parsed.path == "/yt-shorts-publish":
+            # YouTube Shorts Phase 1.5: confirmation page から submit された公開化。
+            length = int(self.headers.get("Content-Length", 0))
+            raw_body = self.rfile.read(length).decode() if length else ""
+            form = parse_qs(raw_body)
+            video_id = (form.get("video_id", [""])[0] or "").strip()
+            token = (form.get("token", [""])[0] or "").strip()
+            code, body, extra_headers = _run_yt_shorts_publish("POST", video_id, token)
+            self._respond(code, body, content_type="text/html; charset=utf-8", extra_headers=extra_headers)
             return
         if self.path != "/run":
             self._respond(404, "Not Found")

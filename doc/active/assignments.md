@@ -1,6 +1,14 @@
 # assignments — 現場担当と次アクション
 
-最終更新: 2026-06-13 JST (YouTube Shorts Phase 1 repo 実装)
+最終更新: 2026-06-13 JST (YouTube Shorts Phase 1.5 repo 実装)
+
+## 2026-06-13 — YouTube Shorts Phase 1.5 半自動公開 repo 実装 (user「ではGO」)
+
+- **目的**: ショート動画をGCPで生成し、YouTubeへ private upload。HTML mail で確認後、user が「公開する」ボタンを押した時だけ public 化する。
+- **repo実装**: `src/yt_shorts_youtube.py` / `src/yt_shorts_youtube_token.py` / `src/yt_shorts_publish_handler.py` を追加。`src/yt_shorts_gen.py` に `--youtube-private-upload` を追加。`src/server.py` に `/yt-shorts-publish` GET/POST route を追加。
+- **HTML mail**: MP4確認、YouTube確認、Studio編集、公開buttonを表示。Gmail内直接再生ではなくリンク確認方式。
+- **安全側既定**: `--live` だけではYouTube uploadしない。`--youtube-private-upload` または `YT_SHORTS_YOUTUBE_PRIVATE_UPLOAD=1` が必要。GETは確認画面のみ、POSTだけ `privacyStatus=public`。
+- **未実行**: YouTube Data API enable / OAuth refresh token取得 / Secret Manager登録 / fetcher deploy / Job update / live mail / Scheduler。live executor は user承認後。
 
 ## 2026-06-13 — YouTube Shorts Phase 1 repo 実装 (user「続きをやって」)
 

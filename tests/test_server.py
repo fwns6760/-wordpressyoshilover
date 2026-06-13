@@ -192,6 +192,34 @@ class RunFetcherTests(unittest.TestCase):
         self.assertIn('"window_minutes": 60', body)
         self.assertIn("audit exploded", body)
 
+    def test_run_yt_shorts_publish_get_delegates_to_handler(self):
+        from importlib import reload
+        import src.server as server
+
+        reload(server)
+        with patch("src.yt_shorts_publish_handler.handle_get") as handle_get:
+            handle_get.return_value = (200, "<html>ok</html>", {})
+            code, body, headers = server._run_yt_shorts_publish("GET", "abc123_DEF-4", "token")
+
+        self.assertEqual(code, 200)
+        self.assertEqual(body, "<html>ok</html>")
+        self.assertEqual(headers, {})
+        handle_get.assert_called_once_with(video_id="abc123_DEF-4", token="token")
+
+    def test_run_yt_shorts_publish_post_delegates_to_handler(self):
+        from importlib import reload
+        import src.server as server
+
+        reload(server)
+        with patch("src.yt_shorts_publish_handler.handle_post") as handle_post:
+            handle_post.return_value = (200, "<html>published</html>", {})
+            code, body, headers = server._run_yt_shorts_publish("POST", "abc123_DEF-4", "token")
+
+        self.assertEqual(code, 200)
+        self.assertEqual(body, "<html>published</html>")
+        self.assertEqual(headers, {})
+        handle_post.assert_called_once_with(video_id="abc123_DEF-4", token="token")
+
 
 class RunStartedLoggingTests(unittest.TestCase):
     def test_run_started_payload_reflects_current_runtime_guards(self):

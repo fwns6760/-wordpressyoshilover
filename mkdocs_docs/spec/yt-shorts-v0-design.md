@@ -91,6 +91,7 @@ status: Phase 1.5 repo 実装追加(2026-06-13)、deploy / Scheduler / live mail
   - `YT_SHORTS_YOUTUBE_CLIENT_SECRET` または `YT_SHORTS_YOUTUBE_CLIENT_SECRET_NAME`
   - `YT_SHORTS_YOUTUBE_REFRESH_TOKEN` または `YT_SHORTS_YOUTUBE_REFRESH_TOKEN_SECRET_NAME`
   - 実値はchat / log / commitへ出さない
+- 注意: YouTube公式仕様上、2020-07-28以降に作成された未監査API project の `videos.insert` upload は private 制限になる可能性がある。`/yt-shorts-publish` の `videos.update` が `forbiddenPrivacySetting` 等で失敗する場合は、YouTube API project audit を通すか、Phase 1 の手動uploadに戻す。
 
 ## 事故ガード
 
@@ -113,7 +114,7 @@ status: Phase 1.5 repo 実装追加(2026-06-13)、deploy / Scheduler / live mail
 3. fetcher service image に `/yt-shorts-publish` endpoint を deploy
 4. まず `--topic-json` + `--allow-silent-tts` + `--no-mail` 相当で render smoke
 5. 次に `--live --youtube-private-upload` を手動executeし、private upload + HTML mail を1通だけ確認
-6. user がmailから公開buttonを押し、YouTube上でpublic化を確認
+6. user がmailから公開buttonを押し、YouTube上でpublic化を確認。未監査API project制限で403になる場合はここでSTOP
 7. user 承認後だけ Scheduler 1本(毎朝 7:30 JST)を作成。完全自動公開はまだしない
 
 ## 効果測定 / 撤退基準

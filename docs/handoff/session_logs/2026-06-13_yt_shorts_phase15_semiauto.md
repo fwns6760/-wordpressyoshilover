@@ -38,6 +38,7 @@
 - GET endpoint は状態変更なし。POSTだけ `privacyStatus=public` に変更。
 - Secret実値は docs / logs / commit に書かない。
 - 完全自動公開は未実装。
+- YouTube公式仕様上、未監査API project の upload は private viewing 制限になる可能性がある。承認buttonの public 化が403なら API audit か手動upload fallback が必要。
 
 ## live executor remains
 

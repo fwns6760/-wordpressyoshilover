@@ -132,3 +132,32 @@ status: Phase 1.5 repo 実装追加(2026-06-13)、deploy / Scheduler / live mail
 
 - YouTubeチャンネルの新規開設(ブランドアカウント推奨)。Phase 1はmail+手動アップロードなので、実装と並行で間に合えばOK
 - **完了(2026-06-12)**: チャンネル開設済 = 「BaseBall Academy ヨシラバー」 https://www.youtube.com/@baseballacademy9623
+
+## user作業(Phase 1.5 OAuth)
+
+完全代行できない箇所は **Google Cloud Consoleで Desktop OAuth client を作る操作** と、ブラウザで YouTube channel owner として許可する操作。API有効化とSecret Manager登録は helper script で実行できる。
+
+1. Google Cloud Console で project `baseballsite` を開く
+2. APIs & Services → Credentials → Create credentials → OAuth client ID
+3. Application type = `Desktop app`
+4. 生成された `client_id` / `client_secret` を手元に控える(チャットには貼らない)
+5. authenticated shell で実行:
+
+```bash
+python3 scripts/setup_yt_shorts_youtube_oauth.py --project baseballsite
+```
+
+script が行うこと:
+
+- `youtube.googleapis.com` を enable
+- `client_id` / `client_secret` を端末で入力
+- browser に OAuth URL を開く
+- YouTube channel owner account で許可
+- refresh token を取得
+- Secret Manager に以下を保存
+  - `yt-shorts-youtube-client-id`
+  - `yt-shorts-youtube-client-secret`
+  - `yt-shorts-youtube-refresh-token`
+  - `yt-shorts-approval-token-secret`
+
+Secret 実値は terminal / chat / commit に出さない。

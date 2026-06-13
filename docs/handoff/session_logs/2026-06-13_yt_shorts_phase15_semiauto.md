@@ -42,9 +42,9 @@
 
 ## live executor remains
 
-- YouTube Data API enable
-- OAuth consent / refresh token 取得
-- Secret Manager 登録
+- YouTube Data API enable / OAuth consent / refresh token取得 / Secret Manager登録:
+  - helper added: `python3 scripts/setup_yt_shorts_youtube_oauth.py --project baseballsite`
+  - OAuth Desktop client itself still needs Console creation by user
 - fetcher service deploy
 - yt-shorts-gen Job update
 - 手動1回 smoke: private upload + mail + button public化

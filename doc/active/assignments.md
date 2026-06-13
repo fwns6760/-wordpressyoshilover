@@ -1,6 +1,14 @@
 # assignments — 現場担当と次アクション
 
-最終更新: 2026-06-11 JST (データ角度v2 + カードバリエーション + 試合後鮮度チェーン)
+最終更新: 2026-06-13 JST (YouTube Shorts Phase 1 repo 実装)
+
+## 2026-06-13 — YouTube Shorts Phase 1 repo 実装 (user「続きをやって」)
+
+- **目的**: `/data/notable` 系の既存データから、権利安全な縦型データ図解ショートを1日1本生成し、mail承認後に user が手動で YouTube 投稿する Phase 1。
+- **repo実装**: `src/yt_shorts_topic.py` / `src/yt_shorts_script.py` / `src/yt_shorts_render.py` / `src/yt_shorts_gen.py`、`Dockerfile.yt_shorts`、`cloudbuild_yt_shorts.yaml`、対応テストを追加。YouTube API upload / 自動公開は未実装。
+- **安全側既定**: CLI は dry-run、`--live` の時だけ GCS upload + 承認mail。映像・写真は使わず、Pillow生成カード + VOICEVOX音声 + ffmpeg合成。数値guardで未検証数字をabort。
+- **今回の追加fix**: `K/9` のような指標名内の数字を数値guardで誤検出しないよう label 数字を許可。live upload 後は mail 前に `uploaded` history を先に書き、SMTP失敗時の同日重複生成を避ける。
+- **未実行**: Cloud Build / Cloud Run Job 作成更新 / Scheduler / live mail / YouTube投稿。live executor は user 承認後。
 
 ## 2026-06-11 — データ角度v2: 驚き系3角度 + 話題選手連動 (user「全部やるgo」)
 

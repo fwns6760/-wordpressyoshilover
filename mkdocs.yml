@@ -58,6 +58,7 @@ nav:
       - アイキャッチ (featured_media): spec/eyecatch.md
       - メール lane の住み分け: spec/mail-lanes.md
       - X インプ向上プラン: spec/x-impression-plan.md
+      - YouTube Shorts 自動生成 v0: spec/yt-shorts-v0-design.md
       - 巨人選手データサイト (per-player daily): spec/data-site.md
       - "★ 巨人 個人データサイト No.1 設計図 (右サイドバー全取り込み)": spec/data-site-no1-design.md
       - "★ データサイト ライバル超え 構築バックログ (468)": spec/data-site-rival-parity.md

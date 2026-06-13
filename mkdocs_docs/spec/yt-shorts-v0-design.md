@@ -1,6 +1,6 @@
 # YouTube Shorts 自動生成 v0 設計(yt-shorts Phase 1)
 
-status: 設計確定(2026-06-12 user GO)、実装未着手
+status: Phase 1 repo 実装追加(2026-06-13)、deploy / Scheduler / live mail は未実行
 位置づけ: 収益化ではなく **サイト/X への導線・認知装置**。巨人市場の飽和に対し「データ図解ショート」枠(実況切り抜き勢と非競合)を取る。
 
 ## ゴール / 非ゴール
@@ -43,20 +43,41 @@ status: 設計確定(2026-06-12 user GO)、実装未着手
 - 動画生成 1本数分のCloud Run実行 → 無料枠内
 - 合計増分: 月¥15程度
 
-## ファイル構成(新規予定)
+## ファイル構成
 
 - `src/yt_shorts_topic.py` — ネタ選定(優先度ロジック)
 - `src/yt_shorts_script.py` — 台本テンプレ+数値guard
 - `src/yt_shorts_render.py` — フレーム生成+ffmpeg合成
 - `src/yt_shorts_gen.py` — orchestrator(選定→台本→render→TTS→GCS→mail)
 - `Dockerfile.yt_shorts` / `cloudbuild_yt_shorts.yaml`
-- `tests/test_yt_shorts_topic.py` / `test_yt_shorts_script.py`(renderはsmoke)
+- `tests/test_yt_shorts_topic.py` / `tests/test_yt_shorts_script.py` / `tests/test_yt_shorts_render.py`
+
+実装時の安全側既定:
+
+- `python -m src.yt_shorts_gen` は dry-run。`--live` を渡した時だけ GCS upload + 承認 mail。
+- `VOICEVOX_BASE_URL` 未設定時は失敗する。local smoke だけ `--allow-silent-tts` で無音 wav を許可。
+- Phase 1 は YouTube API へ upload しない。mail の MP4 URL を user が手動アップロードする。
 
 ## 事故ガード
 
 - 数値guard: 台本中の全数字が元データと一致しなければabort+失敗mail(silent skip禁止)
 - 1日1本cap
 - 生成失敗時はmailで失敗通知
+- live upload 後は承認mail前に `uploaded` history を先に書く。SMTP失敗時も同日の重複生成を避ける
+
+## Phase 1 repo validation(2026-06-13)
+
+- 対象テスト: `python3 -m pytest -q tests/test_yt_shorts_topic.py tests/test_yt_shorts_script.py tests/test_yt_shorts_render.py tests/test_yt_shorts_gen.py`
+- local smoke: `python3 -m src.yt_shorts_gen --topic-json <fixture> --allow-silent-tts --no-mail --output-dir /tmp/yt_shorts_smoke`
+- compile: `python3 -m compileall -q src/yt_shorts_topic.py src/yt_shorts_script.py src/yt_shorts_render.py src/yt_shorts_gen.py`
+- AST parse: `python3 - <<'PY' ... ast.parse(...) ... PY`
+
+## Phase 1 live executor steps(未実行)
+
+1. Cloud Build: `gcloud builds submit --config cloudbuild_yt_shorts.yaml --substitutions _TAG=yt-shorts-<shortsha> .`
+2. Cloud Run Job `yt-shorts-gen` を新規作成または更新。env/secret は既存 mail bridge と `YT_SHORTS_GCS_BUCKET`、`VOICEVOX_BASE_URL` を使う
+3. まず `--topic-json` + `--allow-silent-tts` + `--no-mail` 相当で render smoke。次に VOICEVOX 接続ありで dry-run mail
+4. user 承認後だけ Scheduler 1本(毎朝 7:30 JST)を作成。Phase 1 は YouTube API upload なし
 
 ## 効果測定 / 撤退基準
 

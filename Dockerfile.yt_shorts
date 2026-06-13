@@ -1,0 +1,33 @@
+# YouTube Shorts Phase 1 generator.
+# Generates rights-safe data-card MP4s, uploads them to GCS, and sends an
+# approval mail. It does not upload or publish to YouTube.
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app
+
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        ffmpeg \
+        fonts-noto-cjk fonts-noto-color-emoji fonts-ipafont-gothic \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt ./requirements.txt
+RUN python3 -m pip install --no-cache-dir --upgrade pip \
+    && python3 -m pip install --no-cache-dir -r requirements.txt
+
+COPY src/ ./src/
+COPY config/ ./config/
+
+RUN useradd --create-home --home-dir /home/appuser --shell /usr/sbin/nologin appuser \
+    && mkdir -p /tmp/yt_shorts \
+    && chown -R appuser:appuser /app /home/appuser /tmp/yt_shorts
+
+USER appuser
+
+ENTRYPOINT ["python3", "-m", "src.yt_shorts_gen"]
+CMD []

@@ -1,11 +1,23 @@
 # YouTube Shorts Phase 1 generator.
 # Generates rights-safe data-card MP4s, uploads them to GCS, and sends an
 # approval mail. It does not upload or publish to YouTube.
-FROM python:3.12-slim
+#
+# The image intentionally derives from the official VOICEVOX ENGINE CPU image.
+# The job starts VOICEVOX on 127.0.0.1 only, generates one narration, then exits.
+# This avoids a permanently running VOICEVOX Cloud Run service.
+ARG VOICEVOX_ENGINE_IMAGE=voicevox/voicevox_engine:cpu-latest
+FROM ${VOICEVOX_ENGINE_IMAGE}
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PYTHONPATH=/app
+    PYTHONPATH=/app \
+    PATH=/opt/yt-shorts-venv/bin:$PATH \
+    YT_SHORTS_EMBEDDED_VOICEVOX=1 \
+    VOICEVOX_BASE_URL=http://127.0.0.1:50021 \
+    VV_HOST=127.0.0.1 \
+    VV_PORT=50021 \
+    VV_DISABLE_MUTABLE_API=1 \
+    VV_OUTPUT_LOG_UTF8=1
 
 WORKDIR /app
 
@@ -13,21 +25,22 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates \
         ffmpeg \
+        python3 \
+        python3-venv \
         fonts-noto-cjk fonts-noto-color-emoji fonts-ipafont-gothic \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt ./requirements.txt
-RUN python3 -m pip install --no-cache-dir --upgrade pip \
-    && python3 -m pip install --no-cache-dir -r requirements.txt
+RUN python3 -m venv /opt/yt-shorts-venv \
+    && /opt/yt-shorts-venv/bin/python -m pip install --no-cache-dir --upgrade pip \
+    && /opt/yt-shorts-venv/bin/python -m pip install --no-cache-dir -r requirements.txt
 
 COPY src/ ./src/
 COPY config/ ./config/
+COPY bin/run_yt_shorts_with_voicevox.sh ./bin/run_yt_shorts_with_voicevox.sh
 
-RUN useradd --create-home --home-dir /home/appuser --shell /usr/sbin/nologin appuser \
-    && mkdir -p /tmp/yt_shorts \
-    && chown -R appuser:appuser /app /home/appuser /tmp/yt_shorts
+RUN chmod +x ./bin/run_yt_shorts_with_voicevox.sh \
+    && mkdir -p /tmp/yt_shorts
 
-USER appuser
-
-ENTRYPOINT ["python3", "-m", "src.yt_shorts_gen"]
+ENTRYPOINT ["/app/bin/run_yt_shorts_with_voicevox.sh"]
 CMD []

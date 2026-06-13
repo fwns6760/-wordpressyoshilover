@@ -8,6 +8,7 @@
 - **repo実装**: `src/yt_shorts_topic.py` / `src/yt_shorts_script.py` / `src/yt_shorts_render.py` / `src/yt_shorts_gen.py`、`Dockerfile.yt_shorts`、`cloudbuild_yt_shorts.yaml`、対応テストを追加。YouTube API upload / 自動公開は未実装。
 - **安全側既定**: CLI は dry-run、`--live` の時だけ GCS upload + 承認mail。映像・写真は使わず、Pillow生成カード + VOICEVOX音声 + ffmpeg合成。数値guardで未検証数字をabort。
 - **今回の追加fix**: `K/9` のような指標名内の数字を数値guardで誤検出しないよう label 数字を許可。live upload 後は mail 前に `uploaded` history を先に書き、SMTP失敗時の同日重複生成を避ける。
+- **GCP最安構成 follow-up**: user「ローカルよりGCPで安く」→ `Dockerfile.yt_shorts` を公式 `voicevox/voicevox_engine:cpu-latest` ベースへ変更し、`bin/run_yt_shorts_with_voicevox.sh` で Job 実行中だけ VOICEVOX を 127.0.0.1 起動。別常駐 Cloud Run Service は作らない。
 - **未実行**: Cloud Build / Cloud Run Job 作成更新 / Scheduler / live mail / YouTube投稿。live executor は user 承認後。
 
 ## 2026-06-11 — データ角度v2: 驚き系3角度 + 話題選手連動 (user「全部やるgo」)

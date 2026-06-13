@@ -23,7 +23,7 @@ status: Phase 1 repo 実装追加(2026-06-13)、deploy / Scheduler / live mail �
               優先度: 連続記録更新 > 週間MVP(月曜) > 好調指標 > 年俸コスパ > MLBの2人
 2. 台本生成   テンプレ文型 + Gemini flash(無料枠)で語り口調整 → 数値guard verify
 3. フレーム   matplotlib/PIL で 1080x1920 静止フレーム3〜5枚(サイトと同オレンジ系トーン)
-4. 音声       VOICEVOX engine(同Job内 or sidecar)。47〜55秒、推奨voice=青山龍星(男声・落ち着き、辛口系に合う)
+4. 音声       VOICEVOX engine(同Job内で 127.0.0.1 起動、常駐サービスなし)。47〜55秒、推奨voice=青山龍星(男声・落ち着き、辛口系に合う)
 5. 合成       ffmpeg: フレーム+音声+字幕焼き込み(無音視聴対応) → MP4 → GCS保存
 6. 承認mail   既存mail基盤と同経路。動画GCS署名URL+台本全文+元データを送付
 7. 投稿       Phase 1 = user手動アップロード(チャンネル開設のみuser作業)
@@ -51,12 +51,22 @@ status: Phase 1 repo 実装追加(2026-06-13)、deploy / Scheduler / live mail �
 - `src/yt_shorts_gen.py` — orchestrator(選定→台本→render→TTS→GCS→mail)
 - `Dockerfile.yt_shorts` / `cloudbuild_yt_shorts.yaml`
 - `tests/test_yt_shorts_topic.py` / `tests/test_yt_shorts_script.py` / `tests/test_yt_shorts_render.py`
+- `bin/run_yt_shorts_with_voicevox.sh` — Job開始時だけ公式VOICEVOX CPU engineをlocal起動して終了時に停止
 
 実装時の安全側既定:
 
 - `python -m src.yt_shorts_gen` は dry-run。`--live` を渡した時だけ GCS upload + 承認 mail。
-- `VOICEVOX_BASE_URL` 未設定時は失敗する。local smoke だけ `--allow-silent-tts` で無音 wav を許可。
+- GCP Job image は公式 `voicevox/voicevox_engine:cpu-latest` をベースにし、`VOICEVOX_BASE_URL=http://127.0.0.1:50021` を既定にする。別常駐Serviceは作らない。
+- local smoke だけ `--allow-silent-tts` で無音 wav を許可。
 - Phase 1 は YouTube API へ upload しない。mail の MP4 URL を user が手動アップロードする。
+
+## GCP 最安構成 lock(2026-06-13)
+
+- `yt-shorts-gen` は Cloud Run Job 1 本。常駐 Cloud Run Service は作らない。
+- VOICEVOX は同一コンテナ内で `/opt/voicevox_engine/run --host 127.0.0.1 --port 50021 --disable_mutable_api` としてバックグラウンド起動し、MP4生成後に停止する。
+- `YT_SHORTS_EMBEDDED_VOICEVOX=1` が既定。検証時だけ `0` にして外部 `VOICEVOX_BASE_URL` を使える。
+- GCS 上の MP4 は承認用。bucket lifecycle で 14〜30 日削除を推奨。
+- Scheduler は新規なら 7:30 JST 1 本だけ。さらに安くする場合は既存朝便から Job execute へ相乗りする。
 
 ## 事故ガード
 

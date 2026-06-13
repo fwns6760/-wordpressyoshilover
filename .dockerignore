@@ -6,6 +6,7 @@
 !Dockerfile.insight_nightly
 !Dockerfile.kobayashi_meigen_mail
 !Dockerfile.rotation_updater
+!Dockerfile.yt_shorts
 !bin/
 !bin/**
 !requirements.txt

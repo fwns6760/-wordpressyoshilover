@@ -1,6 +1,6 @@
 # YouTube Shorts 自動生成 v0 設計(yt-shorts Phase 1)
 
-status: Phase 1.5 repo 実装追加(2026-06-13)、deploy / Scheduler / live mail / OAuth secret 設定は未実行
+status: Phase 1.5 repo 実装 + OAuth secret setup helper 完了(2026-06-13)。user 側 OAuth / Secret Manager 登録は完了。deploy / Scheduler / live mail は未実行
 位置づけ: 収益化ではなく **サイト/X への導線・認知装置**。巨人市場の飽和に対し「データ図解ショート」枠(実況切り抜き勢と非競合)を取る。
 
 ## ゴール / 非ゴール
@@ -54,6 +54,7 @@ status: Phase 1.5 repo 実装追加(2026-06-13)、deploy / Scheduler / live mail
 - `src/yt_shorts_youtube_token.py` — `/yt-shorts-publish` 用 HMAC token
 - `src/yt_shorts_publish_handler.py` — mail公開button handler(GET確認 / POST公開)
 - `Dockerfile.yt_shorts` / `cloudbuild_yt_shorts.yaml`
+- `scripts/setup_yt_shorts_phase15_gcp.sh` — authenticated executor 用 live deploy helper(Cloud Build + fetcher update + Job create/update、Scheduler は既定skip)
 - `tests/test_yt_shorts_topic.py` / `tests/test_yt_shorts_script.py` / `tests/test_yt_shorts_render.py`
 - `bin/run_yt_shorts_with_voicevox.sh` — Job開始時だけ公式VOICEVOX CPU engineをlocal起動して終了時に停止
 
@@ -109,6 +110,33 @@ status: Phase 1.5 repo 実装追加(2026-06-13)、deploy / Scheduler / live mail
 
 ## Phase 1.5 live executor steps(未実行)
 
+OAuth / Secret Manager setup は user authenticated shell で完了済み:
+
+- `yt-shorts-youtube-client-id`
+- `yt-shorts-youtube-client-secret`
+- `yt-shorts-youtube-refresh-token`
+- `yt-shorts-approval-token-secret`
+
+次の live mutation は Codex sandbox ではなく、authenticated executor が repo root で実行する。
+
+```bash
+scripts/setup_yt_shorts_phase15_gcp.sh
+```
+
+script が行うこと:
+
+1. `cloudbuild_yt_shorts.yaml` で `yt-shorts-gen` image を build/push
+2. root `Dockerfile` で `yoshilover-fetcher` image を build/pushし、`/yt-shorts-publish` route を service へ反映
+3. `yoshilover-fetcher` service に YouTube OAuth / approval token secret bindings を追加(`--update-secrets`)
+4. Cloud Run Job `yt-shorts-gen` を create/updateし、`--live --youtube-private-upload` args と mail bridge + YouTube secret bindings を設定
+5. Scheduler は既定で作らない。private upload + mail + publish button smoke が通った後だけ `CREATE_SCHEDULER=1 scripts/setup_yt_shorts_phase15_gcp.sh`
+
+1回だけ live smoke を同 script 末尾で実行したい場合:
+
+```bash
+EXECUTE_LIVE_SMOKE=1 scripts/setup_yt_shorts_phase15_gcp.sh
+```
+
 1. Cloud Build: `gcloud builds submit --config cloudbuild_yt_shorts.yaml --substitutions _TAG=yt-shorts-<shortsha> .`
 2. Cloud Run Job `yt-shorts-gen` を新規作成または更新。env/secret は既存 mail bridge と `YT_SHORTS_GCS_BUCKET`、YouTube OAuth secret、`FETCHER_PUBLIC_BASE_URL` を使う
 3. fetcher service image に `/yt-shorts-publish` endpoint を deploy
@@ -161,3 +189,13 @@ script が行うこと:
   - `yt-shorts-approval-token-secret`
 
 Secret 実値は terminal / chat / commit に出さない。
+
+2026-06-13 user 実行結果:
+
+- OAuth callback: `OAuth completed. You can close this tab and return to the terminal.`
+- Secret Manager 登録完了。Secret 実値は chat に貼られていない
+- runtime mapping:
+  - `YT_SHORTS_YOUTUBE_CLIENT_ID=yt-shorts-youtube-client-id:latest`
+  - `YT_SHORTS_YOUTUBE_CLIENT_SECRET=yt-shorts-youtube-client-secret:latest`
+  - `YT_SHORTS_YOUTUBE_REFRESH_TOKEN=yt-shorts-youtube-refresh-token:latest`
+  - `YT_SHORTS_APPROVAL_TOKEN_SECRET=yt-shorts-approval-token-secret:latest`

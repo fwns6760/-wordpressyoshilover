@@ -1,6 +1,13 @@
 # assignments — 現場担当と次アクション
 
-最終更新: 2026-06-13 JST (YouTube Shorts Phase 1.5 repo 実装)
+最終更新: 2026-06-13 JST (YouTube Shorts Phase 1.5 OAuth完了 / deploy helper ready)
+
+## 2026-06-13 — YouTube Shorts Phase 1.5 GCP deploy helper ready (user OAuth完了後の「ではGO」)
+
+- **完了した user 側作業**: YouTube Data API v3 enable、Desktop OAuth client 認証、Secret Manager 登録。Secret 実値は chat / repo に出していない。
+- **repo追加**: `scripts/setup_yt_shorts_phase15_gcp.sh`。`yt-shorts-gen` image build、`yoshilover-fetcher` image build、fetcher `/yt-shorts-publish` deploy、Cloud Run Job create/update、YouTube OAuth secret binding、mail bridge secret binding までを authenticated executor が一括実行できる。
+- **安全側既定**: Scheduler は作らない(`CREATE_SCHEDULER=0`)。live smoke も既定では実行しない(`EXECUTE_LIVE_SMOKE=0`)。private upload + mail + publish button smoke 後だけ Scheduler を作る。
+- **残作業**: Codex sandbox では live GCP mutation 不可。authenticated executor で `scripts/setup_yt_shorts_phase15_gcp.sh` 実行 → `gcloud run jobs execute yt-shorts-gen --wait` で1通だけ private upload mail 確認 → user が「公開する」button smoke → 403ならYouTube API audit判断、成功なら Scheduler判断。
 
 ## 2026-06-13 — YouTube Shorts Phase 1.5 半自動公開 repo 実装 (user「ではGO」)
 

@@ -22,6 +22,7 @@ Dockerfile + cloudbuild config を持ち、 別々に build + deploy する。
 | X 投稿候補メール | `x-post-mail-lane` | `Dockerfile.x_post_mail` | `cloudbuild_x_post_mail.yaml` | Cloud Run job |
 | 小林誠司名言メール | `kobayashi-meigen-mail-lane` | `Dockerfile.kobayashi_meigen_mail` | `cloudbuild_kobayashi_meigen_mail.yaml` | Cloud Run job |
 | 坂本勇人名言メール | `sakamoto-meigen-mail-lane` | `Dockerfile.sakamoto_meigen_mail` | `cloudbuild_sakamoto_meigen_mail.yaml` | Cloud Run job |
+| YouTube Shorts 生成 | `yt-shorts-gen` | `Dockerfile.yt_shorts` | `cloudbuild_yt_shorts.yaml` | Cloud Run job |
 | insight 夜間バッチ | `insight-nightly` | `Dockerfile.insight_nightly` | `cloudbuild_insight_nightly.yaml` | Cloud Run job |
 | 本文編集 (draft body editor) | `draft-body-editor` | `Dockerfile.draft_body_editor` | `cloudbuild_draft_body_editor.yaml` | Cloud Run job |
 | 外部 ping | `external-ping` | `Dockerfile.external_ping` | `cloudbuild_external_ping.yaml` | Cloud Run job |
@@ -33,6 +34,14 @@ Dockerfile + cloudbuild config を持ち、 別々に build + deploy する。
     ==修正したら両方 build + deploy しないと挙動が揃わない==。
 
 ## :material-rocket: 標準フロー
+
+YouTube Shorts Phase 1.5 は `yt-shorts-gen` job と `yoshilover-fetcher` service の両方を同時に更新するため、標準フローではなく専用 helper を使う。
+
+```bash
+scripts/setup_yt_shorts_phase15_gcp.sh
+```
+
+この helper は Scheduler を既定で作らない。private upload + approval mail + `/yt-shorts-publish` button の smoke 後だけ `CREATE_SCHEDULER=1` を付ける。
 
 === ":material-clock-outline: Cloud Run **job** の更新"
 

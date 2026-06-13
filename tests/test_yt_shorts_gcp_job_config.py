@@ -37,3 +37,18 @@ def test_cloudbuild_allows_voicevox_base_image_override() -> None:
 
     assert "_VOICEVOX_ENGINE_IMAGE: voicevox/voicevox_engine:cpu-latest" in cloudbuild
     assert "VOICEVOX_ENGINE_IMAGE=${_VOICEVOX_ENGINE_IMAGE}" in cloudbuild
+
+
+def test_phase15_gcp_setup_script_wires_private_upload_and_approval_flow() -> None:
+    script = (ROOT / "scripts/setup_yt_shorts_phase15_gcp.sh").read_text(encoding="utf-8")
+
+    assert "cloudbuild_yt_shorts.yaml" in script
+    assert "gcloud builds submit" in script
+    assert "gcloud run services update" in script
+    assert "gcloud run jobs update" in script
+    assert "YT_SHORTS_YOUTUBE_PRIVATE_UPLOAD=1" in script
+    assert "YT_SHORTS_YOUTUBE_CLIENT_ID=yt-shorts-youtube-client-id:latest" in script
+    assert "YT_SHORTS_APPROVAL_TOKEN_SECRET=yt-shorts-approval-token-secret:latest" in script
+    assert "--args=--live,--youtube-private-upload" in script
+    assert "CREATE_SCHEDULER" in script
+    assert "Scheduler skipped" in script

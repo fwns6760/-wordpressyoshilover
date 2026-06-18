@@ -1641,6 +1641,21 @@
     "active": true
   },
   {
+    "name": "小笠原慎之介",
+    "aliases": [
+      "小笠原慎之介",
+      "小笠原　慎之介",
+      "小笠原 慎之介"
+    ],
+    "role": "player",
+    "position": "投手",
+    "jersey_number": "98",
+    "throws": "左",
+    "bats": "左",
+    "team_code": "g",
+    "active": true
+  },
+  {
     "name": "藤川球児",
     "aliases": [
       "藤川球児",

@@ -53,3 +53,37 @@ def test_avg_format():
     assert pdp._avg(0.359) == ".359"
     assert pdp._avg(1.107) == "1.107"
     assert pdp._avg(None) == ""
+
+
+def test_prose_covers_more_dimensions_and_weak_opponent():
+    p = _player(
+        weekday_split_stats=[("日", 8, 30, 12, 0.400), ("月", 5, 18, 3, 0.167)],
+        lineup_slot_stats=[(3, 40, 150, 45, 30, 0.300), (5, 10, 30, 6, 4, 0.200)],
+        inning_split_stats=[("序盤", 80, 28, 0.350), ("終盤", 70, 14, 0.200)],
+        interleague_split_stats=[("交流戦", 18, 60, 21, 0.350), ("リーグ戦", 44, 156, 35, 0.224)],
+    )
+    html = pdp.build_player_prose(p)
+    assert "日に打率.400" in html          # 曜日別
+    assert "3番で打率.300" in html         # 打順別
+    assert "序盤に打率.350" in html        # 序中終盤
+    assert "交流戦では打率.350" in html      # 交流戦
+    assert "苦手" in html or "苦戦" in html  # 相手別の弱点も書く
+    assert "阪神戦は.182" in html           # weak opponent
+
+
+def test_pitcher_prose():
+    pit = SimpleNamespace(
+        name="戸郷翔征", season_avg=None, season_games=0,
+        pitch_games=12, pitch_wins=6, pitch_losses=4, pitch_ip=80.0, pitch_k=85,
+        pitch_era=2.50, pitch_whip=1.05, pitch_k_per_9=9.5,
+        pitch_opponent_split_stats=[("中日", 3, 21.0, 12, 5, 1.20),
+                                    ("阪神", 3, 18.0, 20, 8, 4.50)],
+        pitch_venue_split_stats=[("本拠地", 6, 40.0, 30, 10, 2.00),
+                                 ("ビジター", 6, 40.0, 35, 15, 3.00)],
+    )
+    html = pdp.build_player_prose(pit)
+    assert "戸郷翔征" in html
+    assert "防御率2.50" in html
+    assert "中日戦で防御率1.20" in html   # 抑えた相手
+    assert "阪神戦は4.50" in html         # 打たれた相手
+    assert "本拠地では防御率2.00" in html

@@ -145,15 +145,25 @@ def _pitcher_sentences(p: Any, name: str) -> List[str]:
     return s
 
 
+def _is_pitcher(player: Any) -> bool:
+    """ポジションで投手判定(投手は打席があっても投手として扱う = 投手は投手で)。"""
+    pos = str(getattr(player, "position", "") or "")
+    if "投手" in pos:
+        return True
+    # position 不明でも投球成績があり打撃成績が無ければ投手扱い
+    has_pitch = bool(getattr(player, "pitch_games", 0)) or getattr(player, "pitch_era", None) is not None
+    has_bat = bool(getattr(player, "season_games", 0)) and getattr(player, "season_avg", None) is not None
+    return has_pitch and not has_bat
+
+
 def build_player_prose(player: Any) -> str:
-    """player の split から SEO 用の解説段落(HTML)を組み立てる。薄い時は ""。"""
+    """player の split から SEO 用の解説段落(HTML)を組み立てる。薄い時は ""。
+
+    投手はポジションで判定して必ず投手の解説文にする(投手は投手で)。"""
     name = getattr(player, "name", "") or ""
     if not name:
         return ""
-    # 投手で打撃 split が無ければ投手文、それ以外は打者文
-    sentences = _batter_sentences(player, name)
-    if len(sentences) < 2:
-        sentences = _pitcher_sentences(player, name)
+    sentences = _pitcher_sentences(player, name) if _is_pitcher(player) else _batter_sentences(player, name)
     if len(sentences) < 2:
         return ""
     body = "".join(f"<p>{s}</p>" for s in sentences)

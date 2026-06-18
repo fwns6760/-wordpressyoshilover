@@ -87,3 +87,20 @@ def test_pitcher_prose():
     assert "中日戦で防御率1.20" in html   # 抑えた相手
     assert "阪神戦は4.50" in html         # 打たれた相手
     assert "本拠地では防御率2.00" in html
+
+
+def test_pitcher_stays_pitcher_even_with_batting_data():
+    # CL 投手は打席があっても投手の解説文(position で判定)
+    p = SimpleNamespace(
+        name="戸郷翔征", position="投手",
+        season_avg=0.150, season_games=12,  # 打撃データはあるが…
+        venue_split_stats=[("本拠地", 6, 20, 4, 0, 0.200), ("ビジター", 6, 20, 2, 0, 0.100)],
+        vs_lr_split_stats=[("対左", 10, 1, 0.100), ("対右", 30, 5, 0.167)],
+        pitch_games=12, pitch_wins=6, pitch_losses=4, pitch_ip=80.0, pitch_k=85,
+        pitch_era=2.50, pitch_whip=1.05, pitch_k_per_9=9.5,
+        pitch_opponent_split_stats=[("中日", 3, 21.0, 12, 5, 1.20), ("阪神", 3, 18.0, 20, 8, 4.50)],
+        pitch_venue_split_stats=[("本拠地", 6, 40.0, 30, 10, 2.00), ("ビジター", 6, 40.0, 35, 15, 3.00)],
+    )
+    html = pdp.build_player_prose(p)
+    assert "防御率2.50" in html       # 投手文
+    assert "打撃成績" not in html      # 打者文にならない

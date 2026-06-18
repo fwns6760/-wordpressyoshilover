@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import requests
@@ -242,6 +242,53 @@ def refresh_salary_value(base, auth, cluster_id, cur) -> bool:
                    excerpt=render_salary_value_excerpt(data), parent=parent)
 
 
+def refresh_standings(base, auth, cluster_id, cur) -> bool:
+    """セ・リーグ順位表データページ (/data/standings/) を NPB 公式から自動更新。
+
+    取得=既存テスト済み経路(interleague_scraper.fetch_standings_html +
+    source_npb_standings_extractor.parse_npb_standings_html)。描画=standings_article
+    (LLM不使用・数字そのまま)。試合日程に連動する本日次ジョブに相乗りして自動更新する。
+    fetch 失敗は skip(他ページ更新を止めない)。"""
+    from src import interleague_scraper as ils
+    from src import source_npb_standings_extractor as sne
+    from src import standings_article as sa
+
+    try:
+        html = ils.fetch_standings_html(cur, "c")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[standings] fetch failed; skip: {exc!r}", file=sys.stderr)
+        return False
+    rows = sne.parse_npb_standings_html(html)
+    if not rows:
+        print("[standings] no rows parsed; skip", file=sys.stderr)
+        return False
+
+    standings = []
+    for i, r in enumerate(rows, start=1):
+        try:
+            standings.append({
+                "rank": int(r.get("rank") or i),
+                "team": sa.short_team_name(r.get("team") or ""),
+                "g": int(r.get("games") or 0),
+                "w": int(r["wins"]),
+                "l": int(r["losses"]),
+                "t": int(r.get("draws") or 0),
+                "pct": (r.get("win_pct") or "").strip(),
+            })
+        except (KeyError, ValueError, TypeError):
+            continue
+    if not standings:
+        print("[standings] rows unusable; skip", file=sys.stderr)
+        return False
+
+    date_label = datetime.now(timezone(timedelta(hours=9))).strftime("%Y年%-m月%-d日")
+    title, content, excerpt = sa.render_standings_article(
+        standings, date_label=date_label, source="NPB公式 順位表",
+    )
+    return _upsert(base, auth, slug="standings", title=title,
+                   content=content, excerpt=excerpt, parent=cluster_id)
+
+
 def _report_player_class_drift() -> None:
     """登録ポジション分類 (data_site_player_class.json) が giants_roster.json に
     追従しているかを read-only で確認し、drift があればログに出すだけ。
@@ -279,7 +326,7 @@ def main() -> int:
     cur = datetime.now(timezone.utc).year
     ok = []
     for fn in (refresh_rotation, refresh_roster_moves, refresh_open_games,
-               refresh_interleague, refresh_salary_value):
+               refresh_interleague, refresh_salary_value, refresh_standings):
         try:
             ok.append(fn(base, auth, cluster_id, cur))
         except Exception as exc:  # noqa: BLE001

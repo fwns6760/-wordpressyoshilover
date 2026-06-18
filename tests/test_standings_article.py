@@ -60,3 +60,36 @@ def test_render_is_deterministic():
     a = sa.render_standings_article(_standings(), _batting(), _pitching(), date_label="d")
     b = sa.render_standings_article(_standings(), _batting(), _pitching(), date_label="d")
     assert a == b  # 同入力 → 同出力(LLM 無し)
+
+
+def _standings_base_only():
+    # 自動取得(NPB std)= 拡張列なし、rank/team/g/w/l/t/pct のみ
+    return [
+        {"rank": 1, "team": "巨人", "g": 64, "w": 34, "l": 28, "t": 2, "pct": ".548"},
+        {"rank": 2, "team": "阪神", "g": 64, "w": 34, "l": 29, "t": 1, "pct": ".540"},
+    ]
+
+
+def test_render_adapts_when_only_base_columns():
+    # 拡張列・ランキング無しでも順位表は出る。拡張ヘッダ/ランキング見出しは出さない。
+    title, html, excerpt = sa.render_standings_article(
+        _standings_base_only(), date_label="2026年6月17日",
+    )
+    assert "セ・リーグ順位表" in html
+    assert "貯金" in html
+    assert "防御率" not in html        # 拡張列は出さない
+    assert "個人打撃ランキング" not in html  # ランキングは渡されてない
+    assert "巨人が首位" in title
+
+
+def test_lede_basic_when_no_ext():
+    lede = sa.build_giants_lede(_standings_base_only())
+    assert "首位" in lede and "貯金+6" in lede
+    assert "防御率" not in lede  # 拡張データ無し → 簡易リード
+
+
+def test_short_team_name():
+    assert sa.short_team_name("読売ジャイアンツ") == "巨人"
+    assert sa.short_team_name("横浜DeNAベイスターズ") == "DeNA"
+    assert sa.short_team_name("巨人") == "巨人"      # 既に短縮
+    assert sa.short_team_name("未知球団") == "未知球団"  # 未知はそのまま

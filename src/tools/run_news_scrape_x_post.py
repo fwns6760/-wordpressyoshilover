@@ -87,26 +87,49 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--to", default="fwns6760@gmail.com")
     args = ap.parse_args(argv)
 
-    facts = dict(SAMPLE_FACTS) if args.sample else json.loads(Path(args.facts).read_text(encoding="utf-8"))
+    # facts は dict(単発) または list(複数まとめ)。list の各要素は
+    # facts dict、または {"label","facts","quote_url"} の spec。
+    if args.sample:
+        raw = SAMPLE_FACTS
+    else:
+        raw = json.loads(Path(args.facts).read_text(encoding="utf-8"))
 
+    if isinstance(raw, list):
+        specs = []
+        for item in raw:
+            if isinstance(item, dict) and "facts" in item:
+                specs.append((item.get("label", args.label), item["facts"], item.get("quote_url")))
+            else:
+                specs.append((args.label, item, None))
+    else:
+        specs = [(args.label, raw, args.quote_url)]
+
+    article_quotes = []
     if args.article:
-        quotes = nsx.extract_quotes_from_text(Path(args.article).read_text(encoding="utf-8"))
-        if quotes:
-            facts.setdefault("コメント", [])
-            facts["コメント"] = list(dict.fromkeys(list(facts["コメント"]) + quotes))
+        article_quotes = nsx.extract_quotes_from_text(Path(args.article).read_text(encoding="utf-8"))
 
-    draft = nsx.format_scrape_post(facts, model=args.model)
-    print(f"=== draft ({len(draft)}/{nsx.X_CHAR_LIMIT}) ===\n{draft}\n")
+    cards = []
+    drafts_text = []
+    for label, facts, quote_url in specs:
+        facts = dict(facts)
+        if article_quotes:
+            merged = list(facts.get("コメント", [])) + article_quotes
+            facts["コメント"] = list(dict.fromkeys(merged))
+        draft = nsx.format_scrape_post(facts, model=args.model)
+        print(f"=== [{label}] draft ({len(draft)}/{nsx.X_CHAR_LIMIT}) ===\n{draft}\n")
+        cards.append(nsx.build_post_card(draft, label=label, quote_url=quote_url))
+        drafts_text.append(f"【{label}】\n{draft}")
 
-    html = nsx.build_email_html(draft, label=args.label, quote_url=args.quote_url)
+    html = nsx.build_cards_email_html(cards)  # 1 枚でも複数でも同じ外枠で包む
     out_path = Path(args.out)
     out_path.write_text(html, encoding="utf-8")
-    print(f"[html] wrote {out_path.resolve()}")
+    print(f"[html] wrote {out_path.resolve()} ({len(cards)} card(s))")
 
+    subject = f"🌙 {args.label}" + (f"(他{len(cards)-1}件)" if len(cards) > 1 else "")
     request = mdb.MailRequest(
         to=[args.to],
-        subject=f"🌙 {args.label}",
-        text_body=draft,
+        subject=subject,
+        text_body="\n\n".join(drafts_text),
         html_body=html,
     )
     result = mdb.send(request, dry_run=not args.send)

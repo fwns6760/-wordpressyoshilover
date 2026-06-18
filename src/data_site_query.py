@@ -355,13 +355,14 @@ def load_roster_player(canonical_name: str) -> Optional[RosterPlayer]:
     return None
 
 
-def _wp_creds() -> tuple[str, HTTPBasicAuth] | None:
+def _wp_creds(*, warn: bool = True) -> tuple[str, HTTPBasicAuth] | None:
     """WP_URL / WP_USER / WP_APP_PASSWORD env から WP REST 認証情報。"""
     base = os.environ.get("WP_URL", "").strip().rstrip("/")
     user = os.environ.get("WP_USER", "").strip()
     pw = os.environ.get("WP_APP_PASSWORD", "").strip()
     if not (base and user and pw):
-        LOG.warning("WP REST creds missing (WP_URL/WP_USER/WP_APP_PASSWORD)")
+        if warn:
+            LOG.warning("WP REST creds missing (WP_URL/WP_USER/WP_APP_PASSWORD)")
         return None
     return base, HTTPBasicAuth(user, pw)
 
@@ -491,14 +492,18 @@ def mapped_player_media_id(player_name: str) -> Optional[int]:
     return None
 
 
-def _media_source_url(media_id: int, base: str, auth: HTTPBasicAuth) -> str:
+def _media_source_url(media_id: int, base: str, auth: HTTPBasicAuth | None = None) -> str:
     """media id の source_url を返す。 失敗時 空文字。"""
     try:
+        kwargs = {
+            "params": {"_fields": "source_url"},
+            "timeout": 15,
+        }
+        if auth is not None:
+            kwargs["auth"] = auth
         mr = requests.get(
             base + f"/wp-json/wp/v2/media/{int(media_id)}",
-            params={"_fields": "source_url"},
-            auth=auth,
-            timeout=15,
+            **kwargs,
         )
         if mr.ok:
             return str((mr.json() or {}).get("source_url", "")).strip()
@@ -514,10 +519,12 @@ def find_player_featured_image_url(player_name: str) -> str:
     ② map に無ければ 巨人マーク (_GIANTS_MARK_MEDIA_ID) に fallback。
     旧実装の「最新タグ記事 eyecatch 流用」は対戦相手のチームマーク等が混入するため廃止。
     """
-    creds = _wp_creds()
-    if not creds:
-        return ""
-    base, auth = creds
+    creds = _wp_creds(warn=False)
+    if creds:
+        base, auth = creds
+    else:
+        base = os.environ.get("WP_URL", "").strip().rstrip("/") or "https://yoshilover.com"
+        auth = None
     mid = mapped_player_media_id(player_name)
     if mid:
         url = _media_source_url(mid, base, auth)
@@ -1711,6 +1718,61 @@ def fetch_player_npb_ranks(player_canonical: str, *, min_ab_for_avg: int = 30) -
         avg = next((x[3] for x in qual if x[0] == player_canonical), 0.0)
         avg_s = f"{avg:.3f}".lstrip("0") if avg < 1 else f"{avg:.3f}"
         out.append(("打率", avg_s, r[0], r[1]))
+    return out
+
+
+def fetch_pitcher_npb_ranks(player_canonical: str, *, min_ip_for_era: float = 20.0) -> list[tuple]:
+    """投手の NPB 全 12 球団内 順位を返す (防御率 / 奪三振 / 勝利)。
+
+    fetch_player_npb_ranks(打者) の投手版。pitching_logs (全 12 球団) を read-side で
+    集計し NPB-wide rank を自前計算する。
+    Returns ``[(label, value_str, rank, total), ...]``。防御率は IP>=min_ip_for_era を
+    母集団とする (規定投球回の簡易代替)。
+    """
+    path = _ensure_insight_db_local()
+    if not path:
+        return []
+    try:
+        with sqlite3.connect(path) as conn:
+            cur = conn.cursor()
+            rows = cur.execute(
+                "SELECT player_canonical, COALESCE(SUM(IP),0), COALESCE(SUM(ER),0), "
+                "COALESCE(SUM(K),0), COALESCE(SUM(CASE WHEN result_mark='勝' THEN 1 ELSE 0 END),0) "
+                "FROM pitching_logs WHERE player_canonical IS NOT NULL GROUP BY player_canonical"
+            ).fetchall()
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("fetch_pitcher_npb_ranks err player=%s: %r", player_canonical, exc)
+        return []
+    agg = [(p, float(ip), int(er), int(k), int(w)) for (p, ip, er, k, w) in rows if float(ip or 0) > 0]
+    if not agg:
+        return []
+
+    def _rank(sorted_players: list[tuple], name: str) -> Optional[tuple[int, int]]:
+        for i, t in enumerate(sorted_players, 1):
+            if t[0] == name:
+                return i, len(sorted_players)
+        return None
+
+    out: list[tuple] = []
+    # 防御率 (IP>=min_ip_for_era、 小さいほど上位)
+    qual = [(p, ip, er * 9.0 / ip) for (p, ip, er, k, w) in agg if ip >= min_ip_for_era]
+    by_era = sorted(qual, key=lambda x: x[2])
+    r = _rank(by_era, player_canonical)
+    if r:
+        era = next((x[2] for x in qual if x[0] == player_canonical), 0.0)
+        out.append(("防御率", f"{era:.2f}", r[0], r[1]))
+    # 奪三振 (全 IP>0、 多いほど上位)
+    by_k = sorted(agg, key=lambda x: -x[3])
+    r = _rank(by_k, player_canonical)
+    if r:
+        k = next((x[3] for x in agg if x[0] == player_canonical), 0)
+        out.append(("奪三振", str(k), r[0], r[1]))
+    # 勝利 (全 IP>0、 多いほど上位)
+    by_w = sorted(agg, key=lambda x: -x[4])
+    r = _rank(by_w, player_canonical)
+    if r and r[0] <= r[1]:
+        w = next((x[4] for x in agg if x[0] == player_canonical), 0)
+        out.append(("勝利", str(w), r[0], r[1]))
     return out
 
 

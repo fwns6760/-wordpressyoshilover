@@ -56,6 +56,7 @@ from src.data_site_query import (
     fetch_player_latest_game_date,
     fetch_surprise_stats,
     fetch_player_npb_ranks,
+    fetch_pitcher_npb_ranks,
     fetch_pitching_stats_season,
     fetch_pitcher_opponent_split_stats,
     fetch_pitcher_venue_split_stats,
@@ -631,8 +632,12 @@ def _build_pillar_info(player_name: str) -> PillarPlayerInfo | None:
     info.interleague_split_stats = [
         (s.label, s.games, s.ab, s.hits, s.avg) for s in fetch_interleague_split_stats(player_name)
     ]
-    # 453: NPB 全12球団内 順位バッジ (打点/安打/打率)
-    info.metric_ranks = fetch_player_npb_ranks(player_name)
+    # 453: NPB 全12球団内 順位バッジ。投手は防御率/奪三振/勝利、打者は打点/安打/打率。
+    info.metric_ranks = (
+        fetch_pitcher_npb_ranks(player_name)
+        if (info.position or "").strip() == "投手"
+        else fetch_player_npb_ranks(player_name)
+    )
     # Phase 1.0b1 streak
     hit_streak = fetch_hit_streak(player_name)
     info.hit_streak_active = hit_streak.active

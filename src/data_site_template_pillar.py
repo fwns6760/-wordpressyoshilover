@@ -509,10 +509,17 @@ def _build_pitching_season_html(player: PillarPlayerInfo) -> str:
             '</p>'
             '</section>'
         )
+    _rank_badges = "".join(
+        f'<span class="ys-tag">{_esc(label)} {rank}位/{total}人中</span>'
+        for (label, _v, rank, total) in (player.metric_ranks or [])
+    )
+    _ranks_html = f'<p style="margin:0 0 8px;">{_rank_badges}</p>' if _rank_badges else ""
     return (
         '<section class="ys-pillar-pitch-season" '
         'style="background:#fff;border:1px solid #eee;padding:14px;margin:0 0 16px;border-radius:4px;">'
-        '<h2 style="font-size:16px;margin:0 0 10px;">今シーズン 一軍成績 (投手)</h2>'
+        '<h2 style="font-size:16px;margin:0 0 10px;">今シーズン 一軍成績 (投手) '
+        '<span class="ys-tag">NPB順位</span></h2>'
+        f'{_ranks_html}'
         '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
         '<thead><tr style="background:#fafafa;text-align:center;">'
         '<th style="padding:8px 4px;">登板</th>'

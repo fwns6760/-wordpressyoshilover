@@ -118,3 +118,21 @@ def test_pitcher_prose_month_and_interleague():
     html = pdp.build_player_prose(pit)
     assert "月別では5月に防御率1.50" in html
     assert "交流戦では防御率1.80" in html and "リーグ戦では2.80" in html
+
+
+def test_batter_rank_sentence():
+    p = _player(metric_ranks=[("打点", "45", 3, 60), ("安打", "83", 1, 80), ("打率", ".255", 12, 30)])
+    html = pdp.build_player_prose(p)
+    assert "リーグ(12球団" in html
+    assert "打点3位" in html and "安打1位" in html and "打率12位" in html
+
+
+def test_pitcher_rank_sentence():
+    pit = SimpleNamespace(
+        name="戸郷翔征", position="投手", season_avg=None, season_games=0,
+        pitch_games=12, pitch_wins=6, pitch_losses=4, pitch_ip=80.0, pitch_k=85,
+        pitch_era=2.50, pitch_whip=1.05, pitch_k_per_9=9.5,
+        metric_ranks=[("防御率", "2.50", 3, 25), ("奪三振", "85", 5, 40), ("勝利", "6", 2, 40)],
+    )
+    html = pdp.build_player_prose(pit)
+    assert "防御率3位" in html and "奪三振5位" in html and "勝利2位" in html

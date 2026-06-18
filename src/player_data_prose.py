@@ -52,6 +52,23 @@ def _pair(rows: List[tuple], *, label_idx: int, val_idx: int) -> dict:
     return out
 
 
+def _rank_sentence(p: Any) -> Optional[str]:
+    """metric_ranks [(label, value, rank, total)] から リーグ順位の文を作る。"""
+    ranks = getattr(p, "metric_ranks", None) or []
+    parts = []
+    total = 0
+    for t in ranks:
+        try:
+            label, _val, rank, tot = t[0], t[1], int(t[2]), int(t[3])
+        except (IndexError, TypeError, ValueError):
+            continue
+        parts.append(f"{label}{rank}位")
+        total = tot
+    if not parts:
+        return None
+    return f"リーグ(12球団・{total}人)内では" + "・".join(parts) + "。"
+
+
 def _batter_sentences(p: Any, name: str) -> List[str]:
     s: List[str] = []
     avg = getattr(p, "season_avg", None)
@@ -59,6 +76,9 @@ def _batter_sentences(p: Any, name: str) -> List[str]:
     if avg is not None and g:
         s.append(f"{name}の今シーズンの一軍打撃成績は{g}試合で打率{_avg(avg)}、"
                  f"本塁打{getattr(p,'season_hr',0)}本、打点{getattr(p,'season_rbi',0)}。")
+    rs = _rank_sentence(p)
+    if rs:
+        s.append(rs)
 
     venue = _pair(getattr(p, "venue_split_stats", []), label_idx=0, val_idx=5)
     home = next((venue[k] for k in venue if "本拠" in k or "ホーム" in k), None)
@@ -124,6 +144,9 @@ def _pitcher_sentences(p: Any, name: str) -> List[str]:
         s.append(f"{name}の今シーズンの一軍投球成績は{g}登板、"
                  f"{getattr(p,'pitch_wins',0)}勝{getattr(p,'pitch_losses',0)}敗、防御率{_era(era)}、"
                  f"{getattr(p,'pitch_ip',0)}回、奪三振{getattr(p,'pitch_k',0)}。")
+    rs = _rank_sentence(p)
+    if rs:
+        s.append(rs)
     whip = getattr(p, "pitch_whip", None)
     if whip is not None:
         s.append(f"WHIPは{whip:.2f}、9回平均奪三振は{getattr(p,'pitch_k_per_9',None) or 0:.1f}。")

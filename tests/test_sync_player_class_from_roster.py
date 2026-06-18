@@ -99,3 +99,15 @@ def test_apply_updates_timestamp():
     sync.apply_additions(pc, [("X", "shihai", "投手")], updated="2026-06-18")
     assert pc["_updated"] == "2026-06-18"
     assert "X" in pc["shihai"]["投手"]
+
+
+def test_daily_refresh_drift_report_is_read_only_and_never_raises(capsys):
+    """日次ジョブの drift 報告は read-only で、例外でジョブを落とさない。"""
+    from src.tools.data_site_daily_refresh import _report_player_class_drift
+
+    before = sync.CLASS_PATH.read_text(encoding="utf-8")
+    _report_player_class_drift()  # 例外を投げないこと
+    after = sync.CLASS_PATH.read_text(encoding="utf-8")
+    assert before == after  # 書き込みしない
+    captured = capsys.readouterr()
+    assert "[player-class]" in (captured.out + captured.err)

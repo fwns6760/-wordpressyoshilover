@@ -242,7 +242,38 @@ def refresh_salary_value(base, auth, cluster_id, cur) -> bool:
                    excerpt=render_salary_value_excerpt(data), parent=parent)
 
 
+def _report_player_class_drift() -> None:
+    """登録ポジション分類 (data_site_player_class.json) が giants_roster.json に
+    追従しているかを read-only で確認し、drift があればログに出すだけ。
+
+    config は git 正本で、この job のコンテナ FS は ephemeral なため、ここでは
+    **書き込まない / job を失敗させない**。drift が出たらローカルで
+    ``python3 -m src.tools.sync_player_class_from_roster --write`` を回して
+    commit する合図とする。"""
+    try:
+        from src.tools import sync_player_class_from_roster as sync
+
+        roster = json.loads(sync.ROSTER_PATH.read_text(encoding="utf-8"))
+        player_class = json.loads(sync.CLASS_PATH.read_text(encoding="utf-8"))
+        additions, unresolved = sync.plan(roster, player_class)
+        if not additions and not unresolved:
+            print("[player-class] 分類は名簿に追従済み (drift なし)")
+            return
+        if additions:
+            detail = ", ".join(f"{n}->{g}.{p}" for n, g, p in additions)
+            print(f"[player-class] WARN: {len(additions)} 名が未分類 "
+                  f"(sync_player_class_from_roster --write で反映): {detail}",
+                  file=sys.stderr)
+        if unresolved:
+            detail = ", ".join(n for n, _ in unresolved)
+            print(f"[player-class] WARN: {len(unresolved)} 名は position 不明で "
+                  f"手動分類が必要: {detail}", file=sys.stderr)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[player-class] drift check skipped: {exc!r}", file=sys.stderr)
+
+
 def main() -> int:
+    _report_player_class_drift()
     base, auth = _creds()
     cluster_id = _find_page_id(base, auth, "data", parent=0)
     cur = datetime.now(timezone.utc).year

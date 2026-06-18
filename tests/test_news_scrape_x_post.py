@@ -68,3 +68,20 @@ def test_build_email_html_escapes_and_adds_quote_button():
     assert "<script>x</script>" not in html  # エスケープされる
     assert "&lt;script&gt;" in html
     assert "引用RTで投稿" in html
+
+
+def test_build_post_card_is_fragment_not_full_html():
+    card = nsx.build_post_card("テスト投稿", label="ニュース速報")
+    assert "<!DOCTYPE html>" not in card  # full html ではない = 埋め込める断片
+    assert "<html" not in card
+    assert nsx.X_INTENT_URL_BASE in card
+    assert "ニュース速報" in card
+
+
+def test_build_cards_email_html_combines_multiple_cards_into_one():
+    c1 = nsx.build_post_card("投稿その1", label="速報1")
+    c2 = nsx.build_post_card("投稿その2", label="速報2")
+    html = nsx.build_cards_email_html([c1, c2])
+    assert html.count("<!DOCTYPE html>") == 1  # 外枠は 1 つ
+    assert "速報1" in html and "速報2" in html  # 2 枚とも入る
+    assert html.count("タップして投稿する") == 2  # ボタンも 2 つ

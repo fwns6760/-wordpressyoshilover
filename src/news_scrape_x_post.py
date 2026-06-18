@@ -122,15 +122,16 @@ def build_quote_intent_url(text: str, tweet_url: str) -> str:
     return f"{X_INTENT_URL_BASE}?text={q}&url={u}"
 
 
-def build_email_html(
+def build_post_card(
     draft_text: str,
     *,
     label: str = "X投稿 下書き",
     quote_url: Optional[str] = None,
 ) -> str:
-    """ワンタップ投稿ボタン付きの HTML メール本文を返す。
+    """ワンタップ投稿ボタン付きの「カード」HTML 断片を返す(<div> 単体)。
 
-    quote_url を渡すと「引用RTで投稿」ボタンも追加する。"""
+    full HTML ではないので、既存の HTML メール本文や複数枚まとめメールに
+    そのまま差し込める。quote_url を渡すと「引用RTで投稿」ボタンも追加。"""
     count = len(draft_text)
     over = count > X_CHAR_LIMIT
     intent = build_intent_url(draft_text)
@@ -150,12 +151,7 @@ def build_email_html(
         )
         quote_btn = f'<a href="{qurl}" style="{quote_style}">↻ 引用RTで投稿</a>'
 
-    return f"""<!DOCTYPE html>
-<html lang="ja"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#f2f3f5;font-family:-apple-system,'Hiragino Kaku Gothic ProN',sans-serif;">
-<div style="max-width:480px;margin:0 auto;padding:16px;">
-  <div style="background:#fff;border-radius:14px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.08);">
+    return f"""<div style="background:#fff;border-radius:14px;padding:20px;margin:0 0 14px;box-shadow:0 1px 4px rgba(0,0,0,.08);">
     <div style="font-size:13px;color:#ff6600;font-weight:bold;">🌙 {_html.escape(label)}</div>
     <div style="font-size:12px;color:#888;margin:2px 0 14px;">{count_badge}</div>
     <pre style="white-space:pre-wrap;word-break:break-word;font-size:15px;line-height:1.7;
@@ -168,6 +164,33 @@ def build_email_html(
     {quote_btn}
     <div style="font-size:11px;color:#999;text-align:center;margin-top:8px;">
        タップ → X が本文入りで開く → もう一度投稿で完了</div>
-  </div>
+  </div>"""
+
+
+def _wrap_email(inner_html: str) -> str:
+    """カード断片を完全な HTML メールの外枠で包む。"""
+    return f"""<!DOCTYPE html>
+<html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f2f3f5;font-family:-apple-system,'Hiragino Kaku Gothic ProN',sans-serif;">
+<div style="max-width:480px;margin:0 auto;padding:16px;">
+{inner_html}
 </div>
 </body></html>"""
+
+
+def build_email_html(
+    draft_text: str,
+    *,
+    label: str = "X投稿 下書き",
+    quote_url: Optional[str] = None,
+) -> str:
+    """カード 1 枚だけの完全な HTML メールを返す(従来互換)。"""
+    return _wrap_email(build_post_card(draft_text, label=label, quote_url=quote_url))
+
+
+def build_cards_email_html(cards: List[str]) -> str:
+    """複数のカード断片を 1 通の HTML メールにまとめる。
+
+    cards: build_post_card() が返した断片のリスト。"""
+    return _wrap_email("\n".join(cards))

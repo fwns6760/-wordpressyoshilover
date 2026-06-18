@@ -88,6 +88,18 @@ _BAT_HEADERS = ["順位", "選手", "球団", "打率", "試", "打数", "安打
 _PIT_HEADERS = ["順位", "選手", "球団", "防御率", "試", "勝", "敗", "S", "投球回", "奪三振"]
 
 
+def render_leaders_table(heading: str, headers: Sequence[str], rows: Sequence[Sequence[Any]]) -> str:
+    """NPB公式の列をそのまま描画する汎用ランキング表。
+
+    各行は「選手」セルに ``佐藤 輝明(神)`` 形式で球団を含むため、行内に ``(巨)`` を
+    含む行を巨人としてハイライトする。"""
+    body = ""
+    for r in rows:
+        hi = any("(巨)" in str(c) for c in r)
+        body += "<tr>" + _td(list(r), hi) + "</tr>"
+    return f"<h2>{_html.escape(heading)}</h2>" + _table(list(headers), body)
+
+
 def render_standings_article(
     standings: List[Dict[str, Any]],
     batting: List[Dict[str, Any]] | None = None,
@@ -95,6 +107,7 @@ def render_standings_article(
     *,
     date_label: str,
     source: str = "NPB公式成績 / スポーツナビ",
+    leader_tables: List[Dict[str, Any]] | None = None,
 ) -> Tuple[str, str, str]:
     """(title, html, excerpt) を返す。
 
@@ -106,6 +119,7 @@ def render_standings_article(
     """
     batting = batting or []
     pitching = pitching or []
+    leader_tables = leader_tables or []
     ext = _has_ext(standings)
     headers = _BASE_STANDINGS_HEADERS + (_EXT_STANDINGS_HEADERS if ext else [])
 
@@ -139,6 +153,8 @@ def render_standings_article(
             for r in pitching
         )
         parts += ["<h2>セ・リーグ 個人投手ランキング(防御率)</h2>", _table(_PIT_HEADERS, p_rows)]
+    for lt in leader_tables:
+        parts.append(render_leaders_table(lt["heading"], lt["headers"], lt["rows"]))
     parts.append(
         f'<p style="font-size:12px;color:#888;">＜出典＞{_html.escape(source)}'
         f"({_html.escape(date_label)}時点)</p>"
@@ -146,9 +162,10 @@ def render_standings_article(
     html = "".join(parts)
 
     top = next((r for r in standings if r.get("rank") == 1), standings[0])
-    rank_suffix = "｜打撃・投手 個人成績ランキング" if (batting or pitching) else ""
+    has_rankings = bool(batting or pitching or leader_tables)
+    rank_suffix = "｜打撃・投手 個人成績ランキング" if has_rankings else ""
     title = f"【セ・リーグ順位表】{top['team']}が首位({date_label}時点){rank_suffix}"
-    if batting or pitching:
+    if has_rankings:
         excerpt = f"セ・リーグ順位表({top['team']}首位)と個人打撃・投手ランキングをまとめて掲載。"
     else:
         excerpt = f"セ・リーグ順位表({top['team']}首位)。勝敗・勝率・貯金をまとめて掲載。"

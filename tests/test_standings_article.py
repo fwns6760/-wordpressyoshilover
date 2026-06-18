@@ -93,3 +93,22 @@ def test_short_team_name():
     assert sa.short_team_name("横浜DeNAベイスターズ") == "DeNA"
     assert sa.short_team_name("巨人") == "巨人"      # 既に短縮
     assert sa.short_team_name("未知球団") == "未知球団"  # 未知はそのまま
+
+
+def test_render_leaders_table_highlights_giants():
+    html = sa.render_leaders_table(
+        "打撃", ["順位", "選手", "打率"],
+        [["1", "佐藤 輝明(神)", ".359"], ["2", "ダルベック(巨)", ".249"]],
+    )
+    assert "打撃" in html and "ダルベック(巨)" in html
+    assert "background:#fff6e5" in html  # 巨人行ハイライト
+
+
+def test_render_with_leader_tables_in_title_and_body():
+    lt = [{"heading": "個人打撃", "headers": ["順位", "選手", "打率"],
+           "rows": [["1", "佐藤 輝明(神)", ".359"]]}]
+    title, html, _ = sa.render_standings_article(
+        _standings_base_only(), date_label="d", leader_tables=lt,
+    )
+    assert "個人成績ランキング" in title  # ランキング有り → タイトルに反映
+    assert "個人打撃" in html and "佐藤 輝明(神)" in html

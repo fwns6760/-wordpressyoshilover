@@ -281,9 +281,24 @@ def refresh_standings(base, auth, cluster_id, cur) -> bool:
         print("[standings] rows unusable; skip", file=sys.stderr)
         return False
 
+    # 個人ランキング(打撃=打率 / 投手=防御率)も NPB 公式から取得。
+    # 取れない時は順位表だけで公開(止めない)。
+    from src import source_npb_leaders_extractor as nle
+
+    leader_tables = []
+    for kind, heading in (("bat", "セ・リーグ 個人打撃成績ランキング(打率)"),
+                          ("pit", "セ・リーグ 個人投手成績ランキング(防御率)")):
+        try:
+            parsed = nle.parse_leaders_table(nle.fetch_leaders_html(cur, kind, "c"))
+            if parsed and parsed[1]:
+                leader_tables.append({"heading": heading, "headers": parsed[0], "rows": parsed[1]})
+        except Exception as exc:  # noqa: BLE001
+            print(f"[standings] leaders({kind}) fetch failed; skip section: {exc!r}", file=sys.stderr)
+
     date_label = datetime.now(timezone(timedelta(hours=9))).strftime("%Y年%-m月%-d日")
     title, content, excerpt = sa.render_standings_article(
-        standings, date_label=date_label, source="NPB公式 順位表",
+        standings, date_label=date_label, source="NPB公式 順位表・個人成績",
+        leader_tables=leader_tables,
     )
     return _upsert(base, auth, slug="standings", title=title,
                    content=content, excerpt=excerpt, parent=cluster_id)

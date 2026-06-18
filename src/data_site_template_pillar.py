@@ -21,6 +21,8 @@ import os as _os
 from dataclasses import dataclass, field
 from typing import Optional
 
+from src.player_data_prose import build_player_prose as _build_player_prose
+
 
 @dataclass
 class PillarPlayerInfo:
@@ -1282,6 +1284,7 @@ def render_pillar_html(player: PillarPlayerInfo) -> str:
         _build_featured_image_html(player),
         _build_profile_html(player),
         _build_short_review_html(player),
+        _build_player_prose(player),  # SEO: split を index される解説文に
         *stats_sections,
         _build_prosports_html(player),
         _build_related_topic_html(player),

@@ -26,20 +26,27 @@ sys.path.insert(0, str(ROOT))
 
 
 def _load_env() -> None:
-    """ローカル実行用に .env を読む(shell source 禁止 / python 経由)。"""
+    """ローカル実行用に .env を読む(shell source 禁止 / python 経由で全キー)。
+
+    既存の os.environ は上書きしない(shell 指定を優先)。"""
     import os
-    if os.getenv("GEMINI_API_KEY"):
-        return
     env_path = ROOT / ".env"
     if not env_path.exists():
         return
     try:
         from dotenv import load_dotenv
         load_dotenv(env_path)
+        return
     except Exception:
-        for line in env_path.read_text(encoding="utf-8").splitlines():
-            if line.startswith("GEMINI_API_KEY="):
-                os.environ["GEMINI_API_KEY"] = line.split("=", 1)[1].strip().strip('"').strip("'")
+        pass
+    for raw in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, val = line.split("=", 1)
+        key = key.strip()
+        if key and key not in os.environ:
+            os.environ[key] = val.strip().strip('"').strip("'")
 
 
 _load_env()

@@ -104,3 +104,17 @@ def test_pitcher_stays_pitcher_even_with_batting_data():
     html = pdp.build_player_prose(p)
     assert "防御率2.50" in html       # 投手文
     assert "打撃成績" not in html      # 打者文にならない
+
+
+def test_pitcher_prose_month_and_interleague():
+    pit = SimpleNamespace(
+        name="戸郷翔征", position="投手", season_avg=None, season_games=0,
+        pitch_games=12, pitch_wins=6, pitch_losses=4, pitch_ip=80.0, pitch_k=85,
+        pitch_era=2.50, pitch_whip=1.05, pitch_k_per_9=9.5,
+        pitch_month_split_stats=[("5月", 3, 20.0, 12, 5, 1.50), ("6月", 3, 18.0, 20, 9, 4.00)],
+        pitch_interleague_split_stats=[("交流戦", 3, 20.0, 10, 4, 1.80),
+                                       ("リーグ戦", 9, 60.0, 50, 20, 2.80)],
+    )
+    html = pdp.build_player_prose(pit)
+    assert "月別では5月に防御率1.50" in html
+    assert "交流戦では防御率1.80" in html and "リーグ戦では2.80" in html

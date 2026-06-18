@@ -142,6 +142,17 @@ def _pitcher_sentences(p: Any, name: str) -> List[str]:
     away = next((venue[k] for k in venue if "ビジ" in k or "敵地" in k), None)
     if home is not None and away is not None:
         s.append(f"本拠地では防御率{_era(home)}、ビジターでは{_era(away)}。")
+
+    bm = _extreme(getattr(p, "pitch_month_split_stats", []), label_idx=0, val_idx=5, ab_idx=1,
+                  min_ab=2, want_max=False)
+    if bm:
+        s.append(f"月別では{bm[0]}に防御率{_era(bm[1])}と最も安定している。")
+
+    il = _pair(getattr(p, "pitch_interleague_split_stats", []), label_idx=0, val_idx=5)
+    inter = next((il[k] for k in il if "交流" in k), None)
+    league = next((il[k] for k in il if "リーグ" in k and "交流" not in k), None)
+    if inter is not None and league is not None:
+        s.append(f"交流戦では防御率{_era(inter)}、リーグ戦では{_era(league)}。")
     return s
 
 

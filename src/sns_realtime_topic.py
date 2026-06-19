@@ -57,6 +57,7 @@ MAJOR_GENERAL_HANDLES = [
     "Daily_Online",     # デイリースポーツ
     "sponichiannex",    # スポニチ 公式 (general)
     "nikkansports",     # 日刊スポーツ 公式 (general)
+    "ntv_sports_jp",    # 日テレスポーツ (general・動画多め、巨人 relevance filter 適用)
 ]
 SOURCE_HANDLES = GIANTS_SPECIALIST_HANDLES + MAJOR_GENERAL_HANDLES
 GIANTS_FILTER_HANDLES = set(MAJOR_GENERAL_HANDLES)

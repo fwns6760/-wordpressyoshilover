@@ -38,6 +38,15 @@
     ]
   },
   {
+    "name": "日テレスポーツX",
+    "url": "https://rsshub-487178857517.asia-northeast1.run.app/twitter/user/ntv_sports_jp",
+    "type": "social_news",
+    "role": [
+      "article_source",
+      "media_quote_pool"
+    ]
+  },
+  {
     "name": "スポニチ野球記者X",
     "url": "https://rsshub-487178857517.asia-northeast1.run.app/twitter/user/SponichiYakyu",
     "type": "social_news",

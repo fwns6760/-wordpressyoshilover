@@ -2274,6 +2274,14 @@ class XPostMailEntrypointFreshnessTests(unittest.TestCase):
                 "X_POST_MAIL_DEDUP_MIN_CANDIDATES": "3",
                 "X_POST_MAIL_LINEUP_FOCUS_DISABLED": "1",
                 "X_POST_MAIL_NEWS_FALLBACK_DISABLED": "1",
+                # 2026-06-04 voice-only 方針より前のテスト。 dedup バックフィル
+                # (pick_candidates 2 回 → データ候補で mail を送る) を検証するのが
+                # 目的なので voice-only filter を OFF にして data 候補を残す。
+                "X_POST_MAIL_VOICE_ONLY": "0",
+                # hermetic 化: local env に GEMINI key があると queue 417 drain が
+                # 実 GCS / 実ネットワークを読み flaky になるため空にして skip。
+                "GEMINI_API_KEY": "",
+                "GEMMA_BRANDING_GEMINI_API_KEY": "",
             },
             clear=False,
         ), patch.object(

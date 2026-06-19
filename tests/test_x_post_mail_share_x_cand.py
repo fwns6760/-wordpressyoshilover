@@ -77,7 +77,7 @@ class ShareXCandIntegrationTests(unittest.TestCase):
         # GCS upload を mock (実 GCS には触れない)
         upload_calls: list[tuple[str, str]] = []
 
-        def _fake_upload(png, *, bucket_name, blob_key):
+        def _fake_upload(png, *, bucket_name, blob_key, content_type="image/png"):
             upload_calls.append((bucket_name, blob_key))
             return True  # 成功
 

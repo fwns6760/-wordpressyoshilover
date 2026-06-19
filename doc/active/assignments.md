@@ -1,21 +1,6 @@
 # assignments — 現場担当と次アクション
 
-最終更新: 2026-06-13 JST (YouTube Shorts Phase 1.5 OAuth完了 / deploy helper ready)
-
-## 2026-06-13 — YouTube Shorts Phase 1.5 GCP deploy helper ready (user OAuth完了後の「ではGO」)
-
-- **完了した user 側作業**: YouTube Data API v3 enable、Desktop OAuth client 認証、Secret Manager 登録。Secret 実値は chat / repo に出していない。
-- **repo追加**: `scripts/setup_yt_shorts_phase15_gcp.sh`。`yt-shorts-gen` image build、`yoshilover-fetcher` image build、fetcher `/yt-shorts-publish` deploy、Cloud Run Job create/update、YouTube OAuth secret binding、mail bridge secret binding までを authenticated executor が一括実行できる。
-- **安全側既定**: Scheduler は作らない(`CREATE_SCHEDULER=0`)。live smoke も既定では実行しない(`EXECUTE_LIVE_SMOKE=0`)。private upload + mail + publish button smoke 後だけ Scheduler を作る。
-- **残作業**: Codex sandbox では live GCP mutation 不可。authenticated executor で `scripts/setup_yt_shorts_phase15_gcp.sh` 実行 → `gcloud run jobs execute yt-shorts-gen --wait` で1通だけ private upload mail 確認 → user が「公開する」button smoke → 403ならYouTube API audit判断、成功なら Scheduler判断。
-
-## 2026-06-13 — YouTube Shorts Phase 1.5 半自動公開 repo 実装 (user「ではGO」)
-
-- **目的**: ショート動画をGCPで生成し、YouTubeへ private upload。HTML mail で確認後、user が「公開する」ボタンを押した時だけ public 化する。
-- **repo実装**: `src/yt_shorts_youtube.py` / `src/yt_shorts_youtube_token.py` / `src/yt_shorts_publish_handler.py` を追加。`src/yt_shorts_gen.py` に `--youtube-private-upload` を追加。`src/server.py` に `/yt-shorts-publish` GET/POST route を追加。
-- **HTML mail**: MP4確認、YouTube確認、Studio編集、公開buttonを表示。Gmail内直接再生ではなくリンク確認方式。
-- **安全側既定**: `--live` だけではYouTube uploadしない。`--youtube-private-upload` または `YT_SHORTS_YOUTUBE_PRIVATE_UPLOAD=1` が必要。GETは確認画面のみ、POSTだけ `privacyStatus=public`。
-- **未実行**: YouTube Data API enable / OAuth refresh token取得 / Secret Manager登録 / fetcher deploy / Job update / live mail / Scheduler。live executor は user承認後。
+最終更新: 2026-06-13 JST (YouTube Shorts Phase 1 repo 実装)
 
 ## 2026-06-13 — YouTube Shorts Phase 1 repo 実装 (user「続きをやって」)
 
@@ -23,7 +8,6 @@
 - **repo実装**: `src/yt_shorts_topic.py` / `src/yt_shorts_script.py` / `src/yt_shorts_render.py` / `src/yt_shorts_gen.py`、`Dockerfile.yt_shorts`、`cloudbuild_yt_shorts.yaml`、対応テストを追加。YouTube API upload / 自動公開は未実装。
 - **安全側既定**: CLI は dry-run、`--live` の時だけ GCS upload + 承認mail。映像・写真は使わず、Pillow生成カード + VOICEVOX音声 + ffmpeg合成。数値guardで未検証数字をabort。
 - **今回の追加fix**: `K/9` のような指標名内の数字を数値guardで誤検出しないよう label 数字を許可。live upload 後は mail 前に `uploaded` history を先に書き、SMTP失敗時の同日重複生成を避ける。
-- **GCP最安構成 follow-up**: user「ローカルよりGCPで安く」→ `Dockerfile.yt_shorts` を公式 `voicevox/voicevox_engine:cpu-latest` ベースへ変更し、`bin/run_yt_shorts_with_voicevox.sh` で Job 実行中だけ VOICEVOX を 127.0.0.1 起動。別常駐 Cloud Run Service は作らない。
 - **未実行**: Cloud Build / Cloud Run Job 作成更新 / Scheduler / live mail / YouTube投稿。live executor は user 承認後。
 
 ## 2026-06-11 — データ角度v2: 驚き系3角度 + 話題選手連動 (user「全部やるgo」)

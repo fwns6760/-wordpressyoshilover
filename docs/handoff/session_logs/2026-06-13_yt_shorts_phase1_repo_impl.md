@@ -5,7 +5,6 @@
 - Implemented Phase 1 repo path for rights-safe YouTube Shorts generation.
 - Scope is repo-only: topic selection, deterministic script, numeric guard, Pillow frames, VOICEVOX/ffmpeg render path, GCS upload hook, approval mail hook, Dockerfile, Cloud Build config, tests, docs.
 - No Cloud Build, Cloud Run Job mutation, Scheduler mutation, live mail, YouTube API upload, or YouTube publish was executed.
-- Follow-up after user approved GCP low-cost design: `Dockerfile.yt_shorts` now derives from official `voicevox/voicevox_engine:cpu-latest` and starts VOICEVOX locally only for the Job execution. No always-on VOICEVOX service is required.
 
 ## Safety contract
 
@@ -14,7 +13,6 @@
 - `--live` is required for GCS upload and real approval mail.
 - Phase 1 does not upload to YouTube. User manually uploads the MP4 from the approval mail.
 - `VOICEVOX_BASE_URL` is required unless local smoke explicitly passes `--allow-silent-tts`.
-- In the GCP Job image, `VOICEVOX_BASE_URL` defaults to `http://127.0.0.1:50021` and `bin/run_yt_shorts_with_voicevox.sh` starts/stops VOICEVOX inside the same container.
 - Numeric strings in script/title/captions must come from source topic fields. Metric labels such as `K/9` are allowed through the label field.
 
 ## Validation
@@ -26,23 +24,6 @@ python3 -m pytest -q tests/test_yt_shorts_topic.py tests/test_yt_shorts_script.p
 python3 -m unittest tests.test_yt_shorts_topic tests.test_yt_shorts_script tests.test_yt_shorts_render tests.test_yt_shorts_gen  # 18 tests OK
 python3 -m pytest -q tests/test_data_site_publisher.py tests/test_data_site_template_cluster.py  # 40 passed
 python3 -m compileall -q src/yt_shorts_topic.py src/yt_shorts_script.py src/yt_shorts_render.py src/yt_shorts_gen.py
-python3 -m mkdocs build --strict
-```
-
-Follow-up validation should include:
-
-```bash
-python3 -m pytest -q tests/test_yt_shorts_gcp_job_config.py tests/test_yt_shorts_topic.py tests/test_yt_shorts_script.py tests/test_yt_shorts_render.py tests/test_yt_shorts_gen.py  # 22 passed
-bash -n bin/run_yt_shorts_with_voicevox.sh
-python3 -m compileall -q tests/test_yt_shorts_gcp_job_config.py
-git diff --check -- .dockerignore Dockerfile.yt_shorts cloudbuild_yt_shorts.yaml bin/run_yt_shorts_with_voicevox.sh tests/test_yt_shorts_gcp_job_config.py mkdocs_docs/spec/yt-shorts-v0-design.md docs/handoff/session_logs/2026-06-13_yt_shorts_phase1_repo_impl.md doc/active/assignments.md
-```
-
-Also re-ran:
-
-```bash
-python3 -m unittest tests.test_yt_shorts_topic tests.test_yt_shorts_script tests.test_yt_shorts_render tests.test_yt_shorts_gen  # 18 tests OK
-python3 -m pytest -q tests/test_data_site_publisher.py tests/test_data_site_template_cluster.py  # 40 passed
 python3 -m mkdocs build --strict
 ```
 
@@ -64,7 +45,7 @@ Smoke result:
 
 ## Live executor remaining
 
-1. Build image with `cloudbuild_yt_shorts.yaml` (base image default: `voicevox/voicevox_engine:cpu-latest`).
-2. Create/update Cloud Run Job `yt-shorts-gen` with existing mail bridge secrets and `YT_SHORTS_GCS_BUCKET`. A separate VOICEVOX service is not needed.
+1. Build image with `cloudbuild_yt_shorts.yaml`.
+2. Create/update Cloud Run Job `yt-shorts-gen` with existing mail bridge secrets, `YT_SHORTS_GCS_BUCKET`, and a reachable `VOICEVOX_BASE_URL`.
 3. Execute dry-run/smoke first. Then execute `--live` once only after user approval.
 4. Add Scheduler 7:30 JST only after mail approval loop is confirmed.

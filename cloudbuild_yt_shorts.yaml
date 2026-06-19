@@ -3,7 +3,6 @@ substitutions:
   _PROJECT_ID: baseballsite
   _IMAGE_NAME: yt-shorts-gen
   _TAG: latest-job
-  _VOICEVOX_ENGINE_IMAGE: voicevox/voicevox_engine:cpu-latest
 
 steps:
   - id: build yt-shorts-gen image
@@ -12,8 +11,6 @@ steps:
       - build
       - -f
       - Dockerfile.yt_shorts
-      - --build-arg
-      - VOICEVOX_ENGINE_IMAGE=${_VOICEVOX_ENGINE_IMAGE}
       - -t
       - ${_REGION}-docker.pkg.dev/${_PROJECT_ID}/yoshilover/${_IMAGE_NAME}:${_TAG}
       - .

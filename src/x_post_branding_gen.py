@@ -1,4 +1,4 @@
-"""392: ヨシラバー branding X 投稿案を Gemini 3.1 Flash Lite + Tavily HTTP REST で生成。
+"""392: ヨシラバー branding X 投稿案を Gemini + Tavily HTTP REST で生成。
 
 391 (Phase 1 CLI) で smoke 確認した方法を本番 ``x-post-mail-lane`` に
 組み込むための core モジュール。 stdio MCP ではなく **Tavily REST direct**
@@ -9,9 +9,9 @@ start 不変)。
 
 - 検索は ``POST https://api.tavily.com/search`` で HTTP REST 直叩き。
   fastmcp / Node は使わない。
-- 生成は Gemini API 経由 Gemini 3.1 Flash Lite (free tier)。 paid 切替禁止。
-  2026-05-22 swap: gemma-4-31b-it から gemini-3.1-flash-lite へ。 free tier
-  1,500 RPD / 250K TPM 内で運用、 volume 試算 25 req/日 = 1.7% 利用。
+- 生成は Gemini API 経由。 2026-06-11 以降は試合時間帯
+  (既定 JST 17:00-22:59) だけ ``gemini-3.5-flash``、それ以外や
+  primary 不可時は ``gemini-3.1-flash-lite`` へ切替える。
 - spec 382 hard rule (URL / hashtag / 未検証数字 / 引用 / 媒体名 禁止) を
   system prompt + post-gen regex validator の二段で gate。
 - 失敗時は ``None`` 返却 (silent skip)。 caller (``run_x_post_mail.py``) は
@@ -37,6 +37,7 @@ from src.x_post_mail_lane import (
     _is_verified_full_giants_member_name,
     _is_verified_full_giants_player_name,
     _normalize_player_name,
+    _prepend_focus_player_tag,
 )
 
 
@@ -125,7 +126,7 @@ def _append_x_handle_to_post_text(post_text: str, source_url: str) -> str:
     return combined
 # 2026-06-09: X-post を gemini-3.5-flash に切替(user 決定: post 量少・無料枠なので 3.5)。
 # 失敗(レート/品質)時は env X_POST_GEMINI_MODEL=gemini-3.1-flash-lite で rebuild 無しで revert。
-_GEMINI_FLASH_LITE_MODEL = _os.environ.get("X_POST_GEMINI_MODEL", "gemini-3.5-flash")
+_X_POST_GEMINI_PRIMARY_MODEL = _os.environ.get("X_POST_GEMINI_MODEL", "gemini-3.5-flash")
 # 無料枠 fallback (user 2026-06-09): primary(3.5)が無料枠上限/一時不可で落ちたら
 # 自動で 3.1-flash-lite に切替えて投稿を継続する。手動 revert 不要。
 _X_POST_GEMINI_FALLBACK_MODEL = _os.environ.get(
@@ -1167,7 +1168,7 @@ def build_team_roundup_candidate(
     gemini_api_key: str,
     tavily_api_key: str,
     timeout_seconds: int = 30,
-    model_id: str = _GEMINI_FLASH_LITE_MODEL,
+    model_id: str = _X_POST_GEMINI_PRIMARY_MODEL,
     temperature: float = 0.7,
     logger: Optional[_logging.Logger] = None,
 ) -> Optional[Candidate]:
@@ -1245,16 +1246,16 @@ def build_team_roundup_candidate(
         f"team_roundup|{today_str(now_jst)}|{text[:80]}".encode("utf-8")
     ).hexdigest()[:16]
     draft_lines = [
-        "【根拠: Gemini 3.1 Flash Lite team roundup + DB fact】",
+        "【根拠: Gemini team roundup + DB fact】",
         "対象: 今日の勝利試合 (複数選手 total)",
-        f"model: {model_id}",
+        f"configured_model: {model_id}",
         "",
         "【DB fact line】",
         fact_line,
     ]
     log.info("team_roundup_candidate_built text_len=%d", len(text))
     return Candidate(
-        title=f"Gemini 3.1 Flash Lite 試合後 roundup",
+        title="Gemini 試合後 roundup",
         metric=_GEMINI_BRANDING_METRIC,
         period_label="試合後 roundup",
         draft_text="\n".join(draft_lines),
@@ -1272,7 +1273,7 @@ def build_quote_rt_comment(
     phase_hint: str = "",
     *,
     gemini_api_key: str,
-    model_id: str = _GEMINI_FLASH_LITE_MODEL,
+    model_id: str = _X_POST_GEMINI_PRIMARY_MODEL,
     temperature: float = 0.9,
     now=None,
     subject: str = "X投稿",
@@ -1469,7 +1470,7 @@ def build_gemini_branding_candidate(
     db_fact_line: str = "",
     max_tavily_results: int = 3,
     timeout_seconds: int = 30,
-    model_id: str = _GEMINI_FLASH_LITE_MODEL,
+    model_id: str = _X_POST_GEMINI_PRIMARY_MODEL,
     temperature: float = 0.4,
     logger: Optional[_logging.Logger] = None,
     db_path: str = "",
@@ -1484,13 +1485,13 @@ def build_gemini_branding_candidate(
     lineup_change_summary: str = "",
     promotion_summary: str = "",
 ) -> Optional[Candidate]:
-    """Tavily REST 検索 + Gemini 3.1 Flash Lite 生成で 1 件の Candidate を返す。
+    """Tavily REST 検索 + Gemini 生成で 1 件の Candidate を返す。
 
     silent skip 条件 (``None`` 返却):
     - player_name 不正 / 巨人 roster 不一致
     - API key 不足
     - Tavily 失敗 (factual ground 無し → hallucination 抑制のため生成しない)
-    - Gemini Flash Lite 失敗 (rate limit / network 等)
+    - Gemini 失敗 (rate limit / network 等)
     - 空生成 / spec 382 hard rule 違反 (validator drop)
     """
     log = logger or _logging.getLogger("x_post_branding_gen")
@@ -1717,12 +1718,12 @@ def build_gemini_branding_candidate(
         f"gemma_branding|{player}|{text[:80]}".encode("utf-8")
     ).hexdigest()[:16]
     draft_lines = [
-        "【根拠: Gemini 3.1 Flash Lite + Tavily HTTP REST + 任意 DB 参照】",
+        "【根拠: Gemini + Tavily HTTP REST + 任意 DB 参照】",
         f"対象選手: {player}",
         f"検索 query: {query}",
         f"Tavily 結果数: {len(results)}",
         f"DB fact 注入: {'あり' if db_fact_line else 'なし'}",
-        f"model: {model_id}",
+        f"configured_model: {model_id}",
         "",
         "【Tavily 検索結果 snippet】",
         context,
@@ -1735,13 +1736,14 @@ def build_gemini_branding_candidate(
         len(results),
         len(text),
     )
+    tagged_text = _prepend_focus_player_tag(text, player)
     return Candidate(
-        title=f"Gemini 3.1 Flash Lite branding｜{player}",
+        title=f"Gemini branding｜{player}",
         metric=_GEMINI_BRANDING_METRIC,
         period_label="LLM 生成",
         draft_text="\n".join(draft_lines),
-        post_text=text,
-        char_count=len(text),
+        post_text=tagged_text,
+        char_count=len(tagged_text),
         signature=f"gemma_branding|{signature_hash}|False|None",
         focus_player=player,
         source_material_type="gemma_branding",
@@ -1926,15 +1928,15 @@ def build_x_post_from_article_info(
     unverified_numbers gate を全部流用。 違いは「Tavily 検索結果 → article_info の
     title + summary literal」 に source 入れ替えるのみ。
 
-    model_id 未指定時は時間帯で自動切替: 試合中 (18:00-21:30 JST) は Gemini
-    3.5 Flash、 それ以外 (朝 / 昼 / 試合後) は Gemini Flash Lite。 caller が明示指定すれば
+    model_id 未指定時は primary model を渡し、_x_post_generate_content 側で時間帯により
+    自動切替: 既定 JST 17:00-22:59 は primary(3.5)、 それ以外は fallback(lite)。 caller が明示指定すれば
     auto-select を override。
 
     silent skip 条件 (None 返却):
     - article_info が不正 / title 空
     - title から Giants roster player を 1 件も抽出できない (player_canonical も空)
     - gemini_api_key 不在
-    - Gemini Flash Lite / Gemini 失敗 (network / rate limit / 空生成)
+    - Gemini 失敗 (network / rate limit / 空生成)
     - safety_check / unverified_numbers gate hit
     """
     log = logger or _logging.getLogger("x_post_branding_gen")
@@ -2044,7 +2046,7 @@ def build_x_post_from_article_info(
     else:
         resolved_persona = persona
 
-    resolved_model_id = model_id if model_id else _GEMINI_FLASH_LITE_MODEL
+    resolved_model_id = model_id if model_id else _X_POST_GEMINI_PRIMARY_MODEL
 
     # 3. post_type 自動選択 (article_subtype が postgame なら data 寄り、 lineup なら
     # 速報寄り、 等の hint を has_tavily_results=True 相当で発火)
@@ -2247,6 +2249,8 @@ def build_x_post_from_article_info(
             # Pattern B 成立: post_text = 「{player}「{quote}」」、 image は raw のまま
             final_post_text = f"{player}「{extracted_quote}」"
             pattern_label = "B"
+    # 先頭に 【選手名】 を付与 (Pattern B は既に player「…」 で始まるため helper 内で skip)
+    final_post_text = _prepend_focus_player_tag(final_post_text, player)
     log.info(
         "article_info_branding_candidate_built player=%s source_url=%s text_len=%d model=%s handle=%s og_image=%s pattern=%s",
         player,

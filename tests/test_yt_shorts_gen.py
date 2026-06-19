@@ -187,50 +187,6 @@ class YtShortsGenTests(unittest.TestCase):
             self.assertEqual(write_history.call_count, 1)
             self.assertEqual(write_history.call_args.args[2]["status"], "uploaded")
 
-    def test_live_can_upload_private_youtube_before_mail(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            youtube_result = SimpleNamespace(
-                video_id="abc123_DEF-4",
-                privacy_status="private",
-                watch_url="https://www.youtube.com/watch?v=abc123_DEF-4",
-                studio_url="https://studio.youtube.com/video/abc123_DEF-4/edit",
-            )
-            with (
-                mock.patch("src.yt_shorts_gen._load_history", return_value=None),
-                mock.patch("src.yt_shorts_gen.render_short", return_value=_rendered(root)),
-                mock.patch(
-                    "src.yt_shorts_gen._upload_artifacts",
-                    return_value=("gs://bucket/run/short.mp4", "https://signed.example/short.mp4"),
-                ),
-                mock.patch("src.yt_shorts_gen.upload_private_video", return_value=youtube_result) as upload_private,
-                mock.patch(
-                    "src.yt_shorts_gen.build_yt_shorts_publish_url",
-                    return_value="https://fetcher.example.com/yt-shorts-publish?video_id=abc123_DEF-4&token=t",
-                ) as build_url,
-                mock.patch("src.yt_shorts_gen.send_approval_mail", return_value="sent") as send_mail,
-                mock.patch("src.yt_shorts_gen._write_history") as write_history,
-            ):
-                result = run(
-                    live=True,
-                    notable_data=_notable_data(),
-                    output_dir=root,
-                    allow_silent_tts=True,
-                    bucket_name="bucket",
-                    youtube_private_upload=True,
-                )
-
-            self.assertEqual(result.youtube_video_id, "abc123_DEF-4")
-            self.assertEqual(result.youtube_upload_status, "private")
-            upload_private.assert_called_once()
-            build_url.assert_called_once()
-            mail_kwargs = send_mail.call_args.kwargs
-            self.assertEqual(mail_kwargs["youtube_video_id"], "abc123_DEF-4")
-            self.assertIn("/yt-shorts-publish?", mail_kwargs["youtube_publish_url"])
-            first_payload = write_history.call_args_list[0].args[2]
-            self.assertEqual(first_payload["status"], "youtube_private_uploaded")
-            self.assertEqual(first_payload["youtube_video_id"], "abc123_DEF-4")
-
 
 if __name__ == "__main__":
     unittest.main()

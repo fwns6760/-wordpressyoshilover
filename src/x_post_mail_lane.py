@@ -406,6 +406,30 @@ def _is_verified_full_giants_member_name(member_name: object) -> bool:
     return len(key) >= 3
 
 
+def _prepend_focus_player_tag(text: str, player: str) -> str:
+    """投稿本文の先頭に 【選手名】 + 空行 を付ける (例: 【石塚裕惺】\\n\\n本文)。
+
+    safety / 品質ゲートを通過した最終 text に対して呼ぶ (ゲート判定には影響させない)。
+    branding 投稿 (x_post_branding_gen) と data 投稿 (_format_one) で共用。
+    そのまま返す (タグを付けない) 条件:
+    - player が空 / 「巨人選手」「(roundup)」 等の非単一選手 / 巨人 roster 未検証
+    - text が既に 【player】 か player「 で始まる (Pattern B 等、 名前重複回避)
+    - タグ付与で X 文字数上限 (X_CHAR_LIMIT) を超える
+    """
+    body = (text or "").strip()
+    who = (player or "").strip()
+    if not body or not who:
+        return body
+    if not _is_verified_full_giants_member_name(who):
+        return body
+    if body.startswith(f"【{who}】") or body.startswith(f"{who}「"):
+        return body
+    tagged = f"【{who}】\n\n{body}"
+    if len(tagged) > X_CHAR_LIMIT:
+        return body
+    return tagged
+
+
 def normalize_focus_player_names(
     names: Optional[list[str] | tuple[str, ...] | set[str]],
     *,
@@ -3672,6 +3696,8 @@ def _format_one(
             combo.period_label,
         )
         post_text = ""
+    # data 投稿も先頭に 【選手名】 を付与 (focus_name が「巨人選手」fallback / 未検証なら helper 内 skip)
+    post_text = _prepend_focus_player_tag(post_text, focus_name)
     value_text = f"{metric_jp} {_format_metric_value(combo.metric, focus_row.get('metric_value'))}"
     db_fact_line = (
         f"{focus_name}は{period_label}の{fact_metric_label}で"

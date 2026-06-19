@@ -116,6 +116,8 @@ def _build_intro_html() -> str:
         '　/　'
         '<a href="/data/record" style="color:#e25400;font-weight:600;text-decoration:none;">🏛 記録室</a>'
         '　/　'
+        '<a href="/data/walkoff-homerun" style="color:#e25400;font-weight:600;text-decoration:none;">💥 サヨナラ本塁打</a>'
+        '　/　'
         '<a href="/data/cleanup-hitters" style="color:#e25400;font-weight:600;text-decoration:none;">4番打者</a>'
         '　/　'
         '<a href="/data/jersey-numbers" style="color:#e25400;font-weight:600;text-decoration:none;">🔢 歴代背番号</a>'

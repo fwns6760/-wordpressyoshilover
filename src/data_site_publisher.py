@@ -138,6 +138,12 @@ from src.data_site_template_rotation import (
     render_rotation_title,
     render_rotation_excerpt,
 )
+from src.data_site_template_walkoff import (
+    load_walkoff_data,
+    render_walkoff_html,
+    render_walkoff_title,
+    render_walkoff_excerpt,
+)
 from src.data_site_template_fa import (
     load_fa_data,
     render_fa_html,
@@ -1452,6 +1458,19 @@ def publish_phase1(only_slugs: set[str] | None = None) -> dict[str, object]:
              fa_result.page_id, fa_result.action,
              len(fa_data.get("fa_acquisitions") or []),
              len(fa_data.get("fa_eligible") or []))
+
+    # サヨナラ本塁打 ページ upsert（歴代全記録、user 指定 2026-06-19）— parent=cluster → /data/walkoff-homerun/
+    walkoff_data = load_walkoff_data()
+    walkoff_result = _upsert_page(
+        slug="walkoff-homerun",
+        title=render_walkoff_title(),
+        content_html=render_walkoff_html(walkoff_data),
+        parent=cluster_page_id,
+        excerpt=render_walkoff_excerpt(walkoff_data),
+    )
+    LOG.info("walkoff upsert slug=walkoff-homerun page_id=%s action=%s hr=%d",
+             walkoff_result.page_id, walkoff_result.action,
+             len(walkoff_data.get("homeruns") or []))
 
     # trade ページ upsert（トレード/入退団、user 指定 2026-06-05）— parent=cluster → /data/trade/
     trade_data = load_trade_data()

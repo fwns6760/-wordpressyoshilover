@@ -192,6 +192,7 @@ function yoshilover_063_render_home_data_hub() {
                 array( 'href' => '/data/salary/salary-value', 'ic' => '⚖️', 't' => '年俸コスパ分析',     's' => '1安打あたりの年俸で割安度' ),
                 array( 'href' => '/data/jersey-numbers',      'ic' => '🔢', 't' => '歴代背番号',         's' => '永久欠番・番号変遷' ),
                 array( 'href' => '/data/draft',               'ic' => '📋', 't' => '歴代ドラフト',       's' => '指名選手・育成・外れ1位' ),
+                array( 'href' => '/data/walkoff-homerun',     'ic' => '💥', 't' => 'サヨナラ本塁打 全記録', 's' => '歴代162本・王貞治の通算最多' ),
                 array( 'href' => '/data/foreign-players',     'ic' => '🌍', 't' => '歴代外国人選手',     's' => 'スタルヒン〜現役助っ人' ),
                 array( 'href' => '/data/open-games',          'ic' => '🌸', 't' => 'オープン戦結果',     's' => '2001〜2026年 年度別の勝敗' ),
             ),

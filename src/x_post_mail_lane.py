@@ -1077,6 +1077,9 @@ _FAN_VOICE_METRIC = "FAN_VOICE"
 _GEMINI_BRANDING_METRIC = "GEMMA_BRANDING"
 _HOCHI_REPLY_METRIC = "HOCHI_REPLY"
 _REPLY_CANDIDATE_METRIC = "reply_candidate"
+# @Tigers_140609 風の速報スクレイプ型 (重要コメント + 数字だけ抜いて速報)。
+# 報知/サンスポ記事 facts を news_scrape_x_post で 280 字速報に整形した候補。
+_NEWS_SCRAPE_METRIC = "news_scrape"
 _COMMENT_TERMS = (
     "コメント",
     "語った",

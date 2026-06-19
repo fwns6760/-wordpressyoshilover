@@ -15,6 +15,7 @@ Cloud Run Job entrypoint: ``python -m src.tools.run_x_post_mail``.
 from __future__ import annotations
 
 import argparse
+import hashlib as _hashlib
 import json
 import logging
 import os
@@ -290,6 +291,87 @@ def _reply_candidates_enabled() -> bool:
 def _reply_candidates_max_per_run() -> int:
     """リプライ候補数 / fire の上限。 報知返信欄を厚くするため default 3。"""
     return _resolve_int_env("X_POST_REPLY_CANDIDATES_MAX", 3, min_value=0)
+
+
+def _news_scrape_enabled() -> bool:
+    """@Tigers_140609 風の速報スクレイプ型 post をメール便に出すか (default OFF)。
+
+    ON 時、 queue 417 で drain 済みの 報知/サンスポ 記事 facts を
+    news_scrape_x_post で 280 字速報に整形し、 同じメールに最大 N 件 append。
+    flag OFF では既存挙動完全不変 (rollback 余地)。
+    """
+    raw = (os.environ.get("ENABLE_X_POST_NEWS_SCRAPE") or "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _news_scrape_max_per_run() -> int:
+    """速報スクレイプ候補数 / fire の上限 (default 2、 LLM 費用を抑える)。"""
+    return _resolve_int_env("X_POST_MAIL_NEWS_SCRAPE_MAX", 2, min_value=0)
+
+
+def _build_news_scrape_candidates(queue_items, *, gemini_key, max_count, log):
+    """queue 417 で drain 済みの記事 (article_info) から @Tigers_140609 風の
+    速報スクレイプ候補 (lane.Candidate) を最大 max_count 件作る。
+
+    facts は記事の title / summary / 抽出引用のみ。 news_scrape_x_post の
+    system prompt が「facts 外の数字/固有名詞/引用を作らない」を強制するため
+    数字 hallucination は起きない。 加えて lane._is_safe_post_text と 280 字
+    上限で二重 gate。 LLM 失敗 / 空 / unsafe は個別 skip (silent)。
+
+    返値は ``(candidate, source_item)`` の list。 caller は source_item を
+    processed_queue_items に積んで再 drain (次 fire での重複生成) を防ぐ。
+    """
+    out: list[tuple[lane.Candidate, object]] = []
+    if max_count <= 0 or not gemini_key or not queue_items:
+        return out
+    try:
+        from src import news_scrape_x_post as _nsx
+    except Exception as exc:  # noqa: BLE001
+        log.info("news_scrape skip: import failed err=%r", exc)
+        return out
+    for item in queue_items:
+        if len(out) >= max_count:
+            break
+        title = (getattr(item, "title", "") or "").strip()
+        summary = (getattr(item, "summary", "") or "").strip()
+        source_url = (getattr(item, "source_url", "") or "").strip()
+        players = list(getattr(item, "player_canonical", []) or [])
+        if not title:
+            continue
+        facts: dict = {"見出し": title}
+        if summary:
+            facts["概要"] = summary
+        quotes = _nsx.extract_quotes_from_text(summary or title)
+        if quotes:
+            facts["コメント"] = quotes
+        if players:
+            facts["選手"] = "、".join(players[:3])
+        try:
+            text = _nsx.format_scrape_post(facts, api_key=gemini_key).strip()
+        except Exception as exc:  # noqa: BLE001
+            log.warning("news_scrape build skip source_url=%s err=%r", source_url, exc)
+            continue
+        if not text or len(text) > lane.X_CHAR_LIMIT or not lane._is_safe_post_text(text):
+            log.info("news_scrape drop source_url=%s reason=empty/oversize/unsafe", source_url)
+            continue
+        focus = players[0] if players else ""
+        sig = "news_scrape|" + _hashlib.sha1(
+            (source_url or title).encode("utf-8")
+        ).hexdigest()[:16]
+        cand = lane.Candidate(
+            title=f"速報スクレイプ｜{title[:24]}",
+            metric=lane._NEWS_SCRAPE_METRIC,
+            period_label="速報",
+            draft_text=text,
+            char_count=len(text),
+            post_text=text,
+            signature=sig,
+            focus_player=focus,
+            source_material_type="news_scrape",
+        )
+        out.append((cand, item))
+        log.info("news_scrape built source_url=%s text_len=%d", source_url, len(text))
+    return out
 
 
 _OFFICIAL_REPLY_HANDLE = "TokyoGiants"
@@ -2673,6 +2755,32 @@ def main(argv: Sequence[str] | None = None) -> int:
                         len(queue_items),
                     )
 
+                # @Tigers_140609 風 速報スクレイプ: 同じ drain 済み記事を再利用し
+                # (二重 drain しない)、 重要コメント + 数字だけの速報型 post を
+                # 最大 N 件 同じメールに append。 ENABLE_X_POST_NEWS_SCRAPE=1 のみ。
+                if _news_scrape_enabled():
+                    scrape_pairs = _build_news_scrape_candidates(
+                        queue_items,
+                        gemini_key=queue_gemini_key,
+                        max_count=_news_scrape_max_per_run(),
+                        log=LOG,
+                    )
+                    if scrape_pairs:
+                        scrape_cands = [c for c, _ in scrape_pairs]
+                        # source 記事は branding と共有。 scrape が拾った item を
+                        # processed に積み、 再 drain (次 fire での重複生成) を防ぐ。
+                        for _c, it in scrape_pairs:
+                            if it not in processed_queue_items:
+                                processed_queue_items.append(it)
+                        before_s = len(candidates)
+                        candidates = candidates + scrape_cands
+                        LOG.info(
+                            "news_scrape appended: before=%d scrape=%d total=%d",
+                            before_s,
+                            len(scrape_cands),
+                            len(candidates),
+                        )
+
     # 441: relaxed-history fallback removed. user 方針「少なくてもよいから
     # 連発回避優先」(memory: feedback_data_insight_user_preferences_2026_05_15,
     # ticket 436 follow-up 21:20)。 0 件のままなら mail skip。
@@ -2694,6 +2802,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             lane._NEWS_OPINION_METRIC, lane._FAN_VOICE_METRIC, lane._GEMINI_BRANDING_METRIC,
             lane._HOCHI_REPLY_METRIC, lane._REPLY_CANDIDATE_METRIC, lane._VIDEO_RADAR_METRIC,
             lane._PLAYER_COMMENT_METRIC, lane._COMMENT_DB_METRIC, "quote_caption",
+            # @Tigers_140609 風 速報スクレイプ (報知/サンスポ facts の速報型) も
+            # たんぱく事実型として許可 (voice-only filter で落とさない)。
+            lane._NEWS_SCRAPE_METRIC,
             # 2026-06-11 角度 v2 (user 全部GO): たんぱく事実型 pattern① として許可。
             # 2026-06-04 の voice-only は「DB ランキング表の生データ枠」を落とす意図で、
             # 驚き角度 (勝利相関/対戦別/歴代チェイス) は 2-pattern 設計の①に該当する。

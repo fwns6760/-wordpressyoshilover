@@ -48,7 +48,7 @@ class XPostGeneratorTests(unittest.TestCase):
             article_subtype="notice",
         )
 
-        self.assertIn("浅野翔吾が一軍登録。", text)
+        self.assertIn("【浅野翔吾】\n一軍登録。", text)
         self.assertIn("ここから出番が増えるかも気になります。", text)
         self.assertIn("この動き、どう見ますか？", text)
         self.assertIn("#巨人 #ジャイアンツ #浅野翔吾", text)
@@ -62,7 +62,7 @@ class XPostGeneratorTests(unittest.TestCase):
             summary="公示で浅野翔吾外野手の出場選手登録が発表された。",
         )
 
-        self.assertIn("浅野翔吾が一軍登録。", text)
+        self.assertIn("【浅野翔吾】\n一軍登録。", text)
         self.assertIn("ここから出番が増えるかも気になります。", text)
 
     def test_recovery_post_uses_explicit_article_subtype(self):
@@ -75,7 +75,7 @@ class XPostGeneratorTests(unittest.TestCase):
             article_subtype="recovery",
         )
 
-        self.assertIn("西舘勇陽が復帰へ前進。", text)
+        self.assertIn("【西舘勇陽】\n復帰へ前進。", text)
         self.assertIn("ブルペン段階まで戻ってきたのは前進です。", text)
         self.assertIn("一軍復帰、いつがいいと思いますか？", text)
 
@@ -88,7 +88,7 @@ class XPostGeneratorTests(unittest.TestCase):
             summary="コンディション不良からの復帰へ向けて二軍での状態確認が続く。",
         )
 
-        self.assertIn("西舘勇陽が復帰へ前進。", text)
+        self.assertIn("【西舘勇陽】\n復帰へ前進。", text)
         self.assertIn("実戦復帰まで段階が進んできました。", text)
 
     def test_social_news_post_uses_explicit_source_type_and_subtype(self):
@@ -439,7 +439,7 @@ class XPostGeneratorTests(unittest.TestCase):
                 )
 
         gemini_mock.assert_not_called()
-        self.assertIn("浅野翔吾の2軍での動き、気になります。", farm_text)
+        self.assertIn("【浅野翔吾】\n2軍での動き、気になります。", farm_text)
         self.assertIn("数字で見ると、打線の見え方が少し変わります。", column_text)
 
     def test_gemini_failure_falls_back_to_deterministic_copy(self):
@@ -457,7 +457,7 @@ class XPostGeneratorTests(unittest.TestCase):
                     article_subtype="notice",
                 )
 
-        self.assertIn("浅野翔吾が一軍登録。", text)
+        self.assertIn("【浅野翔吾】\n一軍登録。", text)
         self.assertTrue(meta["fallback_used"])
         self.assertEqual(meta["failure_reason"], "empty_response")
 
@@ -540,7 +540,7 @@ class XPostGeneratorTests(unittest.TestCase):
                     x_post_generator.main()
 
         output = stdout.getvalue()
-        self.assertIn("浅野翔吾が一軍登録。", output)
+        self.assertIn("【浅野翔吾】\n一軍登録。", output)
         self.assertIn("ここから出番が増えるかも気になります。", output)
         self.assertIn("この動き、どう見ますか？", output)
 
@@ -555,7 +555,7 @@ class XPostGeneratorTests(unittest.TestCase):
             ),
         )
 
-        self.assertIn("戸郷翔征「人の助言を取り入れることも重要」", text)
+        self.assertIn("【戸郷翔征】\n「人の助言を取り入れることも重要」", text)
         self.assertIn("今回は結果より、フォーム変更の中身が気になる記事です。", text)
         self.assertIn("この変化、どう見ますか？", text)
         self.assertIn("https://yoshilover.com/61897", text)
@@ -570,7 +570,7 @@ class XPostGeneratorTests(unittest.TestCase):
             summary="巨人の浅野翔吾外野手が1軍昇格に向けて準備を進めている。",
         )
 
-        self.assertIn("浅野翔吾の今回の動き、気になります。", text)
+        self.assertIn("【浅野翔吾】\n今回の動き、気になります。", text)
         self.assertIn("今回の動き、今後の起用にも関わってきそうです。", text)
         self.assertIn("この流れ、どう見ますか？", text)
         self.assertIn("#巨人 #ジャイアンツ #浅野翔吾", text)
@@ -583,7 +583,7 @@ class XPostGeneratorTests(unittest.TestCase):
             summary="阿部監督が「レギュラーは決まってません。結果残せば使います」と話した。若手積極起用で競争を促す考えを示した。",
         )
 
-        self.assertIn("阿部慎之助「レギュラーは決まってません。結果残せば使います」", text)
+        self.assertIn("【阿部慎之助】\n「レギュラーは決まってません。結果残せば使います」", text)
         self.assertIn("このコメント、次の序列にも関わってきそうです。", text)
         self.assertIn("この競争、どう見ますか？", text)
         self.assertIn("https://yoshilover.com/61903", text)
@@ -707,7 +707,7 @@ class XPostGeneratorTests(unittest.TestCase):
             summary="巨人2軍の浅野翔吾外野手がマルチ安打を記録。昇格候補として注目が集まる。",
         )
 
-        self.assertIn("浅野翔吾の2軍での動き、気になります。", text)
+        self.assertIn("【浅野翔吾】\n2軍での動き、気になります。", text)
         self.assertIn("この動き、一軍の入れ替えにも関わってきそうです。", text)
         self.assertIn("次に上がるなら誰を見たいですか？", text)
         self.assertIn("#巨人 #ジャイアンツ #浅野翔吾", text)
@@ -731,13 +731,123 @@ class XPostGeneratorTests(unittest.TestCase):
             ),
         )
 
-        self.assertIn("阿部監督は打線をどう組むのか。", text)
+        self.assertIn("【阿部監督】\n打線をどう組むのか。", text)
         self.assertIn("出塁率上位5人", text)
         self.assertIn("泉口 友汰 .368", text)
         self.assertIn("浦田 俊輔 .289", text)
         self.assertIn("坂本勇人 10位 .172", text)
         self.assertIn("NPB調べ", text)
         self.assertIn("#巨人 #ジャイアンツ #泉口友汰 #ダルベック #キャベッジ #佐々木俊輔 #浦田俊輔", text)
+
+
+class XPostPlayerHeadlineBracketTests(unittest.TestCase):
+    """user 2026-06-19: 巨人専門サイトなので見出しは【選手名】+改行で立てる。"""
+
+    def test_player_led_post_gets_player_bracket_headline(self):
+        text = x_post_generator.build_post(
+            title="【巨人】浅野翔吾が同点適時打",
+            url="https://yoshilover.com/a",
+            category="選手情報",
+            summary="浅野翔吾外野手が一軍登録され、出番増も期待される。",
+            article_subtype="notice",
+        )
+        self.assertTrue(text.startswith("【浅野翔吾】\n"))
+        self.assertNotIn("【巨人】", text)
+
+    def test_new_unregistered_player_uses_regex_fallback(self):
+        # 小笠原慎之介は PLAYER_TAGS 未登録でも先頭名フォールバックで拾う。
+        text = x_post_generator.build_post(
+            title="【巨人】小笠原慎之介が東京ドームで練習",
+            url="https://yoshilover.com/b",
+            category="試合速報",
+            summary="巨人に加入した小笠原慎之介投手が19日、東京ドームで試合前練習に参加した。",
+            article_subtype="pregame",
+        )
+        self.assertTrue(text.startswith("【小笠原慎之介】\n東京ドームで練習。"))
+
+    def test_team_framed_postgame_not_bracketed(self):
+        text = x_post_generator.build_post(
+            title="【巨人】阪神に3-2で勝利",
+            url="https://yoshilover.com/c",
+            category="試合速報",
+            summary="巨人が競り勝って白星。連勝。",
+            article_subtype="postgame",
+        )
+        self.assertTrue(text.startswith("巨人、"))
+        self.assertNotIn("【", text.split("\n")[0])
+
+    def test_source_led_social_post_not_bracketed(self):
+        text = x_post_generator.build_post(
+            title="巨人ヤクルト戦のスタメン発表",
+            url="https://yoshilover.com/d",
+            category="試合速報",
+            summary="巨人公式Xがスタメンを伝えた。",
+            source_type="social_news",
+            source_name="巨人公式X",
+        )
+        self.assertTrue(text.startswith("巨人公式が"))
+
+    def _ai_post(self, title, summary, category="試合速報", ai_text="⚾️きたーー！🔥"):
+        with patch.dict(
+            "os.environ",
+            {"LOW_COST_MODE": "1", "X_POST_AI_MODE": "gemini",
+             "X_POST_AI_CATEGORIES": "試合速報,選手情報,首脳陣"},
+            clear=False,
+        ):
+            with patch.object(x_post_generator, "generate_with_gemini", return_value=ai_text):
+                text, meta = x_post_generator.build_post_with_meta(
+                    title=title, url="https://yoshilover.com/ai",
+                    category=category, summary=summary,
+                )
+        return text, meta
+
+    def test_ai_post_headline_forced_deterministically_from_title(self):
+        # AI が選手名を頭に出さなくても、タイトル由来で【選手名】を強制する。
+        text, meta = self._ai_post(
+            title="【巨人】岡本和真が決勝アーチ",
+            summary="岡本和真が決勝本塁打。",
+            ai_text="⚾️岡本、決勝弾きたーー！🔥",
+        )
+        self.assertTrue(meta["ai_used"])
+        self.assertTrue(text.startswith("【岡本和真】\n⚾️岡本、決勝弾きたーー！🔥"))
+
+    def test_ai_post_wrong_bracket_is_replaced_from_title(self):
+        # AI が誤った選手名の【…】を付けても剥がしてタイトル由来で貼り直す。
+        text, _ = self._ai_post(
+            title="【巨人】岡本和真が決勝アーチ",
+            summary="岡本和真が決勝本塁打。",
+            ai_text="【坂本勇人】\n⚾️決勝弾きたー！🔥",
+        )
+        self.assertTrue(text.startswith("【岡本和真】\n⚾️決勝弾きたー！🔥"))
+        self.assertNotIn("【坂本勇人】", text)
+
+    def test_ai_post_multiple_players_not_forced(self):
+        text, _ = self._ai_post(
+            title="【巨人】岡本和真と坂本勇人がアーチ",
+            summary="岡本和真と坂本勇人が本塁打。",
+            ai_text="⚾️巨人打線爆発！🔥",
+        )
+        self.assertFalse(text.startswith("【"))
+
+    def test_ai_post_team_topic_not_forced(self):
+        text, _ = self._ai_post(
+            title="巨人が逆転勝ちで連勝",
+            summary="巨人が逆転で連勝した。",
+            ai_text="⚾️巨人、逆転勝ちきたー！🔥",
+        )
+        self.assertFalse(text.startswith("【"))
+
+    def test_flag_off_keeps_legacy_headline(self):
+        with patch.dict("os.environ", {"ENABLE_X_PLAYER_HEADLINE_BRACKET": "0"}):
+            text = x_post_generator.build_post(
+                title="【巨人】浅野翔吾が出場選手登録",
+                url="https://yoshilover.com/e",
+                category="選手情報",
+                summary="公示で浅野翔吾外野手の出場選手登録が発表された。",
+                article_subtype="notice",
+            )
+        self.assertIn("浅野翔吾が一軍登録。", text)
+        self.assertNotIn("【浅野翔吾】", text)
 
 
 if __name__ == "__main__":

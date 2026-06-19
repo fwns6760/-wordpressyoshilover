@@ -230,7 +230,8 @@ def _generate_with_grok_response(
 
 【絶対ルール】
 ・80〜140文字以内（短く一目で読める）
-・冒頭は「きた！」「ヤバい！」「〜きたーー！！」など感情爆発 or データの核心を一撃
+・話題が1選手中心なら、1行目に「【選手名】」だけ置いて改行し、2行目から本文（巨人専門サイトなので「【巨人】」とは囲まない。複数選手やチーム全体の話題なら【】見出しは付けない）
+・冒頭（【選手名】の次の行）は「きた！」「ヤバい！」「〜きたーー！！」など感情爆発 or データの核心を一撃
 ・⚾️🔥🙌‼️を冒頭か末尾に1〜2個
 ・X検索でバズっている巨人投稿のトーンを参考にする
 ・Web検索で{today}現在のデータを確認してから数字を使う（推測不可）
@@ -383,6 +384,7 @@ def _generate_with_gemini_response(
 ・発言は記事や検索結果から実際のものを引用する（作らない）
 ・ハッシュタグは含めない（後で追加する）
 ・URLは含めない（後で追加する）
+・話題が1選手中心なら、1行目に「【選手名】」だけ置いて改行し、2行目から本文（巨人専門サイトなので「【巨人】」とは囲まない。複数選手やチーム全体の話題なら【】見出しは付けない）
 ・改行を使って見やすく整形する
 ・最後は「→〇〇はブログで👇」など自然な誘導で締める
 ・出力はポスト本文のみ（説明不要）"""
@@ -552,6 +554,117 @@ def _detect_earliest_player_tag(text: str) -> str:
             best_index = idx
             best_tag = tag
     return best_tag
+
+
+# 巨人専門サイトでは「【巨人】」接頭辞は冗長なので、見出し先頭の主役選手名を
+# 「【選手名】」+改行で立てて誰の話かを一目で分からせる (user 2026-06-19 指示)。
+# PLAYER_TAGS 未登録の新加入選手 (例: 小笠原慎之介) も拾えるよう、先頭名の
+# 正規表現フォールバックを併用する。team / 媒体語が先頭の場合は変換しない。
+def x_player_headline_bracket_enabled() -> bool:
+    return _env_flag("ENABLE_X_PLAYER_HEADLINE_BRACKET", True)
+
+
+_HEADLINE_NAME_STOPWORDS = frozenset({
+    "巨人", "読売", "ジャイアンツ", "報知", "スポニチ", "日刊", "サンスポ",
+    "東スポ", "中日", "阪神", "ヤクルト", "DeNA", "横浜", "広島", "カープ",
+    "ソフトバンク", "日本ハム", "ロッテ", "西武", "オリックス", "楽天",
+    "チーム", "球団", "ベンチ", "首脳陣", "選手", "監督", "コーチ", "投手陣",
+})
+_HEADLINE_LEAD_NAME_RE = re.compile(
+    r"^[\s　]*(?P<name>[一-龥々ァ-ヴーA-Za-z]{2,12})(?=[がはのをにへとも、，,「『])"
+)
+_HEADLINE_LEAD_PARTICLE_RE = re.compile(r"^[\s　]*[がはをにのへともや、，,]?[\s　]*")
+
+# 主役が1選手に定まらない / source 視点の subtype は【選手名】化しない。
+_HEADLINE_BRACKET_SKIP_SUBTYPES = frozenset({"social", "lineup", "data", "live_update"})
+
+
+def _is_headline_stopword_name(name: str) -> bool:
+    # 「巨人公式」「報知スポーツ」等、team / 媒体語で始まる語は選手名ではない。
+    return any(name.startswith(sw) for sw in _HEADLINE_NAME_STOPWORDS)
+
+
+def _headline_name_candidates(first_line: str, primary: str, earliest: str) -> list[str]:
+    candidates: list[str] = []
+    for tag in (primary, earliest):
+        name = (tag or "").lstrip("#").strip()
+        if name and name not in candidates and not _is_headline_stopword_name(name):
+            candidates.append(name)
+    match = _HEADLINE_LEAD_NAME_RE.match(first_line.strip())
+    if match:
+        name = match.group("name")
+        if name and name not in candidates and not _is_headline_stopword_name(name):
+            candidates.append(name)
+    return candidates
+
+
+def _apply_player_headline_bracket(
+    text: str, primary: str = "", earliest: str = "", subtype: str = ""
+) -> str:
+    """見出し先頭が主役選手名で始まる場合だけ「【選手名】+改行+残り」へ整形する。
+
+    先頭が「巨人、…」のようなチーム視点の行や、主役が1選手に定まらない
+    subtype (lineup / social / data / live_update) は変換しない。
+    冪等: 既に「【…】」始まりなら何もしない。
+    """
+    if not text or not x_player_headline_bracket_enabled():
+        return text
+    if subtype in _HEADLINE_BRACKET_SKIP_SUBTYPES:
+        return text
+    first, sep, rest = text.partition("\n")
+    stripped = first.strip()
+    if not stripped or stripped.startswith("【"):
+        return text
+    for name in _headline_name_candidates(stripped, primary, earliest):
+        if not stripped.startswith(name):
+            continue
+        remainder = _HEADLINE_LEAD_PARTICLE_RE.sub("", stripped[len(name):], count=1).strip()
+        if not remainder:
+            return text
+        new_first = f"【{name}】\n{remainder}"
+        return new_first + sep + rest if sep else new_first
+    return text
+
+
+_AI_LEAD_BRACKET_RE = re.compile(r"^[\s　]*【[^】]{0,24}】[ \t　]*\n?")
+
+
+def _ai_protagonist_name(title: str) -> str:
+    """AI便の【選手名】見出し用に、実タイトルから主役を1人だけ決定論で採取する。
+
+    AI 出力 (記憶から再構成され得る) ではなく必ずタイトルを根拠にする。
+    タイトルに登録選手がちょうど1人ならその名前。複数 / チーム全体なら空
+    (見出しを強制しない)。未登録の新加入選手は先頭名 regex で補う。
+    """
+    clean = re.sub(r"^【[^】]+】\s*", "", title or "").strip()
+    names = list(dict.fromkeys(t.lstrip("#") for t in detect_player_tags(clean)))
+    if len(names) == 1 and not _is_headline_stopword_name(names[0]):
+        return names[0]
+    if len(names) >= 2:
+        return ""
+    match = _HEADLINE_LEAD_NAME_RE.match(clean)
+    if match and not _is_headline_stopword_name(match.group("name")):
+        return match.group("name")
+    return ""
+
+
+def _force_ai_player_headline(text: str, name: str, subtype: str = "") -> str:
+    """AI便: タイトル由来の主役名で「【選手名】+改行」を決定論で被せる。
+
+    AI が付けた【…】見出しは選手名が誤り得るので一旦剥がしてから貼り直す
+    (silent skip / 記憶からの再構成 への保険)。名前が無い・チーム全体・
+    skip subtype の時は何もしない。
+    """
+    if not text or not x_player_headline_bracket_enabled():
+        return text
+    if subtype in _HEADLINE_BRACKET_SKIP_SUBTYPES:
+        return text
+    if not name or _is_headline_stopword_name(name):
+        return text
+    body = _AI_LEAD_BRACKET_RE.sub("", text, count=1).lstrip("\n")
+    if not body:
+        return text
+    return f"【{name}】\n{body}"
 
 
 def _dedupe_preserve_order(items: list[str]) -> list[str]:
@@ -1177,7 +1290,9 @@ def _pregame_angle(title: str, summary: str) -> str:
 
 def _build_pregame_post(title: str, url: str, summary: str, hashtag_str: str) -> str:
     opponent, venue, time_label = _extract_pregame_context(title, summary)
-    if opponent or venue or time_label:
+    # 対戦相手が取れた時だけ試合プレビュー型の「巨人○○戦…」へ。相手不明
+    # (例: 選手の練習・調整) は選手主役の見出しを残す (後段で【選手名】化)。
+    if opponent:
         intro = "巨人"
         if opponent:
             intro += f"{opponent}戦"
@@ -1504,6 +1619,11 @@ def build_post_with_meta(
         source_type=source_type,
         source_name=source_name,
     )
+    headline_primary = _detect_primary_player_tag(clean_title + " " + summary)
+    headline_earliest = _detect_earliest_player_tag(clean_title + " " + summary)
+    deterministic_text = _apply_player_headline_bracket(
+        deterministic_text, headline_primary, headline_earliest, resolved_subtype
+    )
     fallback_text = _finalize_post_text(deterministic_text, url, hashtags)
     weighted_fallback_length = _weighted_x_length(fallback_text, url)
     effective_ai_mode = resolve_effective_x_post_ai_mode(category, ai_mode_override=ai_mode_override)
@@ -1536,7 +1656,12 @@ def build_post_with_meta(
     ai_text = _sanitize_ai_generated_text(ai_result.get("text", ""))
     blocked_phrase = _blocked_phrase_in_text(ai_text)
     if ai_text and not blocked_phrase:
-        final_text = _finalize_post_text(_compose_ai_post_body(ai_text, url, hashtags), url, hashtags)
+        # AI 出力は信用せず、見出しの選手名は実タイトルから決定論で被せる。
+        ai_body = _force_ai_player_headline(
+            _compose_ai_post_body(ai_text, url, hashtags),
+            _ai_protagonist_name(clean_title), resolved_subtype
+        )
+        final_text = _finalize_post_text(ai_body, url, hashtags)
         metadata["ai_used"] = True
         metadata["generated_length"] = _weighted_x_length(final_text, url)
         return final_text, metadata

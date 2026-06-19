@@ -369,7 +369,7 @@ def _record_hash(slug: str, sig: str, page_id: int, url: str) -> None:
     if not _incremental_enabled() or not page_id:
         return
     led = _load_hash_ledger()
-    led[slug] = {"sig": sig, "page_id": int(page_id), "url": str(url or f"/data/{slug}/")}
+    led[slug] = {"sig": sig, "page_id": int(page_id), "url": str(url or f"/data/{slug}")}
     _HASH_LEDGER_DIRTY = True
 
 
@@ -437,7 +437,7 @@ def _upsert_page(
     """WP page を upsert (slug 一致なら PUT、 無ければ POST)."""
     if _dry_run_enabled():
         LOG.info("DRY_RUN upsert skipped slug=%s title=%s bytes=%d", slug, title, len(content_html))
-        return UpsertResult(slug=slug, page_id=0, action="skipped", url=f"/data/{slug}/")
+        return UpsertResult(slug=slug, page_id=0, action="skipped", url=f"/data/{slug}")
 
     # 差分更新: 描画内容が前回と同じページは GET/POST を skip (親ページは常に実 upsert)
     sig = _content_sig(slug, title, content_html, excerpt, featured_media_id)
@@ -450,7 +450,7 @@ def _upsert_page(
                 slug=slug,
                 page_id=int(cached["page_id"]),
                 action="unchanged",
-                url=str(cached.get("url") or f"/data/{slug}/"),
+                url=str(cached.get("url") or f"/data/{slug}"),
             )
 
     base, auth = _wp_creds()
@@ -491,19 +491,19 @@ def _upsert_page(
             action = "created"
         if not r.ok:
             LOG.warning("upsert fail slug=%s status=%d body=%s", slug, r.status_code, r.text[:300])
-            return UpsertResult(slug=slug, page_id=0, action="error", url=f"/data/{slug}/")
+            return UpsertResult(slug=slug, page_id=0, action="error", url=f"/data/{slug}")
         page = r.json() or {}
         result = UpsertResult(
             slug=slug,
             page_id=int(page.get("id") or 0),
             action=action,
-            url=str(page.get("link") or f"/data/{slug}/"),
+            url=str(page.get("link") or f"/data/{slug}"),
         )
         _record_hash(slug, sig, result.page_id, result.url)
         return result
     except Exception as exc:  # noqa: BLE001
         LOG.exception("upsert exception slug=%s: %r", slug, exc)
-        return UpsertResult(slug=slug, page_id=0, action="error", url=f"/data/{slug}/")
+        return UpsertResult(slug=slug, page_id=0, action="error", url=f"/data/{slug}")
 
 
 def _build_pillar_info(player_name: str) -> PillarPlayerInfo | None:
@@ -929,7 +929,7 @@ def _update_page_content(page_id: int, content_html: str) -> UpsertResult:
 def _update_page_status(page_id: int, slug: str, status: str) -> UpsertResult:
     if _dry_run_enabled():
         LOG.info("DRY_RUN page status update skipped page_id=%s slug=%s status=%s", page_id, slug, status)
-        return UpsertResult(slug=slug, page_id=page_id, action="skipped", url=f"/data/{slug}/")
+        return UpsertResult(slug=slug, page_id=page_id, action="skipped", url=f"/data/{slug}")
     base, auth = _wp_creds()
     try:
         r = requests.post(
@@ -940,17 +940,17 @@ def _update_page_status(page_id: int, slug: str, status: str) -> UpsertResult:
         )
         if not r.ok:
             LOG.warning("page status update fail page_id=%s slug=%s status=%d body=%s", page_id, slug, r.status_code, r.text[:300])
-            return UpsertResult(slug=slug, page_id=0, action="error", url=f"/data/{slug}/")
+            return UpsertResult(slug=slug, page_id=0, action="error", url=f"/data/{slug}")
         page = r.json() or {}
         return UpsertResult(
             slug=slug,
             page_id=int(page.get("id") or page_id),
             action="updated",
-            url=str(page.get("link") or f"/data/{slug}/"),
+            url=str(page.get("link") or f"/data/{slug}"),
         )
     except Exception as exc:  # noqa: BLE001
         LOG.exception("page status update exception page_id=%s slug=%s: %r", page_id, slug, exc)
-        return UpsertResult(slug=slug, page_id=0, action="error", url=f"/data/{slug}/")
+        return UpsertResult(slug=slug, page_id=0, action="error", url=f"/data/{slug}")
 
 
 def retire_legacy_notable_page() -> dict[str, object]:

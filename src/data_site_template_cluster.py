@@ -569,7 +569,7 @@ def _notable_schema(notable_data: dict | None) -> str:
                     f"{str(item.get('value') or '').strip()}"
                 ).strip(),
                 "url": (
-                    f"{SITE_BASE}/data/{str(item.get('slug') or '').strip()}/"
+                    f"{SITE_BASE}/data/{str(item.get('slug') or '').strip()}"
                     if str(item.get("slug") or "").strip() else NOTABLE_DATA_URL
                 ),
             }

@@ -309,7 +309,51 @@ def _news_scrape_max_per_run() -> int:
     return _resolve_int_env("X_POST_MAIL_NEWS_SCRAPE_MAX", 2, min_value=0)
 
 
-def _build_news_scrape_candidates(queue_items, *, gemini_key, max_count, log):
+def _x_post_player_dedup_enabled() -> bool:
+    """1メール内で同一選手の候補を1つに圧縮するか (default ON)。
+
+    user 2026-06-20: branding / 速報スクレイプ / 報知リプ が同じ主役選手 (例: 増田
+    大輝の初猛打賞) を別々に拾い、1通に同一選手が2件以上載って他ニュースの枠を
+    潰す問題への対策。OFF で従来挙動 (rollback)。
+    """
+    raw = (os.environ.get("X_POST_MAIL_PLAYER_DEDUP") or "1").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _candidate_player_key(cand) -> str:
+    return lane._normalize_player_name(getattr(cand, "focus_player", "") or "")
+
+
+def _dedupe_candidates_by_player(candidates, *, log=None):
+    """同一メール内で focus_player が重複する候補を先頭1件に圧縮する。
+
+    候補リストは優先度順に積まれている前提で、各選手の最初の1件を残し以降を落とす
+    (branding と 速報スクレイプ が同じ選手を別経路で拾った重複を最終段で除去)。
+    focus_player 不明の候補は対象外でそのまま残す。flag OFF なら素通り。
+    """
+    if not _x_post_player_dedup_enabled():
+        return list(candidates)
+    seen: set[str] = set()
+    kept: list = []
+    dropped: list = []
+    for cand in candidates:
+        key = _candidate_player_key(cand)
+        if key and key in seen:
+            dropped.append(cand)
+            continue
+        if key:
+            seen.add(key)
+        kept.append(cand)
+    if dropped and log is not None:
+        log.info(
+            "player_dedup: 同一選手の重複 %d 件を除去 (残り %d 件) players=%s",
+            len(dropped), len(kept),
+            ",".join(sorted({_candidate_player_key(c) for c in dropped if _candidate_player_key(c)})),
+        )
+    return kept
+
+
+def _build_news_scrape_candidates(queue_items, *, gemini_key, max_count, log, exclude_player_keys=None):
     """queue 417 で drain 済みの記事 (article_info) から @Tigers_140609 風の
     速報スクレイプ候補 (lane.Candidate) を最大 max_count 件作る。
 
@@ -317,6 +361,11 @@ def _build_news_scrape_candidates(queue_items, *, gemini_key, max_count, log):
     system prompt が「facts 外の数字/固有名詞/引用を作らない」を強制するため
     数字 hallucination は起きない。 加えて lane._is_safe_post_text と 280 字
     上限で二重 gate。 LLM 失敗 / 空 / unsafe は個別 skip (silent)。
+
+    ``exclude_player_keys`` (正規化済み選手名 set) に含まれる選手、および本関数
+    内で既に採用した選手は skip する。同じメール内で同一選手のポストが branding /
+    別記事 経由で重複するのを防ぎ (user 2026-06-20)、空いた枠を別ニュースに回す。
+    重複判定は Gemini 呼び出しの前に行うため LLM コストも無駄にしない。
 
     返値は ``(candidate, source_item)`` の list。 caller は source_item を
     processed_queue_items に積んで再 drain (次 fire での重複生成) を防ぐ。
@@ -329,6 +378,9 @@ def _build_news_scrape_candidates(queue_items, *, gemini_key, max_count, log):
     except Exception as exc:  # noqa: BLE001
         log.info("news_scrape skip: import failed err=%r", exc)
         return out
+    seen_player_keys: set[str] = {
+        k for k in (exclude_player_keys or set()) if k
+    } if _x_post_player_dedup_enabled() else set()
     for item in queue_items:
         if len(out) >= max_count:
             break
@@ -337,6 +389,13 @@ def _build_news_scrape_candidates(queue_items, *, gemini_key, max_count, log):
         source_url = (getattr(item, "source_url", "") or "").strip()
         players = list(getattr(item, "player_canonical", []) or [])
         if not title:
+            continue
+        player_key = lane._normalize_player_name(players[0]) if players else ""
+        if player_key and player_key in seen_player_keys:
+            log.info(
+                "news_scrape skip dup-player source_url=%s player=%s (枠を別ニュースへ)",
+                source_url, player_key,
+            )
             continue
         facts: dict = {"見出し": title}
         if summary:
@@ -370,6 +429,8 @@ def _build_news_scrape_candidates(queue_items, *, gemini_key, max_count, log):
             source_material_type="news_scrape",
         )
         out.append((cand, item))
+        if player_key:
+            seen_player_keys.add(player_key)
         log.info("news_scrape built source_url=%s text_len=%d", source_url, len(text))
     return out
 
@@ -1762,10 +1823,21 @@ def _main_on_queue(args: argparse.Namespace, recipients: list[str]) -> int:
             # NOTE: do NOT mark_processed; let it stay queued for next fire retry.
             # (rss_fetcher dedup will prevent re-enqueue of same source_url.)
             continue
+        cand_key = _candidate_player_key(cand)
+        if cand_key and _x_post_player_dedup_enabled() and any(
+            _candidate_player_key(c) == cand_key for c in candidates
+        ):
+            # 同一選手の別記事は枠を別ニュースへ譲る (user 2026-06-20)。
+            # mark_processed して次 fire での同一選手再浮上も防ぐ。
+            LOG.info("on-queue skip dup-player source_url=%s player=%s", item.source_url, cand_key)
+            processed_items.append(item)
+            continue
         candidates.append(cand)
         processed_items.append(item)
         if len(candidates) >= args.max_candidates:
             break
+
+    candidates = _dedupe_candidates_by_player(candidates, log=LOG)
 
     if not candidates:
         LOG.info(
@@ -2764,6 +2836,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                         gemini_key=queue_gemini_key,
                         max_count=_news_scrape_max_per_run(),
                         log=LOG,
+                        exclude_player_keys={
+                            _candidate_player_key(c) for c in candidates
+                            if _candidate_player_key(c)
+                        },
                     )
                     if scrape_pairs:
                         scrape_cands = [c for c, _ in scrape_pairs]
@@ -2881,6 +2957,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     if not candidates:
         LOG.warning("X impression policy left 0 candidates — skip send.")
+        return 0
+
+    # 同一選手の重複を最終段で除去 (branding+速報スクレイプ+報知リプ が同じ主役を
+    # 別経路で拾った分。user 2026-06-20: 重複が他ニュースの枠を潰すのを防ぐ)。
+    candidates = _dedupe_candidates_by_player(candidates, log=LOG)
+    if not candidates:
+        LOG.warning("player_dedup left 0 candidates — skip send.")
         return 0
 
     LOG.info("Composing mail with %d candidates…", len(candidates))

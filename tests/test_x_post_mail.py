@@ -4076,3 +4076,77 @@ class ShareXFallbackButtonTests(unittest.TestCase):
         )
         self.assertNotIn("テキストのみで投稿", html)
         self.assertIn("X で投稿", html)
+
+
+class PlayerDedupTests(unittest.TestCase):
+    """user 2026-06-20: 1メール内の同一選手重複を圧縮し、枠を別ニュースへ。"""
+
+    @staticmethod
+    def _cand(name):
+        from src.x_post_mail_lane import Candidate
+        return Candidate(
+            title="t", metric="m", period_label="p", draft_text="d",
+            char_count=1, post_text="d", signature="sig-" + name,
+            focus_player=name, source_material_type="x",
+        )
+
+    def test_dedupe_keeps_first_drops_same_player_space_insensitive(self):
+        from src.tools import run_x_post_mail as runner
+        cands = [self._cand("増田 大輝"), self._cand("増田大輝"),
+                 self._cand("竹丸和幸"), self._cand("")]
+        out = runner._dedupe_candidates_by_player(cands)
+        self.assertEqual([c.focus_player for c in out], ["増田 大輝", "竹丸和幸", ""])
+
+    def test_dedupe_flag_off_keeps_all(self):
+        from src.tools import run_x_post_mail as runner
+        with patch.dict("os.environ", {"X_POST_MAIL_PLAYER_DEDUP": "0"}):
+            cands = [self._cand("増田大輝"), self._cand("増田大輝")]
+            out = runner._dedupe_candidates_by_player(cands)
+        self.assertEqual(len(out), 2)
+
+    def test_news_scrape_skips_excluded_player_picks_other_news(self):
+        from src.tools import run_x_post_mail as runner
+        from src import news_scrape_x_post as nsx
+
+        class _Item:
+            def __init__(self, title, players, url):
+                self.title = title
+                self.summary = "x"
+                self.source_url = url
+                self.player_canonical = players
+
+        items = [
+            _Item("【巨人】増田大輝が猛打賞", ["増田大輝"], "u1"),
+            _Item("【巨人】竹丸が6敗目", ["竹丸和幸"], "u2"),
+        ]
+        with patch.object(nsx, "format_scrape_post",
+                          side_effect=lambda facts, **k: "本文 #巨人 #ジャイアンツ"):
+            out = runner._build_news_scrape_candidates(
+                items, gemini_key="k", max_count=5, log=runner.LOG,
+                exclude_player_keys={"増田大輝"},
+            )
+        # 増田 は既出なので skip、枠は竹丸 (別ニュース) で埋まる
+        self.assertEqual([c.focus_player for c, _ in out], ["竹丸和幸"])
+
+    def test_news_scrape_intra_call_dedup_same_player(self):
+        from src.tools import run_x_post_mail as runner
+        from src import news_scrape_x_post as nsx
+
+        class _Item:
+            def __init__(self, title, players, url):
+                self.title = title
+                self.summary = "x"
+                self.source_url = url
+                self.player_canonical = players
+
+        # 同一選手の別記事2本 → 1本だけ採用
+        items = [
+            _Item("【巨人】増田大輝が猛打賞", ["増田大輝"], "u1"),
+            _Item("【巨人】増田大輝が試合後コメント", ["増田大輝"], "u2"),
+        ]
+        with patch.object(nsx, "format_scrape_post",
+                          side_effect=lambda facts, **k: "本文 #巨人 #ジャイアンツ"):
+            out = runner._build_news_scrape_candidates(
+                items, gemini_key="k", max_count=5, log=runner.LOG,
+            )
+        self.assertEqual(len(out), 1)

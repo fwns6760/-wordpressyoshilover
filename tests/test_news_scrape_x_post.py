@@ -29,10 +29,38 @@ def test_format_scrape_post_uses_injected_generate_and_passes_facts():
 
     facts = {"選手": "小笠原慎之介", "背番号": "98"}
     out = nsx.format_scrape_post(facts, model="m1", generate=stub)
-    assert out == "整形済みポスト"  # strip される
+    # facts に選手があれば 1 行目に【選手名】+改行(本文は strip される)
+    assert out == "【小笠原慎之介】\n整形済みポスト"
     assert seen["model"] == "m1"
     assert "小笠原慎之介" in seen["prompt"]  # facts が prompt に入る
     assert "98" in seen["prompt"]
+
+
+def test_format_scrape_post_strips_ai_bracket_and_uses_facts_player():
+    # AI が【巨人】等を付けても剥がし、facts の実選手名を立てる(記憶再構成防止)。
+    facts = {"選手": "浅野翔吾、坂本勇人", "見出し": "【巨人】浅野が同点打"}
+    out = nsx.format_scrape_post(
+        facts, generate=lambda p, *, model, api_key: "【巨人】浅野が同点タイムリー！ #巨人",
+    )
+    assert out.startswith("【浅野翔吾】\n浅野が同点タイムリー！")
+    assert "【巨人】" not in out
+
+
+def test_format_scrape_post_no_player_fact_unchanged():
+    out = nsx.format_scrape_post(
+        {"見出し": "巨人が逆転勝ち"},
+        generate=lambda p, *, model, api_key: "巨人、逆転勝ちで連勝！ #巨人",
+    )
+    assert out == "巨人、逆転勝ちで連勝！ #巨人"
+
+
+def test_format_scrape_post_headline_flag_off(monkeypatch):
+    monkeypatch.setenv("ENABLE_X_PLAYER_HEADLINE_BRACKET", "0")
+    out = nsx.format_scrape_post(
+        {"選手": "浅野翔吾"},
+        generate=lambda p, *, model, api_key: "浅野が同点打！ #巨人",
+    )
+    assert out == "浅野が同点打！ #巨人"
 
 
 def test_build_intent_url_roundtrips_text():

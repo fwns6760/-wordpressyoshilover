@@ -72,9 +72,44 @@ def build_x_prompt(facts: Dict[str, Any]) -> str:
     return (
         "次の facts から、X(旧Twitter)の速報ポストを1本作る。"
         f"条件: {X_CHAR_LIMIT}字以内 / 短文で初速を狙う温度感 / 引用を1〜2本 / "
-        "主要な数字を3点 / 末尾に #巨人 #ジャイアンツ。\n\nfacts:\n"
+        "主要な数字を3点 / 末尾に #巨人 #ジャイアンツ。"
+        "facts に『選手』があれば、1行目に『【選手名】』だけ置いて改行し、2行目から本文"
+        "(巨人専門サイトなので『【巨人】』とは囲まない)。\n\nfacts:\n"
         + json.dumps(facts, ensure_ascii=False, indent=2)
     )
+
+
+_TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
+_LEAD_BRACKET_RE = re.compile(r"^[\s　]*【[^】]{0,24}】[ \t　]*\n?")
+
+
+def _player_headline_enabled() -> bool:
+    return (os.getenv("ENABLE_X_PLAYER_HEADLINE_BRACKET") or "1").strip().lower() in _TRUE_VALUES
+
+
+def _lead_player_from_facts(facts: Dict[str, Any]) -> str:
+    raw = str(facts.get("選手") or "").strip()
+    if not raw:
+        return ""
+    return re.split(r"[、,]", raw)[0].strip()
+
+
+def _apply_player_headline(text: str, facts: Dict[str, Any]) -> str:
+    """速報ポストの1行目に「【選手名】」を決定論で立てる。
+
+    選手名は AI 出力ではなく facts(player_canonical 由来)を根拠にする。
+    AI が付けた先頭の【…】(例: 【巨人】)は剥がしてから貼り直す。
+    巨人専門サイトなので【巨人】接頭辞は冗長で、誰の速報かを一目で分からせる。
+    """
+    if not text or not _player_headline_enabled():
+        return text
+    name = _lead_player_from_facts(facts)
+    if not name:
+        return text
+    body = _LEAD_BRACKET_RE.sub("", text, count=1).lstrip()
+    if not body:
+        return text
+    return f"【{name}】\n{body}"
 
 
 def _default_generate(prompt: str, *, model: str, api_key: str) -> str:
@@ -100,11 +135,11 @@ def format_scrape_post(
     """
     prompt = build_x_prompt(facts)
     if generate is not None:
-        return generate(prompt, model=model, api_key=api_key or "").strip()
+        return _apply_player_headline(generate(prompt, model=model, api_key=api_key or "").strip(), facts)
     key = api_key or os.getenv("GEMINI_API_KEY") or ""
     if not key:
         raise RuntimeError("GEMINI_API_KEY not set (and no generate injected)")
-    return _default_generate(prompt, model=model, api_key=key).strip()
+    return _apply_player_headline(_default_generate(prompt, model=model, api_key=key).strip(), facts)
 
 
 # ---------------------------------------------------------------------------

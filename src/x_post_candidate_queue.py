@@ -22,11 +22,17 @@ import json
 import logging
 import os
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger(__name__)
 
 _QUEUE_BUCKET_ENV = "X_POST_CANDIDATE_QUEUE_BUCKET"
+_MAX_AGE_HOURS_ENV = "X_POST_QUEUE_MAX_AGE_HOURS"
+# 鮮度の hard cap。 これを超えて queue に滞留した item は二度と「速報」になり得ず、
+# 新ネタ不足日に残り枠を埋めて古い記事 (交流戦終了後の交流戦記事 等) を速報化する
+# 事故の元になる。 drain 時に skip + GCS から expire する。 48h = 週末 retry 余裕を
+# 残しつつ、 数日〜十数日前の滞留を確実に排除。
+_DEFAULT_MAX_AGE_HOURS = 48.0
 _DEFAULT_BUCKET = "baseballsite-yoshilover-state"
 _QUEUE_PREFIX = "x_post_candidate_queue"
 _QUEUED_PREFIX = f"{_QUEUE_PREFIX}/queued/"
@@ -59,6 +65,17 @@ def _source_url_hash(source_url: str) -> str:
 
 def _now_utc_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _max_age_hours() -> float:
+    raw = os.environ.get(_MAX_AGE_HOURS_ENV, "")
+    if not raw:
+        return _DEFAULT_MAX_AGE_HOURS
+    try:
+        v = float(raw)
+    except (TypeError, ValueError):
+        return _DEFAULT_MAX_AGE_HOURS
+    return v if v > 0 else _DEFAULT_MAX_AGE_HOURS
 
 
 def _get_bucket():
@@ -138,9 +155,26 @@ def drain(max_count: int = 50) -> list[CandidateArticleInfo]:
         logger.warning("x_post_queue_drain_failed err=%r", exc)
         return []
     all_blobs.sort(key=lambda b: b.updated, reverse=True)
-    blobs = all_blobs[:max_count]
+    # 鮮度 hard cap。 blob.updated (= enqueue 時刻) で年齢を測り、 cutoff より古い
+    # 滞留 item は drain せず GCS から expire する。 これをしないと、 新ネタ不足日に
+    # 数日〜十数日前の古い記事が残り枠を埋めて「速報」候補になり誤投稿リスクになる。
+    max_age_h = _max_age_hours()
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=max_age_h)
     out: list[CandidateArticleInfo] = []
-    for blob in blobs:
+    expired = 0
+    for blob in all_blobs:
+        updated = getattr(blob, "updated", None)
+        if updated is not None and updated < cutoff:
+            # 期限切れ滞留: 二度と速報になり得ないので queue から削除 (再浮上防止)。
+            try:
+                blob.delete()
+                expired += 1
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("x_post_queue_expire_failed blob=%s err=%r", blob.name, exc)
+            continue
+        if len(out) >= max_count:
+            # 新しいが cap 超過 — queued のまま残す (次 fire で drain)。
+            continue
         try:
             data = json.loads(blob.download_as_text())
             out.append(CandidateArticleInfo(**data))
@@ -149,7 +183,10 @@ def drain(max_count: int = 50) -> list[CandidateArticleInfo]:
                 "x_post_queue_drain_entry_corrupt blob=%s err=%r", blob.name, exc
             )
             continue
-    logger.info("x_post_queue_drain count=%d", len(out))
+    logger.info(
+        "x_post_queue_drain count=%d expired_stale=%d max_age_h=%.1f",
+        len(out), expired, max_age_h,
+    )
     return out
 
 

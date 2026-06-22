@@ -1758,6 +1758,48 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def _parse_enqueued_at_utc(value: str):
+    """``enqueued_at_utc`` (``%Y-%m-%dT%H:%M:%SZ``) を tz-aware UTC datetime に。 失敗時 None。"""
+    from datetime import timezone as _tz
+    if not value:
+        return None
+    try:
+        return datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=_tz.utc)
+    except (TypeError, ValueError):
+        return None
+
+
+def _filter_stale_queue_items(queue_items, *, now_jst, log):
+    """drain 済み queue 417 items から、 試合フェーズ鮮度窓を超えた古い item を除く。
+
+    queue.drain の 48h hard-cap 内でも、 当日ネタでない item を「速報」として投稿
+    しないための二重防御 (試合中0.5h / 試合直後6h / 試合前12h / 通常24h)。 build 前に
+    間引くので Gemini call も無駄にしない。 mark_processed はせず queued のまま残し、
+    後続のより広い窓のスロットで使えるようにする (drain hard-cap が最終 expire)。
+    """
+    from datetime import timezone as _tz
+    max_age_h = lane.phase_freshness_max_age_hours(now_jst)
+    now_utc = datetime.now(_tz.utc)
+    fresh: list = []
+    skipped = 0
+    for item in queue_items:
+        enq = _parse_enqueued_at_utc(getattr(item, "enqueued_at_utc", ""))
+        if enq is not None and (now_utc - enq).total_seconds() / 3600.0 > max_age_h:
+            log.info(
+                "queue freshness skip source_url=%s phase_max_age_h=%.1f (鮮度窓外、 速報にしない)",
+                getattr(item, "source_url", "?"), max_age_h,
+            )
+            skipped += 1
+            continue
+        fresh.append(item)
+    if skipped:
+        log.info(
+            "queue freshness filter: kept=%d skipped_stale=%d phase_max_age_h=%.1f",
+            len(fresh), skipped, max_age_h,
+        )
+    return fresh
+
+
 def _main_on_queue(args: argparse.Namespace, recipients: list[str]) -> int:
     """417: drain x_post_candidate_queue → Gemini Flash Lite で候補生成 → mail.
 
@@ -1801,6 +1843,14 @@ def _main_on_queue(args: argparse.Namespace, recipients: list[str]) -> int:
     except Exception as exc:  # noqa: BLE001
         LOG.info("on-queue mode: insight.db unavailable (persona fallback): %r", exc)
 
+    # 試合フェーズ鮮度窓 (試合中0.5h / 試合直後6h / 試合前12h / 通常24h) で当日ネタ
+    # 以外を除外。 queue の drain hard-cap (48h) を超えなくても古い item は速報にしない。
+    from datetime import timezone as _tz, timedelta as _td
+    now_jst = datetime.now(_tz(_td(hours=9)))
+    _pre_fresh = len(queue_items)
+    queue_items = _filter_stale_queue_items(queue_items, now_jst=now_jst, log=LOG)
+    skipped_stale = _pre_fresh - len(queue_items)
+
     candidates: list[lane.Candidate] = []
     processed_items: list = []
     for item in queue_items:
@@ -1841,15 +1891,17 @@ def _main_on_queue(args: argparse.Namespace, recipients: list[str]) -> int:
 
     if not candidates:
         LOG.info(
-            "on-queue mode: drained %d items but all produced 0 candidates (gate hit / no player) — skip mail",
-            len(queue_items),
+            "on-queue mode: drained %d items but all produced 0 candidates "
+            "(gate hit / no player / stale=%d) — skip mail",
+            len(queue_items), skipped_stale,
         )
         return 0
 
     LOG.info(
-        "on-queue mode: composing mail with %d candidates (drained %d)",
+        "on-queue mode: composing mail with %d candidates (drained %d, skipped_stale=%d)",
         len(candidates),
         len(queue_items),
+        skipped_stale,
     )
     mail = lane.compose_mail(
         candidates,
@@ -2764,10 +2816,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             LOG.info("queue 417 drain skip: GEMINI_API_KEY env missing")
         else:
             queue_items = _xpcq.drain(max_count=args.max_candidates)
+            # 試合フェーズ鮮度窓で当日ネタ以外を除外 (6/7 スクレイプが 6/22 に来る等の
+            # 古い滞留記事を「速報」にしない)。 build loop と news_scrape の両方に効く。
+            queue_items = _filter_stale_queue_items(queue_items, now_jst=now_jst, log=LOG)
             if not queue_items:
-                LOG.info("queue 417 drain: queue empty — 0 items")
+                LOG.info("queue 417 drain: queue empty / all stale — 0 items")
             else:
-                LOG.info("queue 417 drain: %d items", len(queue_items))
+                LOG.info("queue 417 drain: %d items (freshness-filtered)", len(queue_items))
                 # 同一選手の重複 Gemini 生成を抑えつつ出力は守る (LLM 費用節約 + 回帰修正)。
                 # 多媒体が同じ選手を扱い queue に同 player 記事が複数入ると、昔は全件
                 # 生成していた。費用のため 1 選手 1 成功 (succeeded_player_keys) に絞るが、

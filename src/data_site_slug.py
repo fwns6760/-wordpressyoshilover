@@ -46,6 +46,7 @@ _PLAYER_SLUG_MAP: dict[str, str] = {
     "田和廉": "tawa-ren",
     "平山功太": "hirayama-kota",
     "井上温大": "inoue-haruhiro",
+    "小笠原慎之介": "ogasawara-shinnosuke",
     "大勢": "taisei",
     "松本剛": "matsumoto-tsuyoshi",
     "船迫大雅": "funasako-taiga",

@@ -235,17 +235,25 @@ def _recent_used(
     topic_keys: set[str] = set()
     if not bucket_name or lookback_days <= 0:
         return players, topic_keys
-    for offset in range(1, lookback_days + 1):
+    # offset 0 = 当日 (同日 re-run で直前の選手も除外)、1..N = 過去日。
+    for offset in range(0, lookback_days + 1):
         day = (current - timedelta(days=offset)).strftime("%Y-%m-%d")
         hist = _load_history(bucket_name, day)
         if not hist:
             continue
-        player = _normalize_player_name(str(hist.get("player") or ""))
-        if player:
-            players.add(player)
         tk = str(hist.get("topic_key") or "").strip()
         if tk:
             topic_keys.add(tk)
+        # player フィールド優先。無い古い履歴は topic_key から選手名を復元
+        # (topic_key 形式: "yt_shorts|YYYY-MM-DD|<player>|<label>|<value>")。
+        player_raw = str(hist.get("player") or "")
+        if not player_raw and tk:
+            parts = tk.split("|")
+            if len(parts) >= 3:
+                player_raw = parts[2]
+        player = _normalize_player_name(player_raw)
+        if player:
+            players.add(player)
     return players, topic_keys
 
 

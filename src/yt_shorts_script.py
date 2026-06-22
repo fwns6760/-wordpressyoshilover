@@ -9,6 +9,41 @@ from src.yt_shorts_topic import ShortsTopic
 
 
 NUMBER_RE = re.compile(r"(?<![A-Za-z])(?:\d+\.\d+|\.\d+|\d+)")
+DECIMAL_RE = re.compile(r"(?P<sign>[+-]?)(?P<value>(?:\d+)?\.\d+)(?!\d)")
+JAPANESE_DIGITS = {
+    "0": "零",
+    "1": "一",
+    "2": "二",
+    "3": "三",
+    "4": "四",
+    "5": "五",
+    "6": "六",
+    "7": "七",
+    "8": "八",
+    "9": "九",
+}
+KANA_DIGITS = {
+    "0": "まる",
+    "1": "いち",
+    "2": "に",
+    "3": "さん",
+    "4": "よん",
+    "5": "ご",
+    "6": "ろく",
+    "7": "なな",
+    "8": "はち",
+    "9": "きゅう",
+}
+METRIC_LABEL_REPLACEMENTS = (
+    ("BB/9", "ビービーナイン"),
+    ("K/9", "ケーナイン"),
+    ("OPS", "オーピーエス"),
+    ("WHIP", "ウィップ"),
+    ("ERA", "防御率"),
+    ("AVG", "打率"),
+    ("OBP", "出塁率"),
+    ("SLG", "長打率"),
+)
 
 
 @dataclass(frozen=True)
@@ -79,6 +114,125 @@ def assert_number_guard(text: str, allowed_numbers: tuple[str, ...]) -> None:
         raise ValueError(f"yt_shorts number guard failed: leaked={list(leaked)}")
 
 
+def display_as_of_date(as_of: str) -> str:
+    raw = str(as_of or "").strip()
+    match = re.fullmatch(r"(\d{4})-(\d{1,2})-(\d{1,2})", raw)
+    if not match:
+        return raw
+    year, month, day = match.groups()
+    return f"{int(year)}年{int(month)}月{int(day)}日"
+
+
+def _baseball_average_reading(match: re.Match[str]) -> str:
+    sign = match.group("sign") or ""
+    value = match.group("value")
+    decimals = value.split(".", 1)[1][:3].ljust(3, "0")
+    units = ("割", "分", "厘")
+    parts = [
+        f"{JAPANESE_DIGITS[digit]}{unit}"
+        for digit, unit in zip(decimals, units, strict=True)
+        if digit != "0"
+    ]
+    reading = "".join(parts) or "零"
+    if sign == "+":
+        return f"プラス{reading}"
+    if sign == "-":
+        return f"マイナス{reading}"
+    return reading
+
+
+def _decimal_point_reading(match: re.Match[str]) -> str:
+    sign = match.group("sign") or ""
+    value = match.group("value")
+    if "." not in value:
+        return match.group(0)
+    left, right = value.split(".", 1)
+    left = left or "0"
+    left_reading = "".join(JAPANESE_DIGITS.get(digit, digit) for digit in left)
+    right_reading = "".join(JAPANESE_DIGITS.get(digit, digit) for digit in right)
+    reading = f"{left_reading}点{right_reading}"
+    if sign == "+":
+        return f"プラス{reading}"
+    if sign == "-":
+        return f"マイナス{reading}"
+    return reading
+
+
+def _ops_reading(match: re.Match[str]) -> str:
+    sign = match.group("sign") or ""
+    value = match.group("value")
+    if "." not in value:
+        return match.group(0)
+    left, right = value.split(".", 1)
+    if left in {"", "0"}:
+        reading = "".join(KANA_DIGITS.get(digit, digit) for digit in right[:3])
+    else:
+        return _decimal_point_reading(match)
+    if sign == "+":
+        return f"プラス{reading}"
+    if sign == "-":
+        return f"マイナス{reading}"
+    return reading
+
+
+def _speech_metric_style(topic: ShortsTopic) -> str:
+    source = " ".join([topic.label, topic.hook, topic.note, str(topic.raw_item.get("label") or "")])
+    if re.search(r"\bOPS\b", source, flags=re.IGNORECASE):
+        return "ops"
+    if "打率" in source or "出塁率" in source or "長打率" in source or "勝率" in source:
+        return "ratio"
+    if re.search(r"\b(AVG|OBP|SLG)\b", source, flags=re.IGNORECASE):
+        return "ratio"
+    if "防御率" in source or re.search(r"\b(ERA|WHIP|K/9|BB/9)\b", source, flags=re.IGNORECASE):
+        return "decimal"
+    return ""
+
+
+def _replace_metric_labels_for_speech(text: str) -> str:
+    value = str(text or "")
+    for raw, reading in METRIC_LABEL_REPLACEMENTS:
+        value = re.sub(
+            rf"(?<![A-Za-z0-9]){re.escape(raw)}(?![A-Za-z0-9])",
+            reading,
+            value,
+            flags=re.IGNORECASE,
+        )
+    return value
+
+
+def _speech_metric_text(topic: ShortsTopic, text: str) -> str:
+    value = _replace_metric_labels_for_speech(text)
+    style = _speech_metric_style(topic)
+    if style == "ratio":
+        return DECIMAL_RE.sub(_baseball_average_reading, value)
+    if style == "ops":
+        return DECIMAL_RE.sub(_ops_reading, value)
+    if style == "decimal":
+        return DECIMAL_RE.sub(_decimal_point_reading, value)
+    if not style:
+        return value
+    return value
+
+
+# 音声(VOICEVOX)が誤読する選手名の読み補正。narration(音声テキスト)にのみ適用し、
+# title / caption / description の漢字表記はそのまま残す。
+# key は長い順に置換する(姓名フルを先に当てて部分誤置換を防ぐ)。
+NAME_READING_OVERRIDES: dict[str, str] = {
+    # 泉 を「いずみ」と読まれるが正しくは「いずぐち」
+    "泉口友汰": "いずぐちゆうた",
+    "泉口": "いずぐち",
+}
+
+
+def _apply_name_readings(text: str) -> str:
+    """誤読しやすい選手名を かな に置換して TTS の発音を正す。"""
+    if not text:
+        return text
+    for kanji in sorted(NAME_READING_OVERRIDES, key=len, reverse=True):
+        text = text.replace(kanji, NAME_READING_OVERRIDES[kanji])
+    return text
+
+
 def build_script(topic: ShortsTopic) -> ShortsScript:
     """Build a deterministic Japanese narration script.
 
@@ -88,20 +242,28 @@ def build_script(topic: ShortsTopic) -> ShortsScript:
     """
 
     allowed = allowed_numbers_for_topic(topic)
-    note_line = f"補足すると、{topic.note}。" if topic.note else "今の巨人で見逃せない数字です。"
+    date_label = display_as_of_date(topic.as_of)
+    date_line = f"記録日は、{date_label}時点。" if date_label else ""
+    speech_hook = _speech_metric_text(topic, topic.hook)
+    speech_note = _speech_metric_text(topic, topic.note)
+    note_line = f"ポイントは、{speech_note}。" if topic.note else "今の巨人で見逃せない数字です。"
     narration_parts = [
-        f"{topic.hook}。",
-        "この数字、ただの好調ではなく、試合の見え方を変える材料です。",
+        f"今日の注目は、{speech_hook}。",
+        date_line,
+        "この数字、見逃せません。",
         note_line,
-        f"{topic.player}を見る時は、結果だけでなく、この流れまでセットで追いたい。",
-        "詳しいデータはヨシラバーの注目データで確認できます。",
+        f"{topic.player}を見るなら、結果だけではなく流れです。",
+        "続きは、ヨシラバーの注目データで。",
     ]
     narration = "\n".join(part for part in narration_parts if part.strip())
     assert_number_guard(narration, allowed)
+    # 数値ガード通過後に選手名の読みを補正(数字は変えない)
+    narration = _apply_name_readings(narration)
 
-    title = topic.title
+    title = f"{topic.title}｜{date_label}時点" if date_label else topic.title
     description = (
         f"{topic.hook}。\n"
+        f"記録日: {date_label or topic.as_of or '未設定'}\n"
         "巨人の注目データを、ヨシラバーのデータページからショート動画化。\n"
         f"詳しいデータ: {topic.source_url}\n\n"
         "音声: VOICEVOX 青山龍星"
@@ -109,11 +271,11 @@ def build_script(topic: ShortsTopic) -> ShortsScript:
     assert_number_guard(title + "\n" + description, allowed)
 
     captions = (
-        ScriptCaption(0.0, 3.0, topic.hook),
-        ScriptCaption(3.0, 17.0, f"{topic.label} {topic.value}"),
-        ScriptCaption(17.0, 31.0, topic.note or "今の巨人で見逃せない数字"),
-        ScriptCaption(31.0, 45.0, "結果だけでなく、流れまで見る"),
-        ScriptCaption(45.0, 55.0, "詳細はヨシラバーで"),
+        ScriptCaption(0.0, 2.2, f"{topic.hook} / {date_label}時点" if date_label else topic.hook),
+        ScriptCaption(2.2, 8.4, f"{topic.label} {topic.value}"),
+        ScriptCaption(8.4, 14.8, topic.note or "今の巨人で見逃せない数字"),
+        ScriptCaption(14.8, 21.0, "結果だけでなく、流れまで見る"),
+        ScriptCaption(21.0, 27.0, "詳細はヨシラバーで"),
     )
     assert_number_guard("\n".join(c.text for c in captions), allowed)
 
@@ -132,6 +294,7 @@ __all__ = [
     "allowed_numbers_for_topic",
     "assert_number_guard",
     "build_script",
+    "display_as_of_date",
     "extract_number_tokens",
     "verify_number_guard",
 ]

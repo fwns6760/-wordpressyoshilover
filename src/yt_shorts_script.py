@@ -60,6 +60,7 @@ class ShortsScript:
     narration: str
     captions: tuple[ScriptCaption, ...]
     allowed_numbers: tuple[str, ...]
+    x_post: str = ""
 
 
 def _normalize_number(token: str) -> str:
@@ -261,6 +262,58 @@ def _apply_name_readings(text: str) -> str:
     return text
 
 
+# ブランディング定数(ヨシラバー｜巨人データ速報)
+BRAND_CLOSING_LINE = "巨人データはヨシラバーで毎日更新中。"
+SITE_URL = "https://yoshilover.com"
+DATA_URL = "https://yoshilover.com/data"
+X_HANDLE = "@yoshilover6760"
+BASE_HASHTAGS = ("#巨人", "#読売ジャイアンツ", "#ジャイアンツ", "#プロ野球", "#npb", "#ヨシラバー")
+
+# 独自コメント(ファン目線の所感)プール。数字・事実は入れない=量産AIに見えない
+# 一言の "巨人目線の敬意ある考察"。player+日付で rotate して同じにならないようにする。
+# NOTE: より高い独自性が必要なら Gemini Flash 生成に差し替え可(v2)。
+FAN_COMMENT_POOL: tuple[str, ...] = (
+    "派手さはないけど、こういう選手が今の巨人を支えてる。",
+    "数字の裏側に、巨人の野球の積み上げが見えます。",
+    "結果だけじゃなく、流れで見ると面白い一人。",
+    "地味だけど、巨人ファンならニヤッとするポイント。",
+    "この働き、ちゃんと見てる巨人ファンは見てる。",
+    "勝負どころで効いてくるタイプ、巨人には大事。",
+    "目立たないけど、今の巨人に欠かせない存在。",
+    "こういう積み重ねが、巨人の地力になっていく。",
+)
+
+
+def _hashtag_player(player: str) -> str:
+    """選手名をハッシュタグ用に整形(空白・中黒を除去)。"""
+    return (player or "").replace(" ", "").replace("　", "").replace("・", "")
+
+
+def _fan_comment(topic: ShortsTopic) -> str:
+    """ファン目線の一言コメントを deterministic に rotate して返す(数字なし)。"""
+    seed = f"{topic.player}|{topic.as_of}|{topic.label}"
+    idx = sum(ord(ch) for ch in seed) % len(FAN_COMMENT_POOL)
+    return FAN_COMMENT_POOL[idx]
+
+
+def build_x_post(topic: ShortsTopic, *, date_label: str) -> str:
+    """X(旧Twitter)再投稿用のポスト文。導線とハッシュタグ込み。"""
+    hook = topic.hook.strip()
+    tags = " ".join(BASE_HASHTAGS[:4])
+    lines = [
+        f"【巨人データ】{hook}",
+        "",
+        _fan_comment(topic),
+        "",
+        "30秒のShortsにまとめました👇",
+        "[Shorts URL]",
+        "",
+        f"巨人の全選手データはこちら → {DATA_URL}",
+        tags,
+    ]
+    return "\n".join(lines)
+
+
 def build_script(topic: ShortsTopic) -> ShortsScript:
     """Build a deterministic Japanese narration script.
 
@@ -280,8 +333,8 @@ def build_script(topic: ShortsTopic) -> ShortsScript:
         date_line,
         "この数字、見逃せません。",
         note_line,
-        f"{topic.player}を見るなら、結果だけではなく流れです。",
-        "続きは、ヨシラバーの注目データで。",
+        _fan_comment(topic),
+        BRAND_CLOSING_LINE,
     ]
     narration = "\n".join(part for part in narration_parts if part.strip())
     assert_number_guard(narration, allowed)
@@ -289,21 +342,32 @@ def build_script(topic: ShortsTopic) -> ShortsScript:
     narration = _apply_name_readings(narration)
 
     title = f"{topic.title}｜{date_label}時点" if date_label else topic.title
-    description = (
+    # 事実部分(hook + 記録日)のみ数値ガード対象。固定ブランディング文(導線・@handle・
+    # "30秒" 等)は捏造数字ではないのでガード外で連結する。
+    desc_factual = (
         f"{topic.hook}。\n"
-        f"記録日: {date_label or topic.as_of or '未設定'}\n"
-        "巨人の注目データを、ヨシラバーのデータページからショート動画化。\n"
-        f"詳しいデータ: {topic.source_url}\n\n"
-        "音声: VOICEVOX 青山龍星"
+        f"記録日: {date_label or topic.as_of or '未設定'}"
     )
-    assert_number_guard(title + "\n" + description, allowed)
+    assert_number_guard(title + "\n" + desc_factual, allowed)
+    desc_branding = (
+        "\n\n"
+        "巨人特化メディア「ヨシラバー」が、巨人の注目データを毎日30秒のShortsでお届け。\n"
+        "「巨人といえばヨシラバー」を目指して、ファン目線で発信しています。\n\n"
+        f"▼巨人の全選手データ(毎日更新)\n{DATA_URL}\n\n"
+        f"▼巨人ニュース・速報\n{SITE_URL}\n\n"
+        f"▼X(旧Twitter)でも毎日発信\n{X_HANDLE}\n\n"
+        f"詳しいデータ: {topic.source_url}\n"
+        "音声: VOICEVOX 青山龍星\n\n"
+        + " ".join((*BASE_HASHTAGS, f"#{_hashtag_player(topic.player)}"))
+    )
+    description = desc_factual + desc_branding
 
     captions = (
         ScriptCaption(0.0, 2.2, f"{topic.hook} / {date_label}時点" if date_label else topic.hook),
         ScriptCaption(2.2, 8.4, f"{topic.label} {topic.value}"),
         ScriptCaption(8.4, 14.8, topic.note or "今の巨人で見逃せない数字"),
         ScriptCaption(14.8, 21.0, "結果だけでなく、流れまで見る"),
-        ScriptCaption(21.0, 27.0, "詳細はヨシラバーで"),
+        ScriptCaption(21.0, 27.0, "巨人データはヨシラバーで毎日更新中"),
     )
     assert_number_guard("\n".join(c.text for c in captions), allowed)
 
@@ -313,6 +377,7 @@ def build_script(topic: ShortsTopic) -> ShortsScript:
         narration=narration,
         captions=captions,
         allowed_numbers=allowed,
+        x_post=build_x_post(topic, date_label=date_label),
     )
 
 

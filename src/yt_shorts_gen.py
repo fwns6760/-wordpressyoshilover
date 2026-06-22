@@ -344,6 +344,8 @@ def _mail_bodies(
         f"{script.narration}\n\n"
         "概要欄:\n"
         f"{script.description}\n\n"
+        "X再投稿文(コピペ用):\n"
+        f"{script.x_post}\n\n"
         "元データJSON:\n"
         f"{source_json}\n"
     )
@@ -401,6 +403,8 @@ def _mail_bodies(
         f'<pre style="white-space:pre-wrap;background:#fafafa;border:1px solid #eee;padding:12px;">{html.escape(script.narration)}</pre>'
         '<h2 style="font-size:16px;margin-top:18px;">概要欄</h2>'
         f'<pre style="white-space:pre-wrap;background:#fafafa;border:1px solid #eee;padding:12px;">{html.escape(script.description)}</pre>'
+        '<h2 style="font-size:16px;margin-top:18px;">X再投稿文(コピペ用)</h2>'
+        f'<pre style="white-space:pre-wrap;background:#fff8e1;border:1px solid #ffe082;padding:12px;">{html.escape(script.x_post)}</pre>'
         '<h2 style="font-size:16px;margin-top:18px;">元データ</h2>'
         f'<pre style="white-space:pre-wrap;background:#fafafa;border:1px solid #eee;padding:12px;">{html.escape(source_json)}</pre>'
         "</div>"

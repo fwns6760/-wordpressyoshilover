@@ -86,11 +86,15 @@ class YtShortsScriptTests(unittest.TestCase):
 
         script = build_script(topic)
 
+        # 事実部分(title + narration)に余計な数字が漏れていないこと。
+        # 説明欄の固定ブランディング文(@yoshilover6760 / "30秒" 等)は捏造数字では
+        # ないためガード対象外(build_script 内で factual 部分のみ guard 済み)。
         ok, leaked = verify_number_guard(
-            script.title + "\n" + script.narration + "\n" + script.description,
+            script.title + "\n" + script.narration,
             script.allowed_numbers,
         )
         self.assertTrue(ok, leaked)
+        self.assertIn("8.7", script.allowed_numbers)
 
     def test_batting_average_uses_baseball_speech_reading_only_in_narration(self):
         topic = ShortsTopic(

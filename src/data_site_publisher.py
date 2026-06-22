@@ -531,7 +531,7 @@ def _build_pillar_info(player_name: str) -> PillarPlayerInfo | None:
             featured_image_url=find_player_featured_image_url(player_name),
             featured_media_id=find_player_featured_media_id(player_name),
             short_review="",
-            related_topic_links=fetch_related_topic_links(player_name, limit=20),
+            related_topic_links=fetch_related_topic_links(player_name, limit=3),
             ob_profile=ob,
             # OB の年度別フル表 (ベンチマーク由来、 slug 引き)。 無ければ None で安全。
             npb_career=_ob_yearly_payload(slug),
@@ -547,7 +547,7 @@ def _build_pillar_info(player_name: str) -> PillarPlayerInfo | None:
         LOG.warning("roster miss player=%s — skip", player_name)
         return None
     slug = player_slug(player_name)
-    related = fetch_related_topic_links(player_name, limit=20)
+    related = fetch_related_topic_links(player_name, limit=3)
     image_url = find_player_featured_image_url(player_name)
     media_id = find_player_featured_media_id(player_name)
     # 登録ポジションは NPB 公式分類を優先 (roster.position は stale: 例 石川達也は

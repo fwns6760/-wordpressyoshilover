@@ -926,23 +926,28 @@ def _build_prosports_html(player: PillarPlayerInfo) -> str:
     )
 
 
+# トピッククラスタ方針 (2026-06-22 user): データ親ページ (index) の中心は
+# データ記事同士の相互リンク。 関連 topic に出すのは noindex ニュース投稿
+# (WP posts 型) のみのため、 親ページが noindex だらけにならないよう「補足
+# 最大 2 本」に抑える。 データ→データの回遊 (同ポジ選手 / 年俸 / データ nav) を
+# 優先し、 ニュースは下流の補足扱い。 関連ニュースが無ければ section ごと省略。
+_RELATED_NEWS_MAX = 2
+
+
 def _build_related_topic_html(player: PillarPlayerInfo) -> str:
-    if not player.related_topic_links:
-        return (
-            '<section class="ys-pillar-topics" '
-            'style="background:#fff;border:1px solid #eee;padding:14px;margin:0 0 16px;border-radius:4px;">'
-            f'<h2 style="font-size:16px;margin:0 0 10px;">{_esc(player.name)} 関連記事</h2>'
-            '<p style="font-size:13px;color:#888;margin:0;">関連記事準備中。</p>'
-            '</section>'
-        )
+    news = player.related_topic_links[:_RELATED_NEWS_MAX]
+    if not news:
+        return ""
     items = "\n".join(
         f'<li style="margin:6px 0;"><a href="{_esc(url)}" style="color:#1976d2;text-decoration:none;">{_esc(title)}</a></li>'
-        for url, title in player.related_topic_links[:20]
+        for url, title in news
     )
     return (
         '<section class="ys-pillar-topics" '
         'style="background:#fff;border:1px solid #eee;padding:14px;margin:0 0 16px;border-radius:4px;">'
-        f'<h2 style="font-size:16px;margin:0 0 10px;">{_esc(player.name)} 関連記事 ({len(player.related_topic_links)} 件)</h2>'
+        f'<h2 style="font-size:16px;margin:0 0 10px;">{_esc(player.name)} 関連ニュース</h2>'
+        '<p style="font-size:12px;color:#888;margin:0 0 8px;">最新ニュースの補足。 '
+        '詳しいデータは上のデータ項目・関連選手から。</p>'
         f'<ul style="font-size:13px;line-height:1.7;margin:0;padding-left:20px;">{items}</ul>'
         '</section>'
     )
@@ -1294,10 +1299,12 @@ def render_pillar_html(player: PillarPlayerInfo) -> str:
         _build_player_prose(player),  # SEO: split を index される解説文に
         *stats_sections,
         _build_prosports_html(player),
-        _build_related_topic_html(player),
+        # トピッククラスタ: index データ記事同士の回遊を先に置き (pillar が中心)、
+        # noindex ニュースは最後の補足にする。
         _build_related_players_html(player),
         _build_salary_link_html(player),
         _build_datasite_nav_html(),
+        _build_related_topic_html(player),
         _build_back_link_html(),
         _build_jsonld(player),
     ]

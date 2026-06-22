@@ -145,10 +145,42 @@ class RenderPillarHtmlTests(unittest.TestCase):
         # 構造は維持
         self.assertIn("丸佳浩", html)
 
-    def test_no_topic_links_placeholder(self) -> None:
+    def test_no_topic_links_section_omitted(self) -> None:
+        # トピッククラスタ方針: 関連ニュース (noindex) が無ければ section ごと省略。
+        # 空の placeholder で親ページを noindex 誘導しない。
         p = PillarPlayerInfo(name="吉川尚輝", slug="yoshikawa-naoki", position="内野手", jersey_number="2")
         html = render_pillar_html(p)
-        self.assertIn("関連記事準備中", html)
+        self.assertNotIn("ys-pillar-topics", html)
+        # 構造は維持
+        self.assertIn("吉川尚輝", html)
+
+    def test_related_news_capped_at_two(self) -> None:
+        # noindex ニュースは補足最大 2 本。 親ページがニュースだらけにならない。
+        p = PillarPlayerInfo(
+            name="坂本勇人", slug="sakamoto-hayato", position="内野手", jersey_number="6",
+            related_topic_links=[
+                ("https://yoshilover.com/1/", "ニュース1"),
+                ("https://yoshilover.com/2/", "ニュース2"),
+                ("https://yoshilover.com/3/", "ニュース3"),
+                ("https://yoshilover.com/4/", "ニュース4"),
+            ],
+        )
+        html = render_pillar_html(p)
+        self.assertIn("ニュース1", html)
+        self.assertIn("ニュース2", html)
+        self.assertNotIn("ニュース3", html)
+        self.assertNotIn("ニュース4", html)
+
+    def test_data_internal_links_precede_news(self) -> None:
+        # index データ記事同士の回遊 (同ポジ選手 / データ nav) を先に置き、
+        # noindex ニュースは最後の補足にする。
+        p = PillarPlayerInfo(
+            name="坂本勇人", slug="sakamoto-hayato", position="内野手", jersey_number="6",
+            related_topic_links=[("https://yoshilover.com/1/", "ニュース1")],
+        )
+        p.related_players = [("yamazaki-iori", "山﨑伊織")]
+        html = render_pillar_html(p)
+        self.assertLess(html.index("ys-pillar-related-players"), html.index("ys-pillar-topics"))
 
     def test_name_or_slug_required(self) -> None:
         with self.assertRaises(ValueError):

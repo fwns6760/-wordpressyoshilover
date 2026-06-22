@@ -2,7 +2,8 @@
 idempotent 注入する batch script.
 
 flow:
-1. config から Phase 1.5 対象 31 player の name list を取得
+1. config から対象 player の name list を取得
+   (DATA_SITE_BACKLINK_SCOPE=shihai 既定で支配下全員 / phase1 で旧 31 player)
 2. 各 player について:
    - WP tag id 解決 (person_tag_router 経由)
    - 該当 tag の publish 記事 を全件 fetch (paginate)
@@ -36,6 +37,7 @@ from src.data_site_query import (
     find_player_tag_id,
     load_phase1_player_names,
     load_roster_player,
+    load_shihai_names,
 )
 from src.data_site_slug import player_slug
 
@@ -83,8 +85,24 @@ def _max_per_player() -> int:
 
 
 def _player_filter() -> str:
-    """1 player slug 指定で他 skip (small-batch verify 用)。 空なら全 31 player。"""
+    """1 player slug 指定で他 skip (small-batch verify 用)。 空なら scope 全員。"""
     return str(os.environ.get("DATA_SITE_BACKLINK_PLAYER_FILTER", "")).strip()
+
+
+def _target_scope() -> str:
+    """back-link 注入の対象選手 scope。
+
+    - ``shihai`` (既定): 支配下選手 全員 (育成・OB 除外)。孤立 /data/ ページの
+      index 解消が目的のため、Phase1.5 の 31 人から拡張。
+    - ``phase1``: 旧挙動 (Phase 1.5 対象 31 player のみ)。env で巻き戻せるよう保持。
+    """
+    return str(os.environ.get("DATA_SITE_BACKLINK_SCOPE", "shihai")).strip().lower()
+
+
+def _load_target_names() -> list[str]:
+    if _target_scope() == "phase1":
+        return load_phase1_player_names()
+    return load_shihai_names()
 
 
 def _wp_creds() -> tuple[str, HTTPBasicAuth]:
@@ -224,7 +242,7 @@ def _process_player(player_name: str) -> InjectorSummary:
 
 def run() -> dict:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
-    target_names = load_phase1_player_names()
+    target_names = _load_target_names()
     if not target_names:
         return {"status": "abort", "reason": "no_target_players"}
     filter_slug = _player_filter()
@@ -233,8 +251,8 @@ def run() -> dict:
         LOG.info("filtered to slug=%s players=%s", filter_slug, target_names)
 
     LOG.info(
-        "backlink injector start dry_run=%s max_per_player=%d players=%d",
-        _dry_run_enabled(), _max_per_player(), len(target_names),
+        "backlink injector start scope=%s dry_run=%s max_per_player=%d players=%d",
+        _target_scope(), _dry_run_enabled(), _max_per_player(), len(target_names),
     )
 
     summaries: list[InjectorSummary] = []

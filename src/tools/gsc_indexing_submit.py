@@ -38,6 +38,9 @@ import sys
 import time
 import urllib.request
 
+import datetime as _dt
+
+import google.auth
 from google.oauth2 import service_account
 import google.auth.transport.requests
 
@@ -60,20 +63,32 @@ HUB_PATHS = [
 ]
 
 
-def _load_sa_credentials() -> service_account.Credentials:
+def _load_sa_credentials():
+    """SA 認証情報を取得。
+
+    優先順:
+      1. GOOGLE_APPLICATION_CREDENTIALS が指す鍵 file (local 明示)
+      2. gcloud で Secret Manager から鍵取得 (gcloud がある local)
+      3. ambient credentials = google.auth.default (Cloud Run job が
+         gsc-indexer SA として動く場合。鍵 file 不要)
+    """
     path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
     if path and os.path.exists(path):
         info = json.load(open(path, encoding="utf-8"))
-    else:
+        return service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
+    try:
         raw = subprocess.run(
             ["gcloud", "secrets", "versions", "access", "latest",
              "--secret", KEY_SECRET, "--project", GCP_PROJECT],
             capture_output=True, text=True,
         ).stdout
-        if not raw.strip():
-            raise RuntimeError(f"could not load SA key from secret {KEY_SECRET}")
-        info = json.loads(raw)
-    return service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
+        if raw.strip():
+            info = json.loads(raw)
+            return service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
+    except FileNotFoundError:
+        pass  # gcloud 不在 (Cloud Run) → ambient へ
+    creds, _ = google.auth.default(scopes=SCOPES)
+    return creds
 
 
 def _access_token(creds: service_account.Credentials) -> str:
@@ -81,22 +96,31 @@ def _access_token(creds: service_account.Credentials) -> str:
     return creds.token
 
 
-def _build_target_urls(include_all: bool) -> list[str]:
-    seen: set[str] = set()
-    urls: list[str] = []
+def _build_target_urls(include_all: bool) -> tuple[list[str], list[str]]:
+    """(priority, tail) を返す。
 
-    def add(path_or_url: str) -> None:
+    priority = hub + active 支配下 69 選手 (毎日必ず submit。鮮度維持 + 主力優先)。
+    tail = sitemap の残り全 /data/ URL (priority に無いもの。rotate 対象)。
+    """
+    seen: set[str] = set()
+    priority: list[str] = []
+
+    def norm(path_or_url: str) -> str:
         u = path_or_url if path_or_url.startswith("http") else SITE + path_or_url
-        u = u.rstrip("/")
+        return u.rstrip("/")
+
+    def add(lst: list[str], path_or_url: str) -> None:
+        u = norm(path_or_url)
         if u not in seen:
             seen.add(u)
-            urls.append(u)
+            lst.append(u)
 
     for p in HUB_PATHS:
-        add(p)
+        add(priority, p)
     for name in load_shihai_names():
-        add(f"/data/{player_slug(name)}")
+        add(priority, f"/data/{player_slug(name)}")
 
+    tail: list[str] = []
     if include_all:
         for sm in ("page-sitemap.xml", "page-sitemap2.xml"):
             try:
@@ -105,8 +129,22 @@ def _build_target_urls(include_all: bool) -> list[str]:
                 LOG.warning("sitemap fetch fail %s: %r", sm, exc)
                 continue
             for m in re.findall(r"<loc>(https://yoshilover\.com/data/[^<]+)</loc>", xml):
-                add(m)
-    return urls
+                add(tail, m)
+    return priority, tail
+
+
+def _rotate_tail(tail: list[str], slots: int) -> list[str]:
+    """day-of-year で tail を rotate し、 毎日違う window を slots 件返す (stateless)。"""
+    if slots <= 0 or not tail:
+        return []
+    if len(tail) <= slots:
+        return tail
+    yday = _dt.datetime.now(_dt.timezone.utc).timetuple().tm_yday
+    start = (yday * slots) % len(tail)
+    window = tail[start:start + slots]
+    if len(window) < slots:  # wrap around
+        window += tail[: slots - len(window)]
+    return window
 
 
 def _publish(token: str, url: str) -> tuple[bool, int, str]:
@@ -129,12 +167,20 @@ def run(argv: list[str] | None = None) -> dict:
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, default=180, help="1 回の最大 submit 数 (quota 200/day)")
     ap.add_argument("--all", action="store_true", help="sitemap 全 /data/ URL も対象に追加")
+    ap.add_argument("--tail-rotate", action="store_true",
+                    help="priority(hub+active) は毎回 + 残り枠を tail から day 単位 rotate")
     ap.add_argument("--dry-run", action="store_true", help="submit せず対象だけ表示")
     ap.add_argument("--sleep", type=float, default=0.3, help="submit 間隔秒")
     args = ap.parse_args(argv)
 
-    targets = _build_target_urls(args.all)[: args.limit]
-    LOG.info("indexing submit: targets=%d dry_run=%s all=%s", len(targets), args.dry_run, args.all)
+    priority, tail = _build_target_urls(args.all or args.tail_rotate)
+    if args.tail_rotate:
+        slots = max(0, args.limit - len(priority))
+        targets = (priority + _rotate_tail(tail, slots))[: args.limit]
+    else:
+        targets = (priority + tail)[: args.limit]
+    LOG.info("indexing submit: priority=%d tail=%d targets=%d dry_run=%s all=%s rotate=%s",
+             len(priority), len(tail), len(targets), args.dry_run, args.all, args.tail_rotate)
     if args.dry_run:
         for u in targets:
             print(u)

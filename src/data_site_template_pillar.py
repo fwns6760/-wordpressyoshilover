@@ -588,7 +588,7 @@ def _build_farm_stats_html(player: PillarPlayerInfo) -> str:
         'padding:14px;margin:0 0 16px;border-radius:4px;">'
         '<h2 style="font-size:16px;margin:0 0 4px;color:#33691e;">🌱 二軍（ファーム）今シーズン成績</h2>'
         '<p style="font-size:12px;color:#689f38;margin:0 0 10px;line-height:1.6;">'
-        'イースタン・リーグでの今季成績です。<strong>一軍とは別集計</strong>のため、'
+        'ファーム・リーグ（中地区）での今季成績です。<strong>一軍とは別集計</strong>のため、'
         '上の「一軍成績」と分けて掲載しています。</p>'
         + "".join(parts)
         + '<p style="font-size:11px;color:#999;margin:8px 0 0;">※ NPB公式 ファーム個人成績より</p>'

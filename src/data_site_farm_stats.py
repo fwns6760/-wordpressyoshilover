@@ -1,7 +1,9 @@
-"""巨人ファーム（二軍/イースタン）今季個人成績の取得（NPB公式）。
+"""巨人ファーム（二軍/中地区）今季個人成績の取得（NPB公式）。
 
 選手ページに「二軍（今季）」ブロックを足すための source。
-NPB 公式: https://npb.jp/bis/{year}/stats/idb1_g.html（打）/ idp1_g.html（投）。
+NPB 公式 ファーム: https://npb.jp/bis/{year}/stats/idb2_g.html（打）/ idp2_g.html（投）。
+（idb1_g / idp1_g は一軍=セントラルなので取り違えない。旧コードは一軍 URL を二軍として
+取得していた bug があった。）
 
 giants_farm_map() -> { 正規化名: {"batting": {stat:val}, "pitching": {stat:val}} }
 ネットワーク失敗時は空 dict（選手ページは二軍ブロックを出さないだけ）。
@@ -20,8 +22,8 @@ import requests
 LOG = logging.getLogger(__name__)
 
 _UA = {"User-Agent": "yoshilover-fetcher (+https://yoshilover.com)"}
-_BAT_URL = "https://npb.jp/bis/{year}/stats/idb1_g.html"
-_PIT_URL = "https://npb.jp/bis/{year}/stats/idp1_g.html"
+_BAT_URL = "https://npb.jp/bis/{year}/stats/idb2_g.html"
+_PIT_URL = "https://npb.jp/bis/{year}/stats/idp2_g.html"
 _WS = re.compile(r"[\s　]+")
 _LEAD = re.compile(r"^[\*＊\+\s　]+")
 

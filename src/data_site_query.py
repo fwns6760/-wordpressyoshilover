@@ -798,11 +798,36 @@ def _ensure_insight_db_local() -> Optional[str]:
         return None
 
 
-def fetch_batting_stats_season(player_canonical: str) -> Optional[BattingStatsSeason]:
-    """insight.db batting_logs を SUM して season summary を返す.
+def _ichigun_official_enabled() -> bool:
+    return (os.environ.get("DATA_SITE_ICHIGUN_OFFICIAL", "1").strip() or "1") != "0"
 
-    未収録 (rows=0 or player table 不在) なら None を返し、 template は placeholder。
+
+def fetch_batting_stats_season(player_canonical: str) -> Optional[BattingStatsSeason]:
+    """今季 一軍 打撃 season summary を返す.
+
+    正本は NPB 公式 一軍 個人打撃成績 (シーズン合計)。 insight.db は box score 積み上げで
+    試合取込漏れ (例: 宇都宮葵星 6試合2打数 が 0 になる) があるため、 公式合計を優先する。
+    公式に居ない / fetch 失敗時のみ insight.db SUM に fallback。 どちらも無ければ None
+    (template は placeholder)。 env DATA_SITE_ICHIGUN_OFFICIAL=0 で公式 source を無効化。
     """
+    if _ichigun_official_enabled():
+        try:
+            from src.data_site_ichigun_stats import giants_ichigun_batting_map
+
+            rec = giants_ichigun_batting_map().get(_norm_name(player_canonical))
+            if rec and rec.get("games"):
+                return BattingStatsSeason(
+                    games=int(rec.get("games") or 0),
+                    ab=int(rec.get("ab") or 0),
+                    hits=int(rec.get("hits") or 0),
+                    rbi=int(rec.get("rbi") or 0),
+                    runs=int(rec.get("runs") or 0),
+                    sb=int(rec.get("sb") or 0),
+                    hr=int(rec.get("hr") or 0),
+                )
+        except Exception as exc:  # noqa: BLE001
+            LOG.warning("ichigun official batting fetch failed player=%s: %r",
+                        player_canonical, exc)
     path = _ensure_insight_db_local()
     if not path:
         return None

@@ -7,6 +7,7 @@ import os
 import sqlite3
 import tempfile
 import unittest
+from unittest import mock
 
 from src.data_site_query import (
     giants_venue_from_game_id,
@@ -19,6 +20,7 @@ from src.data_site_query import (
     fetch_weekday_split_stats,
     fetch_month_split_stats,
     fetch_interleague_split_stats,
+    find_player_featured_image_url,
     _classify_atbat,
 )
 
@@ -45,6 +47,31 @@ class GiantsVenueFromGameIdTests(unittest.TestCase):
         self.assertIsNone(giants_venue_from_game_id(""))
         self.assertIsNone(giants_venue_from_game_id("no-colon-here"))
         self.assertIsNone(giants_venue_from_game_id("2026-03-27:g"))
+
+
+class PlayerFeaturedImagePublicFallbackTests(unittest.TestCase):
+    """YT Shorts can use curated player media even when WP write creds are absent."""
+
+    def test_public_media_source_url_without_wp_creds(self) -> None:
+        class FakeResponse:
+            ok = True
+
+            def json(self) -> dict[str, str]:
+                return {"source_url": "https://yoshilover.com/wp-content/uploads/kishida.jpg"}
+
+        def fake_get(url: str, **kwargs):
+            self.assertIn("/wp-json/wp/v2/media/66557", url)
+            self.assertNotIn("auth", kwargs)
+            self.assertEqual(kwargs["params"], {"_fields": "source_url"})
+            return FakeResponse()
+
+        with (
+            mock.patch.dict(os.environ, {"WP_URL": "", "WP_USER": "", "WP_APP_PASSWORD": ""}, clear=False),
+            mock.patch("src.data_site_query.requests.get", side_effect=fake_get),
+        ):
+            url = find_player_featured_image_url("岸田 行倫")
+
+        self.assertEqual(url, "https://yoshilover.com/wp-content/uploads/kishida.jpg")
 
 
 class ClassifyAtbatTests(unittest.TestCase):
@@ -816,3 +843,50 @@ class AlltimeLeadersTests(unittest.TestCase):
             self.assertEqual(rec, {})
         finally:
             ar.load_ob_stats = orig
+
+
+class LiveRosterFilterTests(unittest.TestCase):
+    """退団選手の self-heal 除外 (NPB 公式現役名簿で player_class を濾過)。"""
+
+    def _reset(self):
+        import src.data_site_query as q
+        q._player_class_cache = None
+        q._npb_active_names_cache = None
+        q._npb_active_names_fetched = False
+
+    def test_drops_departed_keeps_active(self):
+        import src.data_site_query as q
+        self._reset()
+        classes = {
+            "shihai": {"内野手": ["宇都宮葵星", "岡本和真", "坂本勇人"]},
+            "ikusei": {"投手": ["西川歩", "退団投手"]},
+        }
+        with mock.patch.object(
+            q, "_current_npb_norm_names",
+            return_value=frozenset({"宇都宮葵星", "坂本勇人", "西川歩"}),
+        ):
+            out = q._apply_live_roster_filter(classes)
+        self.assertEqual(out["shihai"]["内野手"], ["宇都宮葵星", "坂本勇人"])
+        self.assertEqual(out["ikusei"]["投手"], ["西川歩"])
+
+    def test_noop_when_npb_unavailable(self):
+        import src.data_site_query as q
+        self._reset()
+        classes = {"shihai": {"内野手": ["岡本和真", "坂本勇人"]}, "ikusei": {}}
+        with mock.patch.object(q, "_current_npb_norm_names", return_value=None):
+            out = q._apply_live_roster_filter(classes)
+        # fetch 不全時は濾過しない (config 尊重 = 安全側)
+        self.assertEqual(out["shihai"]["内野手"], ["岡本和真", "坂本勇人"])
+
+    def test_thin_roster_skips_filter(self):
+        import src.data_site_query as q
+        self._reset()
+        with mock.patch("src.giants_roster_loader._fetch_npb_roster",
+                        return_value=[{"name": "唯一選手"}]):
+            self.assertIsNone(q._current_npb_norm_names())
+
+    def test_flag_off_disables_filter(self):
+        import src.data_site_query as q
+        self._reset()
+        with mock.patch.dict(os.environ, {"DATA_SITE_ROSTER_LIVE_FILTER": "0"}):
+            self.assertIsNone(q._current_npb_norm_names())

@@ -75,12 +75,76 @@ def _norm_name(name: str) -> str:
 
 _player_class_cache: Optional[dict] = None
 
+# 退団選手の自動除外 (self-heal): config (data_site_player_class.json) が手動正本で
+# 退団検知に穴があるため、 publish 時に NPB 公式現役名簿で player_class を濾過する。
+# config に居ても NPB 公式に居ない選手 (例: 移籍/引退済) はページ生成・index から外す。
+# NPB fetch 失敗時や名簿が薄すぎる時は濾過しない (= 既存 config を尊重、安全側)。
+_LIVE_ROSTER_FLOOR = 80  # raw NPB 名簿がこの数未満なら fetch 不全とみなし濾過しない
+_npb_active_names_cache: Optional[frozenset] = None
+_npb_active_names_fetched = False
+
+
+def _live_filter_enabled() -> bool:
+    return (os.environ.get("DATA_SITE_ROSTER_LIVE_FILTER", "1").strip() or "1") != "0"
+
+
+def _current_npb_norm_names() -> Optional[frozenset]:
+    """NPB 公式 現役名簿 (支配下+育成) の正規化名 set。
+
+    濾過の権威は giants_roster.json でも loader merge 結果でもなく、 NPB 公式 raw
+    fetch のみ (両者は退団選手を残す union のため)。 fetch 失敗・名簿薄 (< floor)・
+    flag OFF なら None を返し、 呼び出し側は濾過を skip する。"""
+    global _npb_active_names_cache, _npb_active_names_fetched
+    if _npb_active_names_fetched:
+        return _npb_active_names_cache
+    _npb_active_names_fetched = True
+    if not _live_filter_enabled():
+        _npb_active_names_cache = None
+        return None
+    try:
+        from src import giants_roster_loader as _grl
+
+        raw = _grl._fetch_npb_roster()
+        names = {_norm_name(str(e.get("name") or "")) for e in (raw or [])}
+        names.discard("")
+        if len(names) < _LIVE_ROSTER_FLOOR:
+            LOG.warning("NPB roster fetch too thin (%d < %d) — skip live filter",
+                        len(names), _LIVE_ROSTER_FLOOR)
+            _npb_active_names_cache = None
+        else:
+            _npb_active_names_cache = frozenset(names)
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("NPB roster fetch failed — skip live filter: %r", exc)
+        _npb_active_names_cache = None
+    return _npb_active_names_cache
+
+
+def _apply_live_roster_filter(classes: dict) -> dict:
+    """player_class から NPB 公式現役名簿に居ない選手を除外する (退団 self-heal)。"""
+    npb = _current_npb_norm_names()
+    if not npb:
+        return classes
+    dropped: list[str] = []
+    for section in ("shihai", "ikusei"):
+        bucket = classes.get(section) or {}
+        for pos, names in list(bucket.items()):
+            kept = [n for n in names if _norm_name(n) in npb]
+            if len(kept) != len(names):
+                dropped.extend(n for n in names if _norm_name(n) not in npb)
+            bucket[pos] = kept
+        classes[section] = bucket
+    if dropped:
+        LOG.warning("live roster filter dropped %d departed player(s): %s",
+                    len(dropped), ", ".join(dropped))
+    return classes
+
 
 def load_player_class() -> dict:
     """NPB 公式由来の支配下/育成 ポジション分類 (config/data_site_player_class.json)。
 
     giants_roster.json の role/position が stale なため、 data-site の登録ポジション
     分類はこの正本を優先する。 戻り値は {'shihai': {pos:[name]}, 'ikusei': {pos:[name]}}。
+    publish 時は NPB 公式現役名簿で濾過し、 退団選手を自動除外する (_apply_live_roster_filter)。
     """
     global _player_class_cache
     if _player_class_cache is not None:
@@ -94,7 +158,8 @@ def load_player_class() -> dict:
     except Exception as exc:  # noqa: BLE001
         LOG.warning("player class parse error: %r", exc)
         data = {"shihai": {}, "ikusei": {}}
-    _player_class_cache = {"shihai": data.get("shihai") or {}, "ikusei": data.get("ikusei") or {}}
+    classes = {"shihai": data.get("shihai") or {}, "ikusei": data.get("ikusei") or {}}
+    _player_class_cache = _apply_live_roster_filter(classes)
     return _player_class_cache
 
 

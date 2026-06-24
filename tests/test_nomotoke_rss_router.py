@@ -180,7 +180,7 @@ class RequiredFactsGateTests(unittest.TestCase):
     def test_manager_comment_matched_in_allowlist(self):
         r = route_rss_entry_to_nomotoke_card(
             _entry(
-                title="巨人・阿部監督「反省、修正してやる」",
+                title="巨人・橋上監督代行「反省、修正してやる」",
                 summary="",
                 link="https://twitter.com/Sanspo_Giants/status/1",
             ),
@@ -189,12 +189,12 @@ class RequiredFactsGateTests(unittest.TestCase):
         )
         self.assertTrue(r.matched)
         self.assertEqual(r.template_key, TEMPLATE_KEY_MANAGER_COMMENT)
-        self.assertEqual(r.extracted_facts["manager_name"], "阿部")
+        self.assertEqual(r.extracted_facts["manager_name"], "橋上")
 
     def test_manager_comment_skipped_when_quote_empty(self):
         r = route_rss_entry_to_nomotoke_card(
             _entry(
-                title="巨人・阿部監督、リハビリについて言及",
+                title="巨人・橋上監督代行、リハビリについて言及",
                 summary="",
                 link="https://twitter.com/Sanspo_Giants/status/2",
             ),
@@ -271,7 +271,7 @@ class RequiredFactsGateTests(unittest.TestCase):
         long_quote = "あ" * (QUOTE_SHORT_MAX_CHARS + 1)
         r = route_rss_entry_to_nomotoke_card(
             _entry(
-                title=f"巨人・阿部監督「{long_quote}」",
+                title=f"巨人・橋上監督代行「{long_quote}」",
                 summary="",
                 link="https://twitter.com/Sanspo_Giants/status/3",
             ),
@@ -284,7 +284,7 @@ class RequiredFactsGateTests(unittest.TestCase):
         cap_quote = "あ" * QUOTE_SHORT_MAX_CHARS
         r = route_rss_entry_to_nomotoke_card(
             _entry(
-                title=f"巨人・阿部監督「{cap_quote}」",
+                title=f"巨人・橋上監督代行「{cap_quote}」",
                 summary="",
                 link="https://twitter.com/Sanspo_Giants/status/4",
             ),
@@ -584,7 +584,7 @@ class XPostOnlyGuardTests(unittest.TestCase):
         # routes to manager_comment despite being an X-only post.
         r = route_rss_entry_to_nomotoke_card(
             _entry(
-                title="巨人・阿部監督「集中して臨むだけ」",
+                title="巨人・橋上監督代行「集中して臨むだけ」",
                 summary="",
                 link="https://x.com/Sanspo_Giants/status/9003",
             ),
@@ -593,7 +593,7 @@ class XPostOnlyGuardTests(unittest.TestCase):
         )
         self.assertTrue(r.matched)
         self.assertEqual(r.template_key, TEMPLATE_KEY_MANAGER_COMMENT)
-        self.assertEqual(r.extracted_facts["manager_name"], "阿部")
+        self.assertEqual(r.extracted_facts["manager_name"], "橋上")
 
     def test_player_quote_x_post_routes_to_player_comment_not_short_news(self):
         # Player quote branch also takes precedence over the X-only guard.
@@ -806,7 +806,7 @@ class RuntimeIsolationTests(unittest.TestCase):
             render_mock.return_value = lambda d: {"title": "", "content_html": ""}
             r = route_rss_entry_to_nomotoke_card(
                 _entry(
-                    title="巨人・阿部監督「反省して修正する」",
+                    title="巨人・橋上監督代行「反省して修正する」",
                     link="https://twitter.com/Sanspo_Giants/status/9",
                 ),
                 source_name="サンスポ巨人X",
@@ -843,7 +843,7 @@ class RuntimeIsolationTests(unittest.TestCase):
             (fx_dir / "01_test.json").write_text(
                 json.dumps({
                     "source_name": "TokyoGiants",
-                    "title": "巨人・阿部監督「反省」",
+                    "title": "巨人・橋上監督代行「反省」",
                     "summary": "",
                     "link": "https://twitter.com/TokyoGiants/status/1",
                     "published": "",
@@ -887,8 +887,9 @@ class QualityCeilingTests(unittest.TestCase):
 # Manager allowlist boundary
 # ---------------------------------------------------------------------------
 class ManagerAllowlistTests(unittest.TestCase):
-    def test_allowlist_contains_abe(self):
-        self.assertIn("阿部", MANAGER_NAME_ALLOWLIST)
+    def test_allowlist_contains_hashigami(self):
+        # 2026-05-26 阿部慎之助 辞任 → 橋上秀樹 監督代行。現監督代行が allowlist に居ること。
+        self.assertIn("橋上", MANAGER_NAME_ALLOWLIST)
 
 
 # ---------------------------------------------------------------------------
@@ -896,13 +897,13 @@ class ManagerAllowlistTests(unittest.TestCase):
 # ---------------------------------------------------------------------------
 class ExtractorTests(unittest.TestCase):
     def test_extract_manager_quote_basic(self):
-        m = extract_manager_quote("巨人・阿部監督「反省」", "")
-        self.assertEqual(m.get("manager_name"), "阿部")
+        m = extract_manager_quote("巨人・橋上監督代行「反省」", "")
+        self.assertEqual(m.get("manager_name"), "橋上")
         self.assertEqual(m.get("quote_short"), "反省")
 
     def test_extract_manager_topic_only(self):
-        m = extract_manager_quote("巨人 阿部監督が打線について言及", "")
-        self.assertEqual(m.get("manager_name"), "阿部")
+        m = extract_manager_quote("巨人 橋上監督代行が打線について言及", "")
+        self.assertEqual(m.get("manager_name"), "橋上")
         self.assertEqual(m.get("quote_short"), "")
 
     def test_extract_player_quote_basic(self):
@@ -912,7 +913,7 @@ class ExtractorTests(unittest.TestCase):
 
     def test_extract_player_quote_skips_when_manager_pattern(self):
         # If 監督「 appears, player extractor returns {}.
-        p = extract_player_quote("巨人・阿部監督「采配について」", "")
+        p = extract_player_quote("巨人・橋上監督代行「采配について」", "")
         self.assertEqual(p, {})
 
     def test_detect_pregame_pitcher_keyword_only(self):
@@ -1104,7 +1105,7 @@ class ShortNewsTitleSanitizerTests(unittest.TestCase):
 
         r = route_rss_entry_to_nomotoke_card(
             {
-                "title": "巨人・阿部監督「反省」",
+                "title": "巨人・橋上監督代行「反省」",
                 "summary": "",
                 "link": "https://twitter.com/Sanspo_Giants/status/9701",
             },

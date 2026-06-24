@@ -368,7 +368,7 @@ def _generate_with_gemini_response(
 パターンB：発言引用型
 選手名or監督名「発言の前半部分…
 ※記者：（質問内容）
-※阿部監督「（回答の途中で切る、続きはブログへ）
+※橋上監督代行「（回答の途中で切る、続きはブログへ）
 →全文はブログで👇
 
 パターンC：比較・分析型
@@ -1013,7 +1013,7 @@ def _build_data_obp_post(title: str, url: str, content_html: str = "") -> str:
         sakamoto_line = f"\n坂本勇人 {sakamoto['order']}位 {sakamoto['obp']}"
 
     return (
-        "阿部監督は打線をどう組むのか。\n\n"
+        "橋上監督代行は打線をどう組むのか。\n\n"
         "出塁率上位5人\n"
         f"{ranking_block}"
         f"{sakamoto_line}\n"

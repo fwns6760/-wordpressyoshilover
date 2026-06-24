@@ -9,10 +9,10 @@
       "阿部監督",
       "阿部 慎之助"
     ],
-    "role": "manager",
-    "position": "監督",
+    "role": "ob",
+    "position": "前監督",
     "jersey_number": "83",
-    "active": true
+    "active": false
   },
   {
     "name": "橋上秀樹",
@@ -26,7 +26,7 @@
       "橋上コーチ",
       "橋上"
     ],
-    "role": "coach",
+    "role": "manager",
     "position": "監督代行",
     "jersey_number": "73",
     "active": true

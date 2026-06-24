@@ -263,7 +263,7 @@ def source_tier(source_name: str) -> int:
 # surname token in 「{name}「{quote}」」 patterns; first names are
 # never compared.
 MANAGER_NAME_ALLOWLIST: Tuple[str, ...] = (
-    "阿部",  # 1軍監督 (兼任)
+    "橋上",  # 1軍監督代行 (2026-05-26 就任、阿部慎之助 辞任に伴う)
     "桑田",  # 1軍投手チーフコーチ
     "元木",  # 1軍ヘッドコーチ
     "二岡",  # 2軍監督
@@ -292,8 +292,6 @@ GIANTS_KEYWORDS: Tuple[str, ...] = (
     "Giants",
     "GIANTS",
     "東京ドーム",
-    "阿部監督",
-    "阿部慎之助",
     "yomiuri_giants",
     "TokyoGiants",
 )
@@ -584,12 +582,13 @@ def _date_label_from_iso(iso: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-# 「[巨人・]?{監督名}監督「{quote}」」 — strict pattern.
+# 「[巨人・]?{監督名}監督[代行]「{quote}」」 — strict pattern.
+# 「監督代行」(橋上秀樹, 2026-05-26〜) も拾えるよう 代行 suffix を許容。
 _MANAGER_QUOTE_RE = re.compile(
-    r"(?:.*?[・･]\s*)?(?P<name>[^\s「」『』]{1,8})監督[「『](?P<quote>[^「」『』\n]{1,150})[」』]"
+    r"(?:.*?[・･]\s*)?(?P<name>[^\s「」『』]{1,8})監督(?:代行)?[「『](?P<quote>[^「」『』\n]{1,150})[」『]"
 )
 _MANAGER_TOPIC_RE = re.compile(
-    r"(?:.*?[・･]\s*)?(?P<name>[^\s]{1,8})監督[、,]?\s*(?P<topic>[^「」\n]{2,40}?)(?:について|に関して|を巡って|を巡り)"
+    r"(?:.*?[・･]\s*)?(?P<name>[^\s]{1,8})監督(?:代行)?[、,]?\s*(?P<topic>[^「」\n]{2,40}?)(?:について|に関して|を巡って|を巡り)"
 )
 
 

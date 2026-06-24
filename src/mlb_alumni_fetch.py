@@ -276,6 +276,93 @@ def fetch_mlb_player_detail(spec: dict) -> dict | None:
         return None
 
 
+def format_mlb_alumni_fact_line(entry: dict) -> str:
+    """1選手 entry (``_extract_player`` 形) を X 投稿用の verified fact line に。
+
+    MLB 文脈であることを必ず明示する (元巨人 OB だが 2026 巨人成績ではない)。
+    値が無い part は skip。空 entry / season 無しは空 string を返す (caller は
+    空なら従来の Giants DB fact にフォールバック)。
+    """
+    if not entry:
+        return ""
+    name = str(entry.get("name") or "").strip()
+    season = entry.get("season") or {}
+    if not name or not season:
+        return ""
+    team = str(entry.get("team") or "").strip()
+    team_tag = f"MLB {team}" if team else "MLB"
+    lines: list[str] = []
+    if entry.get("group") == "hitting":
+        parts: list[str] = []
+        if season.get("avg"):
+            parts.append(f"打率{season['avg']}")
+        if season.get("hr"):
+            parts.append(f"{season['hr']}本塁打")
+        if season.get("rbi"):
+            parts.append(f"{season['rbi']}打点")
+        if season.get("ops"):
+            parts.append(f"OPS{season['ops']}")
+        head = f"- {name} ({team_tag}) 今季{int(season.get('games') or 0)}試合"
+        lines.append(head + ("：" + " ".join(parts) if parts else ""))
+        lg = entry.get("last_game") or {}
+        if lg:
+            opp = str(lg.get("opponent") or "").strip()
+            lg_head = f"- 直近({lg.get('date','')}" + (f" 対{opp}" if opp else "") + ")"
+            lg_parts: list[str] = []
+            if lg.get("ab") is not None and lg.get("hits") is not None:
+                lg_parts.append(f"{lg['ab']}打数{lg['hits']}安打")
+            if lg.get("hr"):
+                lg_parts.append(f"{lg['hr']}本塁打")
+            if lg.get("rbi"):
+                lg_parts.append(f"{lg['rbi']}打点")
+            if lg_parts:
+                lines.append(lg_head + "：" + " ".join(lg_parts))
+    else:
+        parts = []
+        if season.get("wins") is not None and season.get("losses") is not None:
+            parts.append(f"{season['wins']}勝{season['losses']}敗")
+        if season.get("era"):
+            parts.append(f"防御率{season['era']}")
+        if season.get("ip"):
+            parts.append(f"{season['ip']}回")
+        if season.get("so"):
+            parts.append(f"{season['so']}奪三振")
+        head = f"- {name} ({team_tag}) 今季{int(season.get('games') or 0)}試合"
+        lines.append(head + ("：" + " ".join(parts) if parts else ""))
+        lg = entry.get("last_game") or {}
+        if lg:
+            opp = str(lg.get("opponent") or "").strip()
+            lg_head = f"- 直近({lg.get('date','')}" + (f" 対{opp}" if opp else "") + ")"
+            lg_parts = []
+            if lg.get("ip"):
+                lg_parts.append(f"{lg['ip']}回")
+            if lg.get("runs") is not None:
+                lg_parts.append(f"{lg['runs']}失点")
+            if lg.get("so"):
+                lg_parts.append(f"{lg['so']}奪三振")
+            if lg_parts:
+                lines.append(lg_head + "：" + " ".join(lg_parts))
+    return "\n".join(lines)
+
+
+def _name_key(name: str) -> str:
+    return "".join(str(name or "").split())
+
+
+def mlb_alumni_fact_line(player_name: str, data: dict) -> str:
+    """``fetch_mlb_alumni_data`` の返り値から player_name 一致選手の fact line を返す。
+
+    一致無し / data 空は空 string。 名前は空白無視で比較する。
+    """
+    if not player_name or not data:
+        return ""
+    key = _name_key(player_name)
+    for entry in data.get("players") or []:
+        if _name_key(entry.get("name")) == key:
+            return format_mlb_alumni_fact_line(entry)
+    return ""
+
+
 def fetch_mlb_alumni_data(season: int | None = None) -> dict:
     """全対象選手の今季成績 + 直近試合を取得する。失敗選手は除外。"""
     season = season or datetime.now(_JST).year

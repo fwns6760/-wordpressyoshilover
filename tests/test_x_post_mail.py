@@ -4078,6 +4078,47 @@ class ShareXFallbackButtonTests(unittest.TestCase):
         self.assertIn("X で投稿", html)
 
 
+class MlbAlumniFactLineWiringTests(unittest.TestCase):
+    """2026-06-24: 岡本和真 / 菅野智之 は MLB 成績を fact line に供給する。"""
+
+    def setUp(self):
+        from src.tools import run_x_post_mail as runner
+        # process キャッシュを test 毎にリセット。
+        runner._MLB_ALUMNI_CACHE["fetched"] = False
+        runner._MLB_ALUMNI_CACHE["data"] = None
+
+    _DATA = {
+        "season": 2026,
+        "players": [
+            {"name": "岡本和真", "group": "hitting", "team": "ドジャース",
+             "season": {"games": 70, "avg": ".291", "hr": 18, "rbi": 52, "ops": ".910"}},
+        ],
+    }
+
+    def test_alumni_player_gets_mlb_fact_line(self):
+        from src.tools import run_x_post_mail as runner
+        with patch.object(runner._mlb, "fetch_mlb_alumni_data", return_value=self._DATA) as m:
+            line = runner._mlb_alumni_fact_line("岡本和真")
+            # 2 回目はキャッシュで再 fetch しない。
+            runner._mlb_alumni_fact_line("岡本和真")
+        self.assertIn("MLB ドジャース", line)
+        self.assertIn("18本塁打", line)
+        self.assertEqual(m.call_count, 1)
+
+    def test_non_alumni_player_returns_blank_without_fetch(self):
+        from src.tools import run_x_post_mail as runner
+        with patch.object(runner._mlb, "fetch_mlb_alumni_data", return_value=self._DATA) as m:
+            line = runner._mlb_alumni_fact_line("戸郷翔征")
+        self.assertEqual(line, "")
+        self.assertEqual(m.call_count, 0)  # 非 alumnus は fetch すらしない
+
+    def test_fetch_failure_falls_back_to_blank(self):
+        from src.tools import run_x_post_mail as runner
+        with patch.object(runner._mlb, "fetch_mlb_alumni_data", side_effect=RuntimeError("net")):
+            line = runner._mlb_alumni_fact_line("岡本和真")
+        self.assertEqual(line, "")
+
+
 class PlayerDedupTests(unittest.TestCase):
     """user 2026-06-20: 1メール内の同一選手重複を圧縮し、枠を別ニュースへ。"""
 

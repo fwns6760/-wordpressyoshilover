@@ -36,6 +36,7 @@ if __package__ in {None, ""}:  # pragma: no cover - direct script execution
 
 from src import manual_intake_insight_query as miq  # noqa: E402
 from src import mail_delivery_bridge as mdb  # noqa: E402
+from src import mlb_alumni_fetch as _mlb  # noqa: E402
 from src import x_post_mail_lane as lane  # noqa: E402
 # 392: optional import — only used when X_POST_MAIL_GEMMA_GEN_ENABLED=1。
 # 既存 (flag OFF) 経路で import 失敗時に mail を止めないため lazy import。
@@ -324,6 +325,41 @@ def _x_post_player_dedup_enabled() -> bool:
 
 def _candidate_player_key(cand) -> str:
     return lane._normalize_player_name(getattr(cand, "focus_player", "") or "")
+
+
+# 巨人発 MLB OB (岡本和真 / 菅野智之) は Giants insight.db に当年成績が無いため、
+# X 投稿の DB fact line が空になり数字の裏付けが付かなかった。statsapi 由来の MLB
+# 成績 (data-site で既に取得実績あり) を fact line として供給する。fetch は live
+# HTTP なので 1 プロセス 1 回だけ取得してキャッシュ、失敗時は空で従来挙動に戻す。
+_MLB_ALUMNI_NAME_KEYS = {
+    lane._normalize_player_name(spec.get("name") or "") for spec in _mlb.MLB_ALUMNI
+}
+_MLB_ALUMNI_CACHE: dict = {"fetched": False, "data": None}
+
+
+def _get_mlb_alumni_data():
+    if not _MLB_ALUMNI_CACHE["fetched"]:
+        _MLB_ALUMNI_CACHE["fetched"] = True
+        try:
+            _MLB_ALUMNI_CACHE["data"] = _mlb.fetch_mlb_alumni_data()
+        except Exception as exc:  # noqa: BLE001
+            LOG.warning("mlb_alumni_fetch failed; MLB fact line disabled this run: %r", exc)
+            _MLB_ALUMNI_CACHE["data"] = None
+    return _MLB_ALUMNI_CACHE["data"]
+
+
+def _mlb_alumni_fact_line(player: str) -> str:
+    """player が 元巨人 MLB OB なら MLB 成績の fact line、 そうでなければ空。"""
+    if not player or lane._normalize_player_name(player) not in _MLB_ALUMNI_NAME_KEYS:
+        return ""
+    data = _get_mlb_alumni_data()
+    if not data:
+        return ""
+    try:
+        return _mlb.mlb_alumni_fact_line(player, data)
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("mlb_alumni_fact_line failed player=%s err=%r", player, exc)
+        return ""
 
 
 # 2026-06-24: 内容(中身)で重複判定するための類似度しきい値。
@@ -1455,7 +1491,8 @@ def _rebrand_candidates_via_gemini(
                     exc,
                 )
                 db_fact = ""
-        fact = db_fact or (cand.db_fact_line or "")
+        mlb_fact = _mlb_alumni_fact_line(player)
+        fact = mlb_fact or db_fact or (cand.db_fact_line or "")
         try:
             new_cand = _xbg.build_gemini_branding_candidate(
                 player,
@@ -1676,7 +1713,8 @@ def _build_gemini_branding_candidates(
                     exc,
                 )
                 db_fact = ""
-        fact = db_fact or lineup_fact
+        mlb_fact = _mlb_alumni_fact_line(player)
+        fact = mlb_fact or db_fact or lineup_fact
         # 414 axis E wire: focused_players (= 今日のスタメン focus name list) と
         # fan_voice_snippet を pass、 build_gemini_branding_candidate が
         # build_pregame_themes に転送して prompt 注入する。

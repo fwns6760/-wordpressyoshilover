@@ -388,6 +388,35 @@ def _load_giants_member_aliases(
     return out
 
 
+def _load_giants_member_roles(
+    roster_path: _Path = _ROSTER_PATH,
+) -> dict[str, str]:
+    """Return active Giants member canonical name -> role (player / manager / coach).
+
+    見出し主役選定で「選手 > コーチ/監督」の役割優先付けに使う。 対象は
+    `_load_giants_member_aliases` と同じ active な player + manager + coach。
+    """
+    if not roster_path.exists():
+        return {}
+    try:
+        roster = _json.loads(roster_path.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("failed to load Giants roster roles (member): %r", exc)
+        return {}
+
+    out: dict[str, str] = {}
+    for row in roster:
+        if not row.get("active"):
+            continue
+        role = row.get("role")
+        if role not in {"player", "manager", "coach"}:
+            continue
+        canonical = str(row.get("name") or "").strip()
+        if canonical:
+            out[canonical] = role
+    return out
+
+
 def _active_giants_canonical_member_keys() -> set[str]:
     return {
         _normalize_player_name(canonical)

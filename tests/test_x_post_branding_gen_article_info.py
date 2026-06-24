@@ -51,6 +51,39 @@ class FindFirstGiantsPlayerTests(unittest.TestCase):
         self.assertEqual(result, "田中将大")
 
 
+class RolePriorityHeadlineTests(unittest.TestCase):
+    """2026-06-24: 主役は選手 > コーチ/監督。 山崎伊織×野上コーチ型の回帰防止。"""
+
+    def test_player_wins_even_if_coach_appears_first(self):
+        # 野上コーチ (role=coach) が先頭、 山崎伊織 (role=player) が後 → 選手を主役に
+        result = xbg._find_first_giants_player_in_text(
+            "野上コーチが絶賛、山崎伊織の好投で巨人快勝"
+        )
+        self.assertEqual(result, "山﨑伊織")  # canonical は異体字 (﨑)
+
+    def test_coach_only_article_still_returns_coach(self):
+        # 選手が居ないコーチ単独ニュースは従来どおりコーチを拾う
+        result = xbg._find_first_giants_player_in_text("野上コーチが三軍投手陣を指導")
+        self.assertEqual(result, "野上亮磨")
+
+    def test_roles_filter_player_skips_coach(self):
+        # roles={"player"}: コーチのみの text では何も返さない (cross-text 用)
+        self.assertEqual(
+            xbg._find_first_giants_player_in_text(
+                "野上コーチが三軍を指導", roles={"player"}
+            ),
+            "",
+        )
+
+    def test_roles_filter_player_finds_player(self):
+        self.assertEqual(
+            xbg._find_first_giants_player_in_text(
+                "野上コーチが絶賛、山崎伊織の好投", roles={"player"}
+            ),
+            "山﨑伊織",  # canonical は異体字 (﨑)。 "山崎" 入力は alias 経由で canonical へ
+        )
+
+
 class BuildXPostFromArticleInfoSkipPathTests(unittest.TestCase):
     def test_invalid_input_skipped(self):
         # None article_info

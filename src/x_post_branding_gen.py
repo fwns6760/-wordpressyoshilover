@@ -1893,40 +1893,65 @@ def _resolve_speaker_aliases(canonical_name: str) -> tuple[str, ...]:
     return tuple(out)
 
 
-def _find_first_giants_player_in_text(text: str) -> str:
-    """text 中で最初に出現する Giants roster member の canonical name を返す.
+def _find_first_giants_player_in_text(text: str, *, roles: Optional[set[str]] = None) -> str:
+    """text 中の Giants roster member を役割優先で 1 人選び canonical name を返す.
 
-    aliases (giants_roster.json、 player + manager + coach の active member)
-    と alias を全件 substring match で照合し、 text 内の最も早い位置に出る
-    member を選ぶ。 該当無しは ""。 normalize なし (literal substring) で OK
-    — roster alias 側を そのまま使う。
+    aliases (giants_roster.json、 player + manager + coach の active member) を
+    全件 substring match で照合する。 normalize なし (literal substring)。
 
-    2026-05-27: 関数名は player 表記のまま (caller 互換) だが、 内部は
-    _load_giants_member_aliases (manager / coach 含む) に拡張済。 user 明示
-    「監督やコーチもいれていいんだよ。 巨人なら」。
+    役割優先 (2026-06-24): 記事の本題はコーチ/監督ではなく選手のことが多い。
+    earliest 出現位置だけで選ぶと「選手をコーチが評価」型の記事でコーチが
+    先に出ると主役を奪う (例: 山崎伊織の記事で野上コーチが見出しに立つ)。
+    そこで:
+      - roles=None: text 内に player が 1 人でも居れば player の中で最早出現を返す。
+        player が居なければ coach/manager の中で最早出現を返す (コーチ単独
+        ニュースは従来どおり拾える)。
+      - roles={"player"} 等: 指定ロールのみ対象に最早出現を返す (cross-text で
+        player を横断優先したい caller 用)。
+    該当無しは ""。
+
+    2026-05-27: member gate を player → player + manager + coach へ拡張
+    (user「監督やコーチもいれていい、 巨人なら」)。 関数名は caller 互換で player 表記のまま。
     """
     if not isinstance(text, str) or not text:
         return ""
     try:
-        from src.x_post_mail_lane import _load_giants_member_aliases  # local import to avoid cycle at module top
+        from src.x_post_mail_lane import (  # local import to avoid cycle at module top
+            _load_giants_member_aliases,
+            _load_giants_member_roles,
+        )
     except Exception:  # noqa: BLE001
         return ""
     try:
         aliases = _load_giants_member_aliases()
+        role_map = _load_giants_member_roles()
     except Exception:  # noqa: BLE001
         return ""
-    best_pos = -1
-    best_canonical = ""
+
+    # text 内の全 member 一致を (pos, canonical, role) で収集。
+    matches: list[tuple[int, str, str]] = []
     for alias, canonical in aliases.items():
         if not alias or len(alias) < 2:
             continue
         pos = text.find(alias)
         if pos < 0:
             continue
-        if best_pos < 0 or pos < best_pos:
-            best_pos = pos
-            best_canonical = canonical or alias
-    return best_canonical
+        canon = canonical or alias
+        role = role_map.get(canon, "")
+        if roles is not None and role not in roles:
+            continue
+        matches.append((pos, canon, role))
+
+    if not matches:
+        return ""
+
+    if roles is None:
+        players = [m for m in matches if m[2] == "player"]
+        pool = players if players else matches
+    else:
+        pool = matches
+    pool.sort(key=lambda m: m[0])
+    return pool[0][1]
 
 
 def build_x_post_from_article_info(
@@ -1991,11 +2016,17 @@ def build_x_post_from_article_info(
             title[:60],
         )
     else:
-        # 1. member 抽出 (roster 内 player + manager + coach を title から、 ダメなら
-        # summary から、 それでもダメなら article_info.player_canonical の先頭、
-        # 全部空なら skip)。 2026-05-27 user「監督やコーチもいれていい、 巨人なら」
-        # で player → member gate へ拡張。
-        player = _find_first_giants_player_in_text(title) or _find_first_giants_player_in_text(summary)
+        # 1. member 抽出。 本題は選手のことが多いので player を最優先で title→summary
+        # 横断で探す。 選手が全く居ない記事だけ coach/manager を主役にする (コーチ単独
+        # ニュースは従来どおり拾える)。 それでも空なら article_info.player_canonical の
+        # 先頭、 全部空なら skip。 2026-05-27 で player → member gate へ拡張、
+        # 2026-06-24 で「選手 > コーチ/監督」の役割優先を追加。
+        player = (
+            _find_first_giants_player_in_text(title, roles={"player"})
+            or _find_first_giants_player_in_text(summary, roles={"player"})
+            or _find_first_giants_player_in_text(title)
+            or _find_first_giants_player_in_text(summary)
+        )
         if not player:
             canonical_list = getattr(article_info, "player_canonical", None) or []
             if canonical_list:

@@ -645,12 +645,31 @@ class SelectBrandingPersonaTests411(unittest.TestCase):
 class HallucinationPreventionAxisCTests414(unittest.TestCase):
     """414 axis C: hallucination 防止 (regex + 数値 whitelist + temperature + date filter)."""
 
-    # axis C1: \d+位 forbidden
+    # axis C1: \d+位 = source 照合できない時のみ forbidden (2026-06-24 user 決定)
     def test_safety_check_rejects_rank_28(self) -> None:
+        # verified_text 既定 "" = source 照合不能 → 従来どおり drop
         self.assertFalse(xbg._gemini_branding_safety_check("岸田は出塁率28位の数字を残してる"))
 
     def test_safety_check_rejects_rank_3(self) -> None:
         self.assertFalse(xbg._gemini_branding_safety_check("打率3位の選手だ"))
+
+    def test_safety_check_rejects_rank_when_not_in_source(self) -> None:
+        # source はあるが 28位 を含まない → 捏造扱いで drop
+        self.assertFalse(
+            xbg._gemini_branding_safety_check(
+                "岸田は出塁率28位の数字を残してる",
+                verified_text="岸田 出塁率 好調 セ・リーグ上位",
+            )
+        )
+
+    def test_safety_check_accepts_rank_when_in_source(self) -> None:
+        # source に「28位」が literal で出ていれば許可 (記事にある数字は使ってよい)
+        self.assertTrue(
+            xbg._gemini_branding_safety_check(
+                "岸田は出塁率28位の数字を残してる",
+                verified_text="巨人 岸田 出塁率28位 セ・リーグ",
+            )
+        )
 
     def test_safety_check_accepts_no_rank(self) -> None:
         # 順位表現なしの 220+ 字の post
@@ -663,12 +682,40 @@ class HallucinationPreventionAxisCTests414(unittest.TestCase):
         )
         self.assertTrue(xbg._gemini_branding_safety_check(text))
 
-    # axis C3: rate forbidden
+    # axis C3: rate = source 照合できない時のみ forbidden (2026-06-24 user 決定)
     def test_safety_check_rejects_batting_average(self) -> None:
         self.assertFalse(xbg._gemini_branding_safety_check("岸田は打率.345を残してる"))
 
     def test_safety_check_rejects_era_specific(self) -> None:
         self.assertFalse(xbg._gemini_branding_safety_check("戸郷の防御率1.85は素晴らしい"))
+
+    def test_safety_check_accepts_batting_average_when_in_source(self) -> None:
+        self.assertTrue(
+            xbg._gemini_branding_safety_check(
+                "岸田は打率.345を残してる",
+                verified_text="巨人 岸田 打率.345 好調",
+            )
+        )
+
+    def test_safety_check_accepts_era_when_in_source(self) -> None:
+        self.assertTrue(
+            xbg._gemini_branding_safety_check(
+                "戸郷の防御率1.85は素晴らしい",
+                verified_text="戸郷 今季 防御率1.85 規定到達",
+            )
+        )
+
+    def test_matched_branding_forbidden_pattern_verified_returns_none(self) -> None:
+        # verified なら drop 理由 None (= pass)
+        self.assertIsNone(
+            xbg._matched_branding_forbidden_pattern(
+                "岸田は出塁率28位だ", "巨人 岸田 出塁率28位"
+            )
+        )
+        # source に無ければ pattern 文字列を返す (= drop)
+        self.assertIsNotNone(
+            xbg._matched_branding_forbidden_pattern("岸田は出塁率28位だ", "巨人 岸田 好調")
+        )
 
     # axis C2: 数値 whitelist
     def test_extract_unverified_numbers_returns_unverified(self) -> None:

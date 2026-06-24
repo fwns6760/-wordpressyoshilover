@@ -198,16 +198,21 @@ def _x_post_generate_content(client, *, model, contents, config):
 
 
 # spec 382 hard rule の追加 gate (既存 ``_FORBIDDEN_POST_TERMS`` の上に積む)
+# 常時禁止 (verified でも出さない): URL / hashtag / 媒体導線。
 _GEMINI_BRANDING_FORBIDDEN_PATTERNS = (
     _re.compile(r"https?://"),
     _re.compile(r"#\S+"),
     _re.compile(r"ヨシラバー(で|を|に)?整理しました"),
     _re.compile(r"Xでは|X上では|みんなの声"),
-    # 414 axis 1 (2026-05-20): \d+位 を一律 drop (user 報告 岸田 28位 hallucination 事例)
+)
+
+# 順位 / rate 数字: source (記事 / DB / 検索結果) に literal で出てる時だけ許可。
+# 2026-06-24 (user 決定): 「記事にある数字なら使ってよい」。 414 axis 1 の \d+位 一律 drop
+# (user 報告 岸田 28位 hallucination 事例) は、 verified_text に同じ表記が無い時のみ drop に変更。
+# 捏造防止は維持 (source 照合できない順位 / rate は従来どおり全文破棄)。
+# `.345` (1軍打率風) と `3.456` (OPS 風) 両方カバー、 防御率は別 pattern。
+_GEMINI_BRANDING_VERIFIABLE_NUMBER_PATTERNS = (
     _re.compile(r"\d+位"),
-    # 414 axis C3: 打率 / 出塁率 / OPS / 防御率 系 rate 数字を drop
-    # 未検証の rate 数字は spec 382 違反、 Gemini Flash Lite が prompt 破った時の safety net
-    # `.345` (1軍打率風) と `3.456` (OPS 風) 両方カバー、 防御率は別 pattern。
     _re.compile(r"(?<!\d)\.\d{3}"),
     _re.compile(r"\d+\.\d{3}"),
     _re.compile(r"防御率\s*\d+\.\d{1,2}"),
@@ -298,10 +303,10 @@ _SYSTEM_PROMPT_YOSHILOVER = """あなたは「ヨシラバー」という巨人�
 - **中身の薄い post は禁止** (意見 + 理由 + 戦術や読み のどれかを必ず入れる。 感想・感嘆だけは NG)
 - 巨人以外の球団選手の話題は除外
 - 公開済み MLB の元巨人 OB (菅野・岡本等) は OK、 非元巨人 MLB は NG
-- **【414 hard rule、 厳守】 順位表現 / rate 数字は出力禁止**:
-  - **BAD**: 「出塁率28位」 「打率3位」 「歴代5位」 「セ・リーグOPS2位」 「.345」 「防御率1.85」
-  - **GOOD**: 「出塁率の数字いい」 「打率は安定」 「歴代でも上位」 「セで上の方」 「数字を残してる」
-  - 違反したら出力全体破棄。 「◯位」 という表現は **どんな文脈でも禁止**
+- **【414 hard rule、 厳守】 順位表現 / rate 数字は source 照合できる時だけ可**:
+  - **OK (source = 記事 / DB fact / 検索結果 に同じ表記がある時のみ)**: 「セ・リーグ防御率2位」 「打率.310」 ← source に literal で出てる数字はそのまま使ってよい
+  - **NG (source に無い / 記憶頼り)**: 裏取りできない順位・rate は捏造扱い。 必ず generalize する (「セで上の方」「打率は安定」「歴代でも上位」「数字を残してる」)
+  - 迷ったら generalize 側に倒す。 source に無い 「◯位」 ・rate を書いたら出力全体破棄
 - **【414 axis D、 炎上・ズレ防止】 以下も出力禁止 (ポジティブな巨人ファン account 維持のため)**:
   - 強批判語: 「使えない」 「戦犯」 「クビ」 「最悪」 「酷い」 「論外」 「引退しろ」 「辞めろ」 「無能」
   - 断定語: 「絶対」 「間違いなく」 「確実に」 「100%」 「必ず」 「断言」 (= 事実超え断定)
@@ -652,19 +657,38 @@ def _filter_same_day_jst(results: list[dict]) -> list[dict]:
     return kept
 
 
-def _gemini_branding_safety_check(text: str) -> bool:
+def _matched_branding_forbidden_pattern(text: str, verified_text: str = "") -> Optional[str]:
+    """safety_check で fail させる forbidden pattern 文字列を返す (drop log 用)。 hit 無しは None。
+
+    順位 / rate は verifiable 扱い: source (verified_text) に matched literal が
+    含まれない時だけ fail とする (2026-06-24 user 決定)。 verified_text 既定 "" =
+    照合不能 → 従来どおり全 drop (後方互換、 source 不明な caller は strict)。
+    """
+    for pattern in _GEMINI_BRANDING_FORBIDDEN_PATTERNS:
+        if pattern.search(text):
+            return pattern.pattern
+    safe_verified = verified_text or ""
+    for pattern in _GEMINI_BRANDING_VERIFIABLE_NUMBER_PATTERNS:
+        match = pattern.search(text)
+        if match and match.group(0) not in safe_verified:
+            return pattern.pattern
+    return None
+
+
+def _gemini_branding_safety_check(text: str, verified_text: str = "") -> bool:
     """spec 382 hard rule gate for Gemini Flash Lite branding output.
 
     True = safe (pass). False = violation (caller drops the candidate)。
     414 axis D: 炎上 / ズレ防止 patterns も同等 hard rule として評価。
+    verified_text: 順位 / rate 数字の source 照合用 (記事 / DB / 検索結果)。 既定 "" は
+    strict (順位 / rate を全 drop、 後方互換)。
     """
     if not text or not text.strip():
         return False
     if len(text) > X_CHAR_LIMIT:
         return False
-    for pattern in _GEMINI_BRANDING_FORBIDDEN_PATTERNS:
-        if pattern.search(text):
-            return False
+    if _matched_branding_forbidden_pattern(text, verified_text) is not None:
+        return False
     # 414 axis D: 炎上系も同 fail 扱い
     for pattern in _GEMINI_BRANDING_INFLAMMATORY_PATTERNS:
         if pattern.search(text):
@@ -1236,7 +1260,9 @@ def build_team_roundup_candidate(
         log.warning("team_roundup_skip reason=gemini_error err=%r", exc)
         return None
     text = _finalize_post_text(text)
-    if not _gemini_branding_safety_check(text):
+    # 2026-06-24: 順位 / rate は source (DB fact + Tavily news) 照合できる時のみ許可。
+    verified_text = " ".join(filter(None, [fact_line or "", news_ctx]))
+    if not _gemini_branding_safety_check(text, verified_text):
         log.warning(
             "team_roundup_skip reason=safety_check_failed text_preview=%r",
             text[:60],
@@ -1366,7 +1392,7 @@ def build_quote_rt_comment(
             return ""
         text = _finalize_post_text(text)
         last_preview = text[:60]
-        if not text or not _gemini_branding_safety_check(text):
+        if not text or not _gemini_branding_safety_check(text, verified_text):
             continue
         if _extract_unverified_numbers(text, verified_text):
             continue
@@ -1639,17 +1665,15 @@ def build_gemini_branding_candidate(
 
     text = _finalize_post_text(text)
 
+    # 414 axis C2: 数値 whitelist 用 verified_text = db_fact_line + Tavily context。
+    # 2026-06-24: safety_check の 順位 / rate 照合にも同じ source を使う。
+    verified_text = " ".join(filter(None, [db_fact_line or "", context]))
+
     # 3. spec 382 hard rule + 414 axis D 炎上防止 validator
-    if not _gemini_branding_safety_check(text):
+    if not _gemini_branding_safety_check(text, verified_text):
         # 414 axis C7 + D: 構造化 drop log (どの pattern が hit したか + 軸名)
-        matched_pattern: Optional[str] = None
+        matched_pattern: Optional[str] = _matched_branding_forbidden_pattern(text, verified_text)
         matched_axis: str = "C"  # default: forbidden patterns (axis C)
-        for pattern in _GEMINI_BRANDING_FORBIDDEN_PATTERNS:
-            match = pattern.search(text)
-            if match:
-                matched_pattern = pattern.pattern
-                matched_axis = "C"
-                break
         if matched_pattern is None:
             # 軸 D: 炎上 patterns hit を確認
             inflammatory_match = _matched_inflammatory_pattern(text)
@@ -1674,9 +1698,7 @@ def build_gemini_branding_candidate(
         )
         return None
 
-    # 414 axis C2: 数値 whitelist。 verified_text = db_fact_line + Tavily context。
     # 生成 text の数字で verified_text に literal 含まれない場合は drop。
-    verified_text = " ".join(filter(None, [db_fact_line or "", context]))
     unverified = _extract_unverified_numbers(text, verified_text)
     if unverified:
         log.warning(
@@ -2124,16 +2146,16 @@ def build_x_post_from_article_info(
 
     text = _finalize_post_text(text)
 
+    # 8. § 8 verified_text hygiene + 414 axis 2: 数値 whitelist。
+    # verified_text = article_info の title + summary literal **のみ**。
+    # AI commentary / Gemini Flash Lite 出力は verified_text に **含めない** (二重 hallucination 防止)。
+    # 2026-06-24: safety_check の 順位 / rate 照合にも同じ verified_text を使う。
+    verified_text = " ".join(filter(None, [title, summary]))
+
     # 7. spec 382 hard rule + 414 axis D 炎上防止 validator (既存 1:1 流用)
-    if not _gemini_branding_safety_check(text):
-        matched_pattern: Optional[str] = None
+    if not _gemini_branding_safety_check(text, verified_text):
+        matched_pattern: Optional[str] = _matched_branding_forbidden_pattern(text, verified_text)
         matched_axis: str = "C"
-        for pattern in _GEMINI_BRANDING_FORBIDDEN_PATTERNS:
-            match = pattern.search(text)
-            if match:
-                matched_pattern = pattern.pattern
-                matched_axis = "C"
-                break
         if matched_pattern is None:
             inflammatory_match = _matched_inflammatory_pattern(text)
             if inflammatory_match:
@@ -2158,10 +2180,6 @@ def build_x_post_from_article_info(
         )
         return None
 
-    # 8. § 8 verified_text hygiene + 414 axis 2: 数値 whitelist。
-    # verified_text = article_info の title + summary literal **のみ**。
-    # AI commentary / Gemini Flash Lite 出力は verified_text に **含めない** (二重 hallucination 防止)。
-    verified_text = " ".join(filter(None, [title, summary]))
     unverified = _extract_unverified_numbers(text, verified_text)
     if unverified:
         log.warning(

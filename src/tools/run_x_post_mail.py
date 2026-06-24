@@ -19,8 +19,10 @@ import hashlib as _hashlib
 import json
 import logging
 import os
+import re as _re
 import sys
 from datetime import datetime
+from difflib import SequenceMatcher as _SequenceMatcher
 from pathlib import Path
 from typing import Sequence
 from urllib import request as urlrequest
@@ -324,29 +326,69 @@ def _candidate_player_key(cand) -> str:
     return lane._normalize_player_name(getattr(cand, "focus_player", "") or "")
 
 
-def _dedupe_candidates_by_player(candidates, *, log=None):
-    """同一メール内で focus_player が重複する候補を先頭1件に圧縮する。
+# 2026-06-24: 内容(中身)で重複判定するための類似度しきい値。
+# focus_player が同じ候補同士でのみ比較し、ratio がこれ以上なら「同趣旨」として
+# 後発を落とす。別選手同士は決して比較しない (誤マージ防止)。
+_CONTENT_DEDUP_SIM = 0.82
+_HASHTAG_URL_RE = _re.compile(r"(?:#\S+|https?://\S+|@\w+)")
 
-    候補リストは優先度順に積まれている前提で、各選手の最初の1件を残し以降を落とす
-    (branding と 速報スクレイプ が同じ選手を別経路で拾った重複を最終段で除去)。
-    focus_player 不明の候補は対象外でそのまま残す。flag OFF なら素通り。
+
+def _content_core(text: str) -> str:
+    """post 本文 / 見出しを内容比較用の core に正規化する。
+
+    hashtag / URL / @mention / 記号 / 空白を落とし、日本語・英数のみ小文字で残す。
+    固定の締め (#巨人 等) や導線 URL の差では「似ている」と誤判定しないため。
+    """
+    t = _HASHTAG_URL_RE.sub(" ", text or "")
+    t = _re.sub(r"\s+", " ", t).strip().lower()
+    return _re.sub(r"[\W_]+", "", t)
+
+
+def _content_similar(a: str, b: str, threshold: float = _CONTENT_DEDUP_SIM) -> bool:
+    """正規化済み content core 同士が同趣旨か (ほぼ同一含む)。空は非類似扱い。"""
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    return _SequenceMatcher(None, a, b).ratio() >= threshold
+
+
+def _candidate_content_text(cand) -> str:
+    for attr in ("post_text", "draft_text", "title"):
+        value = (getattr(cand, attr, "") or "").strip()
+        if value:
+            return value
+    return ""
+
+
+def _dedupe_candidates_by_player(candidates, *, log=None):
+    """同一メール内で「同じ選手かつ内容も似ている」候補だけを圧縮する。
+
+    2026-06-24 user 方針「同じ選手でも内容が違うなら別物」: 旧実装は focus_player が
+    同じだけで2件目以降を一律 drop していたが、それでは『戸郷の好投』と『戸郷の別
+    ニュース』のような別内容まで潰してしまう。本実装は focus_player が同じ候補同士
+    に限って post 本文 core の類似度を見て、同趣旨 (ratio >= _CONTENT_DEDUP_SIM)
+    の時だけ後発を drop する。別選手は常に残す。 focus_player 不明の候補は対象外。
+    flag OFF なら素通り。
     """
     if not _x_post_player_dedup_enabled():
         return list(candidates)
-    seen: set[str] = set()
     kept: list = []
     dropped: list = []
+    cores_by_player: dict[str, list[str]] = {}
     for cand in candidates:
         key = _candidate_player_key(cand)
-        if key and key in seen:
-            dropped.append(cand)
-            continue
-        if key:
-            seen.add(key)
+        core = _content_core(_candidate_content_text(cand))
+        if key and core:
+            prev_cores = cores_by_player.get(key, [])
+            if any(_content_similar(core, prev) for prev in prev_cores):
+                dropped.append(cand)
+                continue
+            cores_by_player.setdefault(key, []).append(core)
         kept.append(cand)
     if dropped and log is not None:
         log.info(
-            "player_dedup: 同一選手の重複 %d 件を除去 (残り %d 件) players=%s",
+            "player_dedup: 同一選手かつ同趣旨の重複 %d 件を除去 (残り %d 件) players=%s",
             len(dropped), len(kept),
             ",".join(sorted({_candidate_player_key(c) for c in dropped if _candidate_player_key(c)})),
         )
@@ -362,10 +404,13 @@ def _build_news_scrape_candidates(queue_items, *, gemini_key, max_count, log, ex
     数字 hallucination は起きない。 加えて lane._is_safe_post_text と 280 字
     上限で二重 gate。 LLM 失敗 / 空 / unsafe は個別 skip (silent)。
 
-    ``exclude_player_keys`` (正規化済み選手名 set) に含まれる選手、および本関数
-    内で既に採用した選手は skip する。同じメール内で同一選手のポストが branding /
-    別記事 経由で重複するのを防ぎ (user 2026-06-20)、空いた枠を別ニュースに回す。
-    重複判定は Gemini 呼び出しの前に行うため LLM コストも無駄にしない。
+    ``exclude_player_keys`` (正規化済み選手名 set) に含まれる選手は、別経路
+    (branding 等) で既にこのメールを取った選手なので skip する (cross-path の
+    flood 防止、user 2026-06-20)。一方、本関数内での重複判定は 2026-06-24 user
+    方針「同じ選手でも内容が違えば別物」に合わせ、選手名ではなく **記事トピック
+    (見出し core) の類似** で行う。同一選手でも別トピックの記事 (例: 猛打賞 と
+    試合後コメント) は両方採用し、同趣旨の重複 (別媒体の同じ猛打賞) だけ落とす。
+    判定は Gemini 呼び出しの前に行うため LLM コストも無駄にしない。
 
     返値は ``(candidate, source_item)`` の list。 caller は source_item を
     processed_queue_items に積んで再 drain (次 fire での重複生成) を防ぐ。
@@ -378,9 +423,13 @@ def _build_news_scrape_candidates(queue_items, *, gemini_key, max_count, log, ex
     except Exception as exc:  # noqa: BLE001
         log.info("news_scrape skip: import failed err=%r", exc)
         return out
-    seen_player_keys: set[str] = {
+    dedup_enabled = _x_post_player_dedup_enabled()
+    # cross-path: 別経路で既に取った選手 (hard skip, flood 防止)。
+    excluded_players: set[str] = {
         k for k in (exclude_player_keys or set()) if k
-    } if _x_post_player_dedup_enabled() else set()
+    } if dedup_enabled else set()
+    # intra-call: 選手ごとに採用済みトピック core を持ち、同趣旨だけ落とす。
+    taken_topics_by_player: dict[str, list[str]] = {}
     for item in queue_items:
         if len(out) >= max_count:
             break
@@ -391,12 +440,21 @@ def _build_news_scrape_candidates(queue_items, *, gemini_key, max_count, log, ex
         if not title:
             continue
         player_key = lane._normalize_player_name(players[0]) if players else ""
-        if player_key and player_key in seen_player_keys:
+        if player_key and player_key in excluded_players:
             log.info(
-                "news_scrape skip dup-player source_url=%s player=%s (枠を別ニュースへ)",
+                "news_scrape skip dup-player source_url=%s player=%s (別経路で採用済み)",
                 source_url, player_key,
             )
             continue
+        topic_core = _content_core(title) if dedup_enabled else ""
+        if player_key and topic_core:
+            prev_topics = taken_topics_by_player.get(player_key, [])
+            if any(_content_similar(topic_core, prev) for prev in prev_topics):
+                log.info(
+                    "news_scrape skip dup-topic source_url=%s player=%s (同趣旨の重複)",
+                    source_url, player_key,
+                )
+                continue
         facts: dict = {"見出し": title}
         if summary:
             facts["概要"] = summary
@@ -429,8 +487,8 @@ def _build_news_scrape_candidates(queue_items, *, gemini_key, max_count, log, ex
             source_material_type="news_scrape",
         )
         out.append((cand, item))
-        if player_key:
-            seen_player_keys.add(player_key)
+        if player_key and topic_core:
+            taken_topics_by_player.setdefault(player_key, []).append(topic_core)
         log.info("news_scrape built source_url=%s text_len=%d", source_url, len(text))
     return out
 

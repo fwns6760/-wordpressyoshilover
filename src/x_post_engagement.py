@@ -24,6 +24,7 @@ import math
 import os
 import re
 import time
+import urllib.error
 import urllib.request
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -49,6 +50,10 @@ _REPORTS_PREFIX = "x_engagement/reports"
 _FEED_LIMIT = 30
 _METRICS_FETCH_INTERVAL_SECONDS = 0.5
 _HTTP_TIMEOUT_SECONDS = 20
+# 一時的な 5xx / timeout (RSSHub cold start 等) は数回リトライする。
+# 4xx (401/403/404 = 認証失効・ルート不正) はリトライしても無駄なので即諦める。
+_HTTP_MAX_ATTEMPTS = 3
+_HTTP_RETRY_BACKOFF_SECONDS = 2.0
 _USER_AGENT = "Mozilla/5.0 (compatible; yoshilover-engagement/0.1)"
 
 _TWEET_ID_RE = re.compile(r"/status(?:es)?/(\d+)")
@@ -203,9 +208,30 @@ def parse_feed(xml_text: str, *, now_utc: datetime) -> list[PostRecord]:
 # ---------------------------------------------------------------------------
 
 def _http_get(url: str) -> str:
-    req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
-    with urllib.request.urlopen(req, timeout=_HTTP_TIMEOUT_SECONDS) as resp:
-        return resp.read().decode("utf-8", errors="replace")
+    last_exc: Exception | None = None
+    for attempt in range(1, _HTTP_MAX_ATTEMPTS + 1):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
+            with urllib.request.urlopen(req, timeout=_HTTP_TIMEOUT_SECONDS) as resp:
+                return resp.read().decode("utf-8", errors="replace")
+        except urllib.error.HTTPError as exc:
+            # 4xx は恒久エラー (認証失効・ルート不正) なのでリトライしない。
+            if exc.code < 500:
+                raise
+            last_exc = exc
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            last_exc = exc
+        if attempt < _HTTP_MAX_ATTEMPTS:
+            logger.warning(
+                "x_engagement_http_retry url=%s attempt=%d/%d err=%r",
+                url,
+                attempt,
+                _HTTP_MAX_ATTEMPTS,
+                last_exc,
+            )
+            time.sleep(_HTTP_RETRY_BACKOFF_SECONDS * attempt)
+    assert last_exc is not None  # ループは return か例外で抜けるため到達時は必ず存在
+    raise last_exc
 
 
 def fetch_feed_xml() -> str:
@@ -252,9 +278,19 @@ def _post_blob_name(record: PostRecord) -> str:
 
 
 def collect(*, now_utc: datetime | None = None) -> dict[str, int]:
-    """feed を 1 回取得し、新規投稿だけ GCS に upsert する。"""
+    """feed を 1 回取得し、新規投稿だけ GCS に upsert する。
+
+    feed 取得は外部依存 (自前 RSSHub → Twitter) のため失敗しうる。失敗しても
+    ジョブ全体を落とさず、error を log に残して 0 件で正常終了する。集計欠損は
+    週次レポートの posts=0 として可視化される。
+    """
     now = now_utc or datetime.now(timezone.utc)
-    records = parse_feed(fetch_feed_xml(), now_utc=now)
+    try:
+        feed_xml = fetch_feed_xml()
+    except Exception as exc:  # noqa: BLE001 - feed 取得失敗でジョブを落とさない
+        logger.error("x_engagement_collect_feed_unavailable err=%r", exc)
+        return {"feed": 0, "written": 0, "skipped": 0, "feed_errors": 1}
+    records = parse_feed(feed_xml, now_utc=now)
     bucket = _get_bucket()
     written = 0
     skipped = 0
@@ -274,7 +310,12 @@ def collect(*, now_utc: datetime | None = None) -> dict[str, int]:
         written,
         skipped,
     )
-    return {"feed": len(records), "written": written, "skipped": skipped}
+    return {
+        "feed": len(records),
+        "written": written,
+        "skipped": skipped,
+        "feed_errors": 0,
+    }
 
 
 def _load_posts_for_days(bucket, days_jst: list[str]) -> list[PostRecord]:

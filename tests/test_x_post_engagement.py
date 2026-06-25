@@ -81,6 +81,72 @@ def test_fetch_metrics_handles_failure_without_raising():
     assert metrics.error is not None
 
 
+def test_collect_survives_feed_unavailable(monkeypatch):
+    # RSSHub 失効 (503/401) などで feed 取得が落ちても collect は raise せず
+    # feed_errors=1 を返してジョブを正常終了させる (アラート抑止)。
+    def boom() -> str:
+        raise eng.urllib.error.HTTPError(
+            url="https://rsshub.example/twitter/user/yoshilover6760",
+            code=503,
+            msg="Service Unavailable",
+            hdrs=None,
+            fp=None,
+        )
+
+    monkeypatch.setattr(eng, "fetch_feed_xml", boom)
+    stats = eng.collect(now_utc=_NOW)
+    assert stats == {"feed": 0, "written": 0, "skipped": 0, "feed_errors": 1}
+
+
+def test_http_get_does_not_retry_4xx(monkeypatch):
+    # 4xx (認証失効など) はリトライせず即 raise する。sleep も呼ばれない。
+    calls = {"open": 0, "sleep": 0}
+
+    def fake_urlopen(req, timeout=None):
+        calls["open"] += 1
+        raise eng.urllib.error.HTTPError(
+            url="https://rsshub.example", code=401, msg="Unauthorized", hdrs=None, fp=None
+        )
+
+    monkeypatch.setattr(eng.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(eng.time, "sleep", lambda s: calls.__setitem__("sleep", calls["sleep"] + 1))
+    try:
+        eng._http_get("https://rsshub.example")
+        assert False, "should have raised"
+    except eng.urllib.error.HTTPError as exc:
+        assert exc.code == 401
+    assert calls["open"] == 1
+    assert calls["sleep"] == 0
+
+
+def test_http_get_retries_5xx_then_succeeds(monkeypatch):
+    # 一時的な 5xx はリトライして最終的に成功する。
+    calls = {"open": 0}
+
+    class _Resp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            return b"ok"
+
+    def fake_urlopen(req, timeout=None):
+        calls["open"] += 1
+        if calls["open"] < 3:
+            raise eng.urllib.error.HTTPError(
+                url="https://rsshub.example", code=503, msg="busy", hdrs=None, fp=None
+            )
+        return _Resp()
+
+    monkeypatch.setattr(eng.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(eng.time, "sleep", lambda s: None)
+    assert eng._http_get("https://rsshub.example") == "ok"
+    assert calls["open"] == 3
+
+
 def test_build_weekly_report_aggregates_and_sorts():
     posts = eng.parse_feed(_FEED_XML, now_utc=_NOW)
     metrics = {

@@ -12,6 +12,13 @@
 - tests +3(`test_x_post_engagement.py`)、全 11 passed。
 - build 成功 → Job を新 digest に更新 → 実行で `feed_errors:1` 正常終了を確認。
 
-## 未解決(root、要 user)
-- RSSHub の `TWITTER_AUTH_TOKEN`(Twitter auth_token cookie)が失効。新 cookie に差し替えて RSSHub 再 deploy するまで**集計は 0 件のまま**(ジョブは緑)。
-- 併せて token を平文 env → Secret Manager 化する(現状 describe で値露出)。
+## root も解決(04:00 JST)
+- user から新 Twitter `auth_token` cookie 受領。
+- Secret Manager `rsshub-twitter-auth-token` を作成、RSSHub SA に secretAccessor 付与。
+- RSSHub を平文 env 削除 → `--update-secrets=TWITTER_AUTH_TOKEN=rsshub-twitter-auth-token:2` で再 deploy(rev rsshub-00008-lpb)。
+- 注: 初回 cookie 取り込みで先頭1文字欠落(39桁)→ 401 継続。40桁に訂正し version 2 で復旧。誤 version 1 は destroy 済み。
+- feed `/twitter/user/yoshilover6760` → **HTTP 200**、x-engagement 実行で **feed=11 / written=11 / feed_errors=0**。集計フル復旧。
+
+## 残注意
+- cookie は Twitter がまた失効させうる(構造的再発)。次回 401 が出たら同手順で version 追加 → `--update-secrets=...:N` 再 deploy。
+- cookie 値が一度 chat 履歴に出たため、気になるなら user 側で X セッションを将来ローテートしてもよい(必須ではない)。

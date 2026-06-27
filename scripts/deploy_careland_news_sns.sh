@@ -118,11 +118,28 @@ deploy_share() {
     --set-secrets "SHARE_X_CAND_TOKEN_SECRET=careland-share-x-token-secret:latest,WP_APP_PASSWORD=careland-wp-app-password:latest,PUBLISH_BUTTON_TOKEN_SECRET=careland-share-x-token-secret:latest"
 }
 
+# 手動記事化サービス careland-manual-intake（URLを貼って引用記事下書きを作る人手画面）。
+# job と同じイメージを `python3 -m src.careland_manual_intake_service` で起動。
+# アクセスは CARELAND_MANUAL_INTAKE_TOKEN（Secret）で gate。--allow-unauthenticated だが
+# トークン無しの全リクエストはアプリ側で拒否する。
+deploy_manual_intake() {
+  echo "==> deploy careland-manual-intake service (手動記事化)"
+  gcloud run deploy careland-manual-intake \
+    --image "${IMAGE}" \
+    --region "${REGION}" --project "${PROJECT}" \
+    --service-account "${SA}" \
+    --allow-unauthenticated \
+    --command python3 --args="-m,src.careland_manual_intake_service" \
+    --set-env-vars "^|^WP_URL=https://careland.org|WP_USER=yoshilover|GEMINI_PRIMARY_MODEL=gemini-3.1-flash-lite|GEMINI_FALLBACK_MODEL=gemini-3.1-flash-lite|ENABLE_FAN_VOICE_ENSURE=0" \
+    --set-secrets "WP_APP_PASSWORD=careland-wp-app-password:latest,GEMINI_API_KEY=careland-gemini-api-key:latest,CARELAND_MANUAL_INTAKE_TOKEN=careland-manual-intake-token:latest"
+}
+
 case "${CMD}" in
   prereqs) prereqs ;;
-  deploy)  deploy; deploy_share ;;
+  deploy)  deploy; deploy_share; deploy_manual_intake ;;
   share)   deploy_share ;;
+  manual)  deploy_manual_intake ;;
   test)    test_run ;;
-  all)     prereqs; deploy; deploy_share; test_run ;;
-  *) echo "usage: $0 {prereqs|deploy|share|test|all}"; exit 1 ;;
+  all)     prereqs; deploy; deploy_share; deploy_manual_intake; test_run ;;
+  *) echo "usage: $0 {prereqs|deploy|share|manual|test|all}"; exit 1 ;;
 esac

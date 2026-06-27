@@ -56,7 +56,8 @@ def _fetch_excerpt(url: str, title: str, *, timeout_seconds: int) -> str:
         return ""
     try:
         html_text = fnc._http_get(url, timeout_seconds=timeout_seconds)
-        return extract_article_body_excerpt(html_text, url, max_chars=240, title=title)
+        # 引用本文の文字数は yoshilover と同じ 1200字（manual_intake の SOURCE_BODY_EXCERPT_MAX_CHARS）。
+        return extract_article_body_excerpt(html_text, url, max_chars=1200, title=title)
     except Exception as exc:  # noqa: BLE001
         LOG.info("careland_excerpt_fetch_failed url=%s error=%s", url, type(exc).__name__)
         return ""

@@ -47,6 +47,11 @@ except Exception:  # pragma: no cover - 取れなくても最低限の整形で�
         return re.sub(r"\s+", " ", no_urls).strip()
 
 
+# 引用本文（📖 本文抜粋）の文字数上限。yoshilover（manual_intake の
+# SOURCE_BODY_EXCERPT_MAX_CHARS）と同じ 1200字にそろえる。
+SOURCE_BODY_EXCERPT_MAX_CHARS = 1200
+
+
 @dataclass(frozen=True)
 class ArticleDraft:
     title: str
@@ -174,8 +179,20 @@ def _lead_block(text: str) -> str:
     return f'<p class="nomotoke-lead">{escape(text)}</p>'
 
 
+def _excerpt_paragraphs_html(quoted: str) -> str:
+    """yoshilover（のもとけ）と同じ見た目に寄せて、文単位で <br> 改行して段落化する。"""
+    # 改行で段落、各段落は文末（。！？）で <br> 区切り。
+    paras = [p.strip() for p in re.split(r"[\r\n]+", quoted) if p.strip()] or [quoted]
+    out: list[str] = []
+    for para in paras:
+        sentences = [s for s in re.split(r"(?<=[。！？])", para) if s.strip()]
+        inner = "<br>".join(escape(s.strip()) for s in sentences) if sentences else escape(para)
+        out.append(f"<p>{inner}</p>")
+    return "".join(out)
+
+
 def _source_excerpt_block(excerpt: str, url: str, max_chars: int) -> str:
-    """📖 本文抜粋（適法引用）。のもとけと同じ aside 構造。ゴミなら空文字。"""
+    """📖 本文抜粋（適法引用）。のもとけと同じ aside 構造・文字数（1200字）。ゴミなら空文字。"""
     quoted = _trim_for_quote(excerpt, max_chars)
     # 本文抜粋は「実本文が一定量ある」ことを要件にする（短い/ペイウォール定型文は出さない）。
     if not quoted or len(quoted) < 40 or _is_paywall_junk(quoted):
@@ -184,7 +201,7 @@ def _source_excerpt_block(excerpt: str, url: str, max_chars: int) -> str:
     return (
         '<aside class="nomotoke-source-excerpt" id="toc-excerpt">'
         f'<p class="nomotoke-source-excerpt__label">{_EMO_BOOK} 本文抜粋</p>'
-        f'<blockquote class="nomotoke-source-excerpt__body"><p>{escape(quoted)}</p></blockquote>'
+        f'<blockquote class="nomotoke-source-excerpt__body">{_excerpt_paragraphs_html(quoted)}</blockquote>'
         f'<p class="nomotoke-source-excerpt__attr">— {escape(attr)}</p>'
         '</aside>'
     )
@@ -341,9 +358,8 @@ def build_article_draft(*, verdict: NewsVerdict, title: str, summary: str,
     # リードは「クリーンな1〜2文」。生RSS HTML/URL を除去し、ゴミなら次の候補へ。
     lead = _clean_lead(verdict.what_changes or "", summary, headline)
 
-    # 引用は適法引用(短く・出典明示)。公式はやや長め、民間メディアは短め。ゴミなら出さない。
-    quote_cap = 300 if lane == "official_change" else 160
-    excerpt_html = _source_excerpt_block(body_excerpt, official_url, quote_cap)
+    # 引用本文の文字数は yoshilover と同じ 1200字（manual_intake の SOURCE_BODY_EXCERPT_MAX_CHARS）。
+    excerpt_html = _source_excerpt_block(body_excerpt, official_url, SOURCE_BODY_EXCERPT_MAX_CHARS)
 
     category_ids = decide_category_ids(
         lane=lane, title=title, summary=summary,

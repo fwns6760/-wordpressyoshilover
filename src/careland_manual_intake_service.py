@@ -201,7 +201,7 @@ def run_careland_manual_intake(*, url: str, mode: str = "dry-run",
     if not url or not url.lower().startswith(("http://", "https://")):
         return 400, {"ok": False, "reason": "invalid_url"}
     mode = (mode or "dry-run").strip().lower()
-    if mode not in ("dry-run", "draft"):
+    if mode not in ("dry-run", "publish", "draft"):
         return 400, {"ok": False, "reason": "invalid_mode"}
     lane = lane if lane in _LANE_LABELS else "welfare_media"
     lane_label = _LANE_LABELS[lane]
@@ -267,27 +267,30 @@ def run_careland_manual_intake(*, url: str, mode: str = "dry-run",
     if mode == "dry-run":
         return 200, base
 
-    # mode == draft: WordPress 下書きを作る（status=draft 固定）。
+    # mode == publish: 手動はいきなり記事化＝公開（yoshilover と同じ）。mode==draft なら下書き。
+    wp_status = "draft" if mode == "draft" else "publish"
     factory = wp_client_factory or (lambda: __import__("src.wp_client", fromlist=["WPClient"]).WPClient())
     try:
         wp = factory()
         post_id = wp.create_post(
             title=draft.title, content=draft.content, categories=category_ids,
-            status="draft", source_url=item_url, caller="careland_manual_intake",
+            status=wp_status, source_url=item_url, caller="careland_manual_intake",
             source_lane=lane,
         )
     except Exception as exc:  # noqa: BLE001
-        logger.warning("manual_wp_draft_failed error=%s", type(exc).__name__)
-        return 502, {"ok": False, "reason": "wp_draft_failed", "message": str(exc)[:300]}
+        logger.warning("manual_wp_post_failed error=%s", type(exc).__name__)
+        return 502, {"ok": False, "reason": "wp_post_failed", "message": str(exc)[:300]}
 
     wp_url = os.environ.get("WP_URL", "https://careland.org").rstrip("/")
     base.update({
         "post_id": post_id,
+        "wp_status": wp_status,
+        "view_link": f"{wp_url}/?p={post_id}",
         "edit_link": f"{wp_url}/wp-admin/post.php?post={post_id}&action=edit",
         "preview_link": f"{wp_url}/?p={post_id}&preview=true",
     })
-    logger.info("careland_manual_draft_created post_id=%s index=%s title=%s",
-                post_id, draft.want_index, draft.title)
+    logger.info("careland_manual_post_created status=%s post_id=%s index=%s title=%s",
+                wp_status, post_id, draft.want_index, draft.title)
     return 200, base
 
 
@@ -316,8 +319,8 @@ def _form(error: str = "") -> str:
 <title>CARE LAND 手動記事化</title></head>
 <body style="font-family:sans-serif;max-width:680px;margin:32px auto;padding:0 16px;line-height:1.6;">
 <h1 style="color:#1b8a3e;font-size:21px;">CARE LAND 手動記事化</h1>
-<p style="color:#555;font-size:14px;">記事URLを貼って「記事化」を押すと、引用記事（のもとけ構造・引用1200字・出典明示）の
-<b>下書き</b>を careland.org に作ります。自動公開はしません。</p>{msg}
+<p style="color:#555;font-size:14px;">記事URLを貼って「記事化（公開）」を押すと、引用記事（のもとけ構造・引用1200字・出典明示）を
+careland.org に<b>そのまま公開</b>します（yoshilover と同じ）。まず「プレビュー」で確認できます。</p>{msg}
 <form method="post" action="/">
 <p><label>記事URL（必須）<br>
 <input type="url" name="url" required placeholder="https://..." style="width:100%;padding:10px;font-size:16px;"></label></p>
@@ -330,7 +333,7 @@ def _form(error: str = "") -> str:
 <textarea name="summary" rows="2" style="width:100%;padding:10px;font-size:15px;"></textarea></label></p>
 <p>
 <button type="submit" name="mode" value="dry-run" style="background:#2d7d9a;color:#fff;border:0;padding:11px 20px;border-radius:8px;font-size:16px;margin-right:8px;">プレビュー</button>
-<button type="submit" name="mode" value="draft" style="background:#1b8a3e;color:#fff;border:0;padding:11px 24px;border-radius:8px;font-size:16px;">記事化（下書き作成）</button>
+<button type="submit" name="mode" value="publish" style="background:#1b8a3e;color:#fff;border:0;padding:11px 24px;border-radius:8px;font-size:16px;">記事化（公開）</button>
 </p>
 </form></body></html>"""
 
@@ -346,17 +349,20 @@ def _result_page(payload: dict[str, Any]) -> str:
 
     warn = (f'<p style="background:#fff3cd;border-left:4px solid #d4a017;padding:10px;">'
             f'⚠ {html.escape(payload["warning"])}</p>') if payload.get("warning") else ""
-    if payload.get("mode") == "draft":
+    if payload.get("mode") in ("publish", "draft"):
+        published = payload.get("wp_status") == "publish"
+        view = html.escape(payload.get("view_link", ""), quote=True)
         edit = html.escape(payload.get("edit_link", ""), quote=True)
-        prev = html.escape(payload.get("preview_link", ""), quote=True)
-        links = (f'<p><a href="{edit}" target="_blank" style="background:#1b8a3e;color:#fff;'
-                 f'padding:10px 20px;border-radius:8px;text-decoration:none;">WordPressで編集</a> '
-                 f'<a href="{prev}" target="_blank" style="margin-left:8px;">プレビュー</a></p>'
+        main_link = view if published else html.escape(payload.get("preview_link", ""), quote=True)
+        main_label = "公開した記事を見る" if published else "プレビュー"
+        links = (f'<p><a href="{main_link}" target="_blank" style="background:#1b8a3e;color:#fff;'
+                 f'padding:10px 20px;border-radius:8px;text-decoration:none;">{main_label}</a> '
+                 f'<a href="{edit}" target="_blank" style="margin-left:8px;">WordPressで編集</a></p>'
                  f'<p style="color:#555;">post_id={html.escape(str(payload.get("post_id")))} ／ '
-                 f'index={"許可" if payload.get("want_index") else "noindex"}（下書きのまま・自動公開しません）</p>')
-        head = "下書きを作成しました"
+                 f'index={"許可" if payload.get("want_index") else "noindex"}</p>')
+        head = "記事を公開しました" if published else "下書きを作成しました"
     else:
-        links = '<p style="color:#555;">プレビュー（まだ保存していません）。よければ戻って「記事化」を押してください。</p>'
+        links = '<p style="color:#555;">プレビュー（まだ保存していません）。よければ戻って「記事化（公開）」を押してください。</p>'
         head = "プレビュー"
     title = html.escape(payload.get("title", ""))
     src = html.escape(payload.get("source_name", ""))

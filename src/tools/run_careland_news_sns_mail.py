@@ -120,6 +120,10 @@ def _create_drafts(candidates, *, now, config):
                 status="draft", source_url=cand.url, featured_media=featured_media,
                 caller="careland_news.run", source_lane="careland_news",
             )
+            try:  # URLを短く（数値slugはWP予約と衝突するので非数値 cl-<id>）。
+                wp.update_post_fields(int(post_id), slug=f"cl-{int(post_id)}", caller="careland_news.run")
+            except Exception as exc:  # noqa: BLE001
+                LOG.warning("careland_slug_set_failed post_id=%s error=%s", post_id, type(exc).__name__)
             out.append(replace(cand, post_id=int(post_id), want_index=draft.want_index))
             LOG.info("careland_draft_created post_id=%s index=%s title=%s", post_id, draft.want_index, draft.title)
         except Exception as exc:  # noqa: BLE001 - 1件の失敗で全体を止めない

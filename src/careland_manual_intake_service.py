@@ -289,11 +289,18 @@ def run_careland_manual_intake(*, url: str, mode: str = "dry-run",
         logger.warning("manual_wp_post_failed error=%s", type(exc).__name__)
         return 502, {"ok": False, "reason": "wp_post_failed", "message": str(exc)[:300]}
 
+    # URLを短く。数値だけの slug は WP が予約と衝突させる(301/-2付与)ので非数値 `cl-<id>` にする。
+    short_slug = f"cl-{post_id}"
+    try:
+        wp.update_post_fields(post_id, slug=short_slug, caller="careland_manual_intake")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("manual_slug_set_failed error=%s", type(exc).__name__)
+
     wp_url = os.environ.get("WP_URL", "https://careland.org").rstrip("/")
     base.update({
         "post_id": post_id,
         "wp_status": wp_status,
-        "view_link": f"{wp_url}/?p={post_id}",
+        "view_link": f"{wp_url}/{short_slug}/",
         "edit_link": f"{wp_url}/wp-admin/post.php?post={post_id}&action=edit",
         "preview_link": f"{wp_url}/?p={post_id}&preview=true",
     })
@@ -318,7 +325,7 @@ def _login_form(error: str = "") -> str:
 </form></body></html>"""
 
 
-def _form(error: str = "") -> str:
+def _form(error: str = "", notice_html: str = "") -> str:
     lane_opts = "".join(
         f'<option value="{html.escape(k, quote=True)}">{html.escape(v)}</option>' for k, v in LANES)
     msg = f'<p style="color:#c0392b;">{html.escape(error)}</p>' if error else ""
@@ -326,7 +333,7 @@ def _form(error: str = "") -> str:
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>CARE LAND 手動記事化</title></head>
 <body style="font-family:sans-serif;max-width:680px;margin:32px auto;padding:0 16px;line-height:1.6;">
-<h1 style="color:#1b8a3e;font-size:21px;">CARE LAND 手動記事化</h1>
+<h1 style="color:#1b8a3e;font-size:21px;">CARE LAND 手動記事化</h1>{notice_html}
 <p style="color:#555;font-size:14px;">記事URLを貼って「記事化（公開）」を押すと、引用記事（のもとけ構造・引用1200字・出典明示）を
 careland.org に<b>そのまま公開</b>します（yoshilover と同じ）。まず「プレビュー」で確認できます。</p>{msg}
 <form method="post" action="/">
@@ -420,7 +427,20 @@ def build_handler(*, wp_client_factory=None, logger: logging.Logger | None = Non
             if not _token_ok(_request_token(self)):
                 _html_response(self, 401, _login_form())
                 return
-            _html_response(self, 200, _form())
+            # 公開後はフォームに「公開しました＋URL」だけ出す（結果ページは出さない）。
+            notice = ""
+            pub = (qs.get("published", [""])[0] or "").strip()
+            errm = (qs.get("err", [""])[0] or "").strip()
+            if pub.isdigit():
+                wp_url = os.environ.get("WP_URL", "https://careland.org").rstrip("/")
+                link = f"{wp_url}/cl-{pub}/"
+                notice = (f'<p style="background:#e8f5e9;border-left:4px solid #1b8a3e;padding:10px 12px;">'
+                          f'&#9989; careland.org に公開しました → '
+                          f'<a href="{html.escape(link, quote=True)}" target="_blank">{html.escape(link)}</a></p>')
+            elif errm:
+                notice = (f'<p style="background:#fdecea;border-left:4px solid #c0392b;padding:10px 12px;">'
+                          f'&#9888; {html.escape(errm)}</p>')
+            _html_response(self, 200, _form(notice_html=notice))
 
         def do_POST(self):  # noqa: N802
             if urlparse(self.path).path != "/":
@@ -434,16 +454,32 @@ def build_handler(*, wp_client_factory=None, logger: logging.Logger | None = Non
                 _html_response(self, 401, _login_form("セッション切れです。再ログインしてください。"))
                 return
             wants_json = "application/json" in (self.headers.get("Accept", "") or "")
+            mode = (payload.get("mode") or "dry-run").strip().lower()
             status, result = run_careland_manual_intake(
-                url=payload.get("url", ""), mode=payload.get("mode", "dry-run"),
+                url=payload.get("url", ""), mode=mode,
                 title_override=payload.get("title", ""), summary_override=payload.get("summary", ""),
                 source_name_override=payload.get("source_name", ""), lane=payload.get("lane", "welfare_media"),
                 wp_client_factory=wp_client_factory, logger=log,
             )
             if wants_json:
                 _json_response(self, status, result)
-            else:
-                _html_response(self, status, _result_page(result))
+                return
+            # 公開（publish）は結果ページを出さず、フォームに戻して「公開しました」だけ知らせる。
+            if mode == "publish" and result.get("ok") and result.get("post_id"):
+                self.send_response(303)
+                self.send_header("Location", f"/?published={result['post_id']}")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            if mode == "publish" and not result.get("ok"):
+                from urllib.parse import quote as _q
+                self.send_response(303)
+                self.send_header("Location", f"/?err={_q(str(result.get('message') or result.get('reason') or '失敗'))}")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            # dry-run（プレビュー）だけ結果ページを表示。
+            _html_response(self, status, _result_page(result))
 
     return Handler
 

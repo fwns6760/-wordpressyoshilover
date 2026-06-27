@@ -264,10 +264,18 @@ def _tag_chips(tags: list[str]) -> str:
     )
 
 
-def _share_buttons(url: str, title: str) -> str:
-    """共有ボタン（𝕏 / LINE）。JS不要の実リンク（careland.org に共有JSは無いため）。"""
-    x_url = "https://twitter.com/intent/tweet?text=" + quote(f"{title}\n", safe="") + "&url=" + quote(url, safe="")
-    line_url = "https://social-plugins.line.me/lineit/share?url=" + quote(url, safe="")
+def _share_buttons(title: str) -> str:
+    """共有ボタン（𝕏 / LINE）。**この careland 記事ページ自身のURL**を共有する。
+
+    元記事(Yahoo等)のURLではなく、`location.href`（＝careland.org の記事URL）を
+    共有することで、careland の記事として X にポストできる。careland.org は admin の
+    unfiltered_html が有効なので onclick が保持される（検証済み）。title は percent-encode
+    済みなので onclick 属性内に引用符が混ざらない。"""
+    text_enc = quote(f"{title}\n", safe="")
+    x_oc = ("window.open('https://twitter.com/intent/tweet?text=" + text_enc
+            + "&url='+encodeURIComponent(location.href),'_blank','noopener');return false;")
+    line_oc = ("window.open('https://social-plugins.line.me/lineit/share?url='"
+               "+encodeURIComponent(location.href),'_blank','noopener');return false;")
     btn = ('display:inline-block;margin:0 6px;padding:6px 14px;color:#fff;text-decoration:none;'
            'border-radius:6px;font-size:13px;font-weight:600;')
     return (
@@ -275,9 +283,9 @@ def _share_buttons(url: str, title: str) -> str:
         'border-top:1px solid #eee;border-bottom:1px solid #eee;text-align:center;">'
         '<p style="margin:0 0 8px;font-size:13px;font-weight:600;">&#9660; この記事を共有する</p>'
         '<p style="margin:0;">'
-        f'<a class="nomotoke-share-x" href="{escape(x_url, quote=True)}" target="_blank" rel="noopener" '
+        f'<a class="nomotoke-share-x" href="#" onclick="{x_oc}" '
         f'style="{btn}background:#000;">{_EMO_X} で共有</a>'
-        f'<a class="nomotoke-share-line" href="{escape(line_url, quote=True)}" target="_blank" rel="noopener" '
+        f'<a class="nomotoke-share-line" href="#" onclick="{line_oc}" '
         f'style="{btn}background:#06c755;">LINE で共有</a>'
         '</p>'
         '</aside>'
@@ -407,7 +415,7 @@ def build_article_draft(*, verdict: NewsVerdict, title: str, summary: str,
     chips = _tag_chips(tags)
     if chips:
         parts.append(chips)
-    parts.append(_share_buttons(official_url, headline))
+    parts.append(_share_buttons(headline))
     parts.append(_source_article_block(official_url, headline, source_name))
     parts.append(_footer_cta())
     parts.append(_disclaimer_block())

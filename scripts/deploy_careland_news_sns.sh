@@ -76,8 +76,10 @@ deploy() {
     --service-account "${SA}" \
     --set-env-vars "^|^GOOGLE_CLOUD_PROJECT=${PROJECT}|WP_URL=https://careland.org|WP_USER=yoshilover|RUN_DRAFT_ONLY=1|ENABLE_FAN_VOICE_ENSURE=0|CARELAND_WP_ADMIN_BASE=https://careland.org|CARELAND_NEWS_MAIL_TO=${MAIL_TO}|MAIL_BRIDGE_FROM=${MAIL_FROM}|MAIL_BRIDGE_SMTP_USERNAME=${MAIL_FROM}|CARELAND_NEWS_MAX_ITEMS_PER_SOURCE=60|GEMINI_PRIMARY_MODEL=gemini-3.1-flash-lite|GEMINI_FALLBACK_MODEL=gemini-3.1-flash-lite|CARELAND_NEWS_LEDGER_GCS_URI=gs://${BUCKET}/careland_news_ledger.jsonl|CARELAND_SHARE_GCS_BUCKET=${BUCKET}|CARELAND_FETCHER_BASE_URL=${SHARE_FETCHER_BASE}|ENABLE_SHARE_X_BUTTON=1" \
     --set-secrets "GEMINI_API_KEY=careland-gemini-api-key:latest,MAIL_BRIDGE_GMAIL_APP_PASSWORD=careland-gmail-app-password:latest,SHARE_X_CAND_TOKEN_SECRET=careland-share-x-token-secret:latest,WP_APP_PASSWORD=careland-wp-app-password:latest,PUBLISH_BUTTON_TOKEN_SECRET=careland-share-x-token-secret:latest" \
+    --args="--no-create-drafts" \
     --max-retries 1 --task-timeout 600s
-  # 記事化ON: コンテナargsは付けない(=image CMD[] で run。--no-create-drafts を渡さない)。
+  # 記事化OFF（2026-06-27 ユーザー方針: ポスト(メール/X候補)だけ残し記事化はやめる）:
+  # --no-create-drafts で WordPress 下書きを作らない。x_article 候補もメール上は投稿候補扱い。
 
   # 配信スケジュール: 既定は朝8時から3時間ごと5回 (08/11/14/17/20 JST) を 1 本で。
   # CARELAND_NEWS_SCHEDULE で cron を上書き可（例: 日中2.5h "0 8,13,18 * * *" + 別途:30本）。
@@ -119,9 +121,9 @@ deploy_share() {
 }
 
 # 手動記事化サービス careland-manual-intake（URLを貼って引用記事下書きを作る人手画面）。
+# 自動記事化(job --no-create-drafts)は OFF のまま。記事化は「人が選んだURLだけ」手動で行う運用。
 # job と同じイメージを `python3 -m src.careland_manual_intake_service` で起動。
-# アクセスは CARELAND_MANUAL_INTAKE_TOKEN（Secret）で gate。--allow-unauthenticated だが
-# トークン無しの全リクエストはアプリ側で拒否する。
+# アクセスは CARELAND_MANUAL_INTAKE_TOKEN（Secret）で gate（未設定なら全拒否）。
 deploy_manual_intake() {
   echo "==> deploy careland-manual-intake service (手動記事化)"
   gcloud run deploy careland-manual-intake \

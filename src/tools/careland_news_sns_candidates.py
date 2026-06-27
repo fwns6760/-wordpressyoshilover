@@ -47,20 +47,53 @@ except Exception:  # pragma: no cover - リゾルバが無くても動く
 LOG = logging.getLogger(__name__)
 
 
+import re as _re_og
+
+
+def _extract_og_image(html_text: str, base_url: str) -> str:
+    """元記事の og:image（無ければ twitter:image）を取り出す。アイキャッチ用。"""
+    if not html_text:
+        return ""
+    for pat in (
+        r'<meta[^>]+property=["\']og:image(?::secure_url)?["\'][^>]+content=["\']([^"\']+)["\']',
+        r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:image["\']',
+        r'<meta[^>]+name=["\']twitter:image["\'][^>]+content=["\']([^"\']+)["\']',
+    ):
+        m = _re_og.search(pat, html_text, _re_og.IGNORECASE)
+        if m:
+            url = (m.group(1) or "").strip()
+            if url.startswith("//"):
+                url = "https:" + url
+            elif url.startswith("/"):
+                from urllib.parse import urljoin
+                url = urljoin(base_url, url)
+            if url.lower().startswith("https://"):
+                return url
+    return ""
+
+
+def fetch_excerpt_and_image(url: str, title: str, *, timeout_seconds: int) -> tuple[str, str]:
+    """元ページを1回取得し、(本文抜粋1200字, og:image URL) を返す。失敗時は ('','')。"""
+    if not extract_article_body_excerpt or not url:
+        return "", ""
+    try:
+        html_text = fnc._http_get(url, timeout_seconds=timeout_seconds)
+    except Exception as exc:  # noqa: BLE001
+        LOG.info("careland_excerpt_fetch_failed url=%s error=%s", url, type(exc).__name__)
+        return "", ""
+    try:
+        excerpt = extract_article_body_excerpt(html_text, url, max_chars=1200, title=title)
+    except Exception:  # noqa: BLE001
+        excerpt = ""
+    return excerpt, _extract_og_image(html_text, url)
+
+
 def _fetch_excerpt(url: str, title: str, *, timeout_seconds: int) -> str:
     """元ページを取得して本文抜粋を返す（best-effort）。失敗時は空文字。
 
     yoshilover 同様「元ページをしっかり読む」ための材料。転載はせず判定/文案の参考に使う。
     """
-    if not extract_article_body_excerpt or not url:
-        return ""
-    try:
-        html_text = fnc._http_get(url, timeout_seconds=timeout_seconds)
-        # 引用本文の文字数は yoshilover と同じ 1200字（manual_intake の SOURCE_BODY_EXCERPT_MAX_CHARS）。
-        return extract_article_body_excerpt(html_text, url, max_chars=1200, title=title)
-    except Exception as exc:  # noqa: BLE001
-        LOG.info("careland_excerpt_fetch_failed url=%s error=%s", url, type(exc).__name__)
-        return ""
+    return fetch_excerpt_and_image(url, title, timeout_seconds=timeout_seconds)[0]
 
 # Xポスト末尾のブランド署名。user 指定で既定は「無し」。
 # 付けたい場合のみ env CARELAND_X_BRAND_TAG で1行指定する。
@@ -164,6 +197,8 @@ class CarelandCandidate:
     verdict: NewsVerdict
     # 元記事本文の抜粋（適法引用ブロック用。転載はせず短く引用）
     body_excerpt: str = ""
+    # 元記事の og:image（ヒーロー画像＋アイキャッチ用）
+    hero_image_url: str = ""
     # x_article のとき、メールに同梱する記事候補プレビュー
     article_title: str = ""
     article_html: str = ""
@@ -339,8 +374,9 @@ def build_candidates(
         run_seen_urls.add(norm_url)
         if norm_title:
             run_seen_titles.add(norm_title)
-        # 元ページを読む（ポスト文案を「ひびく」内容にするための材料）
-        body_excerpt = _fetch_excerpt(item_url, item_title, timeout_seconds=timeout_seconds)
+        # 元ページを読む（ポスト文案の材料）＋ og:image（ヒーロー画像/アイキャッチ）。
+        body_excerpt, hero_image_url = fetch_excerpt_and_image(
+            item_url, item_title, timeout_seconds=timeout_seconds)
         use_ai = do_ai and ai_calls < max_ai
         if use_ai:
             ai_calls += 1
@@ -376,7 +412,7 @@ def build_candidates(
                 source_name=source_name, url=item_url, lane=lane, lane_label=label,
                 breaking_id=breaking_id, category_map=category_map,
                 default_index=default_index, slug_hint=fin.dedupe_key[:8],
-                body_excerpt=body_excerpt,
+                body_excerpt=body_excerpt, hero_image_url=hero_image_url,
             )
             article_title = draft.title
             article_html = draft.content
@@ -397,6 +433,7 @@ def build_candidates(
                 dedupe_key=fin.dedupe_key,
                 verdict=verdict,
                 body_excerpt=body_excerpt,
+                hero_image_url=hero_image_url,
                 article_title=article_title,
                 article_html=article_html,
                 want_index=want_index,

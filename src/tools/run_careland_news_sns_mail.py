@@ -105,12 +105,19 @@ def _create_drafts(candidates, *, now, config):
             source_name=cand.source_name, url=cand.url, lane=cand.post_lane,
             lane_label=cand.lane_label, breaking_id=breaking_id, category_map=category_map,
             default_index=default_index, slug_hint=slug,
-            body_excerpt=cand.body_excerpt,
+            body_excerpt=cand.body_excerpt, hero_image_url=cand.hero_image_url,
         )
+        # 元記事の og:image をアイキャッチ(featured)に取り込む。失敗しても記事は出す。
+        featured_media = None
+        if cand.hero_image_url:
+            try:
+                featured_media = int(wp.upload_image_from_url(cand.hero_image_url, source_url=cand.url)) or None
+            except Exception as exc:  # noqa: BLE001
+                LOG.warning("careland_eyecatch_upload_failed url=%s error=%s", cand.url, type(exc).__name__)
         try:
             post_id = wp.create_post(
                 draft.title, draft.content, categories=list(draft.category_ids),
-                status="draft", source_url=cand.url,
+                status="draft", source_url=cand.url, featured_media=featured_media,
                 caller="careland_news.run", source_lane="careland_news",
             )
             out.append(replace(cand, post_id=int(post_id), want_index=draft.want_index))

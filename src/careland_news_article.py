@@ -175,8 +175,22 @@ def _source_line(url: str, label: str) -> str:
     )
 
 
+def _hero_block(image_url: str, alt: str) -> str:
+    """記事冒頭のヒーロー画像（元記事の og:image）。careland.org に CSS が無くても見えるよう inline。"""
+    if not image_url:
+        return ""
+    safe = escape(image_url, quote=True)
+    return (
+        '<figure class="nomotoke-hero" style="margin:0 0 14px;">'
+        f'<img src="{safe}" alt="{escape(alt)}" loading="lazy" '
+        'style="width:100%;height:auto;border-radius:8px;display:block;"></figure>'
+    )
+
+
 def _lead_block(text: str) -> str:
-    return f'<p class="nomotoke-lead">{escape(text)}</p>'
+    # nomotoke CSS が無い careland.org でも整うよう inline style を付ける。
+    return (f'<p class="nomotoke-lead" style="font-size:17px;line-height:1.9;'
+            f'font-weight:600;margin:14px 0 18px;color:#1a1a1a;">{escape(text)}</p>')
 
 
 def _excerpt_paragraphs_html(quoted: str) -> str:
@@ -198,11 +212,19 @@ def _source_excerpt_block(excerpt: str, url: str, max_chars: int) -> str:
     if not quoted or len(quoted) < 40 or _is_paywall_junk(quoted):
         return ""
     attr = _domain(url) or "元記事"
+    # nomotoke CSS が無い careland.org でも yoshilover 風に見えるよう inline style を付ける（CARE LAND 緑）。
     return (
-        '<aside class="nomotoke-source-excerpt" id="toc-excerpt">'
-        f'<p class="nomotoke-source-excerpt__label">{_EMO_BOOK} 本文抜粋</p>'
-        f'<blockquote class="nomotoke-source-excerpt__body">{_excerpt_paragraphs_html(quoted)}</blockquote>'
-        f'<p class="nomotoke-source-excerpt__attr">— {escape(attr)}</p>'
+        '<aside class="nomotoke-source-excerpt" id="toc-excerpt" '
+        'style="margin:24px 0;padding:16px 18px;background:#f6fbf7;border-left:4px solid #1b8a3e;'
+        'border:1px solid #cfe8d6;border-left:4px solid #1b8a3e;border-radius:4px 8px 8px 4px;">'
+        f'<p class="nomotoke-source-excerpt__label" style="display:inline-block;margin:0 0 10px;'
+        f'padding:3px 10px;color:#fff;background:#1b8a3e;font-size:12px;font-weight:700;'
+        f'border-radius:3px;">{_EMO_BOOK} 本文抜粋</p>'
+        '<blockquote class="nomotoke-source-excerpt__body" style="margin:6px 0 10px;padding:0;'
+        f'border:none;background:transparent;font-size:15px;line-height:1.9;font-weight:600;color:#1a1a1a;">'
+        f'{_excerpt_paragraphs_html(quoted)}</blockquote>'
+        f'<p class="nomotoke-source-excerpt__attr" style="margin:8px 0 0;text-align:right;'
+        f'color:#777;font-size:12px;font-style:italic;">— {escape(attr)}</p>'
         '</aside>'
     )
 
@@ -347,7 +369,7 @@ def build_article_draft(*, verdict: NewsVerdict, title: str, summary: str,
                         source_name: str, url: str, lane: str, lane_label: str,
                         breaking_id: int, category_map: dict[str, int],
                         default_index: bool, slug_hint: str,
-                        body_excerpt: str = "") -> ArticleDraft:
+                        body_excerpt: str = "", hero_image_url: str = "") -> ArticleDraft:
     article_title = (verdict.article_title or title).strip()
     if not article_title.startswith("【"):
         article_title = f"【{lane_label}】{article_title}"
@@ -369,11 +391,14 @@ def build_article_draft(*, verdict: NewsVerdict, title: str, summary: str,
     category_names = [id_to_name[c] for c in category_ids if c in id_to_name]
     tags = _derive_tags(lane_label=lane_label, category_names=category_names)
 
-    # yoshilover（のもとけ）と同じブロック順で組む。
+    # yoshilover（のもとけ）と同じブロック順で組む。先頭にヒーロー画像（元記事 og:image）。
     parts = [
         _news_digest_banner(source_name, headline),
         _source_line(official_url, source_name),
     ]
+    hero = _hero_block(hero_image_url, headline)
+    if hero:
+        parts.append(hero)
     if lead:
         parts.append(_lead_block(lead))
     if excerpt_html:

@@ -226,9 +226,9 @@ def run_careland_manual_intake(*, url: str, mode: str = "dry-run",
     except Exception as exc:  # noqa: BLE001
         logger.warning("manual_gnews_resolve_failed error=%s", type(exc).__name__)
 
-    # 本文抽出（yoshilover と同じ 1200字）。
-    from src.tools.careland_news_sns_candidates import _fetch_excerpt
-    body_excerpt = _fetch_excerpt(item_url, title or item_url, timeout_seconds=12)
+    # 本文抽出（yoshilover と同じ 1200字）＋元記事の og:image（アイキャッチ用）。
+    from src.tools.careland_news_sns_candidates import fetch_excerpt_and_image
+    body_excerpt, og_image = fetch_excerpt_and_image(item_url, title or item_url, timeout_seconds=12)
     if not title:
         # タイトル未指定なら抜粋の先頭行を仮タイトルに（人間が編集前提）。改行は混ぜない。
         first_line = next((ln.strip() for ln in (body_excerpt or "").splitlines() if ln.strip()), "")
@@ -250,7 +250,7 @@ def run_careland_manual_intake(*, url: str, mode: str = "dry-run",
         verdict=verdict, title=title, summary=summary, source_name=source_name,
         url=item_url, lane=lane, lane_label=lane_label, breaking_id=breaking_id,
         category_map=category_map, default_index=default_index,
-        slug_hint="manual", body_excerpt=body_excerpt,
+        slug_hint="manual", body_excerpt=body_excerpt, hero_image_url=og_image,
     )
     category_ids = list(decide_category_ids(
         lane=lane, title=title, summary=summary, breaking_id=breaking_id, category_map=category_map))
@@ -272,10 +272,18 @@ def run_careland_manual_intake(*, url: str, mode: str = "dry-run",
     factory = wp_client_factory or (lambda: __import__("src.wp_client", fromlist=["WPClient"]).WPClient())
     try:
         wp = factory()
+        # 元記事の og:image をアイキャッチ(featured)に設定（WPメディアへ取り込み）。失敗しても記事は出す。
+        featured_media = None
+        if og_image:
+            try:
+                mid = wp.upload_image_from_url(og_image, source_url=item_url)
+                featured_media = int(mid) or None
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("manual_eyecatch_upload_failed error=%s", type(exc).__name__)
         post_id = wp.create_post(
             title=draft.title, content=draft.content, categories=category_ids,
             status=wp_status, source_url=item_url, caller="careland_manual_intake",
-            source_lane=lane,
+            source_lane=lane, featured_media=featured_media,
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("manual_wp_post_failed error=%s", type(exc).__name__)

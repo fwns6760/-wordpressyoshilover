@@ -84,7 +84,7 @@ def _request_token(handler: BaseHTTPRequestHandler, body_token: str = "") -> str
 def _token_ok(supplied: str) -> bool:
     want = _require_token()
     if not want:
-        return False  # トークン未設定なら全拒否（誤公開防止）
+        return True  # yoshilover と同じ: トークン未設定なら開放（ログイン手順なしで使える）
     return hmac.compare_digest(supplied.strip(), want)
 
 
@@ -437,7 +437,7 @@ def build_handler(*, wp_client_factory=None, logger: logging.Logger | None = Non
 def serve(port: int | None = None) -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     if not _require_token():
-        LOG.warning("%s 未設定: 全リクエストを拒否します（誤公開防止）。", TOKEN_ENV)
+        LOG.info("%s 未設定: トークン無しで開放します（yoshilover と同じ）。", TOKEN_ENV)
     bind_port = int(port if port is not None else os.environ.get(PORT_ENV, DEFAULT_PORT))
     httpd = HTTPServer(("0.0.0.0", bind_port), build_handler())
     LOG.info("careland manual intake service on :%s", bind_port)

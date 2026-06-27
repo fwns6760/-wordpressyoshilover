@@ -123,7 +123,8 @@ deploy_share() {
 # 手動記事化サービス careland-manual-intake（URLを貼って引用記事下書きを作る人手画面）。
 # 自動記事化(job --no-create-drafts)は OFF のまま。記事化は「人が選んだURLだけ」手動で行う運用。
 # job と同じイメージを `python3 -m src.careland_manual_intake_service` で起動。
-# アクセスは CARELAND_MANUAL_INTAKE_TOKEN（Secret）で gate（未設定なら全拒否）。
+# 認証: yoshilover と同じく既定はトークン無し＝開放（ログイン手順なし）。ロックしたい場合だけ
+# CARELAND_MANUAL_INTAKE_TOKEN を Secret 経由で渡せば gate される。
 deploy_manual_intake() {
   echo "==> deploy careland-manual-intake service (手動記事化)"
   gcloud run deploy careland-manual-intake \
@@ -133,7 +134,7 @@ deploy_manual_intake() {
     --allow-unauthenticated \
     --command python3 --args="-m,src.careland_manual_intake_service" \
     --set-env-vars "^|^WP_URL=https://careland.org|WP_USER=yoshilover|GEMINI_PRIMARY_MODEL=gemini-3.1-flash-lite|GEMINI_FALLBACK_MODEL=gemini-3.1-flash-lite|ENABLE_FAN_VOICE_ENSURE=0" \
-    --set-secrets "WP_APP_PASSWORD=careland-wp-app-password:latest,GEMINI_API_KEY=careland-gemini-api-key:latest,CARELAND_MANUAL_INTAKE_TOKEN=careland-manual-intake-token:latest"
+    --set-secrets "WP_APP_PASSWORD=careland-wp-app-password:latest,GEMINI_API_KEY=careland-gemini-api-key:latest"
 }
 
 case "${CMD}" in

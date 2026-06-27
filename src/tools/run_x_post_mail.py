@@ -327,6 +327,97 @@ def _candidate_player_key(cand) -> str:
     return lane._normalize_player_name(getattr(cand, "focus_player", "") or "")
 
 
+def _queue_item_player_keys(item) -> list[str]:
+    keys: list[str] = []
+    for name in getattr(item, "player_canonical", []) or []:
+        key = lane._normalize_player_name(str(name or ""))
+        if key and key not in keys:
+            keys.append(key)
+    return keys
+
+
+def _clip_queue_context_text(text: str, limit: int) -> str:
+    value = _re.sub(r"\s+", " ", str(text or "")).strip()
+    if limit <= 0 or len(value) <= limit:
+        return value
+    return value[: max(0, limit - 3)].rstrip() + "..."
+
+
+_QUEUE_COMMENT_QUOTE_RE = _re.compile(r"[「『]([^」』]{4,180})[」』]")
+
+
+def _queue_item_comment_quotes(item, *, max_quotes: int = 2) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    text = "\n".join([
+        str(getattr(item, "title", "") or ""),
+        str(getattr(item, "summary", "") or ""),
+    ])
+    for match in _QUEUE_COMMENT_QUOTE_RE.finditer(text):
+        quote = _clip_queue_context_text(match.group(1), 140).strip(" ・、。")
+        if not quote or quote in seen:
+            continue
+        seen.add(quote)
+        out.append(quote)
+        if len(out) >= max_quotes:
+            break
+    return out
+
+
+def _queue_item_context_line(item) -> str:
+    quotes = _queue_item_comment_quotes(item)
+    if not quotes:
+        return ""
+    speaker = ""
+    players = list(getattr(item, "player_canonical", []) or [])
+    if players:
+        speaker = str(players[0] or "").strip()
+    speaker = speaker or "選手・首脳陣"
+    return "\n".join(f"- {speaker}『{quote}』" for quote in quotes)
+
+
+def _build_related_player_context_by_item(
+    queue_items: Sequence[object],
+    *,
+    max_items_per_player: int = 2,
+    max_chars: int = 700,
+) -> dict[int, str]:
+    """同一 drain 内の同一選手コメントを、X-post 生成用の補助文脈にまとめる。
+
+    主記事を上書きせず、選手の直近状況だけを補えるよう literal コメントだけを渡す。
+    """
+    items = list(queue_items or [])
+    by_player: dict[str, list[tuple[int, str, str]]] = {}
+    for item in items:
+        line = _queue_item_context_line(item)
+        if not line:
+            continue
+        source_url = (getattr(item, "source_url", "") or "").strip()
+        for key in _queue_item_player_keys(item):
+            by_player.setdefault(key, []).append((id(item), source_url, line))
+
+    related_by_item: dict[int, str] = {}
+    for item in items:
+        lines: list[str] = []
+        own_url = (getattr(item, "source_url", "") or "").strip()
+        for key in _queue_item_player_keys(item):
+            for other_id, other_url, line in by_player.get(key, []):
+                if other_id == id(item):
+                    continue
+                if own_url and other_url == own_url:
+                    continue
+                if line in lines:
+                    continue
+                lines.append(line)
+                if len(lines) >= max_items_per_player:
+                    break
+            if len(lines) >= max_items_per_player:
+                break
+        if lines:
+            related_by_item[id(item)] = "\n".join(lines)[:max_chars]
+    return related_by_item
+
+
 # 巨人発 MLB OB (岡本和真 / 菅野智之) は Giants insight.db に当年成績が無いため、
 # X 投稿の DB fact line が空になり数字の裏付けが付かなかった。statsapi 由来の MLB
 # 成績 (data-site で既に取得実績あり) を fact line として供給する。fetch は live
@@ -1949,6 +2040,7 @@ def _main_on_queue(args: argparse.Namespace, recipients: list[str]) -> int:
 
     candidates: list[lane.Candidate] = []
     processed_items: list = []
+    related_context_by_item = _build_related_player_context_by_item(queue_items)
     for item in queue_items:
         try:
             cand = _xbg.build_x_post_from_article_info(
@@ -1956,6 +2048,7 @@ def _main_on_queue(args: argparse.Namespace, recipients: list[str]) -> int:
                 gemini_api_key=gemini_key,
                 db_path=db_path or "",
                 logger=LOG,
+                related_player_context=related_context_by_item.get(id(item), ""),
             )
         except Exception as exc:  # noqa: BLE001
             LOG.warning(
@@ -2939,6 +3032,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 queue_succeeded_players: set[str] = set()
                 queue_attempt_counts: dict[str, int] = {}
                 queue_candidates: list[lane.Candidate] = []
+                related_context_by_item = _build_related_player_context_by_item(queue_items)
                 for item in queue_items:
                     try:
                         cand = _xbg.build_x_post_from_article_info(
@@ -2950,6 +3044,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                             succeeded_player_keys=queue_succeeded_players,
                             attempt_counts=queue_attempt_counts,
                             max_attempts_per_player=queue_attempts_max,
+                            related_player_context=related_context_by_item.get(id(item), ""),
                         )
                     except Exception as exc:  # noqa: BLE001
                         LOG.warning(

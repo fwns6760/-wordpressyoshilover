@@ -402,6 +402,7 @@ def _build_share_cand_page_html(
         display_title = display_title[: _SHARE_X_CAND_TITLE_MAX_CHARS - 1] + "…"
     escaped_title = html.escape(display_title)
     safe_image_proxy_attr = html.escape(image_proxy_url)
+    safe_x_intent_attr = html.escape(x_intent_url, quote=True)
     js_image_proxy = json.dumps(image_proxy_url)
     js_x_intent = json.dumps(x_intent_url)
     js_text = json.dumps(text or "")
@@ -420,83 +421,148 @@ def _build_share_cand_page_html(
         'style="background:#000;color:#fff;border:0;padding:14px 32px;'
         'font-size:16px;font-weight:700;cursor:pointer;border-radius:6px;'
         'width:100%;max-width:320px;">'
-        '📱 画像つきで X に投稿</button>'
+        '📱 画像つき投稿を試す</button>'
+        '<div id="share-x-cand-status" '
+        'style="margin:10px auto 0;color:#555;font-size:12px;line-height:1.6;'
+        'max-width:360px;"></div>'
+        '<p style="margin:12px 0 0;">'
+        f'<a id="share-x-cand-intent-link" href="{safe_x_intent_attr}" '
+        'style="display:inline-block;padding:10px 16px;background:#fff;color:#000;'
+        'text-decoration:none;border-radius:6px;font-size:13px;font-weight:700;'
+        'border:1px solid #000;">Xアプリを開く（テキストのみ）</a>'
+        '</p>'
+        '<p style="margin:8px 0 0;">'
+        '<button type="button" id="share-x-cand-copy-btn" '
+        'style="display:inline-block;padding:9px 14px;background:#f5f5f5;color:#222;'
+        'border-radius:6px;font-size:13px;font-weight:700;border:1px solid #ccc;">'
+        '本文をコピー</button></p>'
         '<p style="margin-top:12px;color:#666;font-size:12px;">'
-        '※ ボタンを押すと X app の投稿画面 (画像 + 文 prefill) が開きます。 '
-        'Web Share 非対応の場合は X (text のみ) に切替わります。'
+        '※ Android の X アプリが画像つき共有を受けない場合は、本文をコピーして '
+        'X の投稿画面を開きます。画像は上のプレビューを長押し保存して手動添付できます。'
         '</p></div>'
     )
 
     js_block = f"""
 <script>
 (function() {{
-  var IMAGE_URL = {js_image_proxy};
-  var X_INTENT_URL = {js_x_intent};
-  var POST_TEXT = {js_text};
-  var POST_URL = {js_url};
-  var preloadedFile = null;
+	  var IMAGE_URL = {js_image_proxy};
+	  var X_INTENT_URL = {js_x_intent};
+	  var POST_TEXT = {js_text};
+	  var POST_URL = {js_url};
+	  var preloadedFile = null;
+	  var imageReady = null;
 
-  function preloadImage() {{
-    fetch(IMAGE_URL, {{credentials: 'same-origin'}})
-      .then(function(r) {{
-        if (!r.ok) {{ throw new Error('image fetch failed: ' + r.status); }}
-        return r.blob();
-      }})
+	  function setStatus(message) {{
+	    var el = document.getElementById('share-x-cand-status');
+	    if (el) {{ el.textContent = message || ''; }}
+	  }}
+
+	  function copyPostText() {{
+	    if (!POST_TEXT) {{ return Promise.resolve(false); }}
+	    if (navigator.clipboard && navigator.clipboard.writeText) {{
+	      return navigator.clipboard.writeText(POST_TEXT).then(function() {{ return true; }});
+	    }}
+	    return new Promise(function(resolve) {{
+	      var ta = document.createElement('textarea');
+	      ta.value = POST_TEXT;
+	      ta.setAttribute('readonly', 'readonly');
+	      ta.style.position = 'fixed';
+	      ta.style.left = '-9999px';
+	      document.body.appendChild(ta);
+	      ta.select();
+	      var ok = false;
+	      try {{ ok = document.execCommand('copy'); }} catch (e) {{ ok = false; }}
+	      document.body.removeChild(ta);
+	      resolve(ok);
+	    }});
+	  }}
+
+	  function openXIntent() {{
+	    window.location.href = X_INTENT_URL;
+	  }}
+
+	  function preloadImage() {{
+	    return fetch(IMAGE_URL, {{credentials: 'same-origin'}})
+	      .then(function(r) {{
+	        if (!r.ok) {{ throw new Error('image fetch failed: ' + r.status); }}
+	        return r.blob();
+	      }})
       .then(function(blob) {{
         var ext = 'png';
         if (blob.type === 'image/jpeg') {{ ext = 'jpg'; }}
         else if (blob.type === 'image/webp') {{ ext = 'webp'; }}
-        preloadedFile = new File([blob], 'yoshilover-ranking.' + ext, {{type: blob.type || 'image/png'}});
-      }})
-      .catch(function(err) {{
-        console.warn('share-x-cand preload image failed', err);
-        preloadedFile = null;
-      }});
-  }}
-  preloadImage();
+	        preloadedFile = new File([blob], 'yoshilover-ranking.' + ext, {{type: blob.type || 'image/png'}});
+	        setStatus('画像の準備ができました。');
+	        return preloadedFile;
+	      }})
+	      .catch(function(err) {{
+	        console.warn('share-x-cand preload image failed', err);
+	        preloadedFile = null;
+	        setStatus('画像の準備に失敗しました。テキストのみ投稿に切り替えられます。');
+	        return null;
+	      }});
+	  }}
+	  imageReady = preloadImage();
 
-  var btn = document.getElementById('share-x-cand-btn');
-  if (!btn) {{ return; }}
-  btn.addEventListener('click', function() {{
-    var canShareFiles = false;
-    try {{
-      canShareFiles = !!(navigator.canShare && preloadedFile &&
-        navigator.canShare({{files: [preloadedFile]}}));
-    }} catch (e) {{
-      canShareFiles = false;
-    }}
-    if (!canShareFiles) {{
-      window.location.href = X_INTENT_URL;
-      return;
-    }}
-    // 438: POST_URL が空のときに `url:` を渡すと iOS Safari が現在 page URL を
-    // 共有 URL として勝手に渡してくる事故になる (X compose に share-x-cand の
-    // https URL が貼り付く)。 POST_URL が非空のときだけ key を含める。
-    var sharePayload = {{
-      files: [preloadedFile],
-      text: POST_TEXT
-    }};
-    if (POST_URL && POST_URL.length > 0) {{
-      sharePayload.url = POST_URL;
-    }}
-    // 438 (2026-05-28): Android Chrome は url key を omit しても document.URL を
-    // share metadata に fallback で詰める挙動があり、 X app がそれを compose text
-    // に concat する漏出になる (post 後も URL が残る)。 navigator.share 直前に
-    // history.replaceState で URL を innocuous な path に書き換え、 document.URL
-    // を share metadata に渡さないようにする。 token 検証 / image preload は完了
-    // 済なので URL 書き換えても機能影響なし。
-    try {{
-      history.replaceState({{}}, document.title, '/share-x-blank');
-    }} catch (e) {{
-      // 古い browser fallback、 失敗時は従来動作
-    }}
-    navigator.share(sharePayload).catch(function(err) {{
-      console.warn('share-x-cand share failed, falling back to X intent', err);
-      window.location.href = X_INTENT_URL;
-    }});
-  }});
-}})();
-</script>
+	  var btn = document.getElementById('share-x-cand-btn');
+	  var copyBtn = document.getElementById('share-x-cand-copy-btn');
+	  if (copyBtn) {{
+	    copyBtn.addEventListener('click', function() {{
+	      copyPostText().then(function(ok) {{
+	        setStatus(ok ? '本文をコピーしました。' : 'コピーできませんでした。本文を選択してコピーしてください。');
+	      }}, function() {{
+	        setStatus('コピーできませんでした。本文を選択してコピーしてください。');
+	      }});
+	    }});
+	  }}
+	  if (!btn) {{ return; }}
+	  btn.addEventListener('click', function() {{
+	    setStatus('画像つき共有を準備しています...');
+	    var canShareFiles = false;
+	    imageReady.then(function() {{
+	      try {{
+	        canShareFiles = !!(navigator.share && preloadedFile);
+	        if (canShareFiles && navigator.canShare) {{
+	          canShareFiles = navigator.canShare({{files: [preloadedFile]}});
+	        }}
+	      }} catch (e) {{
+	        canShareFiles = false;
+	      }}
+	      if (!canShareFiles) {{
+	        throw new Error('file share unsupported');
+	      }}
+	      // 438: POST_URL が空のときに `url:` を渡すと iOS Safari が現在 page URL を
+	      // 共有 URL として勝手に渡してくる事故になる (X compose に share-x-cand の
+	      // https URL が貼り付く)。 POST_URL が非空のときだけ key を含める。
+	      var sharePayload = {{
+	        files: [preloadedFile],
+	        text: POST_TEXT
+	      }};
+	      if (POST_URL && POST_URL.length > 0) {{
+	        sharePayload.url = POST_URL;
+	      }}
+	      // 438 (2026-05-28): Android Chrome は url key を omit しても document.URL を
+	      // share metadata に fallback で詰める挙動があり、 X app がそれを compose text
+	      // に concat する漏出になる (post 後も URL が残る)。 navigator.share 直前に
+	      // history.replaceState で URL を innocuous な path に書き換え、 document.URL
+	      // を share metadata に渡さないようにする。 token 検証 / image preload は完了
+	      // 済なので URL 書き換えても機能影響なし。
+	      try {{
+	        history.replaceState({{}}, document.title, '/share-x-blank');
+	      }} catch (e) {{
+	        // 古い browser fallback、 失敗時は従来動作
+	      }}
+	      return navigator.share(sharePayload);
+	    }}).then(function() {{
+	      setStatus('X アプリ側で投稿内容を確認してください。');
+	    }}).catch(function(err) {{
+	      console.warn('share-x-cand share failed, falling back to X intent', err);
+	      setStatus('画像つき共有に失敗しました。本文をコピーして X を開きます。');
+	      copyPostText().then(openXIntent, openXIntent);
+	    }});
+	  }});
+	}})();
+	</script>
 """
 
     return (

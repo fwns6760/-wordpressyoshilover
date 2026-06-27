@@ -442,7 +442,7 @@ def _prepend_focus_player_tag(text: str, player: str) -> str:
     branding 投稿 (x_post_branding_gen) と data 投稿 (_format_one) で共用。
     そのまま返す (タグを付けない) 条件:
     - player が空 / 「巨人選手」「(roundup)」 等の非単一選手 / 巨人 roster 未検証
-    - text が既に 【player】 か player「 で始まる (Pattern B 等、 名前重複回避)
+    - text が既に 【player】 か player「 / player『 で始まる (Pattern B 等、 名前重複回避)
     - タグ付与で X 文字数上限 (X_CHAR_LIMIT) を超える
     """
     body = (text or "").strip()
@@ -451,7 +451,7 @@ def _prepend_focus_player_tag(text: str, player: str) -> str:
         return body
     if not _is_verified_full_giants_member_name(who):
         return body
-    if body.startswith(f"【{who}】") or body.startswith(f"{who}「"):
+    if body.startswith(f"【{who}】") or body.startswith(f"{who}「") or body.startswith(f"{who}『"):
         return body
     tagged = f"【{who}】\n\n{body}"
     if len(tagged) > X_CHAR_LIMIT:
@@ -1507,7 +1507,7 @@ def build_player_comment_candidate(
     """パターン①「選手コメント速報」(2026-06-01): 記事本文 html_text から member の本人発言を
     literal 抽出し、 たんぱく事実型で出す (mainportalhuge 式)。 LLM 不使用 = 捏造/ポエムゼロ。
 
-    形式: コメントが自立 (長い) なら `【名前】「発言」` だけ、 短ければ `【名前】状況 +「発言」`。
+    形式: `名前『発言』` だけ。状況説明は混ぜない。
     quote が取れない / member 未 verify → None (caller は別候補へ)。
     """
     member = str(member_name or "").strip()
@@ -1532,12 +1532,7 @@ def build_player_comment_candidate(
     quote = (quote or "").strip()
     if not quote:
         return None
-    # コメント主役・自立優先: 長い quote はそれだけ、 短ければ状況 1 行を前置き。
-    if len(quote) >= 80:
-        post_text = f"【{member}】「{quote}」"
-    else:
-        situation = _truncate_text(str(source_title or "").strip(), 40)
-        post_text = f"【{member}】{situation}\n「{quote}」" if situation else f"【{member}】「{quote}」"
+    post_text = f"{member}『{quote}』"
     signature_hash = _hashlib.sha1(f"player_comment|{url}|{member}".encode("utf-8")).hexdigest()[:16]
     src = _truncate_text(source_name, 28)
     return Candidate(

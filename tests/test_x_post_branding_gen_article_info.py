@@ -197,6 +197,50 @@ class PostgameTeamWideTests(unittest.TestCase):
         self.assertEqual(cand.focus_player, "戸郷翔征")
 
 
+class RelatedPlayerContextPromptTests(unittest.TestCase):
+    @patch("src.x_post_branding_gen._try_fetch_og_image_for_candidate", return_value=(b"", "", "", ""))
+    @patch("src.x_post_branding_gen.is_giants_game_day", return_value=False)
+    @patch("src.x_post_branding_gen._gemini_branding_safety_check", return_value=True)
+    @patch("google.genai.Client")
+    def test_related_player_context_is_prompt_and_verified_literal(
+        self, mock_client_cls, _safety, _game_day, _og
+    ):
+        captured: dict[str, str] = {}
+
+        def _generate(_client, *, model, contents, config):  # noqa: ARG001
+            captured["prompt"] = contents
+            return type(
+                "R",
+                (),
+                {"text": "山﨑伊織は7回1失点で試合を作ったのがまず大きい。補助コメント通り、6回以降も低めに集められるかを次も見たい。"},
+            )()
+
+        def _unverified(_text, verified_text):
+            captured["verified"] = verified_text
+            return []
+
+        article = _make_article(
+            title="山崎伊織が7回1失点で好投",
+            summary="先発で試合を作った",
+            player_canonical=["山﨑伊織"],
+        )
+        related = "山﨑伊織『6回以降も低めに投げられた』"
+        with patch("src.x_post_branding_gen._x_post_generate_content", side_effect=_generate), patch(
+            "src.x_post_branding_gen._extract_unverified_numbers", side_effect=_unverified
+        ):
+            cand = xbg.build_x_post_from_article_info(
+                article,
+                gemini_api_key="key",
+                persona="fuuga",
+                related_player_context=related,
+            )
+
+        self.assertIsNotNone(cand)
+        self.assertIn("同一選手の直近コメント補助文脈", captured["prompt"])
+        self.assertIn(related, captured["prompt"])
+        self.assertIn(related, captured["verified"])
+
+
 if __name__ == "__main__":
     unittest.main()
 

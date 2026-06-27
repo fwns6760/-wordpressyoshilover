@@ -3875,8 +3875,9 @@ class BuildPlayerCommentCandidateTests(unittest.TestCase):
         )
         self.assertIsNotNone(c)
         self.assertEqual(c.metric, "PLAYER_COMMENT")
-        self.assertTrue(c.post_text.startswith("【竹丸和幸】「"))   # コメント主役
+        self.assertTrue(c.post_text.startswith("竹丸和幸『"))       # コメント主役
         self.assertIn("思ったよりいけるなと", c.post_text)          # literal
+        self.assertNotIn("竹丸8回好投も黒星", c.post_text)           # 状況説明は混ぜない
         self.assertNotIn("http", c.post_text)
 
     def test_no_quote_returns_none(self):
@@ -4245,3 +4246,24 @@ class PlayerDedupTests(unittest.TestCase):
                 items, gemini_key="k", max_count=5, log=runner.LOG,
             )
         self.assertEqual(len(out), 1)
+
+    def test_related_player_context_uses_comment_quotes_only(self):
+        from src.tools import run_x_post_mail as runner
+
+        class _Item:
+            def __init__(self, title, summary, players, url):
+                self.title = title
+                self.summary = summary
+                self.source_url = url
+                self.source_name = "スポーツ報知"
+                self.player_canonical = players
+
+        main = _Item("山崎伊織が7回1失点", "先発で試合を作った", ["山﨑伊織"], "u1")
+        quote = _Item("山崎伊織がコメント「6回以降も低めに投げられた」", "", ["山﨑伊織"], "u2")
+        no_quote = _Item("山崎伊織がブルペン調整", "次回登板へ調整した", ["山﨑伊織"], "u3")
+        other = _Item("戸郷翔征がコメント「次も粘る」", "", ["戸郷翔征"], "u4")
+
+        contexts = runner._build_related_player_context_by_item([main, quote, no_quote, other])
+        self.assertIn("山﨑伊織『6回以降も低めに投げられた』", contexts[id(main)])
+        self.assertNotIn("ブルペン調整", contexts[id(main)])
+        self.assertNotIn("戸郷翔征", contexts[id(main)])

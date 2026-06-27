@@ -984,6 +984,14 @@ class VoiceQualityGateTests(unittest.TestCase):
     def test_rejects_poem(self):
         self.assertFalse(xbg._voice_quality_ok("あの打球の軌跡に、僕らは明日への希望を見た。胸が熱くなった。"))
 
+    def test_rejects_abstract_escape_phrases(self):
+        self.assertFalse(
+            xbg._voice_quality_ok("山崎伊織の好投は単なる好投ニュースじゃなくて、次も任せられるかの話なんだよな。")
+        )
+        self.assertFalse(
+            xbg._voice_quality_ok("吉川尚輝はチームにとって大きい存在。今後に注目したい。")
+        )
+
     def test_accepts_yoshilover_empathy(self):
         t = ("竹丸和幸8回4安打で初完投、内容は文句なし。なのに打線が0点て正直これが今年の巨人なんよな。"
              "投手は頑張ってる。次は打線、頼むわ。")

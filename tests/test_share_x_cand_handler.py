@@ -93,6 +93,25 @@ class HandleShareCandGetTests(unittest.TestCase):
         self.assertIn("/share-x-cand-image-proxy?", body)
         # fallback X intent URL も埋め込まれる
         self.assertIn("x.com/intent/post", body)
+        self.assertIn("navigator.share", body)
+
+    def test_valid_token_includes_android_fallback_controls(self):
+        code, body, _ = handle_share_cand_get(
+            blob_key=_BLOB_KEY,
+            token=_TOKEN,
+            text="坂本勇人 OPS 1.234",
+            post_url="",
+            now=_VERIFY_NOW,
+        )
+        self.assertEqual(code, 200)
+        self.assertIn("画像つき投稿を試す", body)
+        self.assertIn("share-x-cand-status", body)
+        self.assertIn("share-x-cand-intent-link", body)
+        self.assertIn("Xアプリを開く（テキストのみ）", body)
+        self.assertIn("share-x-cand-copy-btn", body)
+        self.assertIn("本文をコピー", body)
+        self.assertIn("copyPostText().then(openXIntent, openXIntent)", body)
+        self.assertNotIn(".finally(openXIntent)", body)
 
     def test_fetcher_base_url_makes_image_proxy_absolute(self):
         code, body, _ = handle_share_cand_get(

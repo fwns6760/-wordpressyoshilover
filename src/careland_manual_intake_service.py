@@ -194,6 +194,7 @@ def _make_verdict(*, title: str, summary: str, source_name: str, url: str,
 def run_careland_manual_intake(*, url: str, mode: str = "dry-run",
                                title_override: str = "", summary_override: str = "",
                                source_name_override: str = "", lane: str = "welfare_media",
+                               excerpt_override: str = "",
                                wp_client_factory=None, logger: logging.Logger = LOG
                                ) -> tuple[int, dict[str, Any]]:
     """URL を careland の引用記事下書きにする。戻り値 (http_status, payload)。"""
@@ -228,7 +229,9 @@ def run_careland_manual_intake(*, url: str, mode: str = "dry-run",
 
     # 本文抽出（yoshilover と同じ 1200字）＋元記事の og:image（アイキャッチ用）。
     from src.tools.careland_news_sns_candidates import fetch_excerpt_and_image
-    body_excerpt, og_image = fetch_excerpt_and_image(item_url, title or item_url, timeout_seconds=12)
+    fetched_excerpt, og_image = fetch_excerpt_and_image(item_url, title or item_url, timeout_seconds=12)
+    # 自動抽出できないサイト(atGP等のJS描画ページ)は、人が貼り付けた引用本文を優先して使う。
+    body_excerpt = excerpt_override.strip() or fetched_excerpt
     if not title:
         # タイトル未指定なら抜粋の先頭行を仮タイトルに（人間が編集前提）。改行は混ぜない。
         first_line = next((ln.strip() for ln in (body_excerpt or "").splitlines() if ln.strip()), "")
@@ -346,6 +349,8 @@ careland.org に<b>そのまま公開</b>します（yoshilover と同じ）。�
 <input type="text" name="source_name" style="width:100%;padding:10px;font-size:16px;"></label></p>
 <p><label>リード/要約（任意・空なら本文先頭）<br>
 <textarea name="summary" rows="2" style="width:100%;padding:10px;font-size:15px;"></textarea></label></p>
+<p><label>引用本文（任意・<b>自動で取れない元記事は、ここに本文をコピペ</b>すると引用がしっかり出ます）<br>
+<textarea name="excerpt" rows="5" placeholder="元記事の本文を貼り付け（atGP等の自動抽出できないサイト用）" style="width:100%;padding:10px;font-size:15px;"></textarea></label></p>
 <p>
 <button type="submit" name="mode" value="dry-run" style="background:#2d7d9a;color:#fff;border:0;padding:11px 20px;border-radius:8px;font-size:16px;margin-right:8px;">プレビュー</button>
 <button type="submit" name="mode" value="publish" style="background:#1b8a3e;color:#fff;border:0;padding:11px 24px;border-radius:8px;font-size:16px;">記事化（公開）</button>
@@ -459,6 +464,7 @@ def build_handler(*, wp_client_factory=None, logger: logging.Logger | None = Non
                 url=payload.get("url", ""), mode=mode,
                 title_override=payload.get("title", ""), summary_override=payload.get("summary", ""),
                 source_name_override=payload.get("source_name", ""), lane=payload.get("lane", "welfare_media"),
+                excerpt_override=payload.get("excerpt", ""),
                 wp_client_factory=wp_client_factory, logger=log,
             )
             if wants_json:

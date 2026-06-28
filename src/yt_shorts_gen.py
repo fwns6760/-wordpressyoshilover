@@ -26,6 +26,7 @@ from src.yt_shorts_script import ShortsScript, build_script
 from src.yt_shorts_topic import (
     DEFAULT_SOURCE_URL,
     ShortsTopic,
+    list_topics_from_notable_data,
     select_topic_from_notable_data,
     topic_from_notable_item,
 )
@@ -42,7 +43,10 @@ EXCLUDE_PLAYERS_ENV = "YT_SHORTS_EXCLUDE_PLAYERS"
 TARGET_PLAYERS_ENV = "YT_SHORTS_TARGET_PLAYERS"
 PLAYER_COOLDOWN_DAYS_ENV = "YT_SHORTS_PLAYER_COOLDOWN_DAYS"
 DEFAULT_PLAYER_COOLDOWN_DAYS = 7
-DEFAULT_NOTABLE_LIMIT = 16
+# Wider than the public /data/notable page (16): the Shorts selector needs a
+# deep, diverse candidate pool so the player cooldown has room to rotate and
+# does not keep falling back to the same hot streak leader every run.
+DEFAULT_NOTABLE_LIMIT = 40
 TARGET_PLAYER_NOTABLE_LIMIT = 80
 
 
@@ -114,7 +118,10 @@ def _load_notable_data_from_repo(limit: int = DEFAULT_NOTABLE_LIMIT) -> dict[str
     # Import lazily because data_site_publisher has a broad dependency surface.
     from src.data_site_publisher import _build_notable_data_from_targets
 
-    data = _build_notable_data_from_targets(limit=limit)
+    # latest_game_only=False so season-to-date leaders (not just players who
+    # appeared in the latest game) widen the pool; without this the eligible
+    # set collapses to a few hot players and the cooldown cannot rotate.
+    data = _build_notable_data_from_targets(limit=limit, latest_game_only=False)
     return dict(data or {})
 
 
@@ -255,6 +262,36 @@ def _recent_used(
         if player:
             players.add(player)
     return players, topic_keys
+
+
+def _recent_used_offsets(
+    bucket_name: str,
+    current: datetime,
+    lookback_days: int,
+) -> dict[str, int]:
+    """直近 ``lookback_days`` 日の history から {正規化player名: 最小offset(=直近使用)}。
+
+    cooldown で候補が枯渇した時に「最も久しく使っていない選手」を選ぶための
+    least-recently-used 判定に使う。 history が無い日は無視。
+    """
+    offsets: dict[str, int] = {}
+    if not bucket_name or lookback_days <= 0:
+        return offsets
+    for offset in range(0, lookback_days + 1):
+        day = (current - timedelta(days=offset)).strftime("%Y-%m-%d")
+        hist = _load_history(bucket_name, day)
+        if not hist:
+            continue
+        player_raw = str(hist.get("player") or "")
+        if not player_raw:
+            tk = str(hist.get("topic_key") or "")
+            parts = tk.split("|")
+            if len(parts) >= 3:
+                player_raw = parts[2]
+        player = _normalize_player_name(player_raw)
+        if player and player not in offsets:
+            offsets[player] = offset  # 最初に当たった offset = 最も新しい使用
+    return offsets
 
 
 def _write_history(bucket_name: str, date_key: str, payload: Mapping[str, Any]) -> None:
@@ -532,6 +569,7 @@ def run(
     # target_players 明示時はユーザ意図優先でクールダウンを掛けない。
     cooldown_players: set[str] = set()
     cooldown_topic_keys: set[str] = set()
+    cooldown_days = DEFAULT_PLAYER_COOLDOWN_DAYS
     if live and bucket and not target_player_names:
         try:
             cooldown_days = int(
@@ -554,12 +592,26 @@ def run(
     )
     topic = select_topic_from_notable_data(data, source_url=DEFAULT_SOURCE_URL)
     if topic is None and (cooldown_players or cooldown_topic_keys):
-        # クールダウンで候補が全滅 → 「何も出さない」より「重複してでも出す」を選ぶ。
-        LOG.warning("yt_shorts_cooldown_exhausted: fall back without cooldown")
+        # クールダウンで候補が全滅。「全解除して最上位を再選定」だと直近に使った
+        # 選手をそのまま選び直して "毎回同じ選手" になるため、最も久しく使って
+        # いない選手 (least-recently-used) を優先して選ぶ。
+        LOG.warning("yt_shorts_cooldown_exhausted: pick least-recently-used player")
         fallback = _without_excluded_topics(
             base_data, excluded_topic_keys, excluded_players, target_player_names
         )
-        topic = select_topic_from_notable_data(fallback, source_url=DEFAULT_SOURCE_URL)
+        candidates = list_topics_from_notable_data(fallback, source_url=DEFAULT_SOURCE_URL)
+        if candidates:
+            last_offset = _recent_used_offsets(bucket, current, cooldown_days)
+            never_used = cooldown_days + 1  # 履歴に無い = 最も優先
+            candidates.sort(
+                key=lambda t: (
+                    -last_offset.get(_normalize_player_name(t.player), never_used),
+                    -t.priority,
+                    t.player,
+                    t.label,
+                )
+            )
+            topic = candidates[0]
     if topic is None:
         if live and send_mail:
             _failure_mail("【YT Shorts失敗】候補なし", "YouTube Shorts の候補データがありません。", dry_run=False)

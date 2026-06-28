@@ -734,8 +734,20 @@ def _serialize_notable_leaders(top_n: int = 3) -> dict[str, list[dict]]:
     return out
 
 
-def _build_notable_data(cluster_entries: list[ClusterPlayerEntry], limit: int = 16) -> dict[str, object]:
-    """Build metric-first notable data items for the dedicated page and hub teaser."""
+def _build_notable_data(
+    cluster_entries: list[ClusterPlayerEntry],
+    limit: int = 16,
+    *,
+    latest_game_only: bool = True,
+) -> dict[str, object]:
+    """Build metric-first notable data items for the dedicated page and hub teaser.
+
+    ``latest_game_only`` keeps the public /data/notable page focused on players
+    who appeared in the latest Giants game. Callers that need a wider, more
+    diverse candidate pool (e.g. the YouTube Shorts selector, which must avoid
+    surfacing the same hot player every run) pass ``False`` to also include
+    season-to-date leaders who did not play the most recent game.
+    """
     latest_game_date = fetch_latest_giants_game_date()
     if not latest_game_date:
         return {"as_of": "", "items": []}
@@ -761,9 +773,10 @@ def _build_notable_data(cluster_entries: list[ClusterPlayerEntry], limit: int = 
     for entry in cluster_entries:
         if entry.role in ("manager", "coach") or "投手" in (entry.position_group or entry.position):
             continue
-        player_game_date = fetch_player_latest_game_date(entry.name, "batting_logs")
-        if latest_game_date and player_game_date != latest_game_date:
-            continue
+        if latest_game_only:
+            player_game_date = fetch_player_latest_game_date(entry.name, "batting_logs")
+            if latest_game_date and player_game_date != latest_game_date:
+                continue
         try:
             hit = fetch_hit_streak(entry.name)
             contrib = fetch_contribution_streak(entry.name)
@@ -795,9 +808,10 @@ def _build_notable_data(cluster_entries: list[ClusterPlayerEntry], limit: int = 
             if not any(tok in row.label for tok in _NOTABLE_CLEAR_METRIC_TOKENS):
                 continue
             table = "pitching_logs" if row.label in pitcher_labels else "batting_logs"
-            player_game_date = fetch_player_latest_game_date(row.player, table)
-            if latest_game_date and player_game_date != latest_game_date:
-                continue
+            if latest_game_only:
+                player_game_date = fetch_player_latest_game_date(row.player, table)
+                if latest_game_date and player_game_date != latest_game_date:
+                    continue
             # 表示は短く: label は指標名のみ、 note は「今季・リーグN位」だけに圧縮
             label_m = re.search(r"（(.+?)）", row.label)
             rank_m = re.search(r"リーグ(\d+)/\d+位", row.note or "")
@@ -829,7 +843,11 @@ def _build_notable_data(cluster_entries: list[ClusterPlayerEntry], limit: int = 
     }
 
 
-def _build_notable_data_from_targets(limit: int = 16) -> dict[str, object]:
+def _build_notable_data_from_targets(
+    limit: int = 16,
+    *,
+    latest_game_only: bool = True,
+) -> dict[str, object]:
     """Build notable data without building or updating player pages."""
     entries: list[ClusterPlayerEntry] = []
     for name in load_data_site_target_names():
@@ -846,7 +864,7 @@ def _build_notable_data_from_targets(limit: int = 16) -> dict[str, object]:
                 position_group=shihai_position_group(roster.name) or "",
             )
         )
-    return _build_notable_data(entries, limit=limit)
+    return _build_notable_data(entries, limit=limit, latest_game_only=latest_game_only)
 
 
 def _get_page_for_edit_by_slug(slug: str, *, parent: int = 0) -> dict | None:

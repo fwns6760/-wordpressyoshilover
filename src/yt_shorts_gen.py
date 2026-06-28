@@ -1102,12 +1102,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--format",
-        choices=["data", "legend", "ranking", "standings", "both", "all"],
+        choices=["data", "legend", "ranking", "standings", "both", "all", "rotate"],
         default=(os.environ.get("YT_SHORTS_FORMAT", "data") or "data"),
         help=(
             "Which Shorts format(s) to generate. "
             "'both' = data + 巨人レジェンド記録室. "
-            "'all' = data + legend + ranking(巨人データ・ランキング) + standings(巨人目線のセ・リーグ)."
+            "'all' = data + legend + ranking + standings (全部毎回). "
+            "'rotate' = 1日1本、日替わりで data→legend→ranking→standings を巡回."
         ),
     )
     return parser
@@ -1123,10 +1124,15 @@ def main(argv: list[str] | None = None) -> int:
         if args.topic_json_inline
         else (_load_notable_data_from_json(args.topic_json) if args.topic_json else None)
     )
-    formats = {
-        "both": ["data", "legend"],
-        "all": ["data", "legend", "ranking", "standings"],
-    }.get(args.format, [args.format])
+    if args.format == "rotate":
+        # 1日1本: JST 日付で data→legend→ranking→standings を巡回。
+        rotation = ["data", "legend", "ranking", "standings"]
+        formats = [rotation[_now_jst().toordinal() % len(rotation)]]
+    else:
+        formats = {
+            "both": ["data", "legend"],
+            "all": ["data", "legend", "ranking", "standings"],
+        }.get(args.format, [args.format])
     single = len(formats) == 1
     results: list[dict[str, Any]] = []
     exit_code = 0

@@ -62,6 +62,8 @@ class RankingEntry:
     rank: int
     player: str
     display: str
+    image_url: str = ""   # 権利クリア写真(Commons free or 自社 eyecatch)。無ければ空。
+    credit: str = ""      # 写真クレジット(CC ライセンスの帰属表示)。自社写真は空。
 
 
 @dataclass(frozen=True)
@@ -191,10 +193,17 @@ def build_ranking_script(topic: RankingTopic) -> ShortsScript:
     assert_number_guard(title + "\n" + desc_factual, allowed)
     rank_block = "\n".join(f"{e.rank}位 {e.player} {e.display}" for e in topic.entries)
     assert_number_guard(rank_block, allowed)
+    credits: list[str] = []
+    for e in topic.entries:
+        c = (e.credit or "").strip()
+        if c and c not in credits:
+            credits.append(c)
+    credit_block = ("写真クレジット:\n" + "\n".join(credits) + "\n\n") if credits else ""
     desc_branding = (
         "\n\n"
         f"{rank_block}\n\n"
-        "巨人特化メディア「ヨシラバー」が、巨人の注目データを毎日Shortsでお届け。\n"
+        + credit_block
+        + "巨人特化メディア「ヨシラバー」が、巨人の注目データを毎日Shortsでお届け。\n"
         "「巨人といえばヨシラバー」を目指して、ファン目線で発信しています。\n\n"
         f"▼巨人の全選手データ(毎日更新)\n{DATA_URL}\n\n"
         f"▼巨人ニュース・速報\n{SITE_URL}\n\n"

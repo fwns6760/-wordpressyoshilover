@@ -150,17 +150,24 @@ def _load_player_image(url: str) -> Image.Image | None:
         return None
 
 
-def _draw_player_visual(
+def _draw_photo_card(
     canvas: Image.Image,
     draw,
-    topic: ShortsTopic,
     *,
+    url: str,
+    name: str,
     x: int,
     y: int,
     width: int,
     height: int,
+    name_size: int = 42,
 ) -> None:
-    image = _load_player_image(_topic_player_image_url(topic))
+    """権利クリアな選手写真を角丸でカード化して描く。無ければ頭文字カードに fallback。
+
+    ここに来る ``url`` は自社 eyecatch map(巨人ユニ)の rights-clean 写真のみ。
+    対戦相手マーク等の無関係画像・外部転載画像は呼び出し側で弾く前提。
+    """
+    image = _load_player_image(url)
     if image is not None:
         cropped = _cover_crop(image, width, height)
         mask = Image.new("L", (width, height), 0)
@@ -170,7 +177,7 @@ def _draw_player_visual(
         shade = Image.new("RGBA", (width, 140), (0, 0, 0, 176))
         canvas.paste(shade, (x, y + height - 140), shade)
         draw.rounded_rectangle((x, y, x + width, y + height), radius=46, outline="#ffffff", width=5)
-        draw.text((x + 36, y + height - 62), topic.player, font=_font(42, bold=True), fill="#ffffff", anchor="lm")
+        draw.text((x + 36, y + height - 62), name, font=_font(name_size, bold=True), fill="#ffffff", anchor="lm")
         return
 
     draw.rounded_rectangle((x, y, x + width, y + height), radius=46, fill="#151515", outline="#ffb36b", width=5)
@@ -182,9 +189,31 @@ def _draw_player_visual(
             int(40 + alpha * 20),
         )
         draw.line((x + 8, line_y, x + width - 8, line_y), fill=color, width=4)
-    initials = "".join(part[:1] for part in topic.player.replace("　", " ").split()) or topic.player[:2]
+    initials = "".join(part[:1] for part in name.replace("　", " ").split()) or name[:2]
     draw.text((x + width // 2, y + height // 2 - 18), initials[:3], font=_font(98, bold=True), fill="#ffb36b", anchor="mm")
-    draw.text((x + width // 2, y + height - 86), topic.player, font=_font(40, bold=True), fill="#ffffff", anchor="mm")
+    draw.text((x + width // 2, y + height - 86), name, font=_font(40, bold=True), fill="#ffffff", anchor="mm")
+
+
+def _draw_player_visual(
+    canvas: Image.Image,
+    draw,
+    topic: ShortsTopic,
+    *,
+    x: int,
+    y: int,
+    width: int,
+    height: int,
+) -> None:
+    _draw_photo_card(
+        canvas,
+        draw,
+        url=_topic_player_image_url(topic),
+        name=topic.player,
+        x=x,
+        y=y,
+        width=width,
+        height=height,
+    )
 
 
 def _wrap_text(draw, text: str, font, max_width: int, *, max_lines: int = 4) -> list[str]:
@@ -386,6 +415,12 @@ def _draw_rank_row(draw, *, rank: int, player: str, display: str, y: int, highli
     draw.text((WIDTH - 150, y + 84), display, font=_font(60, bold=True), fill=text_color, anchor="rm")
 
 
+def _draw_rank_badge(draw, *, rank: int, cx: int, cy: int, r: int = 64) -> None:
+    draw.ellipse((cx - r, cy - r, cx + r, cy + r), fill="#ff7a1a", outline="#ffffff", width=5)
+    draw.text((cx, cy - 6), f"{rank}", font=_font(58, bold=True), fill="#ffffff", anchor="mm")
+    draw.text((cx, cy + 34), "位", font=_font(24, bold=True), fill="#ffffff", anchor="mm")
+
+
 def _draw_ranking_frame(topic, script: ShortsScript, index: int, path: Path) -> None:
     img, draw = _frame_background()
     _draw_ranking_chrome(draw)
@@ -393,24 +428,29 @@ def _draw_ranking_frame(topic, script: ShortsScript, index: int, path: Path) -> 
     entries = tuple(getattr(topic, "entries", ()) or ())
 
     if index == 0:
-        draw.rounded_rectangle((96, 360, WIDTH - 96, 720), radius=54, fill="#ffffff", outline="#ffe0bf", width=4)
-        draw.text((WIDTH // 2, 452), "巨人データ・ランキング", font=_font(58, bold=True), fill="#c94700", anchor="ma")
-        _draw_centered_lines(draw, _wrap_text(draw, stat, _font(120, bold=True), 840, max_lines=1), 560, _font(120, bold=True), "#151515")
-        draw.rounded_rectangle((300, 980, WIDTH - 300, 1058), radius=38, fill="#151515")
-        draw.text((WIDTH // 2, 1019), "TOP 3", font=_font(44, bold=True), fill="#ffffff", anchor="mm")
+        # 表紙: 1位選手の写真をヒーローに、ランキング名を大きく。
+        top = entries[0] if entries else None
+        draw.text((WIDTH // 2, 300), "巨人データ・ランキング", font=_font(56, bold=True), fill="#c94700", anchor="ma")
+        _draw_centered_lines(draw, _wrap_text(draw, f"{stat} TOP3", _font(110, bold=True), 900, max_lines=1), 396, _font(110, bold=True), "#151515")
+        if top is not None:
+            _draw_photo_card(img, draw, url=getattr(top, "image_url", ""), name=getattr(top, "player", ""),
+                             x=290, y=600, width=500, height=620, name_size=40)
+            _draw_rank_badge(draw, rank=getattr(top, "rank", 1), cx=320, cy=632, r=56)
+            _draw_ranking_credit(img, draw, getattr(top, "credit", ""))
     elif index in (1, 2, 3):
         rank_idx = index - 1
-        draw.text((WIDTH // 2, 320), f"巨人 {stat} ランキング", font=_font(48, bold=True), fill="#c94700", anchor="ma")
-        base_y = 470
-        for i, e in enumerate(entries[:3]):
-            _draw_rank_row(
-                draw,
-                rank=getattr(e, "rank", i + 1),
-                player=getattr(e, "player", ""),
-                display=getattr(e, "display", ""),
-                y=base_y + i * 200,
-                highlight=(i == rank_idx),
-            )
+        e = entries[rank_idx] if rank_idx < len(entries) else None
+        draw.text((WIDTH // 2, 290), f"巨人 {stat} ランキング", font=_font(46, bold=True), fill="#c94700", anchor="ma")
+        if e is not None:
+            _draw_photo_card(img, draw, url=getattr(e, "image_url", ""), name=getattr(e, "player", ""),
+                             x=90, y=370, width=900, height=720, name_size=50)
+            _draw_rank_badge(draw, rank=getattr(e, "rank", rank_idx + 1), cx=160, cy=440, r=72)
+            draw.rounded_rectangle((104, 1130, WIDTH - 104, 1400), radius=48, fill="#ff7a1a")
+            draw.text((WIDTH // 2, 1196), stat, font=_font(48, bold=True), fill="#ffffff", anchor="ma")
+            draw.text((WIDTH // 2, 1300), getattr(e, "display", ""), font=_font(108, bold=True), fill="#ffffff", anchor="mm")
+            _draw_ranking_credit(img, draw, getattr(e, "credit", ""))
+        else:
+            draw.text((WIDTH // 2, 760), "続きはヨシラバーで", font=_font(56, bold=True), fill="#c94700", anchor="ma")
     else:
         draw.rounded_rectangle((124, 470, WIDTH - 124, 820), radius=48, fill="#ffffff", outline="#ffb36b", width=4)
         draw.text((WIDTH // 2, 548), "続きはヨシラバーで", font=_font(56, bold=True), fill="#c94700", anchor="ma")
@@ -422,6 +462,16 @@ def _draw_ranking_frame(topic, script: ShortsScript, index: int, path: Path) -> 
     _draw_centered_lines(draw, _wrap_text(draw, caption, _font(38, bold=True), 840, max_lines=2), HEIGHT - 296, _font(38, bold=True), "#151515", gap=10)
     _draw_footer(draw)
     img.save(path, "PNG")
+
+
+def _draw_ranking_credit(canvas, draw, credit: str) -> None:
+    """CC ライセンス写真の帰属クレジットを小さく表示(空なら何もしない)。"""
+    text = str(credit or "").strip()
+    if not text:
+        return
+    lines = _wrap_text(draw, text, _font(22), WIDTH - 200, max_lines=1)
+    if lines:
+        draw.text((WIDTH // 2, HEIGHT - 372), lines[0], font=_font(22), fill="#8a7a68", anchor="ma")
 
 
 def _standings_background():

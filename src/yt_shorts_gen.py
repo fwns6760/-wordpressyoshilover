@@ -585,6 +585,51 @@ def _select_ranking_topic(
     return topics[idx]
 
 
+def _ranking_player_photo(player: str) -> tuple[str, str]:
+    """選手の権利クリア写真 (url/path, credit) を返す。無ければ ("","")。
+
+    優先: ① Wikimedia Commons の free ライセンス写真(商用可・新しい・要クレジット)
+          ② 自社 eyecatch map(巨人ユニ・クレジット不要)
+    ネット報道画像の無断転載はしない。Commons は license を1枚ずつ確認した上で採用。
+    """
+    if _env_flag("YT_SHORTS_DISABLE_COMMONS_PHOTO"):
+        commons = None
+    else:
+        try:
+            from src.yt_shorts_commons_photo import fetch_commons_photo
+
+            commons = fetch_commons_photo(player)
+        except Exception as exc:  # noqa: BLE001
+            LOG.warning("yt_shorts_commons_photo_failed player=%s err=%r", player, exc)
+            commons = None
+    if commons is not None:
+        return commons.local_path, commons.attribution
+    try:
+        from src.data_site_query import (
+            find_player_featured_image_url,
+            mapped_player_media_id,
+        )
+
+        if mapped_player_media_id(player) is not None:
+            url = str(find_player_featured_image_url(player) or "").strip()
+            if url:
+                return url, ""
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("yt_shorts_ranking_eyecatch_failed player=%s err=%r", player, exc)
+    return "", ""
+
+
+def _with_ranking_images(topic):
+    """ランキング各選手に権利クリア写真(Commons free 優先 → 自社 eyecatch)を付与。"""
+    from dataclasses import replace as _replace
+
+    new_entries = []
+    for entry in topic.entries:
+        url, credit = _ranking_player_photo(entry.player)
+        new_entries.append(_replace(entry, image_url=url, credit=credit))
+    return _replace(topic, entries=tuple(new_entries))
+
+
 def _finish_run(
     *,
     topic,
@@ -825,6 +870,7 @@ def run(
             return ShortsRunResult(status="no_topic", dry_run=dry_run, reason="empty_ranking_data")
         from src.yt_shorts_ranking import build_ranking_script
 
+        topic = _with_ranking_images(topic)
         script = build_ranking_script(topic)
         run_id = f"{date_key}-{_safe_id(topic.topic_key)}"
         run_dir = Path(output_dir) / run_id

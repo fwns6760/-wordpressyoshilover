@@ -1,0 +1,115 @@
+{
+  "description": "YOSHILOVER Giants news candidate mail sources. Metadata-only: no article body generation, no WordPress mutation, no X auto-post.",
+  "google_news": {
+    "hl": "ja",
+    "gl": "JP",
+    "ceid": "JP:ja",
+    "freshness_query_suffix": "when:7d"
+  },
+  "scoring": {
+    "dedupe_window_hours": 168,
+    "max_candidate_attempts": 520,
+    "max_resolve_seconds": 240,
+    "include_excluded": true,
+    "max_excluded_to_mail": 3
+  },
+  "google_news_queries": [
+    {"id": "giants_general", "query": "読売ジャイアンツ", "lane": "general", "priority": "P0", "score_base": 78},
+    {"id": "giants_baseball", "query": "巨人 野球", "lane": "general", "priority": "P0", "score_base": 76},
+    {"id": "abe", "query": "巨人 阿部慎之助", "lane": "manager", "priority": "P0", "score_base": 78},
+    {"id": "farm", "query": "巨人 二軍", "lane": "farm", "priority": "P1", "score_base": 73},
+    {"id": "roster_drop", "query": "巨人 登録抹消", "lane": "notice", "priority": "P1", "score_base": 74},
+    {"id": "promotion", "query": "巨人 昇格", "lane": "notice", "priority": "P1", "score_base": 74},
+    {"id": "young", "query": "巨人 若手", "lane": "young", "priority": "P1", "score_base": 72},
+    {"id": "ob", "query": "巨人 OB", "lane": "ob", "priority": "P1", "score_base": 74},
+    {"id": "giants_ob", "query": "読売ジャイアンツ OB", "lane": "ob", "priority": "P1", "score_base": 74},
+    {"id": "weekly_giants", "query": "巨人 週刊誌", "lane": "weekly", "priority": "P2", "score_base": 66},
+    {"id": "youtube_giants", "query": "YouTube 巨人 野球", "lane": "youtube", "priority": "P2", "score_base": 66},
+    {"id": "okamoto_mlb", "query": "岡本和真 MLB", "lane": "mlb_alumni", "priority": "P0", "score_base": 88},
+    {"id": "okamoto_major", "query": "岡本和真 メジャー", "lane": "mlb_alumni", "priority": "P0", "score_base": 88},
+    {"id": "okamoto_en", "query": "Kazuma Okamoto MLB", "lane": "mlb_alumni", "priority": "P0", "score_base": 86},
+    {"id": "sugano_mlb", "query": "菅野智之 MLB", "lane": "mlb_alumni", "priority": "P0", "score_base": 88},
+    {"id": "sugano_major", "query": "菅野智之 メジャー", "lane": "mlb_alumni", "priority": "P0", "score_base": 88},
+    {"id": "sugano_kana", "query": "すがのともゆき MLB", "lane": "mlb_alumni", "priority": "P0", "score_base": 84},
+    {"id": "sugano_en", "query": "Tomoyuki Sugano MLB", "lane": "mlb_alumni", "priority": "P0", "score_base": 86},
+    {"id": "matsui", "query": "松井秀喜 巨人", "lane": "ob", "priority": "P1", "score_base": 74},
+    {"id": "hara", "query": "原辰徳 巨人", "lane": "ob", "priority": "P1", "score_base": 74},
+    {"id": "takahashi_yoshinobu", "query": "高橋由伸 巨人", "lane": "ob", "priority": "P1", "score_base": 74},
+    {"id": "kuwata", "query": "桑田真澄 巨人", "lane": "ob", "priority": "P1", "score_base": 74},
+    {"id": "uehara", "query": "上原浩治 巨人", "lane": "ob", "priority": "P1", "score_base": 74},
+    {"id": "egawa", "query": "江川卓 巨人", "lane": "ob", "priority": "P1", "score_base": 74},
+    {"id": "nakahata", "query": "中畑清 巨人", "lane": "ob", "priority": "P1", "score_base": 74},
+    {"id": "makihara", "query": "槙原寛己 巨人", "lane": "ob", "priority": "P1", "score_base": 74},
+    {"id": "saito_masaki", "query": "斎藤雅樹 巨人", "lane": "ob", "priority": "P1", "score_base": 74},
+    {"id": "kiyohara", "query": "清原和博 巨人", "lane": "ob", "priority": "P1", "score_base": 74},
+    {"id": "motoki", "query": "元木大介 巨人", "lane": "ob", "priority": "P1", "score_base": 74},
+    {"id": "nishi", "query": "仁志敏久 巨人", "lane": "ob", "priority": "P1", "score_base": 74},
+    {"id": "dave", "query": "デーブ大久保 巨人", "lane": "ob", "priority": "P0", "score_base": 92},
+    {"id": "okubo", "query": "大久保博元 巨人", "lane": "ob", "priority": "P0", "score_base": 92},
+    {"id": "dave_youtube", "query": "デーブ大久保 YouTube 巨人", "lane": "youtube_ob", "priority": "P0", "score_base": 94},
+    {"id": "okubo_youtube", "query": "大久保博元 YouTube 巨人", "lane": "youtube_ob", "priority": "P0", "score_base": 94}
+  ],
+  "sources": [
+    {
+      "id": "nikkan_giants",
+      "name": "日刊スポーツ 巨人",
+      "url": "https://www.nikkansports.com/rss/baseball/professional/atom/giants.xml",
+      "kind": "rss",
+      "lane": "general",
+      "priority": "P1",
+      "score_base": 70
+    },
+    {
+      "id": "full_count_giants",
+      "name": "Full-Count 巨人",
+      "url": "https://full-count.jp/category/npb/central-league/kyojin/feed/",
+      "kind": "rss",
+      "lane": "general",
+      "priority": "P1",
+      "score_base": 70
+    },
+    {
+      "id": "baseball_channel_giants",
+      "name": "ベースボールチャンネル 巨人",
+      "url": "https://www.baseballchannel.jp/npb/giants/feed/",
+      "kind": "rss",
+      "lane": "general",
+      "priority": "P1",
+      "score_base": 68
+    },
+    {
+      "id": "asahi_sports",
+      "name": "朝日新聞スポーツRSS",
+      "url": "https://www.asahi.com/rss/asahi/sports.rdf",
+      "kind": "rss",
+      "lane": "general",
+      "priority": "P2",
+      "score_base": 62
+    },
+    {
+      "id": "mainichi_sports",
+      "name": "毎日新聞スポーツRSS",
+      "url": "https://mainichi.jp/rss/etc/mainichi-sports.rss",
+      "kind": "rss",
+      "lane": "general",
+      "priority": "P2",
+      "score_base": 62
+    },
+    {
+      "id": "weekly_baseball",
+      "name": "週刊ベースボールONLINE RSS",
+      "url": "https://sp.baseball.findfriends.jp/?pid=rss_baseball&nourlencode=1",
+      "kind": "rss",
+      "lane": "weekly",
+      "priority": "P2",
+      "score_base": 64
+    }
+  ],
+  "youtube_ob_registry": {
+    "enabled": true,
+    "path": "youtube_ob_sources.json",
+    "statuses": ["confirmed", "candidate"],
+    "roles": ["official", "giants_ob", "broadcast", "media"],
+    "max_sources": 40
+  }
+}

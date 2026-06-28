@@ -209,16 +209,20 @@ def _gcs_client():
     return storage.Client()
 
 
-def _history_blob_name(date_key: str) -> str:
+def _history_blob_name(date_key: str, fmt: str = "data") -> str:
+    # data は後方互換のため従来パス。legend 等は format を suffix にして
+    # 同じ日に複数フォーマット (data + legend) の履歴/daily-cap を独立管理する。
+    if fmt and fmt != "data":
+        return f"{DEFAULT_BUCKET_PREFIX}/history/{date_key}-{fmt}.json"
     return f"{DEFAULT_BUCKET_PREFIX}/history/{date_key}.json"
 
 
-def _load_history(bucket_name: str, date_key: str) -> dict[str, Any] | None:
+def _load_history(bucket_name: str, date_key: str, fmt: str = "data") -> dict[str, Any] | None:
     if not bucket_name:
         return None
     try:
         bucket = _gcs_client().bucket(bucket_name)
-        blob = bucket.blob(_history_blob_name(date_key))
+        blob = bucket.blob(_history_blob_name(date_key, fmt))
         if not blob.exists():
             return None
         payload = blob.download_as_text(encoding="utf-8")
@@ -232,6 +236,7 @@ def _recent_used(
     bucket_name: str,
     current: datetime,
     lookback_days: int,
+    fmt: str = "data",
 ) -> tuple[set[str], set[str]]:
     """直近 ``lookback_days`` 日の history を読み、使用済みの
 
@@ -245,7 +250,7 @@ def _recent_used(
     # offset 0 = 当日 (同日 re-run で直前の選手も除外)、1..N = 過去日。
     for offset in range(0, lookback_days + 1):
         day = (current - timedelta(days=offset)).strftime("%Y-%m-%d")
-        hist = _load_history(bucket_name, day)
+        hist = _load_history(bucket_name, day, fmt)
         if not hist:
             continue
         tk = str(hist.get("topic_key") or "").strip()
@@ -268,6 +273,7 @@ def _recent_used_offsets(
     bucket_name: str,
     current: datetime,
     lookback_days: int,
+    fmt: str = "data",
 ) -> dict[str, int]:
     """直近 ``lookback_days`` 日の history から {正規化player名: 最小offset(=直近使用)}。
 
@@ -279,7 +285,7 @@ def _recent_used_offsets(
         return offsets
     for offset in range(0, lookback_days + 1):
         day = (current - timedelta(days=offset)).strftime("%Y-%m-%d")
-        hist = _load_history(bucket_name, day)
+        hist = _load_history(bucket_name, day, fmt)
         if not hist:
             continue
         player_raw = str(hist.get("player") or "")
@@ -294,11 +300,11 @@ def _recent_used_offsets(
     return offsets
 
 
-def _write_history(bucket_name: str, date_key: str, payload: Mapping[str, Any]) -> None:
+def _write_history(bucket_name: str, date_key: str, payload: Mapping[str, Any], fmt: str = "data") -> None:
     if not bucket_name:
         return
     bucket = _gcs_client().bucket(bucket_name)
-    blob = bucket.blob(_history_blob_name(date_key))
+    blob = bucket.blob(_history_blob_name(date_key, fmt))
     blob.upload_from_string(
         json.dumps(dict(payload), ensure_ascii=False, indent=2) + "\n",
         content_type="application/json; charset=utf-8",
@@ -498,6 +504,183 @@ def _failure_mail(subject: str, message: str, *, dry_run: bool) -> str:
     return result.status
 
 
+def _cooldown_days_env() -> int:
+    try:
+        return int(os.environ.get(PLAYER_COOLDOWN_DAYS_ENV, str(DEFAULT_PLAYER_COOLDOWN_DAYS)))
+    except ValueError:
+        return DEFAULT_PLAYER_COOLDOWN_DAYS
+
+
+def _load_legend_entries_from_repo() -> list[dict[str, Any]]:
+    from src.data_site_query import load_ob_legend_entries
+
+    return list(load_ob_legend_entries() or [])
+
+
+def _select_legend_topic(
+    *,
+    bucket: str,
+    current: datetime,
+    cooldown_days: int,
+    live: bool,
+    legend_entries: list[dict[str, Any]] | None,
+):
+    """記録の強い順 + cooldown(直近使用除外)+ 枯渇時 LRU でレジェンド主役を選ぶ。"""
+    from src.yt_shorts_legend import LEGEND_SOURCE_URL, list_legend_topics
+
+    candidates = list_legend_topics(legend_entries, source_url=LEGEND_SOURCE_URL)
+    if not candidates:
+        return None
+    cooldown_players: set[str] = set()
+    cooldown_topic_keys: set[str] = set()
+    if live and bucket:
+        cooldown_players, cooldown_topic_keys = _recent_used(bucket, current, cooldown_days, "legend")
+    filtered = [
+        t
+        for t in candidates
+        if _normalize_player_name(t.player) not in cooldown_players
+        and t.topic_key not in cooldown_topic_keys
+    ]
+    if filtered:
+        return filtered[0]
+    if live and bucket and (cooldown_players or cooldown_topic_keys):
+        LOG.warning("yt_shorts_legend_cooldown_exhausted: pick least-recently-used")
+        last_offset = _recent_used_offsets(bucket, current, cooldown_days, "legend")
+        never_used = cooldown_days + 1
+        candidates.sort(
+            key=lambda t: (
+                -last_offset.get(_normalize_player_name(t.player), never_used),
+                -t.priority,
+                t.player,
+            )
+        )
+    return candidates[0]
+
+
+def _finish_run(
+    *,
+    topic,
+    script: ShortsScript,
+    rendered: RenderedShort,
+    run_dir: Path,
+    run_id: str,
+    bucket: str,
+    live: bool,
+    dry_run: bool,
+    send_mail: bool,
+    youtube_private_upload: bool,
+    current: datetime,
+    date_key: str,
+    fmt: str,
+    youtube_tags: tuple[str, ...],
+) -> ShortsRunResult:
+    """upload → (YouTube private) → history → 承認mail → result。data/legend 共通。"""
+    gcs_uri = ""
+    signed_url = ""
+    if live:
+        gcs_uri, signed_url = _upload_artifacts(
+            bucket_name=bucket,
+            run_id=run_id,
+            rendered=rendered,
+            topic=topic,
+            script=script,
+        )
+
+    youtube_result: YouTubeUploadResult | None = None
+    youtube_publish_url = ""
+    if live and youtube_private_upload:
+        youtube_result = upload_private_video(
+            rendered.video_path,
+            title=script.title,
+            description=script.description,
+            tags=youtube_tags,
+            category_id=os.environ.get("YT_SHORTS_YOUTUBE_CATEGORY_ID", "17").strip() or "17",
+            privacy_status=os.environ.get("YT_SHORTS_YOUTUBE_INITIAL_PRIVACY", "private").strip()
+            or "private",
+        )
+        youtube_publish_url = (
+            build_yt_shorts_publish_url(youtube_result.video_id, _approval_base_url()) or ""
+        )
+
+    if live and bucket:
+        _write_history(
+            bucket,
+            date_key,
+            {
+                "status": "youtube_private_uploaded" if youtube_result else "uploaded",
+                "topic_key": topic.topic_key,
+                "player": topic.player,
+                "title": script.title,
+                "gcs_uri": gcs_uri,
+                "youtube_video_id": youtube_result.video_id if youtube_result else "",
+                "youtube_watch_url": youtube_result.watch_url if youtube_result else "",
+                "youtube_studio_url": youtube_result.studio_url if youtube_result else "",
+                "signed_url_created_at": current.isoformat(),
+                "mail_status": "",
+                "tts_mode": rendered.tts_mode,
+                "format": fmt,
+            },
+            fmt,
+        )
+
+    mail_status = ""
+    if send_mail:
+        mail_status = send_approval_mail(
+            topic,
+            script,
+            signed_url=signed_url,
+            gcs_uri=gcs_uri,
+            youtube_watch_url=youtube_result.watch_url if youtube_result else "",
+            youtube_studio_url=youtube_result.studio_url if youtube_result else "",
+            youtube_publish_url=youtube_publish_url,
+            youtube_video_id=youtube_result.video_id if youtube_result else "",
+            dry_run=dry_run,
+        )
+
+    if live and bucket:
+        _write_history(
+            bucket,
+            date_key,
+            {
+                "status": "sent"
+                if mail_status == "sent"
+                else ("youtube_private_uploaded" if youtube_result else "uploaded"),
+                "topic_key": topic.topic_key,
+                "player": topic.player,
+                "title": script.title,
+                "gcs_uri": gcs_uri,
+                "youtube_video_id": youtube_result.video_id if youtube_result else "",
+                "youtube_watch_url": youtube_result.watch_url if youtube_result else "",
+                "youtube_studio_url": youtube_result.studio_url if youtube_result else "",
+                "youtube_publish_url": youtube_publish_url,
+                "youtube_upload_status": youtube_result.privacy_status if youtube_result else "",
+                "signed_url_created_at": current.isoformat(),
+                "mail_status": mail_status,
+                "tts_mode": rendered.tts_mode,
+                "format": fmt,
+            },
+            fmt,
+        )
+
+    return ShortsRunResult(
+        status="ok",
+        dry_run=dry_run,
+        topic_key=topic.topic_key,
+        title=script.title,
+        output_dir=str(run_dir),
+        video_path=str(rendered.video_path),
+        gcs_uri=gcs_uri,
+        signed_url=signed_url,
+        mail_status=mail_status,
+        tts_mode=rendered.tts_mode,
+        youtube_video_id=youtube_result.video_id if youtube_result else "",
+        youtube_watch_url=youtube_result.watch_url if youtube_result else "",
+        youtube_studio_url=youtube_result.studio_url if youtube_result else "",
+        youtube_publish_url=youtube_publish_url,
+        youtube_upload_status=youtube_result.privacy_status if youtube_result else "",
+    )
+
+
 def run(
     *,
     live: bool = False,
@@ -514,6 +697,8 @@ def run(
     target_players: list[str] | None = None,
     now: datetime | None = None,
     ffmpeg_bin: str = "ffmpeg",
+    fmt: str = "data",
+    legend_entries: list[dict[str, Any]] | None = None,
 ) -> ShortsRunResult:
     dry_run = not live
     current = (now or _now_jst()).astimezone(JST)
@@ -525,7 +710,7 @@ def run(
 
     history: dict[str, Any] | None = None
     if live and bucket:
-        history = _load_history(bucket, date_key)
+        history = _load_history(bucket, date_key, fmt)
         if history and history.get("status") in {"uploaded", "youtube_private_uploaded", "sent"}:
             if not ignore_daily_cap:
                 return ShortsRunResult(
@@ -544,6 +729,57 @@ def run(
                 date_key,
                 history.get("topic_key"),
             )
+
+    if fmt == "legend":
+        cooldown_days = _cooldown_days_env()
+        if legend_entries is None:
+            legend_entries = _load_legend_entries_from_repo()
+        topic = _select_legend_topic(
+            bucket=bucket,
+            current=current,
+            cooldown_days=cooldown_days,
+            live=live,
+            legend_entries=legend_entries,
+        )
+        if topic is None:
+            if live and send_mail:
+                _failure_mail(
+                    "【YT Shorts失敗】レジェンド候補なし",
+                    "巨人レジェンドの候補データがありません。",
+                    dry_run=False,
+                )
+            return ShortsRunResult(status="no_topic", dry_run=dry_run, reason="empty_legend_data")
+        from src.yt_shorts_legend import build_legend_script
+
+        script = build_legend_script(topic)
+        run_id = f"{date_key}-{_safe_id(topic.topic_key)}"
+        run_dir = Path(output_dir) / run_id
+        rendered = render_short(
+            topic,
+            script,
+            run_dir,
+            voicevox_base_url=voicevox_base_url or os.environ.get("VOICEVOX_BASE_URL", ""),
+            speaker=speaker,
+            allow_silent_tts=allow_silent_tts,
+            ffmpeg_bin=ffmpeg_bin,
+            fmt="legend",
+        )
+        return _finish_run(
+            topic=topic,
+            script=script,
+            rendered=rendered,
+            run_dir=run_dir,
+            run_id=run_id,
+            bucket=bucket,
+            live=live,
+            dry_run=dry_run,
+            send_mail=send_mail,
+            youtube_private_upload=youtube_private_upload,
+            current=current,
+            date_key=date_key,
+            fmt="legend",
+            youtube_tags=("巨人", "ジャイアンツ", "ヨシラバー", "巨人レジェンド", "shorts"),
+        )
 
     excluded_players = {
         _normalize_player_name(name)
@@ -631,110 +867,21 @@ def run(
         ffmpeg_bin=ffmpeg_bin,
     )
 
-    gcs_uri = ""
-    signed_url = ""
-    if live:
-        gcs_uri, signed_url = _upload_artifacts(
-            bucket_name=bucket,
-            run_id=run_id,
-            rendered=rendered,
-            topic=topic,
-            script=script,
-        )
-
-    youtube_result: YouTubeUploadResult | None = None
-    youtube_publish_url = ""
-    if live and youtube_private_upload:
-        youtube_result = upload_private_video(
-            rendered.video_path,
-            title=script.title,
-            description=script.description,
-            tags=("巨人", "ジャイアンツ", "ヨシラバー", "shorts"),
-            category_id=os.environ.get("YT_SHORTS_YOUTUBE_CATEGORY_ID", "17").strip() or "17",
-            privacy_status=os.environ.get("YT_SHORTS_YOUTUBE_INITIAL_PRIVACY", "private").strip()
-            or "private",
-        )
-        youtube_publish_url = (
-            build_yt_shorts_publish_url(
-                youtube_result.video_id,
-                _approval_base_url(),
-            )
-            or ""
-        )
-
-    if live:
-        if bucket:
-            _write_history(
-                bucket,
-                date_key,
-                {
-                    "status": "youtube_private_uploaded" if youtube_result else "uploaded",
-                    "topic_key": topic.topic_key,
-                    "player": topic.player,
-                    "title": script.title,
-                    "gcs_uri": gcs_uri,
-                    "youtube_video_id": youtube_result.video_id if youtube_result else "",
-                    "youtube_watch_url": youtube_result.watch_url if youtube_result else "",
-                    "youtube_studio_url": youtube_result.studio_url if youtube_result else "",
-                    "signed_url_created_at": current.isoformat(),
-                    "mail_status": "",
-                    "tts_mode": rendered.tts_mode,
-                },
-            )
-
-    mail_status = ""
-    if send_mail:
-        mail_status = send_approval_mail(
-            topic,
-            script,
-            signed_url=signed_url,
-            gcs_uri=gcs_uri,
-            youtube_watch_url=youtube_result.watch_url if youtube_result else "",
-            youtube_studio_url=youtube_result.studio_url if youtube_result else "",
-            youtube_publish_url=youtube_publish_url,
-            youtube_video_id=youtube_result.video_id if youtube_result else "",
-            dry_run=dry_run,
-        )
-
-    if live and bucket:
-        _write_history(
-            bucket,
-            date_key,
-                {
-                    "status": "sent"
-                    if mail_status == "sent"
-                    else ("youtube_private_uploaded" if youtube_result else "uploaded"),
-                    "topic_key": topic.topic_key,
-                    "player": topic.player,
-                    "title": script.title,
-                    "gcs_uri": gcs_uri,
-                    "youtube_video_id": youtube_result.video_id if youtube_result else "",
-                    "youtube_watch_url": youtube_result.watch_url if youtube_result else "",
-                    "youtube_studio_url": youtube_result.studio_url if youtube_result else "",
-                    "youtube_publish_url": youtube_publish_url,
-                    "youtube_upload_status": youtube_result.privacy_status if youtube_result else "",
-                    "signed_url_created_at": current.isoformat(),
-                    "mail_status": mail_status,
-                    "tts_mode": rendered.tts_mode,
-                },
-            )
-
-    return ShortsRunResult(
-        status="ok",
+    return _finish_run(
+        topic=topic,
+        script=script,
+        rendered=rendered,
+        run_dir=run_dir,
+        run_id=run_id,
+        bucket=bucket,
+        live=live,
         dry_run=dry_run,
-        topic_key=topic.topic_key,
-        title=script.title,
-        output_dir=str(run_dir),
-        video_path=str(rendered.video_path),
-        gcs_uri=gcs_uri,
-        signed_url=signed_url,
-        mail_status=mail_status,
-        tts_mode=rendered.tts_mode,
-        youtube_video_id=youtube_result.video_id if youtube_result else "",
-        youtube_watch_url=youtube_result.watch_url if youtube_result else "",
-        youtube_studio_url=youtube_result.studio_url if youtube_result else "",
-        youtube_publish_url=youtube_publish_url,
-        youtube_upload_status=youtube_result.privacy_status if youtube_result else "",
+        send_mail=send_mail,
+        youtube_private_upload=youtube_private_upload,
+        current=current,
+        date_key=date_key,
+        fmt="data",
+        youtube_tags=("巨人", "ジャイアンツ", "ヨシラバー", "shorts"),
     )
 
 
@@ -774,6 +921,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=_env_flag("YT_SHORTS_YOUTUBE_PRIVATE_UPLOAD"),
         help="In live mode, upload the MP4 to YouTube as private before sending approval mail.",
     )
+    parser.add_argument(
+        "--format",
+        choices=["data", "legend", "both"],
+        default=(os.environ.get("YT_SHORTS_FORMAT", "data") or "data"),
+        help="Which Shorts format(s) to generate. 'both' = data + 巨人レジェンド記録室.",
+    )
     return parser
 
 
@@ -787,37 +940,55 @@ def main(argv: list[str] | None = None) -> int:
         if args.topic_json_inline
         else (_load_notable_data_from_json(args.topic_json) if args.topic_json else None)
     )
-    try:
-        result = run(
-            live=args.live,
-            notable_data=notable_data,
-            output_dir=args.output_dir,
-            allow_silent_tts=args.allow_silent_tts,
-            send_mail=not args.no_mail,
-            voicevox_base_url=args.voicevox_url,
-            speaker=args.speaker,
-            bucket_name=args.bucket,
-            youtube_private_upload=args.youtube_private_upload,
-            ignore_daily_cap=args.ignore_daily_cap,
-            exclude_players=[name for raw in args.exclude_player for name in _split_csvish(raw)],
-            target_players=[name for raw in args.player for name in _split_csvish(raw)],
-            ffmpeg_bin=args.ffmpeg_bin,
-        )
-    except Exception as exc:  # noqa: BLE001
-        if args.live and not args.no_mail:
-            try:
-                _failure_mail(
-                    "【YT Shorts失敗】生成エラー",
-                    f"YouTube Shorts 生成に失敗しました。\n\nerror={exc!r}",
-                    dry_run=False,
-                )
-            except Exception:
-                pass
-        print(json.dumps({"status": "error", "error": repr(exc)}, ensure_ascii=False), file=sys.stderr)
-        return 1
+    formats = ["data", "legend"] if args.format == "both" else [args.format]
+    single = len(formats) == 1
+    results: list[dict[str, Any]] = []
+    exit_code = 0
+    ok_states = {"ok", "skipped", "no_topic"}
+    for fmt in formats:
+        try:
+            result = run(
+                live=args.live,
+                notable_data=notable_data if fmt == "data" else None,
+                output_dir=args.output_dir,
+                allow_silent_tts=args.allow_silent_tts,
+                send_mail=not args.no_mail,
+                voicevox_base_url=args.voicevox_url,
+                speaker=args.speaker,
+                bucket_name=args.bucket,
+                youtube_private_upload=args.youtube_private_upload,
+                ignore_daily_cap=args.ignore_daily_cap,
+                exclude_players=[name for raw in args.exclude_player for name in _split_csvish(raw)],
+                target_players=[name for raw in args.player for name in _split_csvish(raw)],
+                ffmpeg_bin=args.ffmpeg_bin,
+                fmt=fmt,
+            )
+        except Exception as exc:  # noqa: BLE001
+            if args.live and not args.no_mail:
+                try:
+                    _failure_mail(
+                        "【YT Shorts失敗】生成エラー",
+                        f"YouTube Shorts ({fmt}) 生成に失敗しました。\n\nerror={exc!r}",
+                        dry_run=False,
+                    )
+                except Exception:
+                    pass
+            if single:
+                print(json.dumps({"status": "error", "error": repr(exc)}, ensure_ascii=False), file=sys.stderr)
+                return 1
+            results.append({"format": fmt, "status": "error", "error": repr(exc)})
+            exit_code = 1
+            continue
 
-    print(json.dumps(asdict(result), ensure_ascii=False, indent=2))
-    return 0 if result.status in {"ok", "skipped", "no_topic"} else 1
+        if single:
+            print(json.dumps(asdict(result), ensure_ascii=False, indent=2))
+            return 0 if result.status in ok_states else 1
+        results.append({"format": fmt, **asdict(result)})
+        if result.status not in ok_states:
+            exit_code = 1
+
+    print(json.dumps(results, ensure_ascii=False, indent=2))
+    return exit_code
 
 
 if __name__ == "__main__":

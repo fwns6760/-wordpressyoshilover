@@ -300,13 +300,85 @@ def _draw_frame(topic: ShortsTopic, script: ShortsScript, index: int, path: Path
     img.save(path, "PNG")
 
 
-def render_frames(topic: ShortsTopic, script: ShortsScript, output_dir: Path | str) -> tuple[Path, ...]:
+def _legend_background():
+    from PIL import Image, ImageDraw
+
+    img = Image.new("RGB", (WIDTH, HEIGHT), "#141019")
+    draw = ImageDraw.Draw(img)
+    for y in range(0, HEIGHT, 8):
+        ratio = y / HEIGHT
+        r = int(20 + (34 - 20) * ratio)
+        g = int(16 + (22 - 16) * ratio)
+        b = int(12 + (14 - 12) * ratio)
+        draw.rectangle((0, y, WIDTH, y + 8), fill=(r, g, b))
+    return img, draw
+
+
+def _draw_legend_chrome(draw) -> None:
+    draw.rounded_rectangle((64, 64, WIDTH - 64, 164), radius=32, fill="#1c1814", outline="#f5c542", width=2)
+    draw.text((96, 116), "巨人レジェンド記録室", font=_font(34, bold=True), fill="#f5c542", anchor="lm")
+    draw.text((WIDTH - 96, 116), "by ヨシラバー", font=_font(22, bold=True), fill="#c9c4ba", anchor="rm")
+
+
+def _draw_legend_footer(draw) -> None:
+    draw.rectangle((0, HEIGHT - 168, WIDTH, HEIGHT), fill="#0f0c08")
+    draw.rectangle((0, HEIGHT - 168, WIDTH, HEIGHT - 156), fill="#f5c542")
+    draw.text((72, HEIGHT - 86), "巨人の記録室 → yoshilover.com/data/record?v=yt", font=_font(28, bold=True), fill="#ffffff", anchor="lm")
+
+
+def _draw_legend_frame(topic, script: ShortsScript, index: int, path: Path) -> None:
+    img, draw = _legend_background()
+    _draw_legend_chrome(draw)
+    name = topic.player
+    records = tuple(getattr(topic, "records", ()) or ())
+
+    if index == 0:
+        draw.text((WIDTH // 2, 320), "巨人レジェンド記録室", font=_font(64, bold=True), fill="#f5c542", anchor="ma")
+        draw.rounded_rectangle((150, 470, WIDTH - 150, 548), radius=36, fill="#ff7a1a")
+        draw.text((WIDTH // 2, 509), "今日の主役", font=_font(40, bold=True), fill="#ffffff", anchor="mm")
+        _draw_centered_lines(draw, _wrap_text(draw, name, _font(140, bold=True), 940, max_lines=2), 640, _font(140, bold=True), "#ffffff", gap=10)
+        _draw_centered_lines(draw, _wrap_text(draw, topic.giants_context, _font(40), 880, max_lines=3), 1080, _font(40), "#e8d9b0", gap=12)
+    elif index == 1:
+        draw.text((WIDTH // 2, 420), "巨人での歩み", font=_font(54, bold=True), fill="#f5c542", anchor="ma")
+        _draw_centered_lines(draw, _wrap_text(draw, topic.giants_context, _font(62, bold=True), 900, max_lines=4), 560, _font(62, bold=True), "#ffffff", gap=18)
+        if getattr(topic, "years", ""):
+            draw.text((WIDTH // 2, 1080), f"{topic.years}年", font=_font(48, bold=True), fill="#ff7a1a", anchor="ma")
+    elif index in (2, 3):
+        rec = records[index - 2] if len(records) > index - 2 else (records[-1] if records else None)
+        draw.text((WIDTH // 2, 400), "巨人時代の記録", font=_font(46, bold=True), fill="#f5c542", anchor="ma")
+        draw.rounded_rectangle((110, 540, WIDTH - 110, 1190), radius=54, fill="#1c1814", outline="#f5c542", width=4)
+        if rec is not None:
+            draw.text((WIDTH // 2, 660), rec.label, font=_font(56, bold=True), fill="#e8d9b0", anchor="ma")
+            _draw_centered_lines(draw, _wrap_text(draw, rec.value, _font(150, bold=True), 820, max_lines=2), 800, _font(150, bold=True), "#ffffff", gap=8)
+    else:
+        draw.text((WIDTH // 2, 430), "あなたにとって", font=_font(54, bold=True), fill="#ffffff", anchor="ma")
+        _draw_centered_lines(draw, _wrap_text(draw, name, _font(92, bold=True), 920, max_lines=2), 530, _font(92, bold=True), "#f5c542", gap=8)
+        draw.text((WIDTH // 2, 760), "は、巨人歴代何位？", font=_font(58, bold=True), fill="#ffffff", anchor="ma")
+        draw.rounded_rectangle((190, 900, WIDTH - 190, 982), radius=40, fill="#ff7a1a")
+        draw.text((WIDTH // 2, 941), "コメントで教えて", font=_font(40, bold=True), fill="#ffffff", anchor="mm")
+        draw.text((WIDTH // 2, 1080), "巨人の記録室はヨシラバーで", font=_font(36, bold=True), fill="#e8d9b0", anchor="ma")
+
+    caption = script.captions[min(index, len(script.captions) - 1)].text
+    draw.rounded_rectangle((74, HEIGHT - 340, WIDTH - 74, HEIGHT - 210), radius=36, fill="#1c1814", outline="#f5c542", width=3)
+    _draw_centered_lines(draw, _wrap_text(draw, caption, _font(38, bold=True), 840, max_lines=2), HEIGHT - 296, _font(38, bold=True), "#ffffff", gap=10)
+    _draw_legend_footer(draw)
+    img.save(path, "PNG")
+
+
+def render_frames(
+    topic: ShortsTopic,
+    script: ShortsScript,
+    output_dir: Path | str,
+    *,
+    fmt: str = "data",
+) -> tuple[Path, ...]:
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
+    draw_frame = _draw_legend_frame if fmt == "legend" else _draw_frame
     paths: list[Path] = []
     for index in range(5):
         path = out / f"frame_{index + 1:02d}.png"
-        _draw_frame(topic, script, index, path)
+        draw_frame(topic, script, index, path)
         paths.append(path)
     return tuple(paths)
 
@@ -606,11 +678,12 @@ def render_short(
     speaker: int = 13,
     allow_silent_tts: bool = False,
     ffmpeg_bin: str = "ffmpeg",
+    fmt: str = "data",
 ) -> RenderedShort:
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
     duration = float(sum(DEFAULT_FRAME_DURATIONS))
-    frames = render_frames(topic, script, out)
+    frames = render_frames(topic, script, out, fmt=fmt)
     audio_path, tts_mode = prepare_audio(
         script,
         out / "narration.wav",

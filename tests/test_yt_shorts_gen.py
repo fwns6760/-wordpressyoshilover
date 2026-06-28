@@ -355,7 +355,7 @@ class YtShortsGenTests(unittest.TestCase):
             },
         }
 
-        def fake_history(_bucket, day):
+        def fake_history(_bucket, day, fmt="data"):
             return used.get(day)
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -381,6 +381,35 @@ class YtShortsGenTests(unittest.TestCase):
 
             self.assertEqual(result.status, "ok")
             self.assertIn("岡本和真", result.title)
+
+    def test_legend_format_renders_from_injected_entries(self):
+        oh = {
+            "display_name": "王貞治",
+            "slug": "oh-sadaharu",
+            "type": "batter",
+            "years": "1959-1980",
+            "teams": "読売ジャイアンツ",
+            "npb": {"games": 2831, "avg": ".301", "hits": 2786, "hr": 868, "rbi": 2170},
+            "honors": ["通算868本塁打 (世界記録)"],
+            "kana": "おう さだはる",
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with mock.patch("src.yt_shorts_gen.render_short", return_value=_rendered(root)) as render_short:
+                result = run(
+                    live=False,
+                    output_dir=root,
+                    allow_silent_tts=True,
+                    send_mail=False,
+                    fmt="legend",
+                    legend_entries=[oh],
+                )
+
+            self.assertEqual(result.status, "ok")
+            self.assertIn("巨人レジェンド記録室", result.title)
+            self.assertIn("王貞治", result.title)
+            # render_short was asked for the legend frame format
+            self.assertEqual(render_short.call_args.kwargs.get("fmt"), "legend")
 
     def test_target_player_selects_requested_player(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -306,5 +306,27 @@ class YtShortsRenderTests(unittest.TestCase):
         self.assertEqual(query["speedScale"], 1.0)
 
 
+class FitDurationsToAudioTests(unittest.TestCase):
+    def test_short_audio_keeps_base_duration(self):
+        from src.yt_shorts_render import _fit_durations_to_audio
+
+        self.assertEqual(
+            _fit_durations_to_audio(DEFAULT_FRAME_DURATIONS, 20.0), DEFAULT_FRAME_DURATIONS
+        )
+
+    def test_long_audio_stretches_to_cover_narration(self):
+        from src.yt_shorts_render import _fit_durations_to_audio
+
+        out = _fit_durations_to_audio(DEFAULT_FRAME_DURATIONS, 34.0)
+        self.assertEqual(len(out), len(DEFAULT_FRAME_DURATIONS))
+        self.assertGreaterEqual(sum(out), 34.0)
+
+    def test_pathological_audio_is_capped(self):
+        from src.yt_shorts_render import _fit_durations_to_audio, MAX_SHORT_SECONDS
+
+        out = _fit_durations_to_audio(DEFAULT_FRAME_DURATIONS, 200.0)
+        self.assertLessEqual(sum(out), MAX_SHORT_SECONDS + 0.01)
+
+
 if __name__ == "__main__":
     unittest.main()

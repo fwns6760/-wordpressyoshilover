@@ -865,6 +865,44 @@ def compose_video(
     return target
 
 
+def _wav_duration(path: Path | str) -> float:
+    """WAV の実尺(秒)。読めなければ 0.0。"""
+    try:
+        with wave.open(str(path), "rb") as w:
+            framerate = w.getframerate()
+            return (w.getnframes() / float(framerate)) if framerate else 0.0
+    except Exception:
+        return 0.0
+
+
+# YouTube Shorts の上限内に収める動画尺の上限(秒)。ナレーションがこれを超える
+# 異常ケースだけは尺を頭打ちにする(通常は 30 秒前後で収まる)。
+MAX_SHORT_SECONDS = 58.0
+AUDIO_TAIL_SECONDS = 0.6
+
+
+def _fit_durations_to_audio(
+    base: tuple[float, ...],
+    audio_seconds: float,
+    *,
+    tail: float = AUDIO_TAIL_SECONDS,
+    max_total: float = MAX_SHORT_SECONDS,
+) -> tuple[float, ...]:
+    """ナレーション実尺に合わせてフレーム尺を比例伸縮し、音声の途中切れを防ぐ。
+
+    音声が既定尺(約27秒)に収まるなら base のまま。長い時だけ全フレームを
+    比例して伸ばす(Ken Burns / caption の対応はフレーム単位なので崩れない)。
+    """
+    base_total = float(sum(base))
+    if base_total <= 0 or audio_seconds <= 0:
+        return tuple(base)
+    target = min(max_total, audio_seconds + tail)
+    if target <= base_total:
+        return tuple(base)
+    scale = target / base_total
+    return tuple(round(d * scale, 3) for d in base)
+
+
 def render_short(
     topic: ShortsTopic,
     script: ShortsScript,
@@ -888,12 +926,16 @@ def render_short(
         speaker=speaker,
         allow_silent=allow_silent_tts,
     )
+    # ナレーション実尺に動画尺を合わせる(固定 27 秒だと長い台本が途中で切れるため)。
+    durations = _fit_durations_to_audio(DEFAULT_FRAME_DURATIONS, _wav_duration(audio_path))
+    duration = float(sum(durations))
     audio_filter = _audio_filter_for_style(tts_mode)
     bgm_path, bgm_style = _prepare_bgm(out, duration_seconds=duration)
     video_path = compose_video(
         frames,
         audio_path,
         out / "short.mp4",
+        durations=durations,
         ffmpeg_bin=ffmpeg_bin,
         audio_filter=audio_filter,
         bgm_path=bgm_path,

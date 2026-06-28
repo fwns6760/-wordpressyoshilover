@@ -10,11 +10,17 @@ class CommonsLicenseGateTests(unittest.TestCase):
         self.assertTrue(is_commercial_free("cc-by-4.0", "CC BY 4.0"))
         self.assertTrue(is_commercial_free("cc-by-sa-4.0", "CC BY-SA 4.0"))
         self.assertTrue(is_commercial_free("cc-by-sa-3.0", "CC BY-SA 3.0"))
+        self.assertTrue(is_commercial_free("cc-by-sa-2.0", "CC BY-SA 2.0"))
+        # 王貞治 等の "Attribution"(無印 = free)を取りこぼさない
+        self.assertTrue(is_commercial_free("", "Attribution"))
 
     def test_rejects_noncommercial_and_noderiv_and_nonfree(self):
         self.assertFalse(is_commercial_free("cc-by-nc-4.0", "CC BY-NC 4.0"))
         self.assertFalse(is_commercial_free("cc-by-nc-sa-4.0", "CC BY-NC-SA 4.0"))
         self.assertFalse(is_commercial_free("cc-by-nd-4.0", "CC BY-ND 4.0"))
+        # short name 表記(machine code 無し)でも NC/ND を弾く
+        self.assertFalse(is_commercial_free("", "Attribution-NonCommercial-ShareAlike 4.0"))
+        self.assertFalse(is_commercial_free("", "Attribution-NoDerivs 3.0"))
         self.assertFalse(is_commercial_free("", "Fair use"))
         self.assertFalse(is_commercial_free("", "All rights reserved"))
         self.assertFalse(is_commercial_free("", ""))

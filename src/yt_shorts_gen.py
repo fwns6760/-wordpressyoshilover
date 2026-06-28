@@ -630,6 +630,20 @@ def _with_ranking_images(topic):
     return _replace(topic, entries=tuple(new_entries))
 
 
+def _with_legend_image(topic):
+    """レジェンド主役に Commons の free ライセンス写真(要クレジット)を付与。
+
+    OB は自社 eyecatch map に無いため Commons free 写真のみ。license を確認した
+    商用可の写真だけ採用し、無ければ image_url 空のまま(記録カードで見せる)。
+    """
+    from dataclasses import replace as _replace
+
+    url, credit = _ranking_player_photo(topic.player)
+    if not url:
+        return topic
+    return _replace(topic, image_url=url, credit=credit)
+
+
 def _finish_run(
     *,
     topic,
@@ -826,6 +840,7 @@ def run(
             return ShortsRunResult(status="no_topic", dry_run=dry_run, reason="empty_legend_data")
         from src.yt_shorts_legend import build_legend_script
 
+        topic = _with_legend_image(topic)
         script = build_legend_script(topic)
         run_id = f"{date_key}-{_safe_id(topic.topic_key)}"
         run_dir = Path(output_dir) / run_id

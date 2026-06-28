@@ -31,9 +31,18 @@ USER_AGENT = (
 DEFAULT_CACHE_DIR = Path("/tmp/yt_shorts_commons")
 
 # 商用利用OKと判定する license コード/語(machine code or short name の小文字)。
-_FREE_HINTS = ("cc0", "cc-by", "cc by", "public domain", "publicdomain", "pdm", "pd-")
+# "attribution" = CC Attribution(無印 = free), "gfdl" = 商用可(継承条件付き)。
+_FREE_HINTS = (
+    "cc0", "cc-by", "cc by", "public domain", "publicdomain", "pdm", "pd-",
+    "attribution", "gfdl",
+)
 # これを含むものは弾く: 非営利(NC) / 改変禁止(ND) / 非free / fair use。
-_BLOCK_HINTS = ("nc", "nd", "non-free", "nonfree", "fair use", "fairuse", "all rights reserved")
+# machine code("cc-by-nc-sa-4.0")と short name("...NonCommercial...")両対応。
+_BLOCK_HINTS = (
+    "noncommercial", "non-commercial", "by-nc", "-nc-", "-nc.", "-nc ",
+    "noderiv", "no-deriv", "by-nd", "-nd-", "-nd.", "-nd ",
+    "non-free", "nonfree", "fair use", "fairuse", "all rights reserved",
+)
 
 
 @dataclass(frozen=True)
@@ -57,13 +66,8 @@ def is_commercial_free(license_code: str, short_name: str = "") -> bool:
     if not blob.strip():
         return False
     # ND / NC / 非free を最優先で弾く(CC BY-NC-SA 等の取りこぼし防止)。
-    for bad in _BLOCK_HINTS:
-        if bad == "nc" or bad == "nd":
-            # 単語/ハイフン境界で判定(domain の "nd" 誤検出を避ける)。
-            if re.search(rf"(?<![a-z]){bad}(?![a-z])", blob):
-                return False
-        elif bad in blob:
-            return False
+    if any(bad in blob for bad in _BLOCK_HINTS):
+        return False
     return any(hint in blob for hint in _FREE_HINTS)
 
 

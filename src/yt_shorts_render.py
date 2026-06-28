@@ -362,11 +362,16 @@ def _draw_legend_frame(topic, script: ShortsScript, index: int, path: Path) -> N
     records = tuple(getattr(topic, "records", ()) or ())
 
     if index == 0:
-        draw.text((WIDTH // 2, 320), "巨人レジェンド記録室", font=_font(64, bold=True), fill="#f5c542", anchor="ma")
-        draw.rounded_rectangle((150, 470, WIDTH - 150, 548), radius=36, fill="#ff7a1a")
-        draw.text((WIDTH // 2, 509), "今日の主役", font=_font(40, bold=True), fill="#ffffff", anchor="mm")
-        _draw_centered_lines(draw, _wrap_text(draw, name, _font(140, bold=True), 940, max_lines=2), 640, _font(140, bold=True), "#ffffff", gap=10)
-        _draw_centered_lines(draw, _wrap_text(draw, topic.giants_context, _font(40), 880, max_lines=3), 1080, _font(40), "#e8d9b0", gap=12)
+        img_url = getattr(topic, "image_url", "")
+        draw.text((WIDTH // 2, 250), "巨人レジェンド記録室", font=_font(58, bold=True), fill="#f5c542", anchor="ma")
+        draw.rounded_rectangle((150, 372, WIDTH - 150, 448), radius=36, fill="#ff7a1a")
+        draw.text((WIDTH // 2, 410), "今日の主役", font=_font(40, bold=True), fill="#ffffff", anchor="mm")
+        if img_url:
+            _draw_photo_card(img, draw, url=img_url, name=name, x=290, y=500, width=500, height=620, name_size=46)
+            _draw_legend_credit(img, draw, getattr(topic, "credit", ""))
+        else:
+            _draw_centered_lines(draw, _wrap_text(draw, name, _font(140, bold=True), 940, max_lines=2), 560, _font(140, bold=True), "#ffffff", gap=10)
+            _draw_centered_lines(draw, _wrap_text(draw, topic.giants_context, _font(40), 880, max_lines=3), 1000, _font(40), "#e8d9b0", gap=12)
     elif index == 1:
         draw.text((WIDTH // 2, 420), "巨人での歩み", font=_font(54, bold=True), fill="#f5c542", anchor="ma")
         _draw_centered_lines(draw, _wrap_text(draw, topic.giants_context, _font(62, bold=True), 900, max_lines=4), 560, _font(62, bold=True), "#ffffff", gap=18)
@@ -392,6 +397,16 @@ def _draw_legend_frame(topic, script: ShortsScript, index: int, path: Path) -> N
     _draw_centered_lines(draw, _wrap_text(draw, caption, _font(38, bold=True), 840, max_lines=2), HEIGHT - 296, _font(38, bold=True), "#ffffff", gap=10)
     _draw_legend_footer(draw)
     img.save(path, "PNG")
+
+
+def _draw_legend_credit(canvas, draw, credit: str) -> None:
+    """CC ライセンス写真の帰属クレジットを暗色背景に小さく表示(空なら何もしない)。"""
+    text = str(credit or "").strip()
+    if not text:
+        return
+    lines = _wrap_text(draw, text, _font(22), WIDTH - 200, max_lines=1)
+    if lines:
+        draw.text((WIDTH // 2, HEIGHT - 372), lines[0], font=_font(22), fill="#b6a98c", anchor="ma")
 
 
 def _draw_ranking_chrome(draw) -> None:

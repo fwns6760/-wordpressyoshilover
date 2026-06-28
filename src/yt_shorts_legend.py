@@ -75,6 +75,8 @@ class LegendTopic:
     source_url: str = LEGEND_SOURCE_URL
     raw_item: dict[str, Any] = field(default_factory=dict)
     as_of: str = ""        # レジェンドは timeless。記録日 chrome は出さない。
+    image_url: str = ""    # Commons の free ライセンス写真(無ければ空 → 記録カード)。
+    credit: str = ""       # 写真クレジット(CC 帰属表示)。
 
     @property
     def topic_key(self) -> str:
@@ -268,10 +270,12 @@ def build_legend_script(topic: LegendTopic) -> ShortsScript:
     honor_block = ""
     if topic.honors:
         honor_block = "\n".join(f"・{h}" for h in topic.honors[:4]) + "\n\n"
+    credit_block = (topic.credit.strip() + "\n\n") if topic.credit.strip() else ""
     desc_branding = (
         "\n\n"
         f"{BRAND_LINE}\n"
         "巨人特化メディア「ヨシラバー」が、巨人レジェンドを記録で再評価する Shorts。\n\n"
+        + credit_block
         + honor_block
         + f"▼巨人の記録室・選手データ\n{DATA_URL}\n\n"
         f"▼巨人ニュース・速報\n{SITE_URL}\n\n"

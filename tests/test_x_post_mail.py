@@ -12,11 +12,13 @@ from src.x_post_mail_lane import (
     JST,
     X_CHAR_LIMIT,
     Candidate,
+    apply_x_impression_policy,
     _candidate_anomaly_flags,
     _candidate_source_kind,
     _sample_threshold_label,
     _source_mix_summary,
     _load_giants_player_aliases,
+    _normalize_player_name,
     build_comment_numeric_candidate,
     build_news_opinion_candidate,
     build_subject,
@@ -1247,6 +1249,37 @@ class ComposeMailTests(unittest.TestCase):
         self.assertIn("hard:team_level_unknown", _candidate_anomaly_flags(unknown_b))
         self.assertIn("hard:sample_too_small:2<10", _candidate_anomaly_flags(low_sample_b))
 
+    def test_impression_policy_drops_recently_shown_players_across_lanes(self) -> None:
+        ts = datetime(2026, 6, 28, 12, 0, tzinfo=JST)
+        # 直近メールで井上・浦田を既出 → 別レーン (buzz/コメント/画像) でも全部外れる。
+        recent = {"井上温大", "浦田俊輔"}
+        cands = [
+            Candidate("buzz井上", "x_buzz_post", "引用RT候補", "根拠", 5,
+                      post_text="井上の話題 #巨人", focus_player="井上温大"),
+            Candidate("コメント浦田", "player_comment", "コメント", "根拠", 3,
+                      post_text="浦田のコメント #巨人", focus_player="浦田俊輔"),
+            Candidate("写真井上", "record_article", "写真", "根拠", 3,
+                      post_text="井上の写真 #巨人", focus_player="井上温大"),
+            Candidate("新規大城", "OPS", "直近5試合", "根拠", 80,
+                      post_text="大城の記録 #巨人", focus_player="大城卓三"),
+        ]
+        kept, dropped = apply_x_impression_policy(cands, now=ts, recent_player_keys=recent)
+        kept_players = {_normalize_player_name(c.focus_player) for c in kept}
+        self.assertNotIn(_normalize_player_name("井上温大"), kept_players)
+        self.assertNotIn(_normalize_player_name("浦田俊輔"), kept_players)
+        self.assertIn(_normalize_player_name("大城卓三"), kept_players)
+        reasons = {r for _c, r in dropped}
+        self.assertIn("dedup_player_recent", reasons)
+
+    def test_impression_policy_recent_filter_exempts_reply_lane(self) -> None:
+        ts = datetime(2026, 6, 28, 12, 0, tzinfo=JST)
+        from src.x_post_mail_lane import _REPLY_CANDIDATE_METRIC
+        recent = {_normalize_player_name("井上温大")}
+        reply = Candidate("リプ井上", _REPLY_CANDIDATE_METRIC, "リプ", "根拠", 3,
+                          post_text="井上へのリプ #巨人", focus_player="井上温大")
+        kept, _dropped = apply_x_impression_policy([reply], now=ts, recent_player_keys=recent)
+        self.assertEqual(len(kept), 1)  # 返信レーンは直近既出でも残す
+
     def test_source_mix_summary_flags_low_source_b_ratio(self) -> None:
         cands = [
             Candidate("A1", "NEWS_OPINION", "ニュース", "根拠", 3, post_text="短い。"),
@@ -1356,6 +1389,28 @@ class ComposeMailTests(unittest.TestCase):
         self.assertIn("📮 巨人Xポスト案", mail.text_body)
         self.assertNotIn("📮 巨人データXポスト案", mail.text_body)
         self.assertIn("📮 巨人Xポスト案", mail.html_body)
+
+    def test_record_news_candidate_uses_record_phrase_from_source_title(self) -> None:
+        ts = datetime(2026, 5, 18, 7, 0, tzinfo=JST)
+        cand = build_news_opinion_candidate(
+            source_title="巨人・岸田行倫がプロ初本塁打達成",
+            source_url="https://example.test/giants-kishida-record",
+            source_name="テスト新聞",
+            source_excerpt="岸田行倫の節目を伝える記事。",
+            player_name="岸田行倫",
+            now=ts,
+        )
+        self.assertIsNotNone(cand)
+        assert cand is not None
+        self.assertEqual(cand.metric, "NEWS_OPINION")
+        self.assertEqual(cand.source_material_type, "record")
+        self.assertIn("要確認: 数値未照合｜記録/節目案｜岸田行倫", cand.title)
+        self.assertIn("岸田行倫、プロ初本塁打達成", cand.post_text)
+        self.assertIn("次の打席", cand.post_text)
+        self.assertNotIn("あと", cand.post_text)
+        self.assertNotIn("https://example.test/giants-kishida-record", cand.post_text)
+        self.assertIn("材料種別: 記録/節目 (record)", cand.draft_text)
+        self.assertIn("元記事タイトル: 巨人・岸田行倫がプロ初本塁打達成", cand.draft_text)
 
     def test_gemini_branding_mix_uses_news_label(self) -> None:
         # 仕様: news 派生候補 (article_info_branding=GEMMA_BRANDING) は
@@ -2509,6 +2564,14 @@ class XPostMailEntrypointFreshnessTests(unittest.TestCase):
             return_value=[data_cand],
         ), patch.object(
             run_x_post_mail,
+            "_fetch_player_comment_priority_candidates",
+            return_value=[],
+        ), patch.object(
+            run_x_post_mail,
+            "_fetch_record_article_priority_candidates",
+            return_value=[],
+        ), patch.object(
+            run_x_post_mail,
             "_fetch_news_opinion_fallback_candidates",
             return_value=[news_cand],
         ) as fallback, patch.object(
@@ -2590,6 +2653,14 @@ class XPostMailEntrypointFreshnessTests(unittest.TestCase):
             return_value=data_cands,
         ), patch.object(
             run_x_post_mail,
+            "_fetch_player_comment_priority_candidates",
+            return_value=[],
+        ), patch.object(
+            run_x_post_mail,
+            "_fetch_record_article_priority_candidates",
+            return_value=[],
+        ), patch.object(
+            run_x_post_mail,
             "_fetch_news_opinion_fallback_candidates",
             return_value=[news_cand],
         ), patch.object(
@@ -2610,6 +2681,232 @@ class XPostMailEntrypointFreshnessTests(unittest.TestCase):
         )
         # 382 系: no #巨人 hashtag in post bodies.
         self.assertNotIn("#巨人", request.text_body)
+
+    def test_player_comment_priority_prefers_scraped_comment_over_full_data_mail(self) -> None:
+        """満枠DB候補があっても、本文スクレイプの本人コメントを先頭側に入れる。"""
+        from src.tools import run_x_post_mail
+
+        data_cands = [
+            Candidate(
+                title=f"DB候補 {idx}",
+                metric="OPS",
+                period_label="直近5試合",
+                draft_text=f"DB候補 {idx}",
+                post_text=f"DB投稿 {idx}",
+                char_count=len(f"DB投稿 {idx}"),
+                signature=f"data-sig-{idx}",
+                focus_player="岸田行倫" if idx == 1 else f"DB選手{idx}",
+            )
+            for idx in range(1, 4)
+        ]
+        comment_text = (
+            "岸田行倫『投手が粘ってくれていたので、何とか追加点につなげたいと思っていました。"
+            "次も任せてもらえるように、準備から変えずにやっていきたいです』"
+        )
+        comment_cand = Candidate(
+            title="(コメント速報) 岸田行倫",
+            metric="PLAYER_COMMENT",
+            period_label="本人コメント",
+            draft_text=(
+                "【根拠: 記事本文の本人発言 (literal)】\n"
+                "添付画像: https://img.example.test/kishida.jpg\n\n"
+                f"{comment_text}"
+            ),
+            post_text=comment_text,
+            char_count=len(comment_text),
+            signature="player_comment|kishida",
+            focus_player="岸田行倫",
+            source_material_type="player_comment",
+            image_bytes=b"\xff\xd8\xffcomment-image",
+            image_source_url="https://img.example.test/kishida.jpg",
+        )
+        send_result = run_x_post_mail.mdb.MailResult(
+            status="sent",
+            refused_recipients={},
+            smtp_response=[],
+            reason=None,
+        )
+        with patch.dict(
+            "os.environ",
+            {
+                "MAIL_BRIDGE_TO": "ops@example.test",
+                "X_POST_MAIL_DEDUP_DISABLED": "1",
+                "X_POST_MAIL_LINEUP_FOCUS_DISABLED": "1",
+                "X_POST_MAIL_PLAYER_COMMENT_PRIORITY_CANDIDATES": "1",
+                "X_POST_MAIL_VOICE_ONLY": "0",
+            },
+            clear=False,
+        ), patch.object(
+            run_x_post_mail.miq,
+            "ensure_local_db",
+            return_value={"ok": True, "path": "/tmp/insight.db"},
+        ), patch.object(
+            run_x_post_mail.lane,
+            "query_db_latest_game_date",
+            return_value="2026-05-16",
+        ), patch.object(
+            run_x_post_mail.lane,
+            "db_staleness_days",
+            return_value=0,
+        ), patch.object(
+            run_x_post_mail.lane,
+            "pick_candidates",
+            return_value=data_cands,
+        ), patch.object(
+            run_x_post_mail,
+            "_fetch_player_comment_priority_candidates",
+            return_value=[comment_cand],
+        ) as comment_priority, patch.object(
+            run_x_post_mail,
+            "_fetch_record_article_priority_candidates",
+            return_value=[],
+        ), patch.object(
+            run_x_post_mail,
+            "_fetch_news_opinion_fallback_candidates",
+            return_value=[],
+        ) as generic_fallback, patch.object(
+            run_x_post_mail.mdb,
+            "send",
+            return_value=send_result,
+        ) as send:
+            result = run_x_post_mail.main(["--max-candidates", "3"])
+
+        self.assertEqual(result, 0)
+        comment_priority.assert_called_once()
+        generic_fallback.assert_not_called()
+        request = send.call_args.args[0]
+        self.assertEqual(request.metadata["candidate_count"], 3)
+        self.assertIn("岸田行倫『", request.text_body)
+        self.assertIn("https://img.example.test/kishida.jpg", request.text_body)
+        self.assertLess(
+            request.text_body.index("岸田行倫『"),
+            request.text_body.index("DB候補 2"),
+        )
+
+    def test_record_article_priority_prefers_source_record_over_full_data_mail(self) -> None:
+        """満枠DB候補があっても、記事に出ている記録/節目を先頭側に入れる。"""
+        from src.tools import run_x_post_mail
+
+        data_cands = [
+            Candidate(
+                title=f"DB候補 {idx}",
+                metric="OPS",
+                period_label="直近5試合",
+                draft_text=f"DB候補 {idx}",
+                post_text=f"DB投稿 {idx}",
+                char_count=len(f"DB投稿 {idx}"),
+                signature=f"data-sig-{idx}",
+                focus_player="岸田行倫" if idx == 1 else f"DB選手{idx}",
+            )
+            for idx in range(1, 4)
+        ]
+        record_cand = build_news_opinion_candidate(
+            source_title="巨人・岸田行倫がプロ初本塁打達成",
+            source_url="https://example.test/kishida-record",
+            source_name="テスト新聞",
+            source_excerpt="岸田行倫の節目を伝える記事。",
+            player_name="岸田行倫",
+        )
+        assert record_cand is not None
+        send_result = run_x_post_mail.mdb.MailResult(
+            status="sent",
+            refused_recipients={},
+            smtp_response=[],
+            reason=None,
+        )
+        with patch.dict(
+            "os.environ",
+            {
+                "MAIL_BRIDGE_TO": "ops@example.test",
+                "X_POST_MAIL_DEDUP_DISABLED": "1",
+                "X_POST_MAIL_LINEUP_FOCUS_DISABLED": "1",
+                "X_POST_MAIL_RECORD_ARTICLE_PRIORITY_CANDIDATES": "1",
+                "X_POST_MAIL_VOICE_ONLY": "0",
+            },
+            clear=False,
+        ), patch.object(
+            run_x_post_mail.miq,
+            "ensure_local_db",
+            return_value={"ok": True, "path": "/tmp/insight.db"},
+        ), patch.object(
+            run_x_post_mail.lane,
+            "query_db_latest_game_date",
+            return_value="2026-05-16",
+        ), patch.object(
+            run_x_post_mail.lane,
+            "db_staleness_days",
+            return_value=0,
+        ), patch.object(
+            run_x_post_mail.lane,
+            "pick_candidates",
+            return_value=data_cands,
+        ), patch.object(
+            run_x_post_mail,
+            "_fetch_player_comment_priority_candidates",
+            return_value=[],
+        ), patch.object(
+            run_x_post_mail,
+            "_fetch_record_article_priority_candidates",
+            return_value=[record_cand],
+        ) as record_priority, patch.object(
+            run_x_post_mail,
+            "_fetch_news_opinion_fallback_candidates",
+            return_value=[],
+        ) as generic_fallback, patch.object(
+            run_x_post_mail.mdb,
+            "send",
+            return_value=send_result,
+        ) as send:
+            result = run_x_post_mail.main(["--max-candidates", "3"])
+
+        self.assertEqual(result, 0)
+        record_priority.assert_called_once()
+        generic_fallback.assert_not_called()
+        request = send.call_args.args[0]
+        self.assertEqual(request.metadata["candidate_count"], 3)
+        self.assertIn("岸田行倫、プロ初本塁打達成", request.text_body)
+        self.assertLess(
+            request.text_body.index("プロ初本塁打達成"),
+            request.text_body.index("DB候補 2"),
+        )
+
+    def test_fetch_record_article_priority_uses_feed_title_only(self) -> None:
+        """記録優先枠はDBを掘らず、RSS/title/excerptに出た節目だけを採用する。"""
+        from src.tools import run_x_post_mail
+
+        entries = [
+            {
+                "title": "巨人・岸田行倫がプロ初本塁打達成",
+                "link": "https://example.test/kishida-record",
+                "summary": "岸田行倫が節目の一発を放った。",
+                "published": "Mon, 18 May 2026 03:00:00 GMT",
+            },
+            {
+                "title": "巨人・岸田行倫が練習で汗",
+                "link": "https://example.test/kishida-practice",
+                "summary": "記録や節目ではない通常記事。",
+                "published": "Mon, 18 May 2026 03:00:00 GMT",
+            },
+        ]
+        with patch.object(
+            run_x_post_mail,
+            "_load_news_fallback_sources",
+            return_value=[{"name": "テスト新聞", "url": "https://example.test/feed"}],
+        ), patch.object(
+            run_x_post_mail,
+            "_fetch_feed_entries",
+            return_value=entries,
+        ):
+            cands = run_x_post_mail._fetch_record_article_priority_candidates(
+                [],
+                max_records=1,
+                now=datetime(2026, 5, 18, 13, 7, tzinfo=JST),
+            )
+
+        self.assertEqual(len(cands), 1)
+        self.assertEqual(cands[0].source_material_type, "record")
+        self.assertIn("プロ初本塁打達成", cands[0].post_text)
+        self.assertNotIn("あと", cands[0].post_text)
 
     def test_news_priority_merge_prefers_short_mail_over_same_player_repeat(self) -> None:
         """436 follow-up: 枠埋め目的で同じ選手を復活させない。"""
@@ -2733,6 +3030,182 @@ class XPostMailEntrypointFreshnessTests(unittest.TestCase):
         tag_fetch.assert_called_once()
         players = [lane._normalize_player_name(c.focus_player) for c in cands]
         self.assertEqual(players, ["岸田行倫"])
+
+    def test_news_opinion_fallback_prefers_literal_comment_with_image(self) -> None:
+        """長い本人コメントが取れた記事は抽象ニュース案ではなく画像付きコメント案にする。"""
+        from src.tools import run_x_post_mail
+
+        entries = [
+            {
+                "title": "巨人・岸田行倫が試合後にコメント",
+                "link": "https://example.test/kishida-comment",
+                "summary": "岸田行倫のコメント",
+                "published": "Mon, 18 May 2026 03:00:00 GMT",
+            }
+        ]
+        html = (
+            "<html><body>岸田行倫捕手は試合後、"
+            "「投手が粘ってくれていたので、何とか追加点につなげたいと思っていました。"
+            "次も任せてもらえるように、準備から変えずにやっていきたいです」"
+            "と話した。</body></html>"
+        )
+        comment_fn = MagicMock(side_effect=AssertionError("generic news voice should not run"))
+        with patch.object(
+            run_x_post_mail,
+            "_load_news_fallback_sources",
+            return_value=[{"name": "テスト新聞", "url": "https://example.test/feed"}],
+        ), patch.object(
+            run_x_post_mail,
+            "_fetch_feed_entries",
+            return_value=entries,
+        ), patch.object(
+            run_x_post_mail,
+            "_fetch_comment_article_material",
+            return_value=(html, b"\xff\xd8\xffcomment-image", "https://img.example.test/kishida.jpg"),
+        ):
+            cands = run_x_post_mail._fetch_news_opinion_fallback_candidates(
+                [],
+                max_candidates=1,
+                now=datetime(2026, 5, 18, 13, 7, tzinfo=JST),
+                comment_fn=comment_fn,
+            )
+
+        self.assertEqual(len(cands), 1)
+        self.assertEqual(cands[0].metric, "PLAYER_COMMENT")
+        self.assertEqual(cands[0].image_bytes, b"\xff\xd8\xffcomment-image")
+        self.assertEqual(cands[0].image_source_url, "https://img.example.test/kishida.jpg")
+        self.assertIn("岸田行倫『", cands[0].post_text)
+        self.assertNotIn("巨人・岸田行倫が試合後にコメント", cands[0].post_text)
+        comment_fn.assert_not_called()
+
+    def test_literal_comment_bypasses_recent_history_player(self) -> None:
+        """同じ選手の直近履歴が多くても、本人コメントそのものは別物として残す。"""
+        from src.tools import run_x_post_mail
+
+        entries = [
+            {
+                "title": "巨人・竹丸和幸が8回力投",
+                "link": "https://example.test/takemaru-comment",
+                "summary": "竹丸和幸の試合後記事。",
+                "published": "Mon, 18 May 2026 03:00:00 GMT",
+            }
+        ]
+        html = (
+            "<html><body>竹丸和幸投手は試合後、"
+            "「8イニングはアマ時代含めて結構久々だったんですけど、思ったよりいけるなと。"
+            "きょうぐらいテンポよくいければ、それなりにイニングが食えるのかなとは思います」"
+            "と振り返った。</body></html>"
+        )
+        with patch.object(
+            run_x_post_mail,
+            "_load_news_fallback_sources",
+            return_value=[{"name": "テスト新聞", "url": "https://example.test/feed"}],
+        ), patch.object(
+            run_x_post_mail,
+            "_fetch_feed_entries",
+            return_value=entries,
+        ), patch.object(
+            run_x_post_mail,
+            "_fetch_comment_article_material",
+            return_value=(html, b"\xff\xd8\xffcomment-image", "https://img.example.test/takemaru.jpg"),
+        ):
+            cands = run_x_post_mail._fetch_news_opinion_fallback_candidates(
+                [],
+                max_candidates=1,
+                now=datetime(2026, 5, 18, 13, 7, tzinfo=JST),
+                recent_player_counts={"竹丸和幸": 14},
+            )
+
+        self.assertEqual(len(cands), 1)
+        self.assertEqual(cands[0].metric, "PLAYER_COMMENT")
+        self.assertEqual(cands[0].focus_player, "竹丸和幸")
+        self.assertEqual(cands[0].image_source_url, "https://img.example.test/takemaru.jpg")
+
+    def test_literal_comment_skips_existing_dedup_signature(self) -> None:
+        """同じ記事URL・発言者の本人コメントは、送信済み signature があれば再掲しない。"""
+        from src.tools import run_x_post_mail
+
+        entries = [
+            {
+                "title": "巨人・竹丸和幸が8回力投",
+                "link": "https://example.test/takemaru-comment",
+                "summary": "竹丸和幸の試合後記事。",
+                "published": "Mon, 18 May 2026 03:00:00 GMT",
+            }
+        ]
+        html = (
+            "<html><body>竹丸和幸投手は試合後、"
+            "「8イニングはアマ時代含めて結構久々だったんですけど、思ったよりいけるなと。"
+            "きょうぐらいテンポよくいければ、それなりにイニングが食えるのかなとは思います」"
+            "と振り返った。</body></html>"
+        )
+        common_patches = (
+            patch.object(
+                run_x_post_mail,
+                "_load_news_fallback_sources",
+                return_value=[{"name": "テスト新聞", "url": "https://example.test/feed"}],
+            ),
+            patch.object(run_x_post_mail, "_fetch_feed_entries", return_value=entries),
+            patch.object(
+                run_x_post_mail,
+                "_fetch_comment_article_material",
+                return_value=(html, b"\xff\xd8\xffcomment-image", "https://img.example.test/takemaru.jpg"),
+            ),
+        )
+        with common_patches[0], common_patches[1], common_patches[2]:
+            first = run_x_post_mail._fetch_news_opinion_fallback_candidates(
+                [],
+                max_candidates=1,
+                now=datetime(2026, 5, 18, 13, 7, tzinfo=JST),
+            )
+
+        self.assertEqual(len(first), 1)
+        with common_patches[0], common_patches[1], common_patches[2]:
+            repeated = run_x_post_mail._fetch_news_opinion_fallback_candidates(
+                [],
+                max_candidates=1,
+                now=datetime(2026, 5, 18, 14, 7, tzinfo=JST),
+                dedup_set={first[0].signature},
+            )
+
+        self.assertEqual(repeated, [])
+
+    def test_comments_only_fallback_does_not_create_generic_news_candidate(self) -> None:
+        """コメント専用スクレイプでは、引用が取れない記事を抽象ニュース案に変えない。"""
+        from src.tools import run_x_post_mail
+
+        entries = [
+            {
+                "title": "巨人・岸田行倫が攻守で存在感",
+                "link": "https://example.test/kishida-news",
+                "summary": "岸田行倫の話題",
+                "published": "Mon, 18 May 2026 03:00:00 GMT",
+            }
+        ]
+        comment_fn = MagicMock(side_effect=AssertionError("generic news voice should not run"))
+        with patch.object(
+            run_x_post_mail,
+            "_load_news_fallback_sources",
+            return_value=[{"name": "テスト新聞", "url": "https://example.test/feed"}],
+        ), patch.object(
+            run_x_post_mail,
+            "_fetch_feed_entries",
+            return_value=entries,
+        ), patch.object(
+            run_x_post_mail,
+            "_fetch_comment_article_material",
+            return_value=("<html><body>岸田行倫の本文。本人の長い発言はない。</body></html>", b"", ""),
+        ):
+            cands = run_x_post_mail._fetch_news_opinion_fallback_candidates(
+                [],
+                max_candidates=1,
+                now=datetime(2026, 5, 18, 13, 7, tzinfo=JST),
+                comment_fn=comment_fn,
+                comments_only=True,
+            )
+
+        self.assertEqual(cands, [])
+        comment_fn.assert_not_called()
 
 
 class TicketThreeFiftyFiveDedupTests(unittest.TestCase):
@@ -3605,16 +4078,19 @@ class BuildVideoRadarCandidatesTests(unittest.TestCase):
         self.assertEqual(cands, [])
         self.assertEqual(calls, [])
 
-    def test_comment_fn_empty_skips_candidate(self):
-        # ネタ無しは書かない: comment_fn (LLM) が空/門番落ち時、 優等生・スカスカな
-        # 定型テンプレに逃げず候補ごとスキップする (comment_fn が渡された場合)。
+    def test_comment_fn_empty_falls_back_to_concrete_video_hook(self):
+        # LLM が空/門番落ちでも動画候補は捨てない。抽象テンプレではなく、元動画の
+        # 場面語に寄せた deterministic hook に fallback する。
         from src import x_post_mail_lane as lane
         with self._detect_patch():
             cands = lane.build_video_radar_candidates(
                 db_path=None, max_count=3, fetch_fn=lambda url: self._FEED,
-                comment_fn=lambda pt, pl: "",  # LLM 失敗/門番落ち → skip
+                comment_fn=lambda pt, pl: "",  # LLM 失敗/門番落ち → fallback
             )
-        self.assertEqual(cands, [])
+        self.assertEqual(len(cands), 1)
+        self.assertIn("坂本勇人", cands[0].post_text)
+        self.assertIn("振り切り", cands[0].post_text)
+        self.assertNotIn("これは見ておきたい", cands[0].post_text)
 
     def test_no_comment_fn_uses_template(self):
         # comment_fn 未設定 (key 無し / test) のみ graceful に出来事 template fallback。
@@ -3626,6 +4102,30 @@ class BuildVideoRadarCandidatesTests(unittest.TestCase):
         self.assertEqual(len(cands), 1)
         self.assertIn("坂本勇人", cands[0].post_text)
         self.assertNotIn("http", cands[0].post_text)
+
+    def test_defense_video_fallback_mentions_visible_scene(self):
+        from unittest import mock
+        from src import x_post_mail_lane as lane
+
+        feed = (
+            "<rss><channel>"
+            "<item><title>門脇誠 ファインプレー 好返球</title>"
+            "<description>門脇誠 ファインプレー 好返球 "
+            "&lt;img src=&quot;https://pbs.twimg.com/amplify_video_thumb/222/img/abc.jpg&quot;&gt;</description>"
+            "<link>https://x.com/TokyoGiants/status/222</link></item>"
+            "</channel></rss>"
+        )
+        with mock.patch(
+            "src.x_post_mail_lane.detect_giants_player_name",
+            side_effect=lambda t, alias_map=None: "門脇誠" if "門脇" in str(t) else "",
+        ):
+            cands = lane.build_video_radar_candidates(
+                db_path=None, max_count=3, fetch_fn=lambda url: feed,
+            )
+        self.assertEqual(len(cands), 1)
+        self.assertIn("一歩目", cands[0].post_text)
+        self.assertIn("送球", cands[0].post_text)
+        self.assertNotIn("ナイスゲーム", cands[0].post_text)
 
     def test_dedup_set_skips(self):
         from src import x_post_mail_lane as lane
@@ -3771,6 +4271,140 @@ class VideoRadarImpressionPolicyTests(unittest.TestCase):
         self.assertEqual(dropped, [])
 
 
+class DataPrecisionPolicyTests(unittest.TestCase):
+    """Data-angle candidates stay enabled, but thin facts are not mailed."""
+
+    def test_low_sample_opponent_split_is_dropped(self):
+        from src.x_post_mail_lane import Candidate, apply_x_impression_policy
+
+        thin = Candidate(
+            title="対阪神 split",
+            metric="対戦別split",
+            period_label="今シーズン",
+            draft_text="根拠",
+            char_count=80,
+            signature="opp_split|選手|阪神",
+            post_text="【選手】阪神キラー\n対阪神 .500 (5安打/10打数・2打点)\n#巨人",
+            focus_player="選手",
+            db_fact_line="対阪神 打率.500 (5安打/10打数・2打点) ｜ シーズン.250 ｜ 差 +.250",
+            team_level="first",
+            sample_size=10,
+            source_material_type="opponent_split",
+        )
+        kept, dropped = apply_x_impression_policy([thin], max_candidates=1)
+        self.assertEqual(kept, [])
+        self.assertEqual(len(dropped), 1)
+        self.assertTrue(dropped[0][1].startswith("data_precision_sample_too_small:10<25"))
+
+    def test_strong_opponent_split_survives(self):
+        from src.x_post_mail_lane import Candidate, apply_x_impression_policy
+
+        strong = Candidate(
+            title="対阪神 split",
+            metric="対戦別split",
+            period_label="今シーズン",
+            draft_text="根拠",
+            char_count=100,
+            signature="opp_split|選手|阪神",
+            post_text="【選手】阪神キラー\n対阪神 .360 (9安打/25打数・5打点)\n他カード .240 — 対阪神で+.120\n#巨人",
+            focus_player="選手",
+            db_fact_line="対阪神 打率.360 (9安打/25打数・5打点) ｜ 他カード.240 (50打数) ｜ 差 +.120",
+            team_level="first",
+            sample_size=25,
+            source_material_type="opponent_split",
+        )
+        kept, dropped = apply_x_impression_policy([strong], max_candidates=1)
+        self.assertEqual([c.signature for c in kept], ["opp_split|選手|阪神"])
+        self.assertEqual(dropped, [])
+
+    def test_season_based_opponent_split_is_dropped(self):
+        from src.x_post_mail_lane import Candidate, apply_x_impression_policy
+
+        old_style = Candidate(
+            title="対阪神 split",
+            metric="対戦別split",
+            period_label="今シーズン",
+            draft_text="根拠",
+            char_count=100,
+            signature="opp_split|選手|阪神",
+            post_text="【選手】阪神キラー\n対阪神 .360 (9安打/25打数・5打点)\nシーズン .240 — 対阪神で+.120\n#巨人",
+            focus_player="選手",
+            db_fact_line="対阪神 打率.360 (9安打/25打数・5打点) ｜ シーズン.240 ｜ 差 +.120",
+            team_level="first",
+            sample_size=25,
+            source_material_type="opponent_split",
+        )
+        kept, dropped = apply_x_impression_policy([old_style], max_candidates=1)
+        self.assertEqual(kept, [])
+        self.assertEqual(dropped[0][1], "data_precision_opp_split_fact_weak")
+
+    def test_small_gap_data_angle_is_dropped(self):
+        from src.x_post_mail_lane import Candidate, apply_x_impression_policy
+
+        small_gap = Candidate(
+            title="対阪神 split",
+            metric="対戦別split",
+            period_label="今シーズン",
+            draft_text="根拠",
+            char_count=100,
+            signature="opp_split|選手|阪神",
+            post_text="【選手】阪神キラー\n対阪神 .300 (9安打/30打数・5打点)\n他カード .200 — 対阪神で+.100\n#巨人",
+            focus_player="選手",
+            db_fact_line="対阪神 打率.300 (9安打/30打数・5打点) ｜ 他カード.200 (60打数) ｜ 差 +.100",
+            team_level="first",
+            sample_size=30,
+            source_material_type="opponent_split",
+        )
+        kept, dropped = apply_x_impression_policy([small_gap], max_candidates=1)
+        self.assertEqual(kept, [])
+        self.assertEqual(dropped[0][1], "data_precision_gap_too_small:.100<.120")
+
+    def test_weak_win_correlation_fact_is_dropped(self):
+        from src.x_post_mail_lane import Candidate, apply_x_impression_policy
+
+        weak = Candidate(
+            title="勝利相関",
+            metric="勝利相関",
+            period_label="今シーズン",
+            draft_text="根拠",
+            char_count=80,
+            signature="win_corr|選手|rbi",
+            post_text="【選手】打点を挙げた試合\nあり 8勝2敗\nなし 10勝10敗\n#巨人",
+            focus_player="選手",
+            db_fact_line="打点あり: 8勝2敗",
+            team_level="first",
+            sample_size=40,
+            source_material_type="win_correlation",
+        )
+        kept, dropped = apply_x_impression_policy([weak], max_candidates=1)
+        self.assertEqual(kept, [])
+        self.assertEqual(dropped[0][1], "data_precision_win_corr_fact_weak")
+
+    def test_small_gap_win_correlation_is_dropped(self):
+        from src.x_post_mail_lane import Candidate, apply_x_impression_policy
+
+        small_gap = Candidate(
+            title="勝利相関",
+            metric="勝利相関",
+            period_label="今シーズン",
+            draft_text="根拠",
+            char_count=100,
+            signature="win_corr|選手|rbi",
+            post_text="【選手】打点を挙げた試合\nあり 11勝9敗 (勝率.550)\nなし 11勝11敗 (勝率.500)\n#巨人",
+            focus_player="選手",
+            db_fact_line=(
+                "打点を挙げた試合: 11勝9敗 勝率.550 ｜ "
+                "それ以外: 11勝11敗 勝率.500 ｜ 条件付き勝率差 +.050 (今季42試合)"
+            ),
+            team_level="first",
+            sample_size=42,
+            source_material_type="win_correlation",
+        )
+        kept, dropped = apply_x_impression_policy([small_gap], max_candidates=1)
+        self.assertEqual(kept, [])
+        self.assertEqual(dropped[0][1], "data_precision_gap_too_small:.050<.200")
+
+
 class DbRankingKillSwitchTests(unittest.TestCase):
     """2026-06-12: 驚きのない DB ランキング候補 (直近N日打率等) の kill switch。
 
@@ -3805,6 +4439,71 @@ class DbRankingKillSwitchTests(unittest.TestCase):
                 min_sample=1,
             )
         self.assertGreater(query_mock.call_count, 0)
+
+
+class DataPlainLlmRewriteTests(unittest.TestCase):
+    """Data-only candidates can be made plain with Gemini 3.1 Flash Lite."""
+
+    def test_rewrites_only_data_angle_candidates(self):
+        from src.tools import run_x_post_mail
+
+        data = Candidate(
+            title="勝利相関",
+            metric="勝利相関",
+            period_label="今シーズン",
+            draft_text="【根拠】打点を挙げた試合: 8勝2敗 勝率.800",
+            char_count=40,
+            signature="win_corr|x",
+            post_text="【選手】打点を挙げた試合\nあり 8勝2敗 (勝率.800)\n#巨人",
+            focus_player="選手",
+            db_fact_line="打点を挙げた試合: 8勝2敗 勝率.800",
+            source_material_type="win_correlation",
+        )
+        news = Candidate(
+            title="ニュース",
+            metric="NEWS_OPINION",
+            period_label="ニュース",
+            draft_text="根拠",
+            char_count=20,
+            post_text="ニュース本文",
+            focus_player="選手",
+        )
+        fake_xbg = MagicMock()
+        fake_xbg.build_plain_data_post.return_value = "選手は打点を挙げた試合で8勝2敗。\n数字だけ見ると、勝ち筋とのつながりが分かりやすい。"
+
+        with patch.dict("os.environ", {"X_POST_MAIL_DATA_LLM_REWRITE_ENABLED": "1"}), patch.object(
+            run_x_post_mail, "_xbg", fake_xbg
+        ):
+            out = run_x_post_mail._rewrite_data_candidates_plain_llm(
+                [data, news],
+                gemini_key="dummy",
+                model_id="gemini-3.1-flash-lite",
+            )
+
+        self.assertEqual(out[0].post_text, fake_xbg.build_plain_data_post.return_value)
+        self.assertIn("Gemini Flash Lite data rewrite model=gemini-3.1-flash-lite", out[0].draft_text)
+        self.assertEqual(out[1].post_text, "ニュース本文")
+        fake_xbg.build_plain_data_post.assert_called_once()
+
+    def test_rewrite_flag_zero_keeps_original(self):
+        from src.tools import run_x_post_mail
+
+        data = Candidate(
+            title="勝利相関",
+            metric="勝利相関",
+            period_label="今シーズン",
+            draft_text="根拠",
+            char_count=10,
+            post_text="元本文",
+            focus_player="選手",
+        )
+        fake_xbg = MagicMock()
+        with patch.dict("os.environ", {"X_POST_MAIL_DATA_LLM_REWRITE_ENABLED": "0"}), patch.object(
+            run_x_post_mail, "_xbg", fake_xbg
+        ):
+            out = run_x_post_mail._rewrite_data_candidates_plain_llm([data], gemini_key="dummy")
+        self.assertEqual(out[0].post_text, "元本文")
+        fake_xbg.build_plain_data_post.assert_not_called()
 
 
 class ReplyCandidateRuntimeConfigTests(unittest.TestCase):
@@ -3887,6 +4586,24 @@ class BuildPlayerCommentCandidateTests(unittest.TestCase):
             source_url="https://x.test/2", html_text="<html><body>本文に発言なし</body></html>",
         )
         self.assertIsNone(c)
+
+    def test_comment_candidate_carries_source_image(self):
+        from src import x_post_mail_lane as lane
+        c = lane.build_player_comment_candidate(
+            member_name="竹丸和幸",
+            source_title="竹丸8回好投も黒星",
+            source_url="https://x.test/1",
+            html_text=self._HTML,
+            source_name="テスト新聞",
+            image_bytes=b"\xff\xd8\xffcomment-image",
+            image_source_url="https://img.example.test/takemaru.jpg",
+        )
+        self.assertIsNotNone(c)
+        assert c is not None
+        self.assertEqual(c.image_bytes, b"\xff\xd8\xffcomment-image")
+        self.assertEqual(c.image_source_url, "https://img.example.test/takemaru.jpg")
+        self.assertIn("竹丸和幸", c.image_alt_text)
+        self.assertIn("添付画像: https://img.example.test/takemaru.jpg", c.draft_text)
 
     def test_non_member_returns_none(self):
         from src import x_post_mail_lane as lane

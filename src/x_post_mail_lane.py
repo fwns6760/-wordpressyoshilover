@@ -1277,7 +1277,40 @@ def _metric_topic_family(metric: str) -> str:
     return ""
 
 
-def _build_source_backed_post_text(player: str, material_type: str) -> str:
+def _extract_source_record_phrase(title: str, excerpt: str, player: str) -> str:
+    """Return a short record phrase copied from source title/excerpt."""
+    parts = [str(title or "").strip()]
+    parts.extend(
+        p.strip()
+        for p in _re.split(r"[。\n\r]+", str(excerpt or ""))
+        if p.strip()
+    )
+    for part in parts:
+        if not any(term in part for term in _RECORD_TERMS):
+            continue
+        phrase = _re.sub(r"【[^】]{1,40}】", "", part)
+        phrase = phrase.replace(f"巨人・{player}", player)
+        phrase = phrase.replace(f"巨人の{player}", player)
+        phrase = phrase.replace(f"読売ジャイアンツ・{player}", player)
+        phrase = phrase.strip(" 　。、")
+        for prefix in (f"{player}が", f"{player}は", f"{player}、", f"{player} "):
+            if phrase.startswith(prefix):
+                phrase = phrase[len(prefix):].strip(" 　。、")
+                break
+        phrase = _re.sub(r"\s+", " ", phrase)
+        if phrase:
+            return _truncate_text(phrase, 72).rstrip("。！？!?")
+    return ""
+
+
+def _build_source_backed_post_text(
+    player: str,
+    material_type: str,
+    *,
+    source_title: str = "",
+    source_excerpt: str = "",
+    source_topic_family: str = "",
+) -> str:
     """Build URL-free, hashtag-free copy from verified source presence only.
 
     RSS titles/summaries can contain unverified numbers, so the public
@@ -1293,14 +1326,25 @@ def _build_source_backed_post_text(player: str, material_type: str) -> str:
             "巨人ファンとしては、次の出番でその言葉が配球や打席の落ち着きにどう出るかを見たい。"
         )
     elif material_type == "record":
-        body = (
-            f"{player}の記録や節目の話題は、数字そのものだけでなく、"
-            "ここまで積み上げてきた役割まで見たくなる材料になる。"
-            "積み重ねが見えると、次の一打や一球の重みも変わる。\n"
-            "確定しているのは記事でその節目が扱われていることなので、"
-            "未確認の数字は足さず、巨人の中での意味を見たい。話題だけで終わらせない。\n"
-            "巨人ファンとしては、次の試合でその流れがもう一つ前に進む場面を期待したい。"
-        )
+        record_phrase = _extract_source_record_phrase(source_title, source_excerpt, player)
+        if source_topic_family == "pitching":
+            next_scene = "次のマウンド"
+        elif source_topic_family == "batting":
+            next_scene = "次の打席"
+        else:
+            next_scene = "次の出番"
+        if record_phrase:
+            body = (
+                f"{player}、{record_phrase}。\n"
+                "こういう節目は、1本・1登板の重みがそのまま残る。\n"
+                f"{next_scene}でもう一つ積み上げられるか。"
+            )
+        else:
+            body = (
+                f"{player}の記録・節目が記事で出ている。\n"
+                "未確認の数字は足さず、出ている節目だけで押さえる。\n"
+                f"{next_scene}でもう一つ積み上げられるか。"
+            )
     elif material_type == "farm":
         body = (
             f"ファームで{player}の名前が出ている時は、今すぐの結論より一軍につながる準備として見たい。"
@@ -1462,7 +1506,13 @@ def build_news_opinion_candidate(
             LOG.info("news_opinion comment_fn skip: %r", exc)
             post_text = ""
     if not post_text:
-        post_text = _build_source_backed_post_text(player, material_type)
+        post_text = _build_source_backed_post_text(
+            player,
+            material_type,
+            source_title=title,
+            source_excerpt=excerpt,
+            source_topic_family=source_topic_family,
+        )
     proof_lines = [
         "【根拠: RSS/ニュース候補】",
         f"材料種別: {material_label} ({material_type})",
@@ -1502,6 +1552,9 @@ def build_player_comment_candidate(
     source_url: str,
     html_text: str,
     source_name: str = "",
+    image_bytes: bytes = b"",
+    image_source_url: str = "",
+    image_alt_text: str = "",
     now: Optional[datetime] = None,  # noqa: ARG001 - caller symmetry
 ) -> Optional[Candidate]:
     """パターン①「選手コメント速報」(2026-06-01): 記事本文 html_text から member の本人発言を
@@ -1511,6 +1564,7 @@ def build_player_comment_candidate(
     quote が取れない / member 未 verify → None (caller は別候補へ)。
     """
     member = str(member_name or "").strip()
+    member_display = _normalize_player_name(member) or member
     url = str(source_url or "").strip()
     if not member or not url or not html_text:
         return None
@@ -1532,28 +1586,39 @@ def build_player_comment_candidate(
     quote = (quote or "").strip()
     if not quote:
         return None
-    post_text = f"{member}『{quote}』"
-    signature_hash = _hashlib.sha1(f"player_comment|{url}|{member}".encode("utf-8")).hexdigest()[:16]
+    post_text = f"{member_display}『{quote}』"
+    signature_hash = _hashlib.sha1(f"player_comment|{url}|{member_display}".encode("utf-8")).hexdigest()[:16]
     src = _truncate_text(source_name, 28)
+    proof_lines = [
+        "【根拠: 記事本文の本人発言 (literal)】",
+        f"発言者: {member_display}",
+        f"元媒体: {src or 'unknown'}",
+        f"元記事: {_truncate_text(source_title, 60)}",
+        f"元記事URL: {url}",
+    ]
+    if image_source_url:
+        proof_lines.append(f"添付画像: {image_source_url}")
+    proof_lines.extend([
+        "",
+        "【X 投稿案 (たんぱく・LLM不使用・literal)】",
+        post_text,
+    ])
     return Candidate(
-        title=f"(コメント速報) {member}｜{_truncate_text(source_title, 40)}",
+        title=f"(コメント速報) {member_display}｜{_truncate_text(source_title, 40)}",
         metric=_PLAYER_COMMENT_METRIC,
         period_label="本人コメント",
-        draft_text="\n".join([
-            "【根拠: 記事本文の本人発言 (literal)】",
-            f"発言者: {member}",
-            f"元媒体: {src or 'unknown'}",
-            f"元記事: {_truncate_text(source_title, 60)}",
-            f"元記事URL: {url}",
-            "",
-            "【X 投稿案 (たんぱく・LLM不使用・literal)】",
-            post_text,
-        ]),
+        draft_text="\n".join(proof_lines),
         char_count=len(post_text),
         signature=f"player_comment|{signature_hash}|False|None",
         post_text=post_text,
-        focus_player=member,
+        focus_player=member_display,
         source_material_type="player_comment",
+        image_bytes=image_bytes or b"",
+        image_alt_text=(
+            image_alt_text
+            or f"{src or '元記事'}掲載画像。{member_display}のコメント元記事"
+        ),
+        image_source_url=image_source_url or "",
     )
 
 
@@ -1791,6 +1856,10 @@ def build_data_split_candidates(
 _VIDEO_RADAR_METRIC = "x_buzz_post"
 
 
+def _x_buzz_has_any(text: str, needles: tuple[str, ...]) -> bool:
+    return any(n in text for n in needles)
+
+
 def _x_buzz_event_comment(text: str, player: str, phase: str = "") -> str:
     """451: 引用元 X 投稿の「出来事」に反応する引用RTコメントを返す (LLM 不使用)。
 
@@ -1808,41 +1877,55 @@ def _x_buzz_event_comment(text: str, player: str, phase: str = "") -> str:
 
     if "完封" in t:
         head = "プロ初完封" if ("初完封" in t) else "完封"
-        return f"{who}、{head}…！ねじ伏せたな。"
+        return f"{who}、{head}。最後のアウトまで腕が振れてるのが画面で分かる。"
     if "完投" in t:
         if "初完投" in t or "プロ初" in t:
-            return f"{who}、プロ初完投おめでとう…！最後まで投げ切る姿、しびれた。"
-        return f"{who}、完投…！スタミナも気持ちも見せてくれた。"
+            return f"{who}、プロ初完投。終盤まで球威が落ちないのが動画で分かる。"
+        return f"{who}、完投。最後まで押し込む球の強さが画面から伝わる。"
     if "サヨナラ" in t:
-        return f"{who}、サヨナラ…！これだから野球はやめられない。"
-    if any(k in t for k in ("ホームラン", "本塁打", "アーチ", "一発", "弾")):
+        if _x_buzz_has_any(t, ("ホームラン", "本塁打", "アーチ", "一発", "弾")):
+            return f"{who}、サヨナラの打席でこの振り切り。ベンチの跳ね方まで何回でも見たい。"
+        return f"{who}、サヨナラの瞬間の表情がいい。ベンチの空気まで一気に変わってる。"
+    if _x_buzz_has_any(t, ("ホームラン", "本塁打", "アーチ", "一発", "弾")):
         adj = "特大の" if ("特大" in t or "場外" in t or "弾丸" in t) else ""
         farm = "二軍で" if any(f in t for f in ("二軍", "ファーム", "イースタン")) else ""
-        return f"{who}、{farm}{adj}一発…！この打球は効くわ。"
+        if adj:
+            return f"{who}、{farm}{adj}一発。このスイングと打球音だけでリプレー確定。"
+        return f"{who}、{farm}このスイングで運べるのが強い。打球の伸び方が気持ちいい。"
     k = _grab(r"\d+奪三振")
     inn = _grab(r"\d+回")
-    if k or any(p in t for p in ("好投", "無失点", "粘投", "力投", "三者凡退")):
+    if k or _x_buzz_has_any(t, ("好投", "無失点", "粘投", "力投", "三者凡退", "奪三振", "三振")):
         detail = "・".join(x for x in (inn, k) if x)
         lead = f"{detail}の好投" if detail else "好投"
-        return f"{who}、{lead}…！痺れた。"
-    if any(p in t for p in ("猛打賞", "マルチ", "固め打ち", "3安打", "４安打", "4安打")):
-        return f"{who}、止まらない打撃…！この調子で頼む。"
-    if any(p in t for p in ("タイムリー", "適時", "決勝打", "勝ち越し", "値千金")):
-        return f"{who}、効いた一打…！これは大きい。"
-    if any(p in t for p in ("ファインプレー", "好守", "好返球", "美技", "好捕")):
-        return f"{who}、この守備が効くんだよな…！"
-    if any(p in t for p in ("初登板", "初先発", "初勝利", "初安打", "初打点", "初本塁打", "初", "復帰", "昇格", "1軍", "一軍")):
-        return f"{who}、ここから乗っていってほしい…！"
-    if any(p in t for p in ("勝利", "連勝", "勝ち越", "快勝", "勝った")):
-        return f"{who}、ナイスゲーム…！この勢いで。"
-    # 出来事が拾えない (練習動画 等) 時の汎用文。 フェーズで温度を変える。
+        return f"{who}、{lead}。球で押し込めてるのが動画だとはっきり分かる。"
+    if _x_buzz_has_any(t, ("猛打賞", "マルチ", "固め打ち", "3安打", "４安打", "4安打")):
+        return f"{who}、1打席ずつ振りが強い。固め打ちというより内容で乗ってきてる。"
+    if _x_buzz_has_any(t, ("タイムリー", "適時", "決勝打", "勝ち越し", "値千金")):
+        return f"{who}、この場面で振り切れるのが強い。ベンチの空気まで変える一打。"
+    if _x_buzz_has_any(t, ("ファインプレー", "好守", "好返球", "美技", "好捕")):
+        return f"{who}、この一歩目と送球よ。捕ってから投げるまでが速いからアウトにできる。"
+    if _x_buzz_has_any(t, ("レーザービーム", "補殺", "送球", "刺した", "タッチアウト")):
+        return f"{who}、この送球は動画で見た方が早い。捕ってから投げるまでが速すぎる。"
+    if _x_buzz_has_any(t, ("ダイビング", "背走", "ジャンピング", "フェンス", "スライディング")):
+        return f"{who}、この追い方と体の投げ出し方よ。最後まで打球から目が切れてない。"
+    if _x_buzz_has_any(t, ("ガッツポーズ", "雄叫び", "表情", "ハイタッチ", "ベンチ", "ダグアウト")):
+        return f"{who}、この表情とベンチの反応がいい。文字より動画で伝わる場面。"
+    if _x_buzz_has_any(t, ("練習", "フリー打撃", "打撃練習", "居残り")):
+        return f"{who}、練習動画でもスイングの強さが分かる。打球の伸び方を見てしまう。"
+    if _x_buzz_has_any(t, ("ブルペン", "投球練習", "キャッチボール")):
+        return f"{who}、ブルペンの腕の振りがいい。球の出方まで見たくなる動画。"
+    if _x_buzz_has_any(t, ("初登板", "初先発", "初勝利", "初安打", "初打点", "初本塁打", "復帰", "昇格", "1軍", "一軍")):
+        return f"{who}、この表情と動きなら上でも見たい。きっかけの場面として強い。"
+    if _x_buzz_has_any(t, ("勝利", "連勝", "勝ち越", "快勝", "勝った")):
+        return f"{who}、ベンチのハイタッチまで含めて勝ち方がいい。動画だと表情まで伝わる。"
+    # 出来事が拾えない (編集動画 / 練習周辺 等) 時も、抽象語だけで終わらせない。
     if phase == "試合前":
-        return f"{who}、今日も楽しみだ…！"
+        return f"{who}、試合前の動きと表情がいい。今日は最初の打席から見たくなる。"
     if phase == "試合中":
-        return f"{who}、この流れに乗りたい…！"
+        return f"{who}、ベンチとスタンドの反応まで一気に変わってる。動画で見ると温度が違う。"
     if phase == "試合後":
-        return f"{who}、今日のこれは効いた…！"
-    return f"{who}、これは見ておきたい一件。"
+        return f"{who}、試合後に見返すと表情まで効いてくる。今日の勝負どころの動画。"
+    return f"{who}、この場面は文字より動画で刺さる。表情と周りの反応まで見てしまう。"
 
 
 def _x_buzz_player_fact(db_path: Optional[str], canonical: str) -> str:
@@ -2027,11 +2110,10 @@ def build_video_radar_candidates(
                 post_text = ""
         if not post_text:
             if comment_fn is not None:
-                # ネタ無しは書かない: LLM voice が門番で弾かれた / 失敗した時、 優等生・スカスカな
-                # 定型テンプレ (「これは見ておきたい一件」 等) に逃げず候補ごとスキップする。
-                LOG.info("x_buzz skip: voice comment empty/gated player=%s", player or "(none)")
-                continue
-            # comment_fn 未設定 (key 無し / test) のみ graceful に template fallback。
+                # LLM voice が門番で弾かれた時も動画候補自体は捨てない。抽象テンプレへ逃げず、
+                # 元投稿の場面語 (打球音 / 一歩目 / 送球 / 表情 / ベンチ反応) に寄せた deterministic
+                # hook に落として、メール候補の本数を保つ。
+                LOG.info("x_buzz fallback: voice comment empty/gated player=%s", player or "(none)")
             post_text = _x_buzz_event_comment(p.get("text", ""), player, phase=phase_label)
         # 動画ポスト対策 (user 2026-06-09): X は本文が長いと「動画＋テキスト」を一緒に
         # 投稿できない (短くすると動画が付く)。 引用RT/動画候補のコメントを短く固定する。
@@ -2654,12 +2736,130 @@ _SOURCE_A_METRICS = {
     _NEWS_OPINION_METRIC,
     _COMMENT_DB_METRIC,
     _FAN_VOICE_METRIC,
+    _PLAYER_COMMENT_METRIC,
     _HOCHI_REPLY_METRIC,
     _REPLY_CANDIDATE_METRIC,
 }
 _DB_TABLE_REQUIRED_TOKENS = ("📊", "TOP", "巨人最上位", "🟧巨人🟧")
 _SOURCE_C_CONDITION_TOKENS = ("規定", "条件", "対象", "sample", "サンプル", "打席", "登板", "投球回")
 _SOURCE_C_SLICE_TOKENS = ("対左", "対右", "左右", "打順", "守備", "走者", "カウント", "状況", "起用")
+_DATA_PRECISION_SOURCE_TYPES = frozenset(
+    {
+        "data_split",
+        "win_correlation",
+        "opponent_split",
+        "alltime_chase",
+        "weekly_mvp",
+        "legend_compare",
+        "pregame_preview",
+        "salary_value",
+        "milestone",
+        "rarity",
+        "roster_move",
+        "on_this_day",
+        "on_this_day_birthday",
+    }
+)
+_DATA_PRECISION_FACT_REQUIRED = frozenset(
+    {
+        "data_split",
+        "win_correlation",
+        "opponent_split",
+        "alltime_chase",
+        "weekly_mvp",
+        "legend_compare",
+        "pregame_preview",
+        "salary_value",
+        "milestone",
+        "rarity",
+    }
+)
+_DATA_PRECISION_MIN_SAMPLE = {
+    "data_split": 25,
+    "win_correlation": 40,
+    "opponent_split": 25,
+    "weekly_mvp": 15,
+    "legend_compare": 5,
+    "pregame_preview": 1,
+    "salary_value": 20,
+    "roster_move": 1,
+}
+_DATA_PRECISION_MIN_GAP = {
+    "win_correlation": 0.200,
+    "opponent_split": 0.120,
+}
+
+
+def _parse_precision_decimal(raw: str) -> Optional[float]:
+    token = (raw or "").strip()
+    if not token:
+        return None
+    if token.startswith("."):
+        token = "0" + token
+    try:
+        return float(token)
+    except ValueError:
+        return None
+
+
+def _extract_precision_gap(fact: str) -> Optional[float]:
+    """Extract ``差 +.200`` / ``勝率差 +.200`` style gap values."""
+    matches = _re.findall(r"(?:勝率差|条件付き勝率差|差)\s*\+?\s*([0-9]*\.[0-9]+)", fact)
+    if not matches:
+        return None
+    # Use the last match because data lines may contain multiple rates
+    # before the final comparison delta.
+    return _parse_precision_decimal(matches[-1])
+
+
+def _fmt_precision_threshold(v: float) -> str:
+    return f"{v:.3f}".lstrip("0")
+
+
+def _data_precision_drop_reason(candidate: Candidate) -> str:
+    """Return a hard-drop reason for thin data-angle X candidates."""
+    source_type = (candidate.source_material_type or "").strip()
+    if source_type not in _DATA_PRECISION_SOURCE_TYPES:
+        return ""
+    text = _candidate_post_text(candidate).strip()
+    if not text:
+        return "data_precision_empty_text"
+    if len(text) > X_CHAR_LIMIT:
+        return f"data_precision_over_280:{len(text)}"
+
+    fact = (candidate.db_fact_line or "").strip()
+    if source_type in _DATA_PRECISION_FACT_REQUIRED and not fact:
+        return "data_precision_fact_missing"
+
+    sample = _sample_size_for_candidate(candidate)
+    floor = _DATA_PRECISION_MIN_SAMPLE.get(source_type, 0)
+    if floor > 0:
+        if sample is None:
+            return f"data_precision_sample_unknown:floor={floor}"
+        if sample < floor:
+            return f"data_precision_sample_too_small:{sample}<{floor}"
+
+    if source_type == "win_correlation" and (
+        "勝率" not in fact or "条件付き勝率差" not in fact
+    ):
+        return "data_precision_win_corr_fact_weak"
+    if source_type == "opponent_split" and (
+        "安打/" not in fact or "他カード" not in fact
+    ):
+        return "data_precision_opp_split_fact_weak"
+    gap_floor = _DATA_PRECISION_MIN_GAP.get(source_type)
+    if gap_floor is not None:
+        gap = _extract_precision_gap(fact)
+        if gap is None:
+            return f"data_precision_gap_missing:{source_type}"
+        if gap < gap_floor:
+            return (
+                "data_precision_gap_too_small:"
+                f"{_fmt_precision_threshold(gap)}<{_fmt_precision_threshold(gap_floor)}"
+            )
+    if source_type == "weekly_mvp" and ("打率" not in fact or "打数" not in fact):
+        return "data_precision_weekly_mvp_fact_weak"
+    return ""
 
 
 def _candidate_source_kind(candidate: Candidate) -> str:
@@ -2864,12 +3064,19 @@ def apply_x_impression_policy(
     *,
     now: Optional[datetime] = None,
     max_candidates: Optional[int] = None,
+    recent_player_keys: Optional[set[str]] = None,
 ) -> tuple[list[Candidate], list[tuple[Candidate, str]]]:
     """Apply final API-free X impression policy before composing mail.
 
     This is the concrete version of ``spec/x-impression-plan``:
     keep existing 437 media/share behavior, but gate final candidates by
     same-mail duplicates and annotate kept candidates with ``why_now``.
+
+    ``recent_player_keys`` are normalized focus-player names already shown in
+    recent mails (cross-run, all lanes). Pre-seeding them drops candidates for
+    a player who was just mailed — this is the single choke point that stops
+    the same hot player (buzz / comment / image / record lanes alike) from
+    recurring in every hourly candidate mail. Reply-lane actions are exempt.
     """
     if now is None:
         now = datetime.now(JST)
@@ -2882,6 +3089,7 @@ def apply_x_impression_policy(
     seen_text_hashes: set[str] = set()
     seen_image_hashes: set[str] = set()
     seen_players: set[str] = set()
+    recent_players: set[str] = set(recent_player_keys or ())
 
     for candidate in candidates:
         reason = ""
@@ -2890,7 +3098,14 @@ def apply_x_impression_policy(
         text_hash = _candidate_post_text_hash(candidate)
         image_hash = _candidate_image_payload_hash(candidate)
         player_key = _normalize_player_name(candidate.focus_player)
-        if len(kept) >= limit:
+        is_reply_metric = candidate.metric in {
+            _HOCHI_REPLY_METRIC,
+            _REPLY_CANDIDATE_METRIC,
+        }
+        data_precision_reason = _data_precision_drop_reason(candidate)
+        if data_precision_reason:
+            reason = data_precision_reason
+        elif len(kept) >= limit:
             reason = "over_candidate_limit"
         elif signature and signature in seen_signatures:
             reason = "dedup_signature"
@@ -2900,13 +3115,14 @@ def apply_x_impression_policy(
             reason = "dedup_post_text_hash"
         elif image_hash and image_hash in seen_image_hashes:
             reason = "dedup_image_payload_hash"
+        elif player_key and player_key in recent_players and not is_reply_metric:
+            # 直近の毎時メールで既に出した選手は全レーン共通で外す
+            # (井上・浦田 等が毎時連続するのを止める)。
+            reason = "dedup_player_recent"
         elif (
             player_key
             and player_key in seen_players
-            and candidate.metric not in {
-                _HOCHI_REPLY_METRIC,
-                _REPLY_CANDIDATE_METRIC,
-            }
+            and not is_reply_metric
         ):
             # 2026-06-04 user 決定:「引用RT＋記事を1選手1件に。リプは残す」。
             # 旧 exemption から video_radar (引用RT) を外し、 引用RT と記事voice
@@ -4234,6 +4450,7 @@ _NEWS_DERIVED_METRICS = frozenset(
         _NEWS_OPINION_METRIC,
         _COMMENT_DB_METRIC,
         _FAN_VOICE_METRIC,
+        _PLAYER_COMMENT_METRIC,
         _GEMINI_BRANDING_METRIC,
         _HOCHI_REPLY_METRIC,
         _REPLY_CANDIDATE_METRIC,
@@ -4262,6 +4479,7 @@ _DROPPED_REASON_JA = {
     "dedup_post_text_hash": "重複 (本文 hash)",
     "dedup_image_payload_hash": "重複 (画像 hash)",
     "dedup_player_in_mail": "重複 (同 mail 内 同選手)",
+    "dedup_player_recent": "重複 (直近メールで既出の選手)",
 }
 
 

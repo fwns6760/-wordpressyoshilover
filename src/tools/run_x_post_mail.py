@@ -3,8 +3,8 @@
 Default is **live send** (matches publish-notice job semantics); pass
 ``--dry-run`` to skip the SMTP call.
 
-Hard constraints (mirror ticket 347):
-    - LLM API never called.
+Hard constraints (mirror ticket 347, later XPOST extensions):
+    - Data candidates may be rewritten by Gemini Flash Lite only after fact gates.
     - insight.db: read-only via miq.query_rank.
     - article_candidates table: never touched (348 owns it).
     - パ・リーグ 6 teams: filtered out, only セ 6 teams reach the mail.
@@ -15,6 +15,7 @@ Cloud Run Job entrypoint: ``python -m src.tools.run_x_post_mail``.
 from __future__ import annotations
 
 import argparse
+from dataclasses import replace as _dc_replace
 import hashlib as _hashlib
 import json
 import logging
@@ -54,7 +55,26 @@ DEFAULT_NEWS_FALLBACK_SOURCE_LIMIT = 32
 DEFAULT_NEWS_FALLBACK_ENTRY_LIMIT = 5
 DEFAULT_NEWS_FALLBACK_TIMEOUT_SECONDS = 4
 DEFAULT_NEWS_PRIORITY_CANDIDATES = 5
+DEFAULT_PLAYER_COMMENT_PRIORITY_CANDIDATES = 3
+DEFAULT_RECORD_ARTICLE_PRIORITY_CANDIDATES = 2
+DEFAULT_DATA_LLM_MODEL = "gemini-3.1-flash-lite"
 RSS_SOURCES_FILE = Path(__file__).resolve().parents[2] / "config" / "rss_sources.json"
+
+_DATA_PLAIN_LLM_METRICS = frozenset(
+    {
+        "勝利相関",
+        "対戦別split",
+        "歴代通算チェイス",
+        "新旧比較",
+        "あの日の巨人",
+        "週間MVP",
+        "試合前見どころ",
+        "年俸コスパ",
+        "節目達成",
+        "今季初・以来",
+        "登録抹消",
+    }
+)
 
 
 def _configure_logging() -> None:
@@ -262,6 +282,23 @@ def _topical_boost_enabled() -> bool:
     """
     raw = (os.environ.get("ENABLE_X_POST_TOPICAL_BOOST") or "").strip().lower()
     return raw in {"1", "true", "yes", "on"}
+
+
+def _data_llm_rewrite_enabled() -> bool:
+    """Plain Gemini rewrite for data-only X posts.
+
+    User 2026-06-28: 「データだけたんぱくにわかりやすくLLMGeminiFlash3.1Light」.
+    Default ON when a Gemini key exists; set X_POST_MAIL_DATA_LLM_REWRITE_ENABLED=0
+    to keep deterministic text.
+    """
+    raw = (os.environ.get("X_POST_MAIL_DATA_LLM_REWRITE_ENABLED") or "").strip().lower()
+    if not raw:
+        return True
+    return raw not in {"0", "false", "no", "off"}
+
+
+def _data_llm_model() -> str:
+    return (os.environ.get("X_POST_DATA_LLM_MODEL") or DEFAULT_DATA_LLM_MODEL).strip() or DEFAULT_DATA_LLM_MODEL
 
 
 def _video_radar_enabled() -> bool:
@@ -765,6 +802,80 @@ def _make_voiced_comment_fn(now_jst, subject):
     return _fn
 
 
+def _is_plain_data_llm_candidate(candidate: lane.Candidate) -> bool:
+    if candidate.metric in _DATA_PLAIN_LLM_METRICS:
+        return True
+    if candidate.metric in {
+        getattr(lane, "_DATA_SPLIT_INNING_METRIC", ""),
+        getattr(lane, "_DATA_SPLIT_VENUE_METRIC", ""),
+    }:
+        return True
+    return False
+
+
+def _rewrite_data_candidates_plain_llm(
+    candidates: list[lane.Candidate],
+    *,
+    gemini_key: str = "",
+    model_id: str = "",
+) -> list[lane.Candidate]:
+    """Rewrite data-only candidates into plain explanatory copy.
+
+    Candidate selection, fact gates, signatures, images, and proof text stay
+    unchanged. If Gemini fails or emits unsafe/new numbers, keep the original
+    deterministic post text.
+    """
+    if not candidates or not _data_llm_rewrite_enabled() or _xbg is None:
+        return list(candidates)
+    key = gemini_key or os.environ.get("GEMINI_API_KEY") or os.environ.get("GEMMA_BRANDING_GEMINI_API_KEY") or ""
+    if not key:
+        LOG.info("data_plain_llm rewrite skip: GEMINI_API_KEY env missing")
+        return list(candidates)
+    resolved_model = model_id or _data_llm_model()
+    out: list[lane.Candidate] = []
+    changed = 0
+    for cand in candidates:
+        if not _is_plain_data_llm_candidate(cand):
+            out.append(cand)
+            continue
+        source_text = "\n".join(
+            part
+            for part in [
+                cand.post_text or "",
+                cand.db_fact_line or "",
+                cand.sample_label or "",
+                cand.why_now or "",
+            ]
+            if part
+        )
+        try:
+            rewritten = _xbg.build_plain_data_post(
+                source_text,
+                gemini_api_key=key,
+                fact_text=cand.db_fact_line or cand.draft_text or "",
+                player=cand.focus_player or "",
+                metric_label=cand.metric or cand.period_label or "",
+                model_id=resolved_model,
+            )
+        except Exception as exc:  # noqa: BLE001
+            LOG.warning("data_plain_llm rewrite failed title=%s err=%r", cand.title, exc)
+            rewritten = ""
+        if rewritten:
+            note = (
+                f"【LLM整形】Gemini Flash Lite data rewrite model={resolved_model} "
+                "（数字は元候補/DB fact literal 照合）"
+            )
+            draft = cand.draft_text
+            if note not in draft:
+                draft = f"{draft}\n\n{note}".strip()
+            cand = _dc_replace(cand, post_text=rewritten, char_count=len(rewritten), draft_text=draft)
+            changed += 1
+        out.append(cand)
+    if changed:
+        LOG.info("data_plain_llm rewrite applied: %d/%d model=%s", changed, len(candidates), resolved_model)
+    return out
+
+
 def _gemini_branding_enabled() -> bool:
     """392: env flag for Gemini Flash Lite + Tavily REST branding candidate.
 
@@ -919,6 +1030,26 @@ def _resolve_news_priority_candidates(max_candidates: int) -> int:
     return max(0, min(value, max_candidates))
 
 
+def _resolve_player_comment_priority_candidates(max_candidates: int) -> int:
+    """Dedicated scraping-only slot count for literal player/staff comments."""
+    value = _resolve_int_env(
+        "X_POST_MAIL_PLAYER_COMMENT_PRIORITY_CANDIDATES",
+        DEFAULT_PLAYER_COMMENT_PRIORITY_CANDIDATES,
+        min_value=0,
+    )
+    return max(0, min(value, max_candidates))
+
+
+def _resolve_record_article_priority_candidates(max_candidates: int) -> int:
+    """Dedicated source-title/excerpt slot count for record/milestone articles."""
+    value = _resolve_int_env(
+        "X_POST_MAIL_RECORD_ARTICLE_PRIORITY_CANDIDATES",
+        DEFAULT_RECORD_ARTICLE_PRIORITY_CANDIDATES,
+        min_value=0,
+    )
+    return max(0, min(value, max_candidates))
+
+
 def _fetch_today_lineup_focus_names() -> list[str]:
     """Scrape today's Giants lineup and return canonical player names.
 
@@ -1057,6 +1188,87 @@ def _entry_published_dt(entry: dict):
     return None
 
 
+def _fetch_comment_article_material(
+    link: str,
+    *,
+    timeout_seconds: int,
+) -> tuple[str, bytes, str]:
+    """Fetch article HTML plus og:image bytes for literal comment candidates."""
+    html_text = ""
+    image_bytes = b""
+    image_source_url = ""
+    try:
+        from src.og_image_fetcher import fetch_og_image
+
+        og = fetch_og_image(link, timeout_seconds=timeout_seconds, logger=LOG)
+        if og is not None:
+            html_text = og.html_text or ""
+            image_bytes = og.image_bytes or b""
+            image_source_url = og.image_url or ""
+    except Exception as exc:  # noqa: BLE001
+        LOG.info("player_comment_og_image_skip url=%s: %r", link, exc)
+    if html_text:
+        return html_text, image_bytes, image_source_url
+    try:
+        creq = urlrequest.Request(link, headers={"User-Agent": "yoshilover-x-post-mail/1.0"})
+        with urlrequest.urlopen(creq, timeout=timeout_seconds) as cresp:  # noqa: S310
+            html_text = cresp.read().decode("utf-8", errors="replace")
+    except Exception as exc:  # noqa: BLE001
+        LOG.info("player_comment_html_skip url=%s: %r", link, exc)
+        html_text = ""
+    return html_text, image_bytes, image_source_url
+
+
+_COMMENT_ARTICLE_MARKERS = (
+    "コメント",
+    "一問一答",
+    "談話",
+    "語った",
+    "語る",
+    "話した",
+    "明かした",
+    "振り返った",
+    "発言",
+)
+
+
+def _looks_like_comment_article(title: str, summary: str) -> bool:
+    text = f"{title} {summary}"
+    return any(marker in text for marker in _COMMENT_ARTICLE_MARKERS)
+
+
+_RECORD_ARTICLE_MARKERS = (
+    "記録",
+    "達成",
+    "節目",
+    "通算",
+    "連続",
+    "史上",
+    "球団",
+    "初勝利",
+    "初安打",
+    "初本塁打",
+    "初打点",
+    "初登板",
+    "初先発",
+    "初出場",
+    "最速",
+    "最年少",
+)
+
+
+def _looks_like_record_article(title: str, summary: str) -> bool:
+    text = f"{title} {summary}"
+    return any(marker in text for marker in _RECORD_ARTICLE_MARKERS)
+
+
+def _is_direct_article_url(link: str) -> bool:
+    value = (link or "").strip().lower()
+    if not value.startswith(("http://", "https://")):
+        return False
+    return not any(host in value for host in ("x.com/", "twitter.com/"))
+
+
 def _fetch_news_opinion_fallback_candidates(
     existing_candidates: list[lane.Candidate],
     *,
@@ -1064,6 +1276,8 @@ def _fetch_news_opinion_fallback_candidates(
     now: datetime,
     recent_player_counts: dict[str, int] | None = None,
     comment_fn=None,
+    comments_only: bool = False,
+    dedup_set: set[str] | None = None,
 ) -> list[lane.Candidate]:
     """Fill sparse data mails with source-backed news/opinion candidates.
 
@@ -1135,7 +1349,12 @@ def _fetch_news_opinion_fallback_candidates(
             player_key = lane._normalize_player_name(player)
             if not player_key or player_key in existing_player_keys:
                 continue
-            if player_key in history_player_keys:
+            history_blocked = player_key in history_player_keys
+            may_have_literal_comment = (
+                _looks_like_comment_article(title, summary)
+                or _is_direct_article_url(link)
+            )
+            if history_blocked and not may_have_literal_comment:
                 LOG.info(
                     "news_opinion_fallback_player_history_skip source=%s "
                     "player=%s previous_count=%d url=%s",
@@ -1145,6 +1364,70 @@ def _fetch_news_opinion_fallback_candidates(
                     link,
                 )
                 continue
+            # user 2026-06-27: 選手/首脳陣コメントは『』だけで画像付きにしたい。
+            # literal コメントが取れる記事は、抽象的な news_opinion よりコメント候補を
+            # 優先する。取れなければ従来の voice ニュース候補へ fallback。
+            html_text, image_bytes, image_source_url = _fetch_comment_article_material(
+                link,
+                timeout_seconds=timeout_seconds,
+            )
+            ccand = lane.build_player_comment_candidate(
+                member_name=player,
+                source_title=title,
+                source_url=link,
+                html_text=html_text,
+                source_name=str(source.get("name") or ""),
+                image_bytes=image_bytes,
+                image_source_url=image_source_url,
+                now=now,
+            )
+            if ccand is not None:
+                if dedup_set is not None and ccand.signature in dedup_set:
+                    seen_urls.add(link)
+                    LOG.info(
+                        "player_comment_candidate_dedup_skip source=%s "
+                        "player=%s signature=%s url=%s",
+                        source.get("name"),
+                        player,
+                        ccand.signature,
+                        link,
+                    )
+                    continue
+                out.append(ccand)
+                seen_urls.add(link)
+                existing_player_keys.add(player_key)
+                LOG.info(
+                    "player_comment_candidate_added source=%s player=%s image=%s "
+                    "history_override=%s url=%s",
+                    source.get("name"),
+                    player,
+                    bool(image_bytes),
+                    history_blocked,
+                    link,
+                )
+                continue
+
+            if comments_only:
+                LOG.info(
+                    "player_comment_candidate_skip source=%s player=%s "
+                    "reason=no_literal_comment url=%s",
+                    source.get("name"),
+                    player,
+                    link,
+                )
+                continue
+
+            if history_blocked:
+                LOG.info(
+                    "news_opinion_fallback_player_history_skip source=%s "
+                    "player=%s previous_count=%d url=%s reason=no_literal_comment",
+                    source.get("name"),
+                    player,
+                    history_player_counts.get(player_key, 0),
+                    link,
+                )
+                continue
+
             cand = lane.build_news_opinion_candidate(
                 source_title=title,
                 source_url=link,
@@ -1156,6 +1439,17 @@ def _fetch_news_opinion_fallback_candidates(
             )
             if cand is None:
                 continue
+            if dedup_set is not None and cand.signature in dedup_set:
+                seen_urls.add(link)
+                LOG.info(
+                    "news_opinion_fallback_dedup_skip source=%s player=%s "
+                    "signature=%s url=%s",
+                    source.get("name"),
+                    player,
+                    cand.signature,
+                    link,
+                )
+                continue
             out.append(cand)
             seen_urls.add(link)
             existing_player_keys.add(player_key)
@@ -1165,25 +1459,6 @@ def _fetch_news_opinion_fallback_candidates(
                 player,
                 link,
             )
-            # 併産 (user 2026-06-01「値段一緒なら両方ほしい」): 記事本文から本人コメントが
-            # literal で取れれば、 たんぱく①「コメント速報」も追加 (LLM不使用・¥0)。 全 graceful。
-            try:
-                creq = urlrequest.Request(link, headers={"User-Agent": "yoshilover-x-post-mail/1.0"})
-                with urlrequest.urlopen(creq, timeout=timeout_seconds) as cresp:  # noqa: S310
-                    html_text = cresp.read().decode("utf-8", errors="replace")
-                ccand = lane.build_player_comment_candidate(
-                    member_name=player,
-                    source_title=title,
-                    source_url=link,
-                    html_text=html_text,
-                    source_name=str(source.get("name") or ""),
-                    now=now,
-                )
-                if ccand is not None:
-                    out.append(ccand)
-                    LOG.info("player_comment_candidate_added player=%s url=%s", player, link)
-            except Exception as _cexc:  # noqa: BLE001
-                LOG.info("player_comment_skip url=%s: %r", link, _cexc)
     LOG.info(
         "news_opinion_fallback freshness max_age_h=%.1f added=%d skipped_stale=%d skipped_no_date=%d",
         max_age_hours,
@@ -1191,6 +1466,120 @@ def _fetch_news_opinion_fallback_candidates(
         skipped_stale,
         skipped_no_date,
     )
+    return out
+
+
+def _fetch_player_comment_priority_candidates(
+    existing_candidates: list[lane.Candidate],
+    *,
+    max_comments: int,
+    now: datetime,
+    recent_player_counts: dict[str, int] | None = None,
+    dedup_set: set[str] | None = None,
+) -> list[lane.Candidate]:
+    """Scrape news articles for literal player/manager/coach quotes only.
+
+    This lane intentionally does not call LLM comment generation. It fetches
+    article HTML, extracts a long literal quote, and keeps only
+    ``PLAYER_COMMENT`` candidates with optional ``og:image`` bytes.
+    """
+    if max_comments <= 0:
+        return []
+    target_total = len(existing_candidates) + max_comments
+    candidates = _fetch_news_opinion_fallback_candidates(
+        existing_candidates,
+        max_candidates=target_total,
+        now=now,
+        recent_player_counts=recent_player_counts,
+        comment_fn=None,
+        comments_only=True,
+        dedup_set=dedup_set,
+    )
+    return [c for c in candidates if c.metric == lane._PLAYER_COMMENT_METRIC][:max_comments]
+
+
+def _fetch_record_article_priority_candidates(
+    existing_candidates: list[lane.Candidate],
+    *,
+    max_records: int,
+    now: datetime,
+    recent_player_counts: dict[str, int] | None = None,  # noqa: ARG001 - record記事は履歴より鮮度優先
+) -> list[lane.Candidate]:
+    """Fetch source-backed record/milestone articles without DB-mining.
+
+    user 2026-06-27: 記録記事は早めに出したいが、マニアックなDB掘りではなく
+    記事に出ている記録だけでよい。RSS/title/excerpt に「通算・連続・節目」
+    などが出ている記事だけを優先枠に入れる。
+    """
+    if max_records <= 0:
+        return []
+    source_limit = _resolve_int_env(
+        "X_POST_MAIL_NEWS_FALLBACK_SOURCE_LIMIT",
+        DEFAULT_NEWS_FALLBACK_SOURCE_LIMIT,
+        min_value=0,
+    )
+    entry_limit = _resolve_int_env(
+        "X_POST_MAIL_NEWS_FALLBACK_ENTRY_LIMIT",
+        DEFAULT_NEWS_FALLBACK_ENTRY_LIMIT,
+        min_value=1,
+    )
+    timeout_seconds = _resolve_int_env(
+        "X_POST_MAIL_NEWS_FALLBACK_TIMEOUT_SECONDS",
+        DEFAULT_NEWS_FALLBACK_TIMEOUT_SECONDS,
+        min_value=1,
+    )
+    existing_player_keys = {
+        lane._normalize_player_name(c.focus_player)
+        for c in existing_candidates
+        if lane._normalize_player_name(c.focus_player)
+    }
+    max_age_hours = lane.phase_freshness_max_age_hours(now)
+    seen_urls: set[str] = set()
+    out: list[lane.Candidate] = []
+    for source in _load_news_fallback_sources()[:source_limit]:
+        if len(out) >= max_records:
+            break
+        for entry in _fetch_feed_entries(source, timeout_seconds=timeout_seconds)[:entry_limit]:
+            if len(out) >= max_records:
+                break
+            title, link, summary = _entry_text(entry)
+            if not title or not link or link in seen_urls:
+                continue
+            if not _looks_like_record_article(title, summary):
+                continue
+            pub_dt = _entry_published_dt(entry)
+            if pub_dt is None:
+                continue
+            if (now - pub_dt).total_seconds() / 3600.0 > max_age_hours:
+                continue
+            member = lane.detect_giants_player_name(
+                f"{title} {summary}",
+                alias_map={**lane._load_giants_player_aliases(), **lane._load_giants_member_aliases()},
+            )
+            member_key = lane._normalize_player_name(member)
+            if not member_key or member_key in existing_player_keys:
+                continue
+            cand = lane.build_news_opinion_candidate(
+                source_title=title,
+                source_url=link,
+                source_excerpt=summary,
+                source_name=str(source.get("name") or ""),
+                player_name=member,
+                now=now,
+                comment_fn=None,
+            )
+            if cand is None or cand.source_material_type != "record":
+                continue
+            out.append(cand)
+            seen_urls.add(link)
+            existing_player_keys.add(member_key)
+            LOG.info(
+                "record_article_priority_added source=%s player=%s url=%s",
+                source.get("name"),
+                member,
+                link,
+            )
+    LOG.info("record_article_priority built %d candidates (max=%d)", len(out), max_records)
     return out
 
 
@@ -1566,6 +1955,14 @@ def _rebrand_candidates_via_gemini(
     rebranded: list[lane.Candidate] = []
     success_count = 0
     for idx, cand in enumerate(candidates):
+        if (
+            cand.metric == lane._PLAYER_COMMENT_METRIC
+            or cand.source_material_type == "player_comment"
+        ):
+            # Literal comment posts are already exact scraped quotes in the
+            # required `名前『発言』` format. Do not rewrite them with Gemini.
+            rebranded.append(cand)
+            continue
         persona = "fuuga" if idx % 2 == 0 else "kandume"
         player = (cand.focus_player or "").strip()
         if not player:
@@ -2233,6 +2630,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     recent_player_counts: dict[str, int] = {}
     cooldown_players: set[str] = set()
     live_duplicate_players: set[str] = set()
+    recently_shown_players: set[str] = set()
     dedup_records: list[dict] = []
     bucket_name = os.environ.get("INSIGHT_GCS_BUCKET") or ""
     dedup_disabled = (os.environ.get("X_POST_MAIL_DEDUP_DISABLED") or "").strip()
@@ -2285,11 +2683,26 @@ def main(argv: Sequence[str] | None = None) -> int:
                     live_duplicate_cooldown_hours,
                     len(live_duplicate_players),
                 )
+            # 全レーン共通の「直近に出した選手は候補から外す」窓 (常時発動、試合中限定なし)。
+            # 毎時メールで井上・浦田 等が連続するのを止める最終チョークポイント。
+            recent_show_cooldown_hours = _resolve_int_env(
+                "X_POST_MAIL_RECENT_PLAYER_COOLDOWN_HOURS", 12, min_value=0
+            )
+            if recent_show_cooldown_hours > 0:
+                recently_shown_players = lane._players_within_cooldown(
+                    dedup_records, now_jst, recent_show_cooldown_hours
+                )
+                LOG.info(
+                    "Recent-shown player cooldown (%dh): %d players avoided across all lanes",
+                    recent_show_cooldown_hours,
+                    len(recently_shown_players),
+                )
         except Exception as exc:  # noqa: BLE001
             LOG.warning("dedup load failed (continuing without dedup): %r", exc)
             dedup_set = set()
             recent_player_counts = {}
             live_duplicate_players = set()
+            recently_shown_players = set()
     else:
         LOG.info("Dedup disabled (bucket=%s, disabled_env=%s)",
                  bool(bucket_name), dedup_disabled)
@@ -2368,6 +2781,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     # displacing the base DB/news set. Keep the normal cap for baseline
     # candidates, then add explicit slots for reply candidates below.
     extra_policy_slots = 0
+    comment_priority_candidates: list[lane.Candidate] = []
+    record_priority_candidates: list[lane.Candidate] = []
 
     # 448: flag ON 時、 大手未掲載の差別化 data split (序盤/中盤/終盤・本拠地/ビジター
     # 別打率の大きな差) 候補を append する。 公開 X 自動投稿はしない (候補=メールまで)。
@@ -2621,6 +3036,62 @@ def main(argv: Sequence[str] | None = None) -> int:
                 before, len(wm_new), len(candidates),
             )
 
+    # 2026-06-27 user: 「選手や首脳陣のコメント画像記事を増やして。ポストね」
+    # LLM で膨らませず、記事 HTML から長い literal 発言だけをスクレイピングし、
+    # og:image があればメール添付する。通常 news_opinion の空き埋めより前に置き、
+    # 同一選手のDB候補より本人コメントを優先する。
+    if not _news_fallback_disabled():
+        comment_priority_count = _resolve_player_comment_priority_candidates(args.max_candidates)
+        if comment_priority_count > 0:
+            comment_priority_candidates = _fetch_player_comment_priority_candidates(
+                candidates,
+                max_comments=comment_priority_count,
+                now=now_jst,
+                recent_player_counts=recent_player_counts,
+                dedup_set=dedup_set,
+            )
+            if comment_priority_candidates:
+                before = len(candidates)
+                candidates = _merge_news_priority_candidates(
+                    comment_priority_candidates,
+                    candidates,
+                    max_candidates=args.max_candidates + len(comment_priority_candidates),
+                )
+                extra_policy_slots += len(comment_priority_candidates)
+                LOG.info(
+                    "player_comment priority merged: base=%d comments=%d total=%d",
+                    before,
+                    len(comment_priority_candidates),
+                    len(candidates),
+                )
+
+    # 2026-06-27 user: 「記録記事は早め。ただマニアックはいらない、記事にあるものでよい」
+    # DB の alltime chase / milestone を掘るのではなく、RSS/記事タイトル・抜粋に
+    # 出ている「通算・連続・節目・初○○」だけを source-backed record として先に出す。
+    if not _news_fallback_disabled():
+        record_priority_count = _resolve_record_article_priority_candidates(args.max_candidates)
+        if record_priority_count > 0:
+            record_priority_candidates = _fetch_record_article_priority_candidates(
+                candidates,
+                max_records=record_priority_count,
+                now=now_jst,
+                recent_player_counts=recent_player_counts,
+            )
+            if record_priority_candidates:
+                before = len(candidates)
+                candidates = _merge_news_priority_candidates(
+                    record_priority_candidates,
+                    candidates,
+                    max_candidates=args.max_candidates + len(record_priority_candidates),
+                )
+                extra_policy_slots += len(record_priority_candidates)
+                LOG.info(
+                    "record_article priority merged: base=%d records=%d total=%d",
+                    before,
+                    len(record_priority_candidates),
+                    len(candidates),
+                )
+
     # 451: flag ON 時、 公式/OB/メディア YouTube の「懐かし・ファン反応」動画候補を append。
     # 転載しない (URL 紹介のみ)、 公開 X 自動投稿はしない (候補=メールまで)。 flag OFF で既存不変。
     if _video_radar_enabled():
@@ -2636,10 +3107,16 @@ def main(argv: Sequence[str] | None = None) -> int:
                         from src import x_post_branding_gen as _vr_xbg
 
                         def vr_comment_fn(post_text, player, phase_hint="", *, db_fact="", _k=_vr_key, _g=_vr_xbg, _now=now_jst):  # noqa: E731
-                            # voice は spec の フーガ+缶詰 合成 (_build_system_prompt)。 時間帯トーンは now から自動。
-                            # 2026-06-04 user 方針「DBは使わない」: db_fact (今季数字) は渡さない。
-                            # 引用RTは元投稿 (Xバズ動画) を素材にしたヨシラバー風の読みのみで書く。
-                            return _g.build_quote_rt_comment(post_text, player, gemini_api_key=_k, now=_now)
+                            # 動画SNSは通常の記事voiceと分ける。元投稿の具体場面 (打球音 / 一歩目 /
+                            # 送球 / 表情 / ベンチ反応) を最優先し、DB数字は混ぜない。
+                            return _g.build_quote_rt_comment(
+                                post_text,
+                                player,
+                                phase_hint=phase_hint,
+                                gemini_api_key=_k,
+                                now=_now,
+                                subject="動画SNS",
+                            )
                     except Exception as _vr_imp_exc:  # noqa: BLE001
                         LOG.warning("video_radar LLM comment unavailable: %r", _vr_imp_exc)
                         vr_comment_fn = None
@@ -2896,9 +3373,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     else:
         news_fallback_enabled = not _news_fallback_disabled()
         fallback_candidates = []
+    generic_news_suppressed_by_priority_sources = False
+    priority_source_candidates = comment_priority_candidates + record_priority_candidates
+    if priority_source_candidates and news_fallback_enabled:
+        news_fallback_enabled = False
+        generic_news_suppressed_by_priority_sources = True
     news_priority_count = _resolve_news_priority_candidates(args.max_candidates)
     if not news_fallback_enabled and not gemini_enabled:
-        LOG.info("News/opinion fallback disabled by X_POST_MAIL_NEWS_FALLBACK_DISABLED")
+        if generic_news_suppressed_by_priority_sources:
+            LOG.info(
+                "News/opinion generic fallback skipped because priority source supplied %d candidates",
+                len(priority_source_candidates),
+            )
+        else:
+            LOG.info("News/opinion fallback disabled by X_POST_MAIL_NEWS_FALLBACK_DISABLED")
     if news_fallback_enabled and news_priority_count:
         fallback_candidates = _fetch_news_opinion_fallback_candidates(
             [],
@@ -2906,6 +3394,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             now=now_jst,
             recent_player_counts=recent_player_counts,
             comment_fn=_make_voiced_comment_fn(now_jst, "ニュース記事"),  # A: フーガ+缶詰 voice
+            dedup_set=dedup_set,
         )
         if fallback_candidates:
             before = len(candidates)
@@ -2931,6 +3420,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             now=now_jst,
             recent_player_counts=recent_player_counts,
             comment_fn=_make_voiced_comment_fn(now_jst, "ニュース記事"),  # A: フーガ+缶詰 voice
+            dedup_set=dedup_set,
         )
         if fallback_candidates:
             before = len(candidates)
@@ -3180,11 +3670,24 @@ def main(argv: Sequence[str] | None = None) -> int:
     # Keep the 437 media/share path unchanged; only prune same-mail
     # duplicates and annotate kept candidates with "why now" timing.
     before_policy = len(candidates)
+    pre_policy_candidates = list(candidates)
     candidates, policy_drops = lane.apply_x_impression_policy(
         candidates,
         now=now_jst,
         max_candidates=args.max_candidates + extra_policy_slots,
+        recent_player_keys=recently_shown_players,
     )
+    if not candidates and recently_shown_players:
+        # 直近既出フィルタで全滅したら、空メールより重複してでも出す方を選ぶ
+        # (常に最低限の候補は届ける)。
+        LOG.warning(
+            "recent-player filter left 0 candidates — retry without recent-player gate"
+        )
+        candidates, policy_drops = lane.apply_x_impression_policy(
+            pre_policy_candidates,
+            now=now_jst,
+            max_candidates=args.max_candidates + extra_policy_slots,
+        )
     for dropped, reason in policy_drops:
         LOG.info(
             "x_impression_policy_drop reason=%s title=%s player=%s metric=%s period=%s",
@@ -3211,6 +3714,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not candidates:
         LOG.warning("player_dedup left 0 candidates — skip send.")
         return 0
+
+    candidates = _rewrite_data_candidates_plain_llm(candidates)
 
     LOG.info("Composing mail with %d candidates…", len(candidates))
     context_note = ""

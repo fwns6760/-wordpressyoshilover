@@ -365,6 +365,133 @@ def _draw_legend_frame(topic, script: ShortsScript, index: int, path: Path) -> N
     img.save(path, "PNG")
 
 
+def _draw_ranking_chrome(draw) -> None:
+    draw.rounded_rectangle((64, 64, WIDTH - 64, 164), radius=32, fill="#151515")
+    draw.text((96, 116), "YOSHILOVER DATA RANKING", font=_font(30, bold=True), fill="#ffffff", anchor="lm")
+    draw.rounded_rectangle((WIDTH - 312, 88, WIDTH - 94, 140), radius=26, fill="#ff7a1a")
+    draw.text((WIDTH - 203, 116), "巨人", font=_font(26, bold=True), fill="#ffffff", anchor="mm")
+
+
+def _draw_rank_row(draw, *, rank: int, player: str, display: str, y: int, highlight: bool) -> None:
+    fill = "#ff7a1a" if highlight else "#ffffff"
+    text_color = "#ffffff" if highlight else "#151515"
+    outline = "#ff7a1a" if not highlight else "#ffd166"
+    draw.rounded_rectangle((104, y, WIDTH - 104, y + 168), radius=44, fill=fill, outline=outline, width=4)
+    badge = "#ffffff" if highlight else "#ff7a1a"
+    badge_text = "#ff7a1a" if highlight else "#ffffff"
+    draw.ellipse((140, y + 40, 140 + 88, y + 128), fill=badge)
+    draw.text((140 + 44, y + 84), f"{rank}", font=_font(64, bold=True), fill=badge_text, anchor="mm")
+    name_lines = _wrap_text(draw, player, _font(58, bold=True), 560, max_lines=1)
+    draw.text((268, y + 84), name_lines[0] if name_lines else player, font=_font(58, bold=True), fill=text_color, anchor="lm")
+    draw.text((WIDTH - 150, y + 84), display, font=_font(60, bold=True), fill=text_color, anchor="rm")
+
+
+def _draw_ranking_frame(topic, script: ShortsScript, index: int, path: Path) -> None:
+    img, draw = _frame_background()
+    _draw_ranking_chrome(draw)
+    stat = getattr(topic, "stat", "")
+    entries = tuple(getattr(topic, "entries", ()) or ())
+
+    if index == 0:
+        draw.rounded_rectangle((96, 360, WIDTH - 96, 720), radius=54, fill="#ffffff", outline="#ffe0bf", width=4)
+        draw.text((WIDTH // 2, 452), "巨人データ・ランキング", font=_font(58, bold=True), fill="#c94700", anchor="ma")
+        _draw_centered_lines(draw, _wrap_text(draw, stat, _font(120, bold=True), 840, max_lines=1), 560, _font(120, bold=True), "#151515")
+        draw.rounded_rectangle((300, 980, WIDTH - 300, 1058), radius=38, fill="#151515")
+        draw.text((WIDTH // 2, 1019), "TOP 3", font=_font(44, bold=True), fill="#ffffff", anchor="mm")
+    elif index in (1, 2, 3):
+        rank_idx = index - 1
+        draw.text((WIDTH // 2, 320), f"巨人 {stat} ランキング", font=_font(48, bold=True), fill="#c94700", anchor="ma")
+        base_y = 470
+        for i, e in enumerate(entries[:3]):
+            _draw_rank_row(
+                draw,
+                rank=getattr(e, "rank", i + 1),
+                player=getattr(e, "player", ""),
+                display=getattr(e, "display", ""),
+                y=base_y + i * 200,
+                highlight=(i == rank_idx),
+            )
+    else:
+        draw.rounded_rectangle((124, 470, WIDTH - 124, 820), radius=48, fill="#ffffff", outline="#ffb36b", width=4)
+        draw.text((WIDTH // 2, 548), "続きはヨシラバーで", font=_font(56, bold=True), fill="#c94700", anchor="ma")
+        draw.text((WIDTH // 2, 648), "巨人 全選手データ", font=_font(46, bold=True), fill="#151515", anchor="ma")
+        draw.text((WIDTH // 2, 728), "/data/notable?v=yt", font=_font(34), fill="#555555", anchor="ma")
+
+    caption = script.captions[min(index, len(script.captions) - 1)].text
+    draw.rounded_rectangle((74, HEIGHT - 340, WIDTH - 74, HEIGHT - 210), radius=36, fill="#ffffff", outline="#f0d3bd", width=3)
+    _draw_centered_lines(draw, _wrap_text(draw, caption, _font(38, bold=True), 840, max_lines=2), HEIGHT - 296, _font(38, bold=True), "#151515", gap=10)
+    _draw_footer(draw)
+    img.save(path, "PNG")
+
+
+def _standings_background():
+    from PIL import Image, ImageDraw
+
+    img = Image.new("RGB", (WIDTH, HEIGHT), "#0b1f3a")
+    draw = ImageDraw.Draw(img)
+    for y in range(0, HEIGHT, 8):
+        ratio = y / HEIGHT
+        r = int(11 + (16 - 11) * ratio)
+        g = int(31 + (40 - 31) * ratio)
+        b = int(58 + (74 - 58) * ratio)
+        draw.rectangle((0, y, WIDTH, y + 8), fill=(r, g, b))
+    return img, draw
+
+
+def _draw_standings_chrome(draw) -> None:
+    draw.rounded_rectangle((64, 64, WIDTH - 64, 164), radius=32, fill="#12294a", outline="#ff7a1a", width=2)
+    draw.text((96, 116), "巨人目線のセ・リーグ", font=_font(34, bold=True), fill="#ffffff", anchor="lm")
+    draw.text((WIDTH - 96, 116), "by ヨシラバー", font=_font(22, bold=True), fill="#9fb4d6", anchor="rm")
+
+
+def _draw_standings_footer(draw) -> None:
+    draw.rectangle((0, HEIGHT - 168, WIDTH, HEIGHT), fill="#081627")
+    draw.rectangle((0, HEIGHT - 168, WIDTH, HEIGHT - 156), fill="#ff7a1a")
+    draw.text((72, HEIGHT - 86), "巨人の順位・データ → yoshilover.com/data", font=_font(28, bold=True), fill="#ffffff", anchor="lm")
+
+
+def _draw_standings_frame(topic, script: ShortsScript, index: int, path: Path) -> None:
+    img, draw = _standings_background()
+    _draw_standings_chrome(draw)
+    rank = getattr(topic, "rank", "")
+    wins = getattr(topic, "wins", "")
+    losses = getattr(topic, "losses", "")
+    draws = getattr(topic, "draws", "")
+    gb = getattr(topic, "gb", "")
+    is_leading = bool(getattr(topic, "is_leading", False))
+
+    if index == 0:
+        draw.text((WIDTH // 2, 360), "巨人目線で見る", font=_font(58, bold=True), fill="#ffffff", anchor="ma")
+        draw.text((WIDTH // 2, 452), "今のセ・リーグ", font=_font(72, bold=True), fill="#ff7a1a", anchor="ma")
+        draw.rounded_rectangle((180, 700, WIDTH - 180, 940), radius=54, fill="#12294a", outline="#ff7a1a", width=4)
+        draw.text((WIDTH // 2, 760), "巨人", font=_font(48, bold=True), fill="#9fb4d6", anchor="ma")
+        draw.text((WIDTH // 2, 850), f"{rank}位", font=_font(120, bold=True), fill="#ffffff", anchor="mm")
+    elif index == 1:
+        draw.text((WIDTH // 2, 420), "セ・リーグ順位", font=_font(54, bold=True), fill="#ff7a1a", anchor="ma")
+        draw.text((WIDTH // 2, 720), f"{rank}位", font=_font(300, bold=True), fill="#ffffff", anchor="mm")
+    elif index == 2:
+        draw.text((WIDTH // 2, 440), "今シーズンの成績", font=_font(54, bold=True), fill="#ff7a1a", anchor="ma")
+        draw.rounded_rectangle((110, 600, WIDTH - 110, 980), radius=54, fill="#12294a", outline="#ff7a1a", width=4)
+        draw.text((WIDTH // 2, 790), f"{wins}勝 {losses}敗 {draws}分", font=_font(96, bold=True), fill="#ffffff", anchor="mm")
+    elif index == 3:
+        if is_leading:
+            draw.text((WIDTH // 2, 560), "巨人が", font=_font(64, bold=True), fill="#ffffff", anchor="ma")
+            draw.text((WIDTH // 2, 680), "首位", font=_font(220, bold=True), fill="#ff7a1a", anchor="mm")
+        else:
+            draw.text((WIDTH // 2, 470), "首位とのゲーム差", font=_font(58, bold=True), fill="#ff7a1a", anchor="ma")
+            draw.text((WIDTH // 2, 720), f"{gb}", font=_font(240, bold=True), fill="#ffffff", anchor="mm")
+    else:
+        draw.text((WIDTH // 2, 540), "巨人の今を、", font=_font(58, bold=True), fill="#ffffff", anchor="ma")
+        draw.text((WIDTH // 2, 640), "毎日データで。", font=_font(58, bold=True), fill="#ff7a1a", anchor="ma")
+        draw.text((WIDTH // 2, 800), "ヨシラバー", font=_font(64, bold=True), fill="#ffffff", anchor="ma")
+
+    caption = script.captions[min(index, len(script.captions) - 1)].text
+    draw.rounded_rectangle((74, HEIGHT - 340, WIDTH - 74, HEIGHT - 210), radius=36, fill="#12294a", outline="#ff7a1a", width=3)
+    _draw_centered_lines(draw, _wrap_text(draw, caption, _font(38, bold=True), 840, max_lines=2), HEIGHT - 296, _font(38, bold=True), "#ffffff", gap=10)
+    _draw_standings_footer(draw)
+    img.save(path, "PNG")
+
+
 def render_frames(
     topic: ShortsTopic,
     script: ShortsScript,
@@ -374,7 +501,11 @@ def render_frames(
 ) -> tuple[Path, ...]:
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
-    draw_frame = _draw_legend_frame if fmt == "legend" else _draw_frame
+    draw_frame = {
+        "legend": _draw_legend_frame,
+        "ranking": _draw_ranking_frame,
+        "standings": _draw_standings_frame,
+    }.get(fmt, _draw_frame)
     paths: list[Path] = []
     for index in range(5):
         path = out / f"frame_{index + 1:02d}.png"

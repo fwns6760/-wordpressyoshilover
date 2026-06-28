@@ -557,6 +557,34 @@ def _select_legend_topic(
     return candidates[0]
 
 
+def _load_ranking_leaders_from_repo() -> dict[str, Any]:
+    from src.data_site_publisher import _serialize_notable_leaders
+
+    return dict(_serialize_notable_leaders(top_n=3) or {})
+
+
+def _load_standings_rows_from_repo() -> list[dict[str, Any]]:
+    from src.data_site_query import fetch_npb_cl_standings
+
+    return list(fetch_npb_cl_standings() or [])
+
+
+def _select_ranking_topic(
+    leaders: Mapping[str, Any] | None,
+    *,
+    as_of: str,
+    current: datetime,
+):
+    """stat 別ランキングを日替わり rotate で1本選ぶ(同じ指標の連投を避ける)。"""
+    from src.yt_shorts_ranking import RANKING_SOURCE_URL, list_ranking_topics
+
+    topics = list_ranking_topics(leaders, as_of=as_of, source_url=RANKING_SOURCE_URL)
+    if not topics:
+        return None
+    idx = current.toordinal() % len(topics)
+    return topics[idx]
+
+
 def _finish_run(
     *,
     topic,
@@ -699,6 +727,8 @@ def run(
     ffmpeg_bin: str = "ffmpeg",
     fmt: str = "data",
     legend_entries: list[dict[str, Any]] | None = None,
+    ranking_leaders: Mapping[str, Any] | None = None,
+    standings_rows: list[dict[str, Any]] | None = None,
 ) -> ShortsRunResult:
     dry_run = not live
     current = (now or _now_jst()).astimezone(JST)
@@ -779,6 +809,94 @@ def run(
             date_key=date_key,
             fmt="legend",
             youtube_tags=("巨人", "ジャイアンツ", "ヨシラバー", "巨人レジェンド", "shorts"),
+        )
+
+    if fmt == "ranking":
+        if ranking_leaders is None:
+            ranking_leaders = _load_ranking_leaders_from_repo()
+        topic = _select_ranking_topic(ranking_leaders, as_of=date_key, current=current)
+        if topic is None:
+            if live and send_mail:
+                _failure_mail(
+                    "【YT Shorts失敗】ランキング候補なし",
+                    "巨人ランキングの候補データがありません。",
+                    dry_run=False,
+                )
+            return ShortsRunResult(status="no_topic", dry_run=dry_run, reason="empty_ranking_data")
+        from src.yt_shorts_ranking import build_ranking_script
+
+        script = build_ranking_script(topic)
+        run_id = f"{date_key}-{_safe_id(topic.topic_key)}"
+        run_dir = Path(output_dir) / run_id
+        rendered = render_short(
+            topic,
+            script,
+            run_dir,
+            voicevox_base_url=voicevox_base_url or os.environ.get("VOICEVOX_BASE_URL", ""),
+            speaker=speaker,
+            allow_silent_tts=allow_silent_tts,
+            ffmpeg_bin=ffmpeg_bin,
+            fmt="ranking",
+        )
+        return _finish_run(
+            topic=topic,
+            script=script,
+            rendered=rendered,
+            run_dir=run_dir,
+            run_id=run_id,
+            bucket=bucket,
+            live=live,
+            dry_run=dry_run,
+            send_mail=send_mail,
+            youtube_private_upload=youtube_private_upload,
+            current=current,
+            date_key=date_key,
+            fmt="ranking",
+            youtube_tags=("巨人", "ジャイアンツ", "ヨシラバー", "ランキング", "shorts"),
+        )
+
+    if fmt == "standings":
+        if standings_rows is None:
+            standings_rows = _load_standings_rows_from_repo()
+        from src.yt_shorts_standings import build_standings_script, standings_topic_from_rows
+
+        topic = standings_topic_from_rows(standings_rows, as_of=date_key)
+        if topic is None:
+            if live and send_mail:
+                _failure_mail(
+                    "【YT Shorts失敗】順位データなし",
+                    "巨人の順位データが取得できませんでした。",
+                    dry_run=False,
+                )
+            return ShortsRunResult(status="no_topic", dry_run=dry_run, reason="empty_standings_data")
+        script = build_standings_script(topic)
+        run_id = f"{date_key}-{_safe_id(topic.topic_key)}"
+        run_dir = Path(output_dir) / run_id
+        rendered = render_short(
+            topic,
+            script,
+            run_dir,
+            voicevox_base_url=voicevox_base_url or os.environ.get("VOICEVOX_BASE_URL", ""),
+            speaker=speaker,
+            allow_silent_tts=allow_silent_tts,
+            ffmpeg_bin=ffmpeg_bin,
+            fmt="standings",
+        )
+        return _finish_run(
+            topic=topic,
+            script=script,
+            rendered=rendered,
+            run_dir=run_dir,
+            run_id=run_id,
+            bucket=bucket,
+            live=live,
+            dry_run=dry_run,
+            send_mail=send_mail,
+            youtube_private_upload=youtube_private_upload,
+            current=current,
+            date_key=date_key,
+            fmt="standings",
+            youtube_tags=("巨人", "ジャイアンツ", "ヨシラバー", "セリーグ", "順位表", "shorts"),
         )
 
     excluded_players = {
@@ -923,9 +1041,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--format",
-        choices=["data", "legend", "both"],
+        choices=["data", "legend", "ranking", "standings", "both", "all"],
         default=(os.environ.get("YT_SHORTS_FORMAT", "data") or "data"),
-        help="Which Shorts format(s) to generate. 'both' = data + 巨人レジェンド記録室.",
+        help=(
+            "Which Shorts format(s) to generate. "
+            "'both' = data + 巨人レジェンド記録室. "
+            "'all' = data + legend + ranking(巨人データ・ランキング) + standings(巨人目線のセ・リーグ)."
+        ),
     )
     return parser
 
@@ -940,7 +1062,10 @@ def main(argv: list[str] | None = None) -> int:
         if args.topic_json_inline
         else (_load_notable_data_from_json(args.topic_json) if args.topic_json else None)
     )
-    formats = ["data", "legend"] if args.format == "both" else [args.format]
+    formats = {
+        "both": ["data", "legend"],
+        "all": ["data", "legend", "ranking", "standings"],
+    }.get(args.format, [args.format])
     single = len(formats) == 1
     results: list[dict[str, Any]] = []
     exit_code = 0

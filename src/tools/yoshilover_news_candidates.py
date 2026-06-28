@@ -273,6 +273,7 @@ class YoshiNewsBuildStats:
     fetched_sources: int = 0
     skipped_sources: dict[str, int] = field(default_factory=dict)
     raw_items: int = 0
+    stale_items: int = 0
     scored_items: int = 0
     deduped_items: int = 0
     resolved_google_news: int = 0
@@ -322,6 +323,47 @@ def _format_published(raw: str) -> str:
     if parsed:
         return parsed.strftime("%Y-%m-%d %H:%M")
     return _normalize_space(raw) or "不明"
+
+
+def _freshness_window_hours(now: datetime, freshness_cfg: dict[str, Any]) -> int:
+    env_value = os.environ.get("YOSHILOVER_NEWS_FRESHNESS_WINDOW_HOURS")
+    if env_value:
+        try:
+            return max(1, int(env_value))
+        except ValueError:
+            LOG.warning("invalid YOSHILOVER_NEWS_FRESHNESS_WINDOW_HOURS=%s", env_value)
+
+    now_jst = now.astimezone(JST) if now.tzinfo else now.replace(tzinfo=JST)
+    slot_cfg = freshness_cfg.get("slot_max_age_hours", {})
+    if isinstance(slot_cfg, dict):
+        raw_slot_value = slot_cfg.get(str(now_jst.hour))
+        if raw_slot_value is not None:
+            try:
+                return max(1, int(raw_slot_value))
+            except (TypeError, ValueError):
+                LOG.warning("invalid slot freshness value hour=%s value=%s", now_jst.hour, raw_slot_value)
+
+    try:
+        return max(1, int(freshness_cfg.get("default_max_age_hours", 18)))
+    except (TypeError, ValueError):
+        return 18
+
+
+def _item_is_fresh(
+    item: dict[str, str],
+    *,
+    now: datetime,
+    max_age_hours: int,
+    keep_unknown_published: bool,
+) -> bool:
+    parsed = _parse_timestamp(item.get("published") or "")
+    if parsed is None:
+        return keep_unknown_published
+    now_jst = now.astimezone(JST) if now.tzinfo else now.replace(tzinfo=JST)
+    age = now_jst - parsed
+    if age < timedelta(hours=-1):
+        return True
+    return age <= timedelta(hours=max_age_hours)
 
 
 def _read_json(path: Path | str) -> dict[str, Any]:
@@ -734,6 +776,10 @@ def build_candidates(
     stats.raw_items = finance_stats.raw_items
 
     scoring_cfg = config.get("scoring", {}) if isinstance(config.get("scoring"), dict) else {}
+    freshness_cfg = config.get("freshness", {}) if isinstance(config.get("freshness"), dict) else {}
+    freshness_enabled = bool(freshness_cfg.get("enabled", True))
+    freshness_hours = _freshness_window_hours(active_now, freshness_cfg)
+    keep_unknown_published = bool(freshness_cfg.get("keep_unknown_published", True))
     window = int(scoring_cfg.get("dedupe_window_hours", 168))
     ledger_uri = gcs_ledger_uri or os.environ.get("YOSHILOVER_NEWS_CANDIDATE_LEDGER_GCS_URI") or None
     seen_keys, seen_urls, seen_titles = load_seen(
@@ -758,6 +804,14 @@ def build_candidates(
             LOG.info("yoshilover_news_resolve_time_budget_reached candidates=%d", len(candidates))
             break
         if not item.get("title") or not item.get("url"):
+            continue
+        if freshness_enabled and not _item_is_fresh(
+            item,
+            now=active_now,
+            max_age_hours=freshness_hours,
+            keep_unknown_published=keep_unknown_published,
+        ):
+            stats.stale_items += 1
             continue
         cand = _candidate_from_item(
             source,
@@ -874,7 +928,7 @@ def compose_mail(
         "本文は作成していません。自動公開・X自動投稿もしません。URLと原典を確認してから採用してください。",
         (
             f"sources={stats.loaded_sources} fetched={stats.fetched_sources} "
-            f"raw={stats.raw_items} scored={stats.scored_items} "
+            f"raw={stats.raw_items} stale={stats.stale_items} scored={stats.scored_items} "
             f"deduped={stats.deduped_items} gnews_resolved={stats.resolved_google_news} "
             f"gnews_unresolved={stats.unresolved_google_news}"
         ),
@@ -887,7 +941,7 @@ def compose_mail(
         "<p>本文は作成していません。自動公開・X自動投稿もしません。URLと原典を確認してから採用してください。</p>",
         (
             f"<p>sources={stats.loaded_sources} / fetched={stats.fetched_sources} / "
-            f"raw={stats.raw_items} / scored={stats.scored_items} / "
+            f"raw={stats.raw_items} / stale={stats.stale_items} / scored={stats.scored_items} / "
             f"deduped={stats.deduped_items} / gnews_resolved={stats.resolved_google_news} / "
             f"gnews_unresolved={stats.unresolved_google_news}</p>"
         ),

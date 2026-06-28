@@ -38,6 +38,27 @@ RSS_SAMPLE = """<?xml version="1.0" encoding="UTF-8"?>
 """
 
 
+RSS_WITH_STALE_SAMPLE = """<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Giants source</title>
+    <item>
+      <title>巨人の若手特集、二軍で見えた課題</title>
+      <link>https://example.test/fresh</link>
+      <description>巨人の若手分析</description>
+      <pubDate>Sun, 28 Jun 2026 02:30:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>巨人の若手特集、二日前の話題</title>
+      <link>https://example.test/stale</link>
+      <description>巨人の若手分析</description>
+      <pubDate>Fri, 26 Jun 2026 00:00:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>
+"""
+
+
 class YoshiloverNewsCandidateTests(unittest.TestCase):
     def test_google_news_title_is_not_rewritten_and_url_can_resolve(self) -> None:
         source = fnc.FinanceSource(
@@ -279,6 +300,45 @@ class YoshiloverNewsCandidateTests(unittest.TestCase):
             self.assertEqual(second.candidates, [])
             self.assertGreaterEqual(second.stats.deduped_items, 1)
 
+    def test_build_candidates_drops_stale_published_items_before_scoring(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            config = tmp / "sources.json"
+            ledger = tmp / "ledger.jsonl"
+            config.write_text(
+                json.dumps(
+                    {
+                        "freshness": {"enabled": True, "default_max_age_hours": 4},
+                        "scoring": {"dedupe_window_hours": 168, "include_excluded": True},
+                        "sources": [
+                            {
+                                "id": "rss",
+                                "name": "テストRSS",
+                                "url": "https://example.test/rss.xml",
+                                "kind": "rss",
+                                "lane": "general",
+                                "score_base": 70,
+                            }
+                        ],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            now = datetime(2026, 6, 28, 12, 0, tzinfo=JST)
+            with patch.object(fnc, "_http_get", return_value=RSS_WITH_STALE_SAMPLE):
+                result = ync.build_candidates(
+                    source_path=config,
+                    now=now,
+                    ledger_path=ledger,
+                    resolve_google_news=False,
+                    max_candidates=10,
+                )
+
+            self.assertEqual([cand.url for cand in result.candidates], ["https://example.test/fresh"])
+            self.assertEqual(result.stats.stale_items, 1)
+            self.assertEqual(result.stats.scored_items, 1)
+
     def test_compose_mail_has_required_sections_and_top3(self) -> None:
         now = datetime(2026, 6, 28, 12, 0, tzinfo=JST)
         candidates = [
@@ -320,6 +380,7 @@ class YoshiloverNewsCandidateTests(unittest.TestCase):
         self.assertIn("【OBネタ】", text)
         self.assertIn("今日のおすすめ上位3件", text)
         self.assertIn("自動公開・X自動投稿もしません", text)
+        self.assertIn("stale=", text)
         self.assertIn("原典を開く", html)
 
 

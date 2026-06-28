@@ -4,7 +4,17 @@
     "hl": "ja",
     "gl": "JP",
     "ceid": "JP:ja",
-    "freshness_query_suffix": "when:7d"
+    "freshness_query_suffix": "when:1d"
+  },
+  "freshness": {
+    "enabled": true,
+    "default_max_age_hours": 18,
+    "slot_max_age_hours": {
+      "9": 18,
+      "12": 4,
+      "15": 4
+    },
+    "keep_unknown_published": true
   },
   "scoring": {
     "dedupe_window_hours": 168,

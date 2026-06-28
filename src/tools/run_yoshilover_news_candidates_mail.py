@@ -112,12 +112,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     for cand in candidates:
         counts[cand.category] = counts.get(cand.category, 0) + 1
     LOG.info(
-        "yoshilover_news_result candidates=%d counts=%s loaded=%d fetched=%d raw=%d scored=%d deduped=%d",
+        "yoshilover_news_result candidates=%d counts=%s loaded=%d fetched=%d raw=%d stale=%d scored=%d deduped=%d",
         len(candidates),
         counts,
         result.stats.loaded_sources,
         result.stats.fetched_sources,
         result.stats.raw_items,
+        result.stats.stale_items,
         result.stats.scored_items,
         result.stats.deduped_items,
     )

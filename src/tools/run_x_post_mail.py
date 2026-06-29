@@ -349,6 +349,17 @@ def _news_scrape_max_per_run() -> int:
     return _resolve_int_env("X_POST_MAIL_NEWS_SCRAPE_MAX", 2, min_value=0)
 
 
+def _recent_cooldown_per_group_enabled() -> bool:
+    """recent-player クールダウンをレーン群ごとに分離するか (default ON)。
+
+    ON: 動画/本人コメント(オリジナル) と 報知/ファンリプ(レス) と データ速報を
+    別群として recent dedup を判定 → レス既出がオリジナルを落とさない。
+    `0` で従来の全レーン横断 1set 挙動へ rollback。
+    """
+    raw = (os.environ.get("X_POST_MAIL_RECENT_COOLDOWN_PER_GROUP") or "").strip().lower()
+    return raw not in {"0", "false", "no", "off"}
+
+
 def _x_post_player_dedup_enabled() -> bool:
     """1メール内で同一選手の候補を1つに圧縮するか (default ON)。
 
@@ -2631,6 +2642,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     cooldown_players: set[str] = set()
     live_duplicate_players: set[str] = set()
     recently_shown_players: set[str] = set()
+    recently_shown_by_group: dict[str, set[str]] | None = None
     dedup_records: list[dict] = []
     bucket_name = os.environ.get("INSIGHT_GCS_BUCKET") or ""
     dedup_disabled = (os.environ.get("X_POST_MAIL_DEDUP_DISABLED") or "").strip()
@@ -2692,11 +2704,24 @@ def main(argv: Sequence[str] | None = None) -> int:
                 recently_shown_players = lane._players_within_cooldown(
                     dedup_records, now_jst, recent_show_cooldown_hours
                 )
-                LOG.info(
-                    "Recent-shown player cooldown (%dh): %d players avoided across all lanes",
-                    recent_show_cooldown_hours,
-                    len(recently_shown_players),
-                )
+                if _recent_cooldown_per_group_enabled():
+                    recently_shown_by_group = lane._players_within_cooldown_by_group(
+                        dedup_records, now_jst, recent_show_cooldown_hours
+                    )
+                    LOG.info(
+                        "Recent-shown player cooldown (%dh) per-group: "
+                        "original=%d reply=%d other=%d",
+                        recent_show_cooldown_hours,
+                        len(recently_shown_by_group["original"]),
+                        len(recently_shown_by_group["reply"]),
+                        len(recently_shown_by_group["other"]),
+                    )
+                else:
+                    LOG.info(
+                        "Recent-shown player cooldown (%dh): %d players avoided across all lanes",
+                        recent_show_cooldown_hours,
+                        len(recently_shown_players),
+                    )
         except Exception as exc:  # noqa: BLE001
             LOG.warning("dedup load failed (continuing without dedup): %r", exc)
             dedup_set = set()
@@ -3676,6 +3701,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         now=now_jst,
         max_candidates=args.max_candidates + extra_policy_slots,
         recent_player_keys=recently_shown_players,
+        recent_player_keys_by_group=recently_shown_by_group,
     )
     if not candidates and recently_shown_players:
         # 直近既出フィルタで全滅したら、空メールより重複してでも出す方を選ぶ

@@ -3059,12 +3059,36 @@ def _candidate_topic_key(candidate: Candidate) -> str:
     return f"{player}|{metric}|{period}"
 
 
+# 2026-06-29 user 決定: recent-player クールダウン (dedup_player_recent) を
+# レーン群ごとに分離する。 レス/メディアで直近に出た選手が 動画・本人コメントの
+# オリジナルを巻き添えで落とす問題への対処 (動画オリジナル 1 本 + メディアレス
+# 1 本を同選手で両立)。
+_ORIGINAL_LANE_METRICS = frozenset({_VIDEO_RADAR_METRIC, _PLAYER_COMMENT_METRIC})
+_REPLY_LANE_METRICS = frozenset({_HOCHI_REPLY_METRIC, _REPLY_CANDIDATE_METRIC})
+
+
+def _lane_group(metric: object) -> str:
+    """Return the recent-player cooldown group for a candidate metric.
+
+    "original" = 引用動画 + 本人/首脳陣コメント, "reply" = 報知/ファンリプ,
+    "other" = データ速報など残り全部。 群をまたぐ既出では recent dedup を
+    効かせない。
+    """
+    m = str(metric or "")
+    if m in _ORIGINAL_LANE_METRICS:
+        return "original"
+    if m in _REPLY_LANE_METRICS:
+        return "reply"
+    return "other"
+
+
 def apply_x_impression_policy(
     candidates: list[Candidate],
     *,
     now: Optional[datetime] = None,
     max_candidates: Optional[int] = None,
     recent_player_keys: Optional[set[str]] = None,
+    recent_player_keys_by_group: Optional[dict[str, set[str]]] = None,
 ) -> tuple[list[Candidate], list[tuple[Candidate, str]]]:
     """Apply final API-free X impression policy before composing mail.
 
@@ -3077,6 +3101,11 @@ def apply_x_impression_policy(
     a player who was just mailed — this is the single choke point that stops
     the same hot player (buzz / comment / image / record lanes alike) from
     recurring in every hourly candidate mail. Reply-lane actions are exempt.
+
+    ``recent_player_keys_by_group`` (2026-06-29): when provided, the recent
+    gate is scoped per lane-group (original / reply / other) so a player shown
+    recently in one group does not suppress candidates in another group. Falls
+    back to the flat ``recent_player_keys`` set when ``None``.
     """
     if now is None:
         now = datetime.now(JST)
@@ -3090,6 +3119,8 @@ def apply_x_impression_policy(
     seen_image_hashes: set[str] = set()
     seen_players: set[str] = set()
     recent_players: set[str] = set(recent_player_keys or ())
+    # per-group が渡されたら群ごとに recent 判定 (群をまたぐ既出では落とさない)。
+    recent_by_group = recent_player_keys_by_group
 
     for candidate in candidates:
         reason = ""
@@ -3102,6 +3133,12 @@ def apply_x_impression_policy(
             _HOCHI_REPLY_METRIC,
             _REPLY_CANDIDATE_METRIC,
         }
+        if recent_by_group is not None:
+            recent_hit = player_key in recent_by_group.get(
+                _lane_group(candidate.metric), frozenset()
+            )
+        else:
+            recent_hit = player_key in recent_players
         data_precision_reason = _data_precision_drop_reason(candidate)
         if data_precision_reason:
             reason = data_precision_reason
@@ -3115,9 +3152,10 @@ def apply_x_impression_policy(
             reason = "dedup_post_text_hash"
         elif image_hash and image_hash in seen_image_hashes:
             reason = "dedup_image_payload_hash"
-        elif player_key and player_key in recent_players and not is_reply_metric:
-            # 直近の毎時メールで既に出した選手は全レーン共通で外す
-            # (井上・浦田 等が毎時連続するのを止める)。
+        elif player_key and recent_hit and not is_reply_metric:
+            # 直近の毎時メールで既に出した選手は外す (井上・浦田 等が毎時連続
+            # するのを止める)。 per-group 時は同じ群の既出のみで判定するので、
+            # レス既出が動画/本人コメントのオリジナルを落とすことはない。
             reason = "dedup_player_recent"
         elif (
             player_key
@@ -3567,6 +3605,45 @@ def _players_within_cooldown(
         if ts >= cutoff:
             recent.add(player_key)
     return recent
+
+
+def _players_within_cooldown_by_group(
+    records: list[dict],
+    now: datetime,
+    cooldown_hours: float,
+) -> dict[str, set[str]]:
+    """Like ``_players_within_cooldown`` but split per lane-group.
+
+    Returns ``{"original": set, "reply": set, "other": set}`` keyed by
+    ``_lane_group(rec["metric"])``. Used so a player shown recently in one
+    lane-group does not suppress candidates in another group (レス既出が
+    動画/本人コメントのオリジナルを落とさない)。
+    """
+    groups: dict[str, set[str]] = {
+        "original": set(),
+        "reply": set(),
+        "other": set(),
+    }
+    if cooldown_hours <= 0:
+        return groups
+    cutoff = now - timedelta(hours=cooldown_hours)
+    for rec in records:
+        player_key = _normalize_player_name(rec.get("focus_player"))
+        if not player_key:
+            continue
+        ts_str = rec.get("ts") or ""
+        if not ts_str:
+            continue
+        try:
+            ts = datetime.fromisoformat(str(ts_str).replace("Z", "+00:00"))
+        except (ValueError, TypeError):
+            continue
+        if ts.tzinfo is None:
+            # Treat naive timestamps as JST per project convention.
+            ts = ts.replace(tzinfo=JST)
+        if ts >= cutoff:
+            groups[_lane_group(rec.get("metric"))].add(player_key)
+    return groups
 
 
 def _load_recent_player_counts(

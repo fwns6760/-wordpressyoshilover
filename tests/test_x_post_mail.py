@@ -1280,6 +1280,86 @@ class ComposeMailTests(unittest.TestCase):
         kept, _dropped = apply_x_impression_policy([reply], now=ts, recent_player_keys=recent)
         self.assertEqual(len(kept), 1)  # 返信レーンは直近既出でも残す
 
+    def test_impression_policy_per_group_reply_recent_keeps_original(self) -> None:
+        # 2026-06-29: レス群で 戸郷 既出でも、動画/本人コメントのオリジナルは残す。
+        ts = datetime(2026, 6, 28, 12, 0, tzinfo=JST)
+        from src.x_post_mail_lane import (
+            _VIDEO_RADAR_METRIC, _PLAYER_COMMENT_METRIC,
+        )
+        # 戸郷(動画)・大城(本人コメント) ともレス群で既出。 別選手なので
+        # 同一メール内 dedup には掛からず、 レス既出でも 2 本とも残る。
+        by_group = {
+            "original": set(),
+            "reply": {
+                _normalize_player_name("戸郷翔征"),
+                _normalize_player_name("大城卓三"),
+            },
+            "other": set(),
+        }
+        video = Candidate("動画戸郷", _VIDEO_RADAR_METRIC, "引用RT候補", "根拠", 5,
+                          post_text="戸郷の動画 #巨人", focus_player="戸郷翔征")
+        comment = Candidate("コメ大城", _PLAYER_COMMENT_METRIC, "本人コメント", "根拠", 4,
+                            post_text="大城のコメント #巨人", focus_player="大城卓三")
+        kept, _dropped = apply_x_impression_policy(
+            [video, comment], now=ts, recent_player_keys_by_group=by_group
+        )
+        self.assertEqual(len(kept), 2)  # レス既出はオリジナルを落とさない
+
+    def test_impression_policy_per_group_same_group_recent_drops(self) -> None:
+        # オリジナル群で既出なら、同群(動画)のオリジナルは従来通り落ちる。
+        ts = datetime(2026, 6, 28, 12, 0, tzinfo=JST)
+        from src.x_post_mail_lane import _VIDEO_RADAR_METRIC
+        by_group = {
+            "original": {_normalize_player_name("戸郷翔征")},
+            "reply": set(),
+            "other": set(),
+        }
+        video = Candidate("動画戸郷", _VIDEO_RADAR_METRIC, "引用RT候補", "根拠", 5,
+                          post_text="戸郷の動画 #巨人", focus_player="戸郷翔征")
+        kept, dropped = apply_x_impression_policy(
+            [video], now=ts, recent_player_keys_by_group=by_group
+        )
+        self.assertEqual(len(kept), 0)
+        self.assertIn("dedup_player_recent", {r for _c, r in dropped})
+
+    def test_impression_policy_per_group_other_recent_keeps_original(self) -> None:
+        # データ速報(other群)で既出でも、動画オリジナルは残す。
+        ts = datetime(2026, 6, 28, 12, 0, tzinfo=JST)
+        from src.x_post_mail_lane import _VIDEO_RADAR_METRIC
+        by_group = {
+            "original": set(),
+            "reply": set(),
+            "other": {_normalize_player_name("戸郷翔征")},
+        }
+        video = Candidate("動画戸郷", _VIDEO_RADAR_METRIC, "引用RT候補", "根拠", 5,
+                          post_text="戸郷の動画 #巨人", focus_player="戸郷翔征")
+        kept, _dropped = apply_x_impression_policy(
+            [video], now=ts, recent_player_keys_by_group=by_group
+        )
+        self.assertEqual(len(kept), 1)
+
+    def test_players_within_cooldown_by_group_buckets_by_metric(self) -> None:
+        from src.x_post_mail_lane import (
+            _players_within_cooldown_by_group,
+            _VIDEO_RADAR_METRIC, _PLAYER_COMMENT_METRIC,
+            _HOCHI_REPLY_METRIC, _NEWS_SCRAPE_METRIC,
+        )
+        now = datetime(2026, 6, 28, 12, 0, tzinfo=JST)
+        ts = (now - timedelta(hours=1)).isoformat()
+        records = [
+            {"ts": ts, "focus_player": "戸郷翔征", "metric": _VIDEO_RADAR_METRIC},
+            {"ts": ts, "focus_player": "大城卓三", "metric": _PLAYER_COMMENT_METRIC},
+            {"ts": ts, "focus_player": "泉口友汰", "metric": _HOCHI_REPLY_METRIC},
+            {"ts": ts, "focus_player": "岡本和真", "metric": _NEWS_SCRAPE_METRIC},
+        ]
+        out = _players_within_cooldown_by_group(records, now, cooldown_hours=12)
+        self.assertEqual(
+            out["original"],
+            {_normalize_player_name("戸郷翔征"), _normalize_player_name("大城卓三")},
+        )
+        self.assertEqual(out["reply"], {_normalize_player_name("泉口友汰")})
+        self.assertEqual(out["other"], {_normalize_player_name("岡本和真")})
+
     def test_source_mix_summary_flags_low_source_b_ratio(self) -> None:
         cands = [
             Candidate("A1", "NEWS_OPINION", "ニュース", "根拠", 3, post_text="短い。"),

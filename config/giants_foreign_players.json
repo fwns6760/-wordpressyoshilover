@@ -645,7 +645,7 @@
   {
    "name": "D.マルティネス",
    "display_name": "D.マルティネス",
-   "slug": "martinez",
+   "slug": "martinez-domingo",
    "type": "batter",
    "years": "1999-2001",
    "roman": "DOMINGO MARTINEZ",
@@ -2072,7 +2072,7 @@
    "name": "マルティネス",
    "group": "投手",
    "status": "支配下",
-   "slug": ""
+   "slug": "martinez"
   },
   {
    "name": "ダルベック",

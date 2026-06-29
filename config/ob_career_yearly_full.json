@@ -17227,7 +17227,7 @@
   "display_name": "DICKY.ゴンザレス",
   "slug": "gonzalez09"
  },
- "martinez": {
+ "martinez-domingo": {
   "is_pitcher": false,
   "batting": {
    "columns": [
@@ -17470,7 +17470,7 @@
   "pitching": null,
   "source_url": "https://www.my-favorite-giants.net/giants_data/player/player7/martinez.htm",
   "display_name": "D.マルティネス",
-  "slug": "martinez"
+  "slug": "martinez-domingo"
  },
  "gonzalez10": {
   "is_pitcher": false,

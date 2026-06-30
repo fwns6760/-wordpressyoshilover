@@ -18,7 +18,7 @@ _TWEET_URL_RE = re.compile(r"https?://(?:x|twitter)\.com/([^/]+)/status/", re.IG
 _NOTICE_TWEET_WINDOW_HOURS = 24
 _NPB_HANDLES = {"@npb"}
 _OFFICIAL_HANDLES = {"@tokyogiants", "@yomiuri_giants"}
-_MEDIA_HANDLES = {"@hochi_giants", "@sportshochi", "@hochi_baseball", "@sponichiyakyu", "@sanspo_giants", "@nikkansports", "@ntv_sports_jp"}
+_MEDIA_HANDLES = {"@hochi_giants", "@sportshochi", "@hochi_baseball", "@sponichiyakyu", "@sanspo_giants", "@nikkansports", "@kitamura_nikkan", "@ntv_sports_jp"}
 
 # 2026-05-14 PM: event keyword match + game-time step bonus tuning so the
 # pool ranks tweets that share the article's specific event (HR / サヨナラ /

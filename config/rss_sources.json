@@ -119,6 +119,15 @@
     ]
   },
   {
+    "name": "日刊北村記者X",
+    "url": "https://rsshub-487178857517.asia-northeast1.run.app/twitter/user/kitamura_nikkan",
+    "type": "social_news",
+    "role": [
+      "article_source",
+      "media_quote_pool"
+    ]
+  },
+  {
     "name": "デイリー野球X",
     "url": "https://rsshub-487178857517.asia-northeast1.run.app/twitter/user/daily_baseball",
     "type": "social_news",

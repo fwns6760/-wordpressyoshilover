@@ -2082,6 +2082,13 @@ def build_video_radar_candidates(
         if player_key and player_key in avoid_names:
             LOG.info("x_buzz skip: player in live duplicate cooldown player=%s", player)
             continue
+        # A (2026-06-30 user): 低シグナル「選手の話題」(選手名のみ・出来事語なし) は除外。
+        # 元投稿に反応材料が無く、 LLM/テンプレ どちらでも選手名以外が同型の generic コメントに
+        # なり候補が重複する (別選手で「同じセリフ」になる)。 出来事/懐かし/バズの hook がある
+        # 投稿 (好プレー・反応 / 懐かし・名場面 / Xで話題) だけを引用RT候補に残す。
+        if p.get("type_tag") == "選手の話題":
+            LOG.info("x_buzz skip: low-signal tag=選手の話題 player=%s", player or "(none)")
+            continue
         # 一記事一本: 同じ選手は 1 本だけ
         if player and player in used_players:
             continue

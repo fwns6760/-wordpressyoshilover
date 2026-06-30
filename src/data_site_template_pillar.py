@@ -61,8 +61,8 @@ class PillarPlayerInfo:
     season_avg: Optional[float] = None
     # 453: NPB 全 12 球団内 順位バッジ [(label, value_str, rank, total), ...]
     metric_ranks: list[tuple] = field(default_factory=list)
-    recent_games: list[tuple[str, str, int, int, int]] = field(default_factory=list)
-    # recent_games = [(game_date, opponent, ab, hits, rbi), ...]
+    recent_games: list[tuple[str, str, int, int, int, int, int]] = field(default_factory=list)
+    # recent_games = [(game_date, opponent, ab, hits, hr, rbi, sb), ...]
     has_stats: bool = False  # False なら 「データ集計中」 placeholder
     # Phase 1.0a 大手未掲載 metric pack
     lineup_slot_stats: list[tuple[int, int, int, int, int, Optional[float]]] = field(default_factory=list)
@@ -279,15 +279,15 @@ def _build_recent_games_html(player: PillarPlayerInfo) -> str:
     rows_html = "\n".join(
         '<tr>'
         f'<td>{_esc(date)}</td><td>{_esc(opp)}</td><td>{ab}</td>'
-        f'<td class="ys-k">{h}</td><td>{rbi}</td>'
+        f'<td class="ys-k">{h}</td><td>{hr}</td><td>{rbi}</td><td>{sb}</td>'
         '</tr>'
-        for (date, opp, ab, h, rbi) in player.recent_games
+        for (date, opp, ab, h, hr, rbi, sb) in player.recent_games
     )
     return (
         '<div class="ys-card">'
         f'<h2>{SEASON_LABEL} 全 {len(player.recent_games)} 試合</h2>'
         '<table><thead><tr>'
-        '<th>日付</th><th>相手</th><th>打数</th><th>安打</th><th>打点</th>'
+        '<th>日付</th><th>相手</th><th>打数</th><th>安打</th><th>本塁打</th><th>打点</th><th>盗塁</th>'
         '</tr></thead>'
         f'<tbody>{rows_html}</tbody></table>'
         '</div>'

@@ -608,8 +608,9 @@ def _build_pillar_info(player_name: str) -> PillarPlayerInfo | None:
         info.season_hr = season.hr
         info.season_avg = season.avg
     if recent_games_raw:
+        # (日付, 相手, 打数, 安打, 本塁打, 打点, 盗塁)
         info.recent_games = [
-            (g.game_date, g.opponent, g.ab, g.hits, g.rbi)
+            (g.game_date, g.opponent, g.ab, g.hits, g.hr, g.rbi, g.sb)
             for g in recent_games_raw
         ]
     # Phase 1.0a 大手未掲載 metric pack

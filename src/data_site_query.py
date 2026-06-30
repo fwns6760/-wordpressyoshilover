@@ -638,6 +638,7 @@ class BattingGameRow:
     rbi: int
     runs: int = 0
     sb: int = 0
+    hr: int = 0
 
 
 @dataclass
@@ -896,7 +897,8 @@ def fetch_recent_games(player_canonical: str, limit: Optional[int] = 5) -> list[
             sql = (
                 "SELECT g.game_date, g.opponent, "
                 "COALESCE(b.AB, 0), COALESCE(b.H, 0), "
-                "COALESCE(b.RBI, 0), COALESCE(b.R, 0), COALESCE(b.SB, 0) "
+                "COALESCE(b.RBI, 0), COALESCE(b.R, 0), COALESCE(b.SB, 0), "
+                "b.atbats_json "
                 "FROM batting_logs b "
                 "JOIN games g ON b.game_id = g.game_id "
                 "WHERE REPLACE(b.player_canonical,' ','') = REPLACE(?,' ','') AND b.team_name = '巨人' "
@@ -911,6 +913,17 @@ def fetch_recent_games(player_canonical: str, limit: Optional[int] = 5) -> list[
     except Exception as exc:  # noqa: BLE001
         LOG.warning("fetch_recent_games err player=%s: %r", player_canonical, exc)
         return []
+
+    def _hr_from_atbats(aj) -> int:
+        # 本塁打は単純列が無く、 打席結果 JSON (atbats_json) の各打席に「本」を含む数で算出
+        # (fetch_team_leaders と同じ規則)。
+        if not aj:
+            return 0
+        try:
+            return sum(1 for c in _json.loads(aj) if "本" in str(c))
+        except Exception:  # noqa: BLE001
+            return 0
+
     return [
         BattingGameRow(
             game_date=str(r[0] or ""),
@@ -920,6 +933,7 @@ def fetch_recent_games(player_canonical: str, limit: Optional[int] = 5) -> list[
             rbi=int(r[4] or 0),
             runs=int(r[5] or 0),
             sb=int(r[6] or 0),
+            hr=_hr_from_atbats(r[7]),
         )
         for r in rows
     ]

@@ -109,6 +109,38 @@ def _text_width(draw, text: str, font) -> int:
     return bbox[2] - bbox[0]
 
 
+def _soft_shadow(
+    canvas: Image.Image,
+    box: tuple[int, int, int, int],
+    *,
+    radius: int,
+    dx: int = 0,
+    dy: int = 18,
+    blur: int = 22,
+    alpha: int = 78,
+) -> None:
+    """角丸パネルの背後に柔らかいドロップシャドウを落として奥行きを出す。
+
+    平面に図形を並べただけの「自動生成っぽさ」を消すための土台処理。影は
+    中立グレー(R=G=B)なので、写真カラーを判定する既存テストには影響しない。
+    """
+    from PIL import ImageFilter
+
+    x0, y0, x1, y1 = box
+    pad = blur * 3
+    w = (x1 - x0) + pad * 2
+    h = (y1 - y0) + pad * 2
+    if w <= 0 or h <= 0:
+        return
+    layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    layer_draw = ImageDraw.Draw(layer)
+    layer_draw.rounded_rectangle(
+        (pad, pad, pad + (x1 - x0), pad + (y1 - y0)), radius=radius, fill=(0, 0, 0, alpha)
+    )
+    layer = layer.filter(ImageFilter.GaussianBlur(blur))
+    canvas.paste(layer, (x0 - pad + dx, y0 - pad + dy), layer)
+
+
 def _topic_player_image_url(topic: ShortsTopic) -> str:
     env_url = os.environ.get(PLAYER_IMAGE_ENV, "").strip()
     if env_url:
@@ -167,6 +199,7 @@ def _draw_photo_card(
     ここに来る ``url`` は自社 eyecatch map(巨人ユニ)の rights-clean 写真のみ。
     対戦相手マーク等の無関係画像・外部転載画像は呼び出し側で弾く前提。
     """
+    _soft_shadow(canvas, (x, y, x + width, y + height), radius=46, dy=20, blur=24, alpha=82)
     image = _load_player_image(url)
     if image is not None:
         cropped = _cover_crop(image, width, height)
@@ -323,6 +356,7 @@ def _draw_frame(topic: ShortsTopic, script: ShortsScript, index: int, path: Path
         draw.text((WIDTH // 2, 1456), "/data/notable?v=yt", font=small_font, fill="#555555", anchor="ma")
 
     caption = script.captions[min(index, len(script.captions) - 1)].text
+    _soft_shadow(img, (74, HEIGHT - 340, WIDTH - 74, HEIGHT - 210), radius=36, dy=14, blur=18, alpha=66)
     draw.rounded_rectangle((74, HEIGHT - 340, WIDTH - 74, HEIGHT - 210), radius=36, fill="#ffffff", outline="#f0d3bd", width=3)
     _draw_centered_lines(draw, _wrap_text(draw, caption, _font(38, bold=True), 840, max_lines=2), HEIGHT - 296, _font(38, bold=True), "#151515", gap=10)
     _draw_footer(draw)
@@ -473,6 +507,7 @@ def _draw_ranking_frame(topic, script: ShortsScript, index: int, path: Path) -> 
         draw.text((WIDTH // 2, 728), "/data/notable?v=yt", font=_font(34), fill="#555555", anchor="ma")
 
     caption = script.captions[min(index, len(script.captions) - 1)].text
+    _soft_shadow(img, (74, HEIGHT - 340, WIDTH - 74, HEIGHT - 210), radius=36, dy=14, blur=18, alpha=66)
     draw.rounded_rectangle((74, HEIGHT - 340, WIDTH - 74, HEIGHT - 210), radius=36, fill="#ffffff", outline="#f0d3bd", width=3)
     _draw_centered_lines(draw, _wrap_text(draw, caption, _font(38, bold=True), 840, max_lines=2), HEIGHT - 296, _font(38, bold=True), "#151515", gap=10)
     _draw_footer(draw)
@@ -614,20 +649,26 @@ def write_pop_bgm_wav(
         bar = int(t / (beat_seconds * 4))
         root = chord_roots[bar % len(chord_roots)]
 
-        sidechain = 0.74 + 0.26 * min(1.0, beat_pos / 0.28)
+        sidechain = 0.78 + 0.22 * min(1.0, beat_pos / 0.30)
+        # 温かいパッド: わずかなビブラートで打ち込みの硬さを和らげる。
+        vibrato = 1.0 + 0.0035 * math.sin(2 * math.pi * 5.0 * t)
         pad = (
-            math.sin(2 * math.pi * root * t)
-            + 0.55 * math.sin(2 * math.pi * root * 1.25 * t)
-            + 0.45 * math.sin(2 * math.pi * root * 1.5 * t)
-        ) / 2.0
-        bass_gate = 1.0 if beat_pos < 0.52 else 0.35
-        bass = math.sin(2 * math.pi * (root / 2.0) * t) * bass_gate
-        pulse = math.sin(2 * math.pi * root * 2.0 * t) * max(0.0, 1.0 - beat_pos) ** 2
-        hat = math.sin(2 * math.pi * 7200.0 * t) * (1.0 if beat_pos > 0.48 else 0.0) * 0.11
-        kick = math.sin(2 * math.pi * 58.0 * t) * max(0.0, 1.0 - beat_pos * 8.0) ** 2
+            math.sin(2 * math.pi * root * vibrato * t)
+            + 0.50 * math.sin(2 * math.pi * root * 1.5 * t)
+            + 0.30 * math.sin(2 * math.pi * root * 2.0 * t)
+        ) / 1.95
+        # 低音はゲートを浅くしてブツ切れ感を消し、丸いサブベースにする。
+        bass = math.sin(2 * math.pi * (root / 2.0) * t) * (0.85 if beat_pos < 0.55 else 0.5)
+        # 刺さる7200Hzサインのハイハット → 柔らかいシェイカー(決定論的な擬似ノイズ)。
+        shaker = (
+            math.sin(t * 81923.0) + math.sin(t * 43717.0) + math.sin(t * 96731.0)
+        ) / 3.0
+        hat_env = (max(0.0, 1.0 - (beat_pos - 0.5) * 9.0) ** 2) if beat_pos > 0.5 else 0.0
+        hat = shaker * hat_env * 0.05
+        kick = math.sin(2 * math.pi * 55.0 * t) * max(0.0, 1.0 - beat_pos * 7.0) ** 2
 
-        sample = (0.48 * pad * sidechain) + (0.24 * bass) + (0.16 * pulse) + hat + (0.30 * kick)
-        envelope = min(1.0, t / 1.1, (duration_seconds - t) / 1.1 if duration_seconds > 1.1 else 1.0)
+        sample = (0.50 * pad * sidechain) + (0.26 * bass) + hat + (0.28 * kick)
+        envelope = min(1.0, t / 1.2, (duration_seconds - t) / 1.2 if duration_seconds > 1.2 else 1.0)
         value = int(max(-1.0, min(1.0, sample * volume * envelope)) * 32767)
         frames.extend(struct.pack("<h", value))
 

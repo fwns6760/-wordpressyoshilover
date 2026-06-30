@@ -65,7 +65,7 @@ def test_nightly_runs_end_to_end_against_cached_html(tmp_path):
     assert summary["game_id"] == "2026-05-10:d-g-08"
     assert summary["game_date"] == "2026-05-10"
     assert summary["fetch_meta"]["from_cache"] is True
-    assert summary["etl"]["batters_giants"] == 9
+    assert summary["etl"]["batters_giants"] == 20  # 代打/代走/守備固め含む (2026-06-30)
     assert summary["lineup_rows"] == 9
     # at least the single-game candidates landed
     assert summary["csv_rows_total"] >= 1
@@ -103,7 +103,7 @@ def test_nightly_accepts_fetched_html_override(tmp_path):
     )
     assert summary["fetch_meta"]["from_cache"] is False
     assert summary["fetch_meta"]["url"] is None  # bypass mode
-    assert summary["etl"]["batters_giants"] == 9
+    assert summary["etl"]["batters_giants"] == 20  # 代打/代走/守備固め含む (2026-06-30)
 
 
 def test_nightly_no_digest_flag(tmp_path):

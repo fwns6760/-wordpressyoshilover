@@ -122,8 +122,10 @@ def _run_etl(tmp_path: Path):
 
 def test_etl_fixture_inserts_game_and_logs(tmp_path):
     summary, db, csv_path = _run_etl(tmp_path)
-    assert summary["batters_giants"] == 9
-    assert summary["batters_opponent"] == 9
+    # 2026-06-30: 代打/代走/守備固め (順が空欄の交代選手) も記録するようになったため、
+    # スタメン9人 + 交代選手を含む。 集計行「チーム計」は除外。
+    assert summary["batters_giants"] == 20
+    assert summary["batters_opponent"] == 16
     # チーム計 集計行は除外されるので、6 投手のみ
     assert summary["pitchers_giants"] == 6
     assert summary["candidates_inserted"] >= 1

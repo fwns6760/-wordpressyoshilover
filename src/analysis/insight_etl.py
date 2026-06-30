@@ -1315,6 +1315,9 @@ def upsert_game(
         )
 
 
+_BATTER_AGGREGATE_LABELS = {"チーム計", "計", "合計", "全体"}
+
+
 def _upsert_batters(
     conn: sqlite3.Connection,
     game_id: str,
@@ -1325,16 +1328,32 @@ def _upsert_batters(
 ) -> int:
     n = 0
     # Each (slot_order, player_display) is unique. Substitutions reuse the slot.
+    # 代打 / 代走 / 守備固め は box score 上で「順」が空欄になり、 直前の打者の打順に入った
+    # 交代選手を表す。 旧実装は順が空の行を skip して交代選手を全て捨てており、
+    # 「スタメンしか出場試合が記録されない」原因だった。 直前 slot を carry-forward し、
+    # is_sub=1 で記録する。 PK は player_display を含むため同一 slot に先発 + 交代が共存でき、
+    # 再取り込みも idempotent (2026-06-30 fix)。
+    last_slot: Optional[int] = None
     for row in rows:
         slot_raw = row.get("順")
         try:
-            slot = int(slot_raw) if slot_raw else None
+            parsed_slot = int(slot_raw) if slot_raw else None
         except (TypeError, ValueError):
-            slot = None
+            parsed_slot = None
+        is_sub = bool(row.get("is_sub")) or parsed_slot is None
+        if parsed_slot is not None:
+            last_slot = parsed_slot
+            slot = parsed_slot
+        else:
+            slot = last_slot  # 交代選手は直前の打順を引き継ぐ
         if slot is None:
-            continue
+            continue  # 先頭から打順不明 (異常 box score) は従来通り skip
         display = (row.get("選手") or "").strip()
         if not display:
+            continue
+        # 集計行 (「チーム計」等) は選手ではない。 旧実装は順が空のため偶然 skip されていたが、
+        # carry-forward 後は交代選手扱いで入ってしまうため明示除外する (2026-06-30 fix)。
+        if display in _BATTER_AGGREGATE_LABELS:
             continue
         # 395 fix: giants-only resolver は team が巨人と確定した時のみ適用。
         # surname-only alias (例: "井上"→"井上温大") は giants 内 unique 前提
@@ -1361,7 +1380,7 @@ def _upsert_batters(
                 (row.get("守備") or "").strip() or None,
                 display,
                 canonical,
-                int(bool(row.get("is_sub"))),
+                int(is_sub),
                 _int_or_none(row.get("打数")),
                 _int_or_none(row.get("得点")),
                 _int_or_none(row.get("安打")),

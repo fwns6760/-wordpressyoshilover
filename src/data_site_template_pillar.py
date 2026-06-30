@@ -273,7 +273,7 @@ def _build_season_stats_html(player: PillarPlayerInfo) -> str:
 
 
 def _build_recent_games_html(player: PillarPlayerInfo) -> str:
-    """直近 5 試合の打撃結果表。 data 無ければ section omit。"""
+    """当季 (2026) 全試合の打撃結果表。 data 無ければ section omit。"""
     if not player.recent_games:
         return ""
     rows_html = "\n".join(
@@ -285,7 +285,7 @@ def _build_recent_games_html(player: PillarPlayerInfo) -> str:
     )
     return (
         '<div class="ys-card">'
-        f'<h2>直近 {len(player.recent_games)} 試合</h2>'
+        f'<h2>{SEASON_LABEL} 全 {len(player.recent_games)} 試合</h2>'
         '<table><thead><tr>'
         '<th>日付</th><th>相手</th><th>打数</th><th>安打</th><th>打点</th>'
         '</tr></thead>'
@@ -615,7 +615,7 @@ def _build_pitching_recent_html(player: PillarPlayerInfo) -> str:
     return (
         '<section class="ys-pillar-pitch-recent" '
         'style="background:#fff;border:1px solid #eee;padding:14px;margin:0 0 16px;border-radius:4px;">'
-        f'<h2 style="font-size:16px;margin:0 0 10px;">直近 {len(player.recent_pitching_games)} 登板</h2>'
+        f'<h2 style="font-size:16px;margin:0 0 10px;">{SEASON_LABEL} 全 {len(player.recent_pitching_games)} 登板</h2>'
         '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
         '<thead><tr style="background:#fafafa;text-align:center;">'
         '<th style="padding:8px 4px;">日付</th>'

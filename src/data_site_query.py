@@ -882,28 +882,31 @@ def fetch_batting_stats_season(player_canonical: str) -> Optional[BattingStatsSe
     )
 
 
-def fetch_recent_games(player_canonical: str, limit: int = 5) -> list[BattingGameRow]:
-    """直近 limit 試合の打撃結果。 insight.db batting_logs JOIN games。"""
+def fetch_recent_games(player_canonical: str, limit: Optional[int] = 5) -> list[BattingGameRow]:
+    """打撃結果の試合ログ (game_date 降順)。 insight.db batting_logs JOIN games。
+
+    ``limit`` 件まで。 ``limit=None`` で当季 (insight.db 収録分=2026) の全試合を返す。
+    """
     path = _ensure_insight_db_local()
     if not path:
         return []
     try:
         with sqlite3.connect(path) as conn:
             cur = conn.cursor()
-            cur.execute(
-                """
-                SELECT g.game_date, g.opponent,
-                       COALESCE(b.AB, 0), COALESCE(b.H, 0),
-                       COALESCE(b.RBI, 0), COALESCE(b.R, 0),
-                       COALESCE(b.SB, 0)
-                FROM batting_logs b
-                JOIN games g ON b.game_id = g.game_id
-                WHERE REPLACE(b.player_canonical,' ','') = REPLACE(?,' ','') AND b.team_name = '巨人'
-                ORDER BY g.game_date DESC
-                LIMIT ?
-                """,
-                (player_canonical, int(limit)),
+            sql = (
+                "SELECT g.game_date, g.opponent, "
+                "COALESCE(b.AB, 0), COALESCE(b.H, 0), "
+                "COALESCE(b.RBI, 0), COALESCE(b.R, 0), COALESCE(b.SB, 0) "
+                "FROM batting_logs b "
+                "JOIN games g ON b.game_id = g.game_id "
+                "WHERE REPLACE(b.player_canonical,' ','') = REPLACE(?,' ','') AND b.team_name = '巨人' "
+                "ORDER BY g.game_date DESC"
             )
+            params: list = [player_canonical]
+            if limit is not None:
+                sql += " LIMIT ?"
+                params.append(int(limit))
+            cur.execute(sql, params)
             rows = cur.fetchall()
     except Exception as exc:  # noqa: BLE001
         LOG.warning("fetch_recent_games err player=%s: %r", player_canonical, exc)
@@ -2180,32 +2183,36 @@ def _normalize_npb_ip_sum(ip_sum_raw: float) -> float:
     return float(whole) + frac_tenth / 10.0
 
 
-def fetch_recent_pitching_games(player_canonical: str, limit: int = 5) -> list[PitchingGameRow]:
-    """直近 limit 登板の投手成績."""
+def fetch_recent_pitching_games(player_canonical: str, limit: Optional[int] = 5) -> list[PitchingGameRow]:
+    """投手成績の登板ログ (game_date 降順)。
+
+    ``limit`` 件まで。 ``limit=None`` で当季 (insight.db 収録分=2026) の全登板を返す。
+    """
     path = _ensure_insight_db_local()
     if not path:
         return []
     try:
         with sqlite3.connect(path) as conn:
             cur = conn.cursor()
-            cur.execute(
-                """
-                SELECT g.game_date, g.opponent,
-                       COALESCE(p.result_mark, ''),
-                       COALESCE(p.IP, 0.0),
-                       COALESCE(p.H_allowed, 0),
-                       COALESCE(p.K, 0),
-                       COALESCE(p.BB, 0),
-                       COALESCE(p.ER, 0),
-                       COALESCE(p.pitches, 0)
-                FROM pitching_logs p
-                JOIN games g ON p.game_id = g.game_id
-                WHERE REPLACE(p.player_canonical,' ','') = REPLACE(?,' ','') AND p.team_name = '巨人'
-                ORDER BY g.game_date DESC
-                LIMIT ?
-                """,
-                (player_canonical, int(limit)),
+            sql = (
+                "SELECT g.game_date, g.opponent, "
+                "COALESCE(p.result_mark, ''), "
+                "COALESCE(p.IP, 0.0), "
+                "COALESCE(p.H_allowed, 0), "
+                "COALESCE(p.K, 0), "
+                "COALESCE(p.BB, 0), "
+                "COALESCE(p.ER, 0), "
+                "COALESCE(p.pitches, 0) "
+                "FROM pitching_logs p "
+                "JOIN games g ON p.game_id = g.game_id "
+                "WHERE REPLACE(p.player_canonical,' ','') = REPLACE(?,' ','') AND p.team_name = '巨人' "
+                "ORDER BY g.game_date DESC"
             )
+            params: list = [player_canonical]
+            if limit is not None:
+                sql += " LIMIT ?"
+                params.append(int(limit))
+            cur.execute(sql, params)
             rows = cur.fetchall()
     except Exception as exc:  # noqa: BLE001
         LOG.warning("fetch_recent_pitching_games err player=%s: %r", player_canonical, exc)

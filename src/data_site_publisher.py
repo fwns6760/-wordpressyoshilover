@@ -595,7 +595,8 @@ def _build_pillar_info(player_name: str) -> PillarPlayerInfo | None:
         info.career_stats = coach_career_stat(player_name)
         return info
     season = fetch_batting_stats_season(player_name)
-    recent_games_raw = fetch_recent_games(player_name, limit=5)
+    # 2026-06-30 user: 選手ページは直近5試合ではなく当季 (2026) 全試合を表示する。
+    recent_games_raw = fetch_recent_games(player_name, limit=None)
     if season:
         info.has_stats = True
         info.season_games = season.games
@@ -675,7 +676,8 @@ def _build_pillar_info(player_name: str) -> PillarPlayerInfo | None:
         info.pitch_whip = pitching.whip
         info.pitch_k_per_9 = pitching.k_per_9
         info.pitch_bb_per_9 = pitching.bb_per_9
-    pitching_recent = fetch_recent_pitching_games(player_name, limit=5)
+    # 2026-06-30 user: 投手ページも当季 (2026) 全登板を表示する。
+    pitching_recent = fetch_recent_pitching_games(player_name, limit=None)
     if pitching_recent:
         info.recent_pitching_games = [
             (p.game_date, p.opponent, p.result_mark, p.ip, p.h_allowed, p.k, p.bb, p.er)

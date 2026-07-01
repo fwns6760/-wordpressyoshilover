@@ -77,6 +77,7 @@ from src.data_site_query import (
     load_ikusei_entries,
     shihai_position_group,
     related_shihai_players,
+    related_ob_players,
     staff_military_level,
     coach_career_stat,
     load_ob_names,
@@ -522,6 +523,10 @@ def _build_pillar_info(player_name: str) -> PillarPlayerInfo | None:
     ob = ob_legend(player_name) if not load_roster_player(player_name) else None
     if ob:
         slug = ob.get("slug") or player_slug(player_name)
+        npb_career = _ob_yearly_payload(slug)
+        # OB は shihai_position_group=None で従来 related_players が空 = 内部リンク孤立。
+        # 同型 (投手/野手) の他 OB へリンクして link equity を流す。
+        is_pit = ob.get("type") == "pitcher" or bool((npb_career or {}).get("is_pitcher"))
         return PillarPlayerInfo(
             name=ob.get("display_name", player_name),
             slug=slug,
@@ -532,9 +537,10 @@ def _build_pillar_info(player_name: str) -> PillarPlayerInfo | None:
             featured_media_id=find_player_featured_media_id(player_name),
             short_review="",
             related_topic_links=fetch_related_topic_links(player_name, limit=3),
+            related_players=related_ob_players(slug, is_pit),
             ob_profile=ob,
             # OB の年度別フル表 (ベンチマーク由来、 slug 引き)。 無ければ None で安全。
-            npb_career=_ob_yearly_payload(slug),
+            npb_career=npb_career,
             # prosports 人物記事の相互リンクは OB (原辰徳/桑田 等) こそ多い
             prosports_links=[
                 (e.get("url"), e.get("title"))

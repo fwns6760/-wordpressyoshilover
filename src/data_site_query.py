@@ -216,6 +216,49 @@ def related_shihai_players(player_name: str, limit: int = 6) -> list[str]:
     return others[:limit]
 
 
+_OB_YEARLY_FULL_PATH = Path(__file__).resolve().parents[1] / "config" / "ob_career_yearly_full.json"
+_OB_TYPE_INDEX: Optional[dict] = None
+
+
+def _ob_type_index() -> dict:
+    """OB を投手 / 野手 に分けた [(slug, display_name), ...] index。
+
+    ob_career_yearly_full.json (slug -> {is_pitcher, display_name, slug}) から
+    軽量に構築。 関連 OB リンク (OB ページの内部リンク孤立解消) 用。
+    """
+    global _OB_TYPE_INDEX
+    if _OB_TYPE_INDEX is None:
+        pit: list[tuple[str, str]] = []
+        bat: list[tuple[str, str]] = []
+        try:
+            with open(_OB_YEARLY_FULL_PATH, encoding="utf-8") as f:
+                data = _json.load(f)
+            for slug, rec in data.items():
+                name = rec.get("display_name") or slug
+                (pit if rec.get("is_pitcher") else bat).append((slug, name))
+        except Exception as exc:  # noqa: BLE001
+            LOG.warning("ob_type_index load failed: %r", exc)
+        _OB_TYPE_INDEX = {"pitcher": pit, "batter": bat}
+    return _OB_TYPE_INDEX
+
+
+def related_ob_players(slug: str, is_pitcher: bool, limit: int = 6) -> list[tuple[str, str]]:
+    """同じ型 (投手/野手) の他 OB を limit 名返す (OB ページの内部リンク孤立解消)。
+
+    現役の related_shihai_players と同じく回転窓でリンクを均等化する。 OB は
+    shihai_position_group が None のため従来 related_players が空 = 孤立していた。
+    """
+    members = _ob_type_index()["pitcher" if is_pitcher else "batter"]
+    if not members:
+        return []
+    idx = next((i for i, (s, _n) in enumerate(members) if s == slug), None)
+    if idx is None:
+        others = [m for m in members if m[0] != slug]
+    else:
+        others = members[idx + 1:] + members[:idx]
+    return others[:limit]
+
+
 def load_ikusei_entries() -> list[tuple[str, str]]:
     """育成選手 [(name, position_group), ...] (投手→捕手→内野手→外野手 の順)。 cluster 育成枠用。"""
     cls = load_player_class()

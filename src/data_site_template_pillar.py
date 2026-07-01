@@ -978,6 +978,31 @@ def _build_related_players_html(player: PillarPlayerInfo) -> str:
     )
 
 
+def _build_source_citation_html(player: PillarPlayerInfo) -> str:
+    """データ出典の明記 (E-E-A-T 信頼性 = 数字の出所を示す)。
+
+    現役/監督/コーチの今季成績は NPB 公式 (npb.jp) を実取得しているため明示。
+    OB の通算記録・推定年俸は公開記録/推定である旨を正直に記す (誇張しない)。
+    """
+    if player.role in ("player", "manager", "coach"):
+        body = (
+            "今季成績は"
+            '<a href="https://npb.jp/" rel="nofollow noopener" target="_blank" '
+            'style="color:#1565c0;">NPB公式サイト(npb.jp)</a>'
+            "、通算成績・プロフィールは日本野球機構(NPB)の公開記録に基づきます。"
+        )
+    else:
+        body = "成績・通算記録は日本野球機構(NPB)の公開記録に基づきます。"
+    return (
+        '<section class="ys-source" style="font-size:11px;color:#888;margin:18px 0 0;'
+        'padding:10px 12px;background:#fafafa;border:1px solid #eee;border-radius:4px;'
+        'line-height:1.6;">'
+        f"📊 データ出典: {body}"
+        "推定年俸は契約更改報道など公開情報に基づく編集部推定値です。"
+        "</section>"
+    )
+
+
 def _build_back_link_html() -> str:
     return (
         '<div class="ys-pillar-back" style="margin:24px 0 0;text-align:center;">'
@@ -1224,15 +1249,28 @@ def _salary_by_slug() -> dict:
 
 
 def _build_salary_section_html(player: PillarPlayerInfo) -> str:
-    """年俸を成績ページに統合 (エンティティ集約: 1 選手 = 1 ページ = 1 URL)。
+    """年俸ブロック。 OB と現役で扱いを分ける (更新頻度・検索意図が違うため)。
 
-    従来は別ページ /data/salary/<slug> への cross link のみだったが、 同一選手
-    エンティティを 2 ページに割ると信号が分散するため、 年俸ブロック本体
-    (棒グラフ・折れ線・年度別表・契約金) を本ページへ埋め込む。 データが無ければ空。
+    - OB (成績が凍結): 成績ページに年俸を埋め込み統合 = 1 エンティティ 1 ページ。
+      静的同士なので寄せるのが得 (棒グラフ・折れ線・年度別表・契約金)。
+    - 現役 (成績が日々更新される生きた資産 + 「<選手> 年俸」の独立検索需要):
+      別ページ /data/salary/<slug> を維持し cross link のみ。 MLB ページと同じく
+      別意図・別更新頻度なので分離する方が各ページが各クエリで上位を取れる。
+    データが無ければ空。
     """
     p = _salary_by_slug().get(player.slug)
     if not p:
         return ""
+    if not _is_ob(player):
+        # 現役: 別ページ維持 + cross link (エンティティは相互リンクで担保)。
+        return (
+            '<div class="ys-card" style="font-size:13px;">'
+            f'<a href="/data/salary/{_esc(player.slug)}" '
+            'style="color:#e25400;font-weight:600;text-decoration:none;">'
+            f"💰 {_esc(player.name)}の年俸推移（契約金・通算年俸）はこちら</a>"
+            "</div>"
+        )
+    # OB: 統合埋め込み。
     from src.data_site_template_salary import render_salary_section_html
     return render_salary_section_html(p)
 
@@ -1319,6 +1357,7 @@ def render_pillar_html(player: PillarPlayerInfo) -> str:
         _build_salary_section_html(player),
         _build_datasite_nav_html(),
         _build_related_topic_html(player),
+        _build_source_citation_html(player),
         _build_back_link_html(),
         _build_jsonld(player),
     ]
@@ -1347,8 +1386,9 @@ def render_pillar_title(player: PillarPlayerInfo) -> str:
     pos = player.position or ""
     bracket = f"【巨人 {pos}{num}】" if pos else "【巨人】"
     is_ob = player.role == "ob" or player.ob_profile is not None
-    # 年俸を同ページに統合した選手は、 実サジェスト語「年俸」を title にも寄せる。
-    sal = "・年俸" if player.slug in _salary_by_slug() else ""
+    # 年俸を同ページに統合するのは OB のみ (現役は年俸別ページ)。 統合した OB だけ
+    # 実サジェスト語「年俸」を title にも寄せる。
+    sal = "・年俸" if (is_ob and player.slug in _salary_by_slug()) else ""
     if is_ob:
         head = f"{player.name} 通算成績{sal}・プロフィール"
     elif player.role in ("manager", "coach"):

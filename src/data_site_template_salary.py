@@ -503,6 +503,41 @@ def _index_year(data: dict) -> int:
     )
 
 
+def render_salary_section_html(p: dict) -> str:
+    """選手 pillar (/data/<slug>) に統合する年俸セクション (エンティティ集約).
+
+    成績と年俸を 1 ページ = 1 選手エンティティ = 1 URL に寄せるため、 成績ページ側
+    (render_pillar_html) から本関数を呼んで年俸ブロックを埋め込む。
+    単体年俸ページ (render_salary_player_html) と違い、 h1 / breadcrumb JSON-LD /
+    dataset JSON-LD は付けない (pillar 側が持つため二重出力を避ける)。
+    見出しは実サジェスト語「年俸推移」「通算年俸」に合わせる。
+    棒グラフ・折れ線グラフ (インライン SVG) 込みで、 追加コスト・著作権リスクなし。
+    """
+    years = p.get("years") or []
+    if not years:
+        return ""
+    years_sorted = sorted(years, key=lambda y: int(y["year"]))
+    name = _esc(p.get("name") or "")
+    return (
+        _PAGE_STYLE
+        + '<section class="ys-sl" id="salary" style="margin-top:22px;">'
+        + '<h2 style="font-size:19px;margin:0 0 6px;border-left:5px solid #e25400;'
+        'padding-left:10px;">'
+        + f"{name}の年俸推移・通算年俸</h2>"
+        + _player_pills(p)
+        + '<h3 id="sl-bar" style="font-size:15px;margin:16px 0 4px;">'
+        "年度別 推定年俸（棒グラフ）</h3>"
+        + _bar_chart_svg(years_sorted)
+        + '<h3 id="sl-line" style="font-size:15px;margin:16px 0 4px;">'
+        "通算 推定年俸の推移（折れ線グラフ）</h3>"
+        + _line_chart_svg(years_sorted)
+        + _player_table(p)
+        + _draft_section(p)
+        + _notes_section(p)
+        + "</section>"
+    )
+
+
 def render_salary_index_title(data: dict | None = None) -> str:
     data = data if data is not None else load_salary_data()
     return f"巨人 年俸ランキング【{_index_year(data)}年最新】選手別の推定年俸・通算年俸 | 巨人データ"

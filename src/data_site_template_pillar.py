@@ -1210,17 +1210,31 @@ def _salary_slugs() -> frozenset:
         return frozenset()
 
 
-def _build_salary_link_html(player: PillarPlayerInfo) -> str:
-    """年俸推移ページへの cross link (トピクラ: pillar ↔ salary spoke 双方向)。"""
-    if player.slug not in _salary_slugs():
+@_functools.lru_cache(maxsize=1)
+def _salary_by_slug() -> dict:
+    """slug -> 年俸 player dict (giants_salary.json 正本)。"""
+    path = _os.path.join(_os.path.dirname(__file__), "..", "config",
+                         "giants_salary.json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = _json.load(f)
+        return {p["slug"]: p for p in data.get("players", [])}
+    except Exception:
+        return {}
+
+
+def _build_salary_section_html(player: PillarPlayerInfo) -> str:
+    """年俸を成績ページに統合 (エンティティ集約: 1 選手 = 1 ページ = 1 URL)。
+
+    従来は別ページ /data/salary/<slug> への cross link のみだったが、 同一選手
+    エンティティを 2 ページに割ると信号が分散するため、 年俸ブロック本体
+    (棒グラフ・折れ線・年度別表・契約金) を本ページへ埋め込む。 データが無ければ空。
+    """
+    p = _salary_by_slug().get(player.slug)
+    if not p:
         return ""
-    return (
-        '<div class="ys-card" style="font-size:13px;">'
-        f'<a href="/data/salary/{_esc(player.slug)}" '
-        'style="color:#e25400;font-weight:600;text-decoration:none;">'
-        f'💰 {_esc(player.name)}の年俸推移（契約金・通算年俸）はこちら</a>'
-        '</div>'
-    )
+    from src.data_site_template_salary import render_salary_section_html
+    return render_salary_section_html(p)
 
 
 def _build_datasite_nav_html() -> str:
@@ -1302,7 +1316,7 @@ def render_pillar_html(player: PillarPlayerInfo) -> str:
         # トピッククラスタ: index データ記事同士の回遊を先に置き (pillar が中心)、
         # noindex ニュースは最後の補足にする。
         _build_related_players_html(player),
-        _build_salary_link_html(player),
+        _build_salary_section_html(player),
         _build_datasite_nav_html(),
         _build_related_topic_html(player),
         _build_back_link_html(),
@@ -1333,14 +1347,16 @@ def render_pillar_title(player: PillarPlayerInfo) -> str:
     pos = player.position or ""
     bracket = f"【巨人 {pos}{num}】" if pos else "【巨人】"
     is_ob = player.role == "ob" or player.ob_profile is not None
+    # 年俸を同ページに統合した選手は、 実サジェスト語「年俸」を title にも寄せる。
+    sal = "・年俸" if player.slug in _salary_by_slug() else ""
     if is_ob:
-        head = f"{player.name} 通算成績・プロフィール"
+        head = f"{player.name} 通算成績{sal}・プロフィール"
     elif player.role in ("manager", "coach"):
-        head = f"{player.name} {SEASON_LABEL} 通算成績・プロフィール"
+        head = f"{player.name} {SEASON_LABEL} 通算成績{sal}・プロフィール"
     elif "投手" in pos:
-        head = f"{player.name} {SEASON_LABEL}成績・防御率"
+        head = f"{player.name} {SEASON_LABEL}成績・防御率{sal}"
     else:
-        head = f"{player.name} {SEASON_LABEL}成績・打率"
+        head = f"{player.name} {SEASON_LABEL}成績・打率{sal}"
     return f"{head}{bracket} | 巨人選手データ"
 
 

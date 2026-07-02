@@ -2041,7 +2041,7 @@ def build_video_radar_candidates(
     # RSSHub 叩きすぎ防止: fetch_buzzing_players と gather_buzz_posts は同じ 8 feed を
     # 同 URL で読むため、 1 fire 内で同 URL を 1 回だけ取得する memo cache を噛ませる
     # (16→8 fetch/fire)。 試合帯は 15 分おき発火なので RSSHub レート対策に効く。
-    _base_fetch = fetch_fn or _vr._default_fetch
+    _base_fetch = fetch_fn or _vr._cached_default_fetch
     _fetch_cache: dict = {}
 
     def _cached_fetch(url: str) -> str:
@@ -2260,14 +2260,15 @@ def build_mlb_watch_candidates(
     if now is None:
         now = datetime.now(JST)
     now_utc = now.astimezone(_tz.utc)
-    fetch = fetch_fn or _vr._default_fetch
+    fetch = fetch_fn or _vr._cached_default_fetch
     posts: list[dict] = []
     seen_urls: set[str] = set()
+    feed_urls = {h: f"{_vr._RSSHUB_BASE}/twitter/user/{h}?limit=30" for h in _MLB_WATCH_HANDLES}
+    fetched = _vr.prefetch_feeds(list(feed_urls.values()), fetch)
     for h in _MLB_WATCH_HANDLES:
-        try:
-            xml = fetch(f"{_vr._RSSHUB_BASE}/twitter/user/{h}?limit=30")
-        except Exception as exc:  # noqa: BLE001
-            LOG.info("mlb_watch fetch skip handle=%s err=%r", h, exc)
+        xml = fetched.get(feed_urls[h])
+        if not isinstance(xml, str):
+            LOG.info("mlb_watch fetch skip handle=%s err=%r", h, xml)
             continue
         for item in _vr._extract_rss_items(xml):
             text = item.get("text", "")

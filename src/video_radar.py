@@ -11,6 +11,8 @@ read-only 巡回し、「懐かしい・ファンが面白い・いま話題」�
 from __future__ import annotations
 
 import re as _re
+import threading as _threading
+from concurrent.futures import ThreadPoolExecutor as _ThreadPoolExecutor
 from datetime import datetime as _datetime, timezone as _timezone
 from email.utils import parsedate_to_datetime as _parsedate_to_datetime
 from typing import Callable, Optional
@@ -109,6 +111,50 @@ def _default_fetch(url: str, *, timeout: int = 12) -> str:
         return resp.read().decode("utf-8", errors="replace")
 
 
+# 2026-07-02 コスト削減: 1 便 (= 1 プロセス) 内で同じ feed URL を複数 lane が
+# 取り直さないよう、default fetch を process 内 cache する。Job は one-shot
+# プロセスなので鮮度問題はない (fetch_fn 注入時 = テストでは使わない)。
+_FETCH_CACHE: dict[str, str] = {}
+_FETCH_CACHE_LOCK = _threading.Lock()
+
+
+def _cached_default_fetch(url: str) -> str:
+    with _FETCH_CACHE_LOCK:
+        if url in _FETCH_CACHE:
+            return _FETCH_CACHE[url]
+    body = _default_fetch(url)
+    with _FETCH_CACHE_LOCK:
+        _FETCH_CACHE[url] = body
+    return body
+
+
+def prefetch_feeds(
+    urls: list[str],
+    fetch: Callable[[str], str],
+    *,
+    max_workers: int = 6,
+) -> dict[str, object]:
+    """URL 群を並列 fetch して {url: xml or Exception} を返す。
+
+    2026-07-02 コスト削減: RSSHub への feed fetch が 1 便あたり 20 本超の直列
+    待ちで vCPU 秒の最大要因だったため並列化 (待ちは I/O なので wall time 短縮
+    = Cloud Run Job の課金秒数短縮に直結)。失敗はここで握らず Exception を
+    値として返し、呼び出し側の従来どおりの skip / log 挙動に委ねる。
+    """
+    uniq = list(dict.fromkeys(urls))
+    results: dict[str, object] = {}
+    if not uniq:
+        return results
+    with _ThreadPoolExecutor(max_workers=min(max_workers, len(uniq))) as ex:
+        futs = {ex.submit(fetch, u): u for u in uniq}
+        for f in futs:
+            try:
+                results[futs[f]] = f.result()
+            except Exception as exc:  # noqa: BLE001
+                results[futs[f]] = exc
+    return results
+
+
 def _strip_html(s: str) -> str:
     s = _re.sub(r"<!\[CDATA\[(.*?)\]\]>", r"\1", s or "", flags=_re.S)
     s = _re.sub(r"<[^>]+>", " ", s)
@@ -190,13 +236,14 @@ def fetch_buzzing_players(
     X API は使わない (445 と同じ self-host RSSHub の twitter/user route)。 取得失敗は
     silent skip。 ``min_mentions`` 未満は落とし、 上位 ``top_n`` を返す。
     """
-    fetch = fetch_fn or _default_fetch
+    fetch = fetch_fn or _cached_default_fetch
     handles = handles or _BUZZ_HANDLES
     counts: dict[str, int] = {}
+    urls = {h: f"{_RSSHUB_BASE}/twitter/user/{h}?limit={limit}" for h in handles}
+    fetched = prefetch_feeds(list(urls.values()), fetch)
     for h in handles:
-        try:
-            xml = fetch(f"{_RSSHUB_BASE}/twitter/user/{h}?limit={limit}")
-        except Exception:  # noqa: BLE001
+        xml = fetched.get(urls[h])
+        if not isinstance(xml, str):
             continue
         for item in _extract_rss_items(xml):
             try:
@@ -234,15 +281,16 @@ def gather_buzz_posts(
     feed には最大 1 週間前の投稿が混ざるため、 pubDate ベースで鮮度 gate する。 投稿日時不明は
     判定不能なので通す (RSSHub は通常 RFC1123 を返すので稀)。
     """
-    fetch = fetch_fn or _default_fetch
+    fetch = fetch_fn or _cached_default_fetch
     handles = handles or _BUZZ_HANDLES
     now = now or _datetime.now(_timezone.utc)
     out: list[dict] = []
     seen_urls: set[str] = set()
+    feed_urls = {h: f"{_RSSHUB_BASE}/twitter/user/{h}?limit={limit}" for h in handles}
+    fetched = prefetch_feeds(list(feed_urls.values()), fetch)
     for h in handles:
-        try:
-            xml = fetch(f"{_RSSHUB_BASE}/twitter/user/{h}?limit={limit}")
-        except Exception:  # noqa: BLE001
+        xml = fetched.get(feed_urls[h])
+        if not isinstance(xml, str):
             continue
         for item in _extract_rss_items(xml):
             text = item.get("text", "")

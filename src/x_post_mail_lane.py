@@ -1481,12 +1481,18 @@ def build_news_opinion_candidate(
     source_excerpt: str = "",
     now: Optional[datetime] = None,  # noqa: ARG001 - kept for caller symmetry/tests
     comment_fn=None,
+    skip_on_empty_comment: bool = False,
 ) -> Optional[Candidate]:
     """Build a fallback X candidate from explicit source text only.
 
     The generated post avoids invented stats, quotes, and claims. It
     names the player only when the caller supplies a detected roster
     match from the source title/summary.
+
+    ``skip_on_empty_comment`` (2026-07-02 user 指摘「スクレイピングした
+    ものだけのポストは余計」): comment_fn (voice) が空を返した時、記事
+    タイトル貼り直しの安全テンプレで埋めず None を返す。 record 系 lane
+    (2026-06-27「記事にあるものでよい」) は False のまま従来挙動。
     """
     title = _truncate_text(source_title, 70)
     player = str(player_name or "").strip()
@@ -1510,6 +1516,14 @@ def build_news_opinion_candidate(
             LOG.info("news_opinion comment_fn skip: %r", exc)
             post_text = ""
     if not post_text:
+        if skip_on_empty_comment and comment_fn is not None:
+            # voice が門番落ち / budget 枯渇した候補はテンプレで埋めない
+            # (スクレイプ由来のタイトル貼り直しポストを user に出さない)。
+            LOG.info(
+                "news_opinion skip: voice empty and skip_on_empty_comment "
+                "player=%s url=%s", player, url,
+            )
+            return None
         post_text = _build_source_backed_post_text(
             player,
             material_type,

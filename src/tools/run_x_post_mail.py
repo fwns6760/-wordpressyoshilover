@@ -1447,6 +1447,9 @@ def _fetch_news_opinion_fallback_candidates(
                 player_name=player,
                 now=now,
                 comment_fn=comment_fn,  # A: フーガ+缶詰 voice (None なら従来テンプレ)
+                # 2026-07-02 user 指摘: voice が取れない候補はスクレイプ由来の
+                # タイトル貼り直しテンプレで埋めず skip (record lane は従来通り)。
+                skip_on_empty_comment=comment_fn is not None,
             )
             if cand is None:
                 continue

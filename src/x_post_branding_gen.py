@@ -1393,6 +1393,7 @@ def build_quote_rt_comment(
     db_fact: str = "",
     budget_site: str = "quote_rt",
     extra_voice_note: str = "",
+    require_db_fact: bool = True,
 ) -> str:
     """451: X バズ投稿への引用RTコメントを Gemini で生成。
 
@@ -1424,7 +1425,36 @@ def build_quote_rt_comment(
     base_voice = _build_system_prompt(hour, today, persona=persona)
     is_live = 18 <= hour <= 21  # 試合中帯 = 缶詰ライブ (短文・即時反応OK)
     is_video_sns = ("動画" in subject) or ("SNS" in subject.upper())
-    if is_video_sns:
+    # 2026-07-03 user「リプの型が長い。感想リプではなく補足リプ。相手が喜んで
+    # リツイートしてくれるもの」: リプ lane (budget_site="reply") は長文分析を
+    # やめ、 元投稿に無い verified data を1つ足す短い補足に固定する。
+    # 補足できる db_fact が無い時はリプ自体を成立させない (感想で埋めない)。
+    # 例外: MLB リプ (NPB DB に数字が無い) は require_db_fact=False で呼び、
+    # 元投稿内の具体場面を核にした短い補足に切り替える。
+    is_reply = budget_site == "reply"
+    if is_reply and require_db_fact and not (db_fact or "").strip():
+        log.info("quote_rt_comment_skip reason=reply_without_db_fact player=%s", who)
+        return ""
+    if is_reply and (db_fact or "").strip():
+        len_rule = (
+            "補足リプ用 (相手の返信欄に出る)。 50〜90字、 1〜2文で短く。 "
+            "感想・共感・称賛・分析講釈で埋めず、 元投稿に無い verified data の数字を1つ"
+            "『ちなみに』的に補足する (投稿主と読者に役立ち、 投稿主が嬉しくなる返し)。 "
+            "元投稿の内容を支える・広げる方向のみ。 逆張り・訂正・辛口は禁止。 "
+            "『〜すべき』『〜してほしい』『どう見ますか』で締めない。 "
+            "URL / ハッシュタグ / 媒体名は禁止。 絵文字は多くても1個。 "
+            "verified data と元投稿に無い数字・事実は足さない。"
+        )
+    elif is_reply:
+        len_rule = (
+            "補足リプ用 (相手の返信欄に出る)。 50〜90字、 1〜2文で短く。 "
+            "元投稿の動画・本文にある具体的な場面・事実を1つ拾い、 一言だけ添える "
+            "(投稿主が嬉しくなる返し)。 長い感想・分析講釈・逆張り・訂正は禁止。 "
+            "『〜すべき』『〜してほしい』『どう見ますか』で締めない。 "
+            "URL / ハッシュタグ / 媒体名は禁止。 絵文字は多くても1個。 "
+            "元投稿に無い数字・事実は足さない。"
+        )
+    elif is_video_sns:
         len_rule = (
             "動画SNS用。 70〜120字、 1〜2文。 元投稿にある場面を1つ具体名で書く。 "
             "打球音 / スイング / 一歩目 / 送球 / 球の押し込み / 表情 / ベンチ反応 / 場面価値のどれかを必ず入れる。 "
@@ -1464,7 +1494,13 @@ def build_quote_rt_comment(
     # unverified ゲートを通す。
     _fact = (db_fact or "").strip()
     diff_instr = ""
-    if _fact:
+    if _fact and is_reply:
+        diff_instr = (
+            f"【補足に使う verified data】{_fact}\n"
+            "↑この中から元投稿が触れていない数字を1つだけ選び、 補足の核にする。 "
+            "これ以外の数字は足さない。"
+        )
+    elif _fact:
         diff_instr = (
             f"【使ってよい verified data】{_fact}\n"
             "↑元投稿が触れていない数字/事実をこの中から1つだけ自然に織り込み、 媒体と違う"
@@ -1476,6 +1512,11 @@ def build_quote_rt_comment(
         is_final_attempt = attempt == _total_attempts - 1
         if attempt == 0:
             retry_note = ""
+        elif is_reply:
+            retry_note = (
+                "※前回は長い/感想・講釈っぽくて却下された。 verified data の補足を核に、 "
+                "50〜90字・1〜2文で短く書き直す。\n"
+            )
         elif is_video_sns:
             retry_note = (
                 "※前回は抽象的で却下された。 動画内の具体場面を1つ選び、 打球音・一歩目・送球・表情・ベンチ反応など"
@@ -1486,12 +1527,22 @@ def build_quote_rt_comment(
                 "※前回は優等生締め/ポエム/中身薄で却下された。 データ+フーガ風の読みで具体的に書き、 "
                 "『〜してほしい』 系で終わるな。\n"
             )
+        task_line = (
+            f"【今回のタスク: {subject}への補足リプ】"
+            if is_reply
+            else f"【今回のタスク: {subject}への反応コメント】"
+        )
+        task_instr = (
+            f"上記 voice のまま、 次の{subject}にデータを1つ補足する短いリプを書く。"
+            if is_reply
+            else f"上記 voice のまま、 次の{subject}に反応するヨシラバーのコメントを書く。"
+        )
         prompt = "\n".join([
             base_voice,
             "",
             "----",
-            f"【今回のタスク: {subject}への反応コメント】",
-            retry_note + f"上記 voice のまま、 次の{subject}に反応するヨシラバーのコメントを書く。",
+            task_line,
+            retry_note + task_instr,
             (f"【視点指定】{extra_voice_note}" if extra_voice_note else ""),
             f"対象選手: {who or '(不明)'}",
             len_rule,

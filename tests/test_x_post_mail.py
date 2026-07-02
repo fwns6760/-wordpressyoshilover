@@ -168,7 +168,11 @@ class ReplyTargetHandleTests(unittest.TestCase):
         from src.tools import run_x_post_mail as runner
 
         with patch.dict("os.environ", {}, clear=True):
-            self.assertEqual(runner._reply_target_handles(), ["hochi_giants", "TokyoGiants"])
+            # 2026-07-03 user 追加: Sanspo_Giants / koba_nikkan を default 化
+            self.assertEqual(
+                runner._reply_target_handles(),
+                ["hochi_giants", "Sanspo_Giants", "koba_nikkan", "TokyoGiants"],
+            )
 
     def test_configured_reply_targets_keep_existing_and_add_tokyo_giants(self) -> None:
         from src.tools import run_x_post_mail as runner
@@ -178,6 +182,41 @@ class ReplyTargetHandleTests(unittest.TestCase):
                 runner._reply_target_handles(),
                 ["hochi_giants", "Sanspo_Giants", "TokyoGiants"],
             )
+
+    def test_fan_reply_default_handles_include_2026_07_03_additions(self) -> None:
+        from src.tools import run_x_post_mail as runner
+
+        with patch.dict("os.environ", {}, clear=True):
+            handles = runner._fan_reply_target_handles()
+        self.assertEqual(
+            sorted(handles),
+            sorted(["EH87EazmV9D2eSw", "kandume92", "ay222000", "vto6u", "GIANTSLIFE0801"]),
+        )
+
+    def test_fan_reply_handles_rotate_by_hour(self) -> None:
+        from src.tools import run_x_post_mail as runner
+
+        with patch.dict("os.environ", {}, clear=True):
+            h9 = runner._fan_reply_target_handles(now=datetime(2026, 7, 3, 9, 0, tzinfo=JST))
+            h10 = runner._fan_reply_target_handles(now=datetime(2026, 7, 3, 10, 0, tzinfo=JST))
+        # 同じ集合のまま走査開始位置だけ変わる (先頭 handle が毎便勝ち続けない)
+        self.assertEqual(sorted(h9), sorted(h10))
+        self.assertNotEqual(h9[0], h10[0])
+
+    def test_mlb_reply_defaults(self) -> None:
+        """2026-07-03: MLBリプ lane は env gate (default OFF)、対象は日本語系 default。"""
+        from src.tools import run_x_post_mail as runner
+
+        with patch.dict("os.environ", {}, clear=True):
+            self.assertFalse(runner._mlb_reply_enabled())
+            self.assertEqual(runner._mlb_reply_max_per_run(), 1)
+            self.assertEqual(
+                runner._mlb_reply_target_handles(),
+                ["30R9gmaMUy3guDJ", "MLBJapan", "SPOTVNOW_jp"],
+            )
+        with patch.dict("os.environ", {"ENABLE_X_POST_MLB_REPLY": "1", "X_POST_MLB_REPLY_TARGET_HANDLES": "@MLBJapan"}):
+            self.assertTrue(runner._mlb_reply_enabled())
+            self.assertEqual(runner._mlb_reply_target_handles(), ["MLBJapan"])
 
     def test_tokyo_giants_reply_candidate_uses_official_label(self) -> None:
         from src.tools import run_x_post_mail as runner
@@ -4461,6 +4500,52 @@ class BuildMlbWatchCandidatesTests(unittest.TestCase):
             self.assertEqual(c.media_handle, "mlbjapan")
             self.assertIn("コピペ用", c.draft_text)
 
+    def test_as_reply_builds_reply_candidates_with_custom_handles(self):
+        """2026-07-03 user「メジャー系の日本公式で大谷や岡本や菅野にもリプしたい」:
+        as_reply=True で reply_to_id 付きのリプ候補になり、handles 差し替えが効く。"""
+        from src import x_post_mail_lane as lane
+        feed = self._feed(self._item("大谷翔平が第30号ホームラン", "77"))
+        calls = []
+
+        def fetch(url):
+            calls.append(url)
+            return feed if "30R9gmaMUy3guDJ" in url else "<rss><channel></channel></rss>"
+
+        cands = lane.build_mlb_watch_candidates(
+            max_count=2,
+            fetch_fn=fetch,
+            comment_fn=lambda pt, pl: f"{pl}、この一発は角度も完璧でした。",
+            handles=["30R9gmaMUy3guDJ", "MLBJapan"],
+            as_reply=True,
+        )
+        self.assertTrue(any("30R9gmaMUy3guDJ" in u for u in calls))
+        self.assertFalse(any("/Dodgers" in u for u in calls))  # handles 差し替えで US 公式は fetch しない
+        self.assertEqual(len(cands), 1)
+        c = cands[0]
+        self.assertEqual(c.metric, lane._REPLY_CANDIDATE_METRIC)
+        self.assertEqual(c.reply_to_id, "77")
+        self.assertEqual(c.quote_url, "")
+        self.assertTrue(c.signature.startswith("mlbreply|"))
+        self.assertIn("MLBリプ候補", c.title)
+        self.assertIn("reply:mlb", c.reason_tags)
+        self.assertIn("manual_only", c.reason_tags)
+
+    def test_as_reply_and_quote_signatures_differ(self):
+        """同じ元投稿でも引用RT と リプ で signature が分かれ、dedup が互いを潰さない。"""
+        from src import x_post_mail_lane as lane
+        feed = self._feed(self._item("岡本和真がメジャー初の猛打賞", "5"))
+        kw = dict(
+            max_count=1,
+            fetch_fn=lambda url: feed if "MLBJapan" in url else "<rss><channel></channel></rss>",
+            comment_fn=lambda pt, pl: f"{pl}、逆方向への一打が光りました。",
+            handles=["MLBJapan"],
+        )
+        quote = lane.build_mlb_watch_candidates(**kw)
+        reply = lane.build_mlb_watch_candidates(as_reply=True, **kw)
+        self.assertEqual(len(quote), 1)
+        self.assertEqual(len(reply), 1)
+        self.assertNotEqual(quote[0].signature, reply[0].signature)
+
     def test_skip_when_voice_empty_no_template(self):
         from src import x_post_mail_lane as lane
         feed = self._feed(self._item("大谷翔平が第30号ホームラン", "1"))
@@ -4603,14 +4688,19 @@ class BuildQuoteRtCommentTests(unittest.TestCase):
     """451: Flash Lite 引用RTコメント生成 (post-API path、 log NameError regression)。"""
 
     def _patch_genai(self, text):
-        import sys, types
+        import contextlib, sys, types
         from unittest import mock
         fake_client = mock.MagicMock()
         fake_client.models.generate_content.return_value = types.SimpleNamespace(text=text)
         fake_genai = types.SimpleNamespace(Client=lambda api_key=None: fake_client)
         google_mod = sys.modules.get("google") or types.ModuleType("google")
-        setattr(google_mod, "genai", fake_genai)
-        return mock.patch.dict(sys.modules, {"google": google_mod, "google.genai": fake_genai})
+        stack = contextlib.ExitStack()
+        stack.enter_context(mock.patch.dict(sys.modules, {"google": google_mod, "google.genai": fake_genai}))
+        # 2026-07-03: 旧実装の bare setattr は google module に fake を残し、
+        # 後続の test_x_post_branding_gen 側 genai patch を汚染していた (leak)。
+        # patch.object なら退出時に元の属性へ戻る。
+        stack.enter_context(mock.patch.object(google_mod, "genai", fake_genai, create=True))
+        return stack
 
     def test_returns_comment_post_api(self):
         from src import x_post_branding_gen as xbg
@@ -4634,6 +4724,48 @@ class BuildQuoteRtCommentTests(unittest.TestCase):
     def test_empty_key_returns_empty(self):
         from src import x_post_branding_gen as xbg
         self.assertEqual(xbg.build_quote_rt_comment("x", "y", gemini_api_key=""), "")
+
+    def test_reply_mode_without_db_fact_skips(self):
+        """2026-07-03: 補足リプは verified data が核。 db_fact 無し = 補足材料
+        無しなので LLM を呼ばず "" (caller は候補ごとスキップ、 感想で埋めない)。"""
+        from src import x_post_branding_gen as xbg
+        with self._patch_genai("呼ばれないはず"):
+            out = xbg.build_quote_rt_comment(
+                "坂本勇人 サヨナラ", "坂本勇人",
+                gemini_api_key="k", budget_site="reply", db_fact="",
+            )
+        self.assertEqual(out, "")
+
+    def test_reply_mode_returns_short_supplement(self):
+        """補足リプ mode: db_fact あり → 短い補足文が返る (捏造数字なし)。"""
+        from src import x_post_branding_gen as xbg
+        supplement = (
+            "ちなみに坂本勇人、今季の得点圏は.345で12球団でも上位です。"
+            "この場面で回ってくる巡り合わせも含めて強いですね。"
+        )
+        with self._patch_genai(supplement):
+            out = xbg.build_quote_rt_comment(
+                "坂本勇人 サヨナラ", "坂本勇人",
+                gemini_api_key="k", budget_site="reply",
+                db_fact="今季得点圏打率.345 (12球団上位)",
+            )
+        self.assertEqual(out, supplement)
+
+    def test_reply_mode_mlb_no_fact_allowed_with_flag(self):
+        """MLBリプ: require_db_fact=False なら db_fact 無しでも元投稿の具体場面
+        ベースの短い補足リプが成立する (NPB DB に MLB 数字が無いため)。"""
+        from src import x_post_branding_gen as xbg
+        reply = (
+            "打った瞬間に確信歩きが出る第30号でした。逆方向にあの角度で運べるのは"
+            "今の大谷翔平の状態の良さそのものですね。"
+        )
+        with self._patch_genai(reply):
+            out = xbg.build_quote_rt_comment(
+                "大谷翔平が第30号ホームラン", "大谷翔平",
+                gemini_api_key="k", budget_site="reply",
+                db_fact="", require_db_fact=False,
+            )
+        self.assertEqual(out, reply)
 
 
 class VideoRadarImpressionPolicyTests(unittest.TestCase):
@@ -4942,9 +5074,10 @@ class ReplyCandidateRuntimeConfigTests(unittest.TestCase):
             clear=False,
         ):
             # 469: 読売巨人軍公式 TokyoGiants は env に依らず常時補完される
+            # 2026-07-03: Sanspo_Giants / koba_nikkan default 追加
             self.assertEqual(
                 run_x_post_mail._reply_target_handles(),
-                ["hochi_giants", "TokyoGiants"],
+                ["hochi_giants", "Sanspo_Giants", "koba_nikkan", "TokyoGiants"],
             )
             self.assertEqual(run_x_post_mail._reply_candidates_max_per_run(), 3)
             self.assertTrue(run_x_post_mail._reply_llm_enabled())

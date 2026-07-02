@@ -2266,6 +2266,8 @@ def build_mlb_watch_candidates(
     fetch_fn=None,
     comment_fn=None,
     max_age_hours: float = 12.0,
+    handles: Optional[list[str]] = None,
+    as_reply: bool = False,
 ) -> list[Candidate]:
     """元巨人MLB組 + 大谷の引用RT候補。動画付き優先、選手ごと 1 本/便。
 
@@ -2273,6 +2275,11 @@ def build_mlb_watch_candidates(
     - voice (comment_fn) が空の候補は skip (テンプレで埋めない、
       2026-07-02 余計なポスト方針と同じ)。comment_fn 未設定時も skip。
     - 重複防止: URL signature (24h dedup_set) + 選手ごと 1 本/便。
+    - ``as_reply=True`` (2026-07-03 user「メジャー系の日本公式で大谷や岡本や
+      菅野にもリプしたい」): 引用RTではなく返信候補として組む。tweet_id を
+      ``reply_to_id`` に載せ、metric は既存リプ policy (_REPLY_CANDIDATE_METRIC)
+      に合流する。``handles`` で対象アカウントを差し替え可 (default は引用RT と
+      同じ _MLB_WATCH_HANDLES)。
     """
     from src import video_radar as _vr
     from datetime import timezone as _tz
@@ -2281,11 +2288,12 @@ def build_mlb_watch_candidates(
         now = datetime.now(JST)
     now_utc = now.astimezone(_tz.utc)
     fetch = fetch_fn or _vr._cached_default_fetch
+    watch_handles = [h for h in (handles or _MLB_WATCH_HANDLES) if h]
     posts: list[dict] = []
     seen_urls: set[str] = set()
-    feed_urls = {h: f"{_vr._RSSHUB_BASE}/twitter/user/{h}?limit=30" for h in _MLB_WATCH_HANDLES}
+    feed_urls = {h: f"{_vr._RSSHUB_BASE}/twitter/user/{h}?limit=30" for h in watch_handles}
     fetched = _vr.prefetch_feeds(list(feed_urls.values()), fetch)
-    for h in _MLB_WATCH_HANDLES:
+    for h in watch_handles:
         xml = fetched.get(feed_urls[h])
         if not isinstance(xml, str):
             LOG.info("mlb_watch fetch skip handle=%s err=%r", h, xml)
@@ -2330,7 +2338,14 @@ def build_mlb_watch_candidates(
         if player == "大谷翔平" and ohtani_used >= ohtani_max:
             continue
         url = p["url"]
-        signature = "mlbwatch|" + _hashlib.sha1(url.encode("utf-8")).hexdigest()[:16]
+        tweet_id = ""
+        if as_reply:
+            m = _re.search(r"/status/(\d+)", url)
+            if not m:
+                continue
+            tweet_id = m.group(1)
+        sig_prefix = "mlbreply|" if as_reply else "mlbwatch|"
+        signature = sig_prefix + _hashlib.sha1(url.encode("utf-8")).hexdigest()[:16]
         if dedup_set is not None and signature in dedup_set:
             continue
         post_text = ""
@@ -2351,36 +2366,63 @@ def build_mlb_watch_candidates(
         handle = p["handle"]
         frame = "大谷別枠" if player == "大谷翔平" else "元巨人MLB"
         src_text = _truncate_text(p["text"].replace("\n", " ").strip(), 140)
-        draft = "\n".join([
-            f"【MLB引用RT候補: {frame}】 @{handle}",
-            f"対象選手: {player}",
-            f"▶ 元ツイート (タップで開く): {url}",
-            f"元投稿本文: {src_text}",
-            "",
-            f"▼ コピペ用（このコメントだけ貼って引用RT / {len(post_text)}字）",
-            post_text,
-            "── ここまで貼る ──",
-            "",
-            "※ 動画付き投稿は動画ごと引用RTされインプが伸びる。動画ファイルの転載はしない。",
-        ])
-        out.append(Candidate(
-            title=f"(MLB引用RT) {frame}｜@{handle}｜{player}",
-            metric=_MLB_WATCH_METRIC,
-            period_label="MLB引用RT候補",
-            draft_text=draft,
-            char_count=len(post_text),
-            signature=signature,
-            post_text=post_text,
-            focus_player=player,
-            quote_url=url,
-            why_now="MLB朝昼枠 (元巨人/大谷、午前〜午後がインプ強)",
-            source_material_type="mlb_watch_post",
-            media_handle=handle.strip().lower(),
-        ))
+        if as_reply:
+            draft = "\n".join([
+                f"【MLBリプ候補: {frame}】 @{handle}",
+                f"対象選手: {player}",
+                f"返信先 (タップで開く): {url}",
+                f"元投稿本文: {src_text}",
+                f"リプ文: {post_text}",
+                "",
+                "※ ボタンで返信画面が開く(リプ文入り)→ 投稿。"
+                "MLB系アカの返信欄で露出=インプ近道。自動投稿はしない。",
+            ])
+            out.append(Candidate(
+                title=f"💬 MLBリプ候補: {frame}｜@{handle}｜{player}",
+                metric=_REPLY_CANDIDATE_METRIC,
+                period_label="MLBリプ候補",
+                draft_text=draft,
+                char_count=len(post_text),
+                signature=signature,
+                post_text=post_text,
+                focus_player=player,
+                reply_to_id=tweet_id,
+                why_now="MLB朝昼枠 (元巨人/大谷、返信欄で露出)",
+                source_material_type="reply_candidate",
+                reason_tags=("reply:mlb", "manual_only"),
+                media_handle=handle.strip().lower(),
+            ))
+        else:
+            draft = "\n".join([
+                f"【MLB引用RT候補: {frame}】 @{handle}",
+                f"対象選手: {player}",
+                f"▶ 元ツイート (タップで開く): {url}",
+                f"元投稿本文: {src_text}",
+                "",
+                f"▼ コピペ用（このコメントだけ貼って引用RT / {len(post_text)}字）",
+                post_text,
+                "── ここまで貼る ──",
+                "",
+                "※ 動画付き投稿は動画ごと引用RTされインプが伸びる。動画ファイルの転載はしない。",
+            ])
+            out.append(Candidate(
+                title=f"(MLB引用RT) {frame}｜@{handle}｜{player}",
+                metric=_MLB_WATCH_METRIC,
+                period_label="MLB引用RT候補",
+                draft_text=draft,
+                char_count=len(post_text),
+                signature=signature,
+                post_text=post_text,
+                focus_player=player,
+                quote_url=url,
+                why_now="MLB朝昼枠 (元巨人/大谷、午前〜午後がインプ強)",
+                source_material_type="mlb_watch_post",
+                media_handle=handle.strip().lower(),
+            ))
         used_players.add(player)
         if player == "大谷翔平":
             ohtani_used += 1
-    LOG.info("mlb_watch: built %d candidates", len(out))
+    LOG.info("mlb_watch: built %d candidates (as_reply=%s)", len(out), as_reply)
     return out
 
 

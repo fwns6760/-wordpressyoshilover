@@ -346,6 +346,32 @@ def _in_mlb_watch_window(now_jst) -> bool:
     return 7 <= now_jst.hour < 16
 
 
+def _mlb_reply_enabled() -> bool:
+    """2026-07-03 user「メジャー系の日本公式で大谷や岡本や菅野にもリプしたい」:
+    MLB系アカ投稿への手動リプ候補をメールに出すか (default OFF、env gate)。"""
+    raw = (os.environ.get("ENABLE_X_POST_MLB_REPLY") or "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _mlb_reply_max_per_run() -> int:
+    """MLBリプ候補数 / fire の上限。少量運用なので default 1。"""
+    return _resolve_int_env("X_POST_MLB_REPLY_MAX", 1, min_value=0)
+
+
+# 2026-07-03 user 指定: 大谷速報系 @30R9gmaMUy3guDJ + メジャー系日本公式。
+# US 公式 (MLB/Dodgers 等) は英語返信欄になるため default から外す (env で追加可)。
+_DEFAULT_MLB_REPLY_HANDLES = "30R9gmaMUy3guDJ,MLBJapan,SPOTVNOW_jp"
+
+
+def _mlb_reply_target_handles() -> list[str]:
+    raw = (
+        os.environ.get("X_POST_MLB_REPLY_TARGET_HANDLES")
+        or _DEFAULT_MLB_REPLY_HANDLES
+    ).strip()
+    handles = [h.strip().lstrip("@") for h in raw.split(",") if h.strip()]
+    return handles or _DEFAULT_MLB_REPLY_HANDLES.split(",")
+
+
 def _reply_candidates_max_per_run() -> int:
     """リプライ候補数 / fire の上限。 報知返信欄を厚くするため default 3。"""
     return _resolve_int_env("X_POST_REPLY_CANDIDATES_MAX", 3, min_value=0)
@@ -687,7 +713,10 @@ def _build_news_scrape_candidates(queue_items, *, gemini_key, max_count, log, ex
 
 
 _OFFICIAL_REPLY_HANDLE = "TokyoGiants"
-_DEFAULT_REPLY_TARGET_HANDLES = ("hochi_giants",)
+# 2026-07-03 user 追加: サンスポ巨人 (Sanspo_Giants) + 日刊巨人担当 (koba_nikkan)。
+# 順序 = 親ツイートの閲覧が多い順 (報知 → サンスポ → 記者)。TokyoGiants は
+# _reply_target_handles が常時補完する。
+_DEFAULT_REPLY_TARGET_HANDLES = ("hochi_giants", "Sanspo_Giants", "koba_nikkan")
 
 
 def _unique_reply_handles(handles: list[str]) -> list[str]:
@@ -762,14 +791,28 @@ def _fan_reply_max_per_run() -> int:
     return _resolve_int_env("X_POST_FAN_REPLY_MAX", 2, min_value=0)
 
 
-def _fan_reply_target_handles() -> list[str]:
-    """ファンリプの対象 X handle。 default = フーガ + 缶詰 (2026-06-05 user 指定)。"""
+_DEFAULT_FAN_REPLY_HANDLES = "EH87EazmV9D2eSw,kandume92,ay222000,vto6u,GIANTSLIFE0801"
+
+
+def _fan_reply_target_handles(now=None) -> list[str]:
+    """ファンリプの対象 X handle。 default = フーガ + 缶詰 (2026-06-05 user 指定)
+    + ay222000 / vto6u / GIANTSLIFE0801 (2026-07-03 user 追加)。
+
+    fan reply は per-fire 上限が小さい (X_POST_FAN_REPLY_MAX=1〜2) ため、 先頭
+    handle が毎便勝ち続けないよう ``now`` の時刻で走査開始位置をローテする
+    (deterministic、 追加コストなし)。 env 指定時もローテは同様に効く。
+    """
     raw = (
         os.environ.get("X_POST_FAN_REPLY_TARGET_HANDLES")
-        or "EH87EazmV9D2eSw,kandume92"
+        or _DEFAULT_FAN_REPLY_HANDLES
     ).strip()
     handles = [h.strip().lstrip("@") for h in raw.split(",") if h.strip()]
-    return handles or ["EH87EazmV9D2eSw", "kandume92"]
+    if not handles:
+        handles = _DEFAULT_FAN_REPLY_HANDLES.split(",")
+    if now is not None and len(handles) > 1:
+        shift = (int(now.timetuple().tm_yday) * 24 + int(now.hour)) % len(handles)
+        handles = handles[shift:] + handles[:shift]
+    return handles
 
 
 def _reply_llm_enabled() -> bool:
@@ -3305,6 +3348,66 @@ def main(argv: Sequence[str] | None = None) -> int:
                     before, len(mlb_new), len(candidates),
                 )
 
+    # 2026-07-03 user「メジャー系の日本公式で大谷や岡本や菅野にもリプしたい」:
+    # MLB系日本語アカ (@30R9gmaMUy3guDJ / MLBJapan / SPOTVNOW_jp) の 大谷/岡本/菅野
+    # 投稿への手動リプ候補。引用RT lane と同じ検出を as_reply=True で流用し、
+    # 既存リプ policy (manual_only / reply intent) に合流。NPB DB に MLB 数字は
+    # 無いため require_db_fact=False で「元投稿内の具体場面」補足リプにする。
+    if _mlb_reply_enabled() and _in_mlb_watch_window(now_jst):
+        mlb_rep_max = _mlb_reply_max_per_run()
+        if mlb_rep_max > 0:
+            mlb_rep_comment_fn = None
+            _mlbr_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GEMMA_BRANDING_GEMINI_API_KEY") or ""
+            if _mlbr_key:
+                try:
+                    from src import x_post_branding_gen as _mlbr_xbg
+
+                    def mlb_rep_comment_fn(parent_text, player, _k=_mlbr_key, _g=_mlbr_xbg, _now=now_jst):  # noqa: E731
+                        # フレーミングは引用RT lane と同じ (大谷=別枠/元巨人=送り出した側)。
+                        if player == "大谷翔平":
+                            subject = "大谷翔平のMLB投稿"
+                            note = (
+                                "大谷は巨人と無関係の別枠。巨人ファン視点や巨人との"
+                                "比較は入れず、純粋に野球ファンとしての短い補足にする。"
+                            )
+                        else:
+                            subject = f"元巨人・{player}のMLB投稿"
+                            note = (
+                                f"{player}は巨人からMLBへ行った選手。巨人ファンとして"
+                                "送り出した側の親心・誇りの視点で短く補足する。"
+                            )
+                        return _g.build_quote_rt_comment(
+                            parent_text, player, gemini_api_key=_k, now=_now,
+                            subject=subject, extra_voice_note=note,
+                            budget_site="reply", require_db_fact=False,
+                        )
+                except Exception as _mlbr_imp_exc:  # noqa: BLE001
+                    LOG.warning("mlb_reply LLM comment unavailable: %r", _mlbr_imp_exc)
+                    mlb_rep_comment_fn = None
+            try:
+                mlb_rep_candidates = lane.build_mlb_watch_candidates(
+                    now=now_jst,
+                    max_count=mlb_rep_max,
+                    dedup_set=dedup_set,
+                    comment_fn=mlb_rep_comment_fn,
+                    handles=_mlb_reply_target_handles(),
+                    as_reply=True,
+                )
+            except Exception as _mlbr_exc:  # noqa: BLE001
+                LOG.warning("mlb_reply build failed: %r", _mlbr_exc)
+                mlb_rep_candidates = []
+            _existing_sigs_mlbr = {getattr(c, "signature", "") for c in candidates}
+            mlb_rep_new = [c for c in mlb_rep_candidates if c.signature not in _existing_sigs_mlbr]
+            if mlb_rep_new:
+                before = len(candidates)
+                candidates = candidates + mlb_rep_new
+                extra_policy_slots += len(mlb_rep_new)
+                LOG.info(
+                    "mlb_reply appended: base=%d mlb_rep=%d total=%d handles=%s",
+                    before, len(mlb_rep_new), len(candidates),
+                    ",".join(_mlb_reply_target_handles()),
+                )
+
     # 451: 「今日の動画引用キャプション」(ヨシラバーコメント+データ)。 user が X で動画を
     # 長押し引用する時に貼るテキスト。 巨人選手限定。 flag ON 時のみ append。
     if _quote_captions_enabled() and db_path:
@@ -3477,7 +3580,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 except Exception as _fan_imp_exc:  # noqa: BLE001
                     LOG.warning("fan_reply LLM comment unavailable: %r", _fan_imp_exc)
                     fan_comment_fn = None
-            fan_handles = _fan_reply_target_handles()
+            fan_handles = _fan_reply_target_handles(now=now_jst)
             try:
                 from src import sns_topic_cards as _tc3
                 fan_reps = _tc3.build_reply_candidates(

@@ -22,3 +22,4 @@
 - 08:2x JST | env | user「リプはより多めにしたい」| Job generation 236 | REPLY_CANDIDATES_MAX 4→6 / FAN_REPLY_MAX 1→2 / MLB_REPLY_MAX →2 / REPLY_LLM_RESERVE 4→8 / MAX_LLM_PER_RUN 8→12 (非リプ枠4は不変)。コスト影響 概算 ¥40/日 → 最大¥60/日程度 (flash-lite、候補がある便のみ消費)
 - 08:4x JST | env | user「今より倍に。特に公式と報知」「その他メディア分散」「他レーンも増やしていい」| generation 237-238 | REPLY 6→12 / FAN 2→4 / MLB 2→4 / RESERVE 8→20 / MAX_LLM 12→24→28 (非リプ 4→8) / VIDEO_RADAR 5→8。code側 e0b9fbc1 = 報知/公式 先頭固定 + その他ローテ (build 中)
 - 08:5x JST | deploy | Cloud Build 0a855941 SUCCESS (1m34s) | image x-post-mail-lane:reply-priority-e0b9fbc1 | Job generation 239 | 本日の最終形 = 補足リプ型 + 対象拡張 + MLBリプ + 枠倍増 + 報知/公式先頭固定 + その他ローテ + 非リプ枠8
+- 09:2x JST | deploy | user 確定「記事の数字ごと載せる」「【選手名】 内容 画像があるとよい」| commit 1bf25bfb | image record-headline-1bf25bfb | Job generation 240 | record post = 【選手名】+記事内容+記事画像添付、mail 表示「記事記載値」

@@ -1219,7 +1219,7 @@ def _build_career_history_html(player: PillarPlayerInfo) -> str:
         return ""
     return (
         '<div class="ys-card">'
-        '<h2>年度別成績・通算 <span class="ys-tag">NPB全記録</span></h2>'
+        f'<h2>{_esc(player.name)}の年度別成績・通算 <span class="ys-tag">NPB全記録</span></h2>'
         '<p class="ys-note">入団からの年度別成績と通算記録 (移籍履歴を含む)。 横スクロールで全項目を表示。</p>'
         + "\n".join(tables) +
         '<p class="ys-foot">※ NPB 公式選手データより。 当該シーズン途中の数値は試合進行に応じて更新されます。</p>'
@@ -1446,17 +1446,52 @@ def render_pillar_excerpt(player: PillarPlayerInfo) -> str:
                 parts.append(f'{npb["hits"]}安打')
             if npb.get("hr"):
                 parts.append(f'{npb["hr"]}本塁打')
-        honor = str((ob.get("honors") or [""])[0]).strip()
+        honors = [str(h).strip() for h in (ob.get("honors") or []) if str(h).strip()]
         kind = "投手" if ob.get("type") == "pitcher" else "野手"
         lead = f"{name}（元巨人・{kind}" + (f"、巨人在籍{years}" if years else "") + "）の選手データ。"
         if parts:
             lead += "・".join(parts) + "。"
-        if honor:
-            lead += f"{honor}。"
+        # 代表実績は最大 2 つ (台帳の事実のみ、感想・修飾は入れない)。
+        # 通算数値と同内容の実績 (「通算382本塁打」等) は重複するので落とす。
+        parts_str = "・".join(parts)
+        uniq_honors = [h for h in honors if h.replace("通算", "") not in parts_str][:2]
+        if uniq_honors:
+            lead += "。".join(uniq_honors) + "。"
         lead += "年度別成績と関連ニュースをまとめた巨人OBデータページ。"
         return lead
     if player.role in ("manager", "coach"):
-        return f"{name}（巨人{pos}）のプロフィールと現役時代の通算成績。関連ニュースもまとめた巨人選手データ。"
+        # 2026-07-02 user 指摘「どのページも似てる」: 首脳陣 27 ページが同一定型文
+        # だったため、現役時代の通算 (config 事実) からページ固有文を組む。
+        # LLM 不使用・感想語なし (user「AIっぽくならないように」)。
+        cs = player.career_stats or {}
+        span = str(cs.get("years") or "").strip()
+        facts = []
+        if cs.get("type") == "pitcher":
+            if cs.get("games"):
+                facts.append(f'通算{cs["games"]}登板')
+            if cs.get("w"):
+                facts.append(f'{cs["w"]}勝{cs.get("l", 0)}敗')
+            if cs.get("era"):
+                facts.append(f'防御率{cs["era"]}')
+            if cs.get("k"):
+                facts.append(f'{cs["k"]}奪三振')
+        else:
+            if cs.get("games"):
+                facts.append(f'通算{cs["games"]}試合')
+            if cs.get("avg"):
+                facts.append(f'打率{cs["avg"]}')
+            if cs.get("hits"):
+                facts.append(f'{cs["hits"]}安打')
+            if cs.get("hr"):
+                facts.append(f'{cs["hr"]}本塁打')
+        lead = f"{name}（巨人{pos}）のデータページ。"
+        if span:
+            lead += f"現役時代は{span}にプレー"
+            lead += ("、" + "・".join(facts) + "。") if facts else "。"
+        elif facts:
+            lead += "現役時代は" + "・".join(facts) + "。"
+        lead += "現役時代の通算成績・年度別成績、プロフィールと関連ニュースをまとめた巨人選手データ。"
+        return lead
     if "投手" in pos and player.has_pitching_stats:
         era = f"・防御率{player.pitch_era:.2f}" if player.pitch_era is not None else ""
         return (

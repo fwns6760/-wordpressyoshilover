@@ -437,3 +437,43 @@ class CareerMilestoneRenderTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class UniqueLeadTests(unittest.TestCase):
+    """2026-07-02 user「どのページも似てる」「AIっぽくならないように」:
+    リード文は台帳事実のみの機械組み立てで、ページごとに固有になる。"""
+
+    def test_coach_lead_uses_career_facts(self):
+        p = PillarPlayerInfo(
+            name="橋上秀樹", slug="hashigami-hideki", position="監督代行",
+            jersey_number="73", role="coach",
+            career_stats={"type": "batter", "games": 543, "avg": ".265",
+                          "hits": 215, "hr": 17, "rbi": 86, "years": "1988-1999"},
+        )
+        ex = render_pillar_excerpt(p)
+        self.assertIn("1988-1999", ex)
+        self.assertIn("543試合", ex)
+        self.assertIn("打率.265", ex)
+
+    def test_two_coaches_get_distinct_leads(self):
+        a = PillarPlayerInfo(name="A", slug="a", position="投手コーチ", jersey_number="1",
+                             role="coach", career_stats={"type": "pitcher", "games": 316,
+                                                         "w": 142, "l": 77, "era": "2.95",
+                                                         "k": 2156, "years": "2002-2015"})
+        b = PillarPlayerInfo(name="B", slug="b", position="打撃コーチ", jersey_number="2",
+                             role="coach", career_stats={"type": "batter", "games": 302,
+                                                         "avg": ".213", "hits": 132,
+                                                         "hr": 6, "rbi": 43, "years": "1995-2008"})
+        self.assertNotEqual(render_pillar_excerpt(a).replace("A", "").replace("B", ""),
+                            render_pillar_excerpt(b).replace("A", "").replace("B", ""))
+
+    def test_ob_lead_dedupes_honor_matching_totals(self):
+        p = PillarPlayerInfo(
+            name="原辰徳", slug="hara-tatsunori", position="", jersey_number="", role="ob",
+            ob_profile={"type": "batter", "years": "1981-1995",
+                        "npb": {"games": 1697, "avg": ".279", "hits": 1675, "hr": 382},
+                        "honors": ["通算382本塁打", "新人王・MVP・打点王"]},
+        )
+        ex = render_pillar_excerpt(p)
+        self.assertEqual(ex.count("382本塁打"), 1)  # 通算欄と実績欄で重複しない
+        self.assertIn("新人王・MVP・打点王", ex)

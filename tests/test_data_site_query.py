@@ -890,3 +890,29 @@ class LiveRosterFilterTests(unittest.TestCase):
         self._reset()
         with mock.patch.dict(os.environ, {"DATA_SITE_ROSTER_LIVE_FILTER": "0"}):
             self.assertIsNone(q._current_npb_norm_names())
+
+
+class CurrentRosterNamesFilterTests(unittest.TestCase):
+    """2026-07-02 阿部前監督: roster の role=ob / active=false 行は現役扱いしない。"""
+
+    def test_ob_and_inactive_rows_not_treated_as_current(self):
+        import json as _j
+        import tempfile, pathlib
+        from unittest import mock as _m
+        import data_site_query as q
+        rows = [
+            {"name": "阿部慎之助", "role": "ob", "active": False},
+            {"name": "戸郷翔征", "role": "player"},
+        ]
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as fh:
+            _j.dump(rows, fh, ensure_ascii=False)
+            tmp = pathlib.Path(fh.name)
+        try:
+            with _m.patch.object(q, "_ROSTER_PATH", tmp):
+                q._current_roster_names_cache = None
+                names = q._current_roster_names()
+            self.assertIn(q._norm_name("戸郷翔征"), names)
+            self.assertNotIn(q._norm_name("阿部慎之助"), names)
+        finally:
+            q._current_roster_names_cache = None
+            tmp.unlink(missing_ok=True)

@@ -339,6 +339,12 @@ def _current_roster_names() -> set:
     if _ROSTER_PATH.exists():
         try:
             for row in _json.loads(_ROSTER_PATH.read_text(encoding="utf-8")):
+                # 2026-07-02 阿部前監督: 辞任・退団後も alias 分類用に roster へ
+                # 残す行 (role=ob / active=false) は「現役」ではないので、OB 名鑑
+                # からの除外対象にしない (除外すると OB ページへ切替わらず、
+                # 「監督」表記のまま更新されない迷子ページになる)。
+                if str(row.get("role", "") or "").strip() == "ob" or row.get("active") is False:
+                    continue
                 n = _norm_name(str(row.get("name", "") or ""))
                 if n:
                     names.add(n)

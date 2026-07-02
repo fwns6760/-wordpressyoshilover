@@ -1338,6 +1338,114 @@ class ComposeMailTests(unittest.TestCase):
         )
         self.assertEqual(len(kept), 1)
 
+    def test_impression_policy_same_player_different_media_videos_kept(self) -> None:
+        # 2026-07-02 user 決定: 動画SNS はインプが取れるため、同一選手でも
+        # 媒体 (@handle) が違えば同一メール内で両方残す。
+        ts = datetime(2026, 7, 2, 12, 0, tzinfo=JST)
+        from src.x_post_mail_lane import _VIDEO_RADAR_METRIC
+        hochi = Candidate("動画岡本(報知)", _VIDEO_RADAR_METRIC, "引用RT候補",
+                          "元動画: https://x.com/hochi_giants/status/1", 5,
+                          signature="xbuzz|aaa", post_text="岡本の一発、報知の角度 #巨人",
+                          focus_player="岡本和真", media_handle="hochi_giants")
+        sponichi = Candidate("動画岡本(スポニチ)", _VIDEO_RADAR_METRIC, "引用RT候補",
+                             "元動画: https://x.com/sponichi_giants/status/2", 5,
+                             signature="xbuzz|bbb", post_text="岡本の一発、スポニチのリプレー #巨人",
+                             focus_player="岡本和真", media_handle="sponichi_giants")
+        kept, dropped = apply_x_impression_policy([hochi, sponichi], now=ts)
+        self.assertEqual(len(kept), 2, dropped)
+
+    def test_impression_policy_same_player_same_media_video_dropped(self) -> None:
+        # 同一選手×同一媒体の別動画は従来通り 1 本に抑える。
+        ts = datetime(2026, 7, 2, 12, 0, tzinfo=JST)
+        from src.x_post_mail_lane import _VIDEO_RADAR_METRIC
+        v1 = Candidate("動画岡本1", _VIDEO_RADAR_METRIC, "引用RT候補",
+                       "元動画: https://x.com/hochi_giants/status/1", 5,
+                       signature="xbuzz|aaa", post_text="岡本の一発 第1打席 #巨人",
+                       focus_player="岡本和真", media_handle="hochi_giants")
+        v2 = Candidate("動画岡本2", _VIDEO_RADAR_METRIC, "引用RT候補",
+                       "元動画: https://x.com/hochi_giants/status/3", 5,
+                       signature="xbuzz|ccc", post_text="岡本の守備の場面はこちら #巨人",
+                       focus_player="岡本和真", media_handle="hochi_giants")
+        kept, dropped = apply_x_impression_policy([v1, v2], now=ts)
+        self.assertEqual(len(kept), 1)
+        # 同一 (選手×媒体) は topic key (player|metric|period|handle) か
+        # (選手×媒体) mail 内 gate のどちらかで 1 本に落ちる。
+        reasons = {r for _c, r in dropped}
+        self.assertTrue(
+            reasons & {"dedup_player_in_mail", "dedup_player_metric_period"},
+            reasons,
+        )
+
+    def test_impression_policy_video_media_aware_recent_gate(self) -> None:
+        # 12h クールダウン: 報知の岡本動画を既送 → 報知の別動画は落ち、
+        # スポニチの岡本動画は残る (媒体が違えばインプが取れる)。
+        ts = datetime(2026, 7, 2, 12, 0, tzinfo=JST)
+        from src.x_post_mail_lane import _VIDEO_RADAR_METRIC
+        recent_media = {f"{_normalize_player_name('岡本和真')}|hochi_giants"}
+        hochi = Candidate("動画岡本(報知)", _VIDEO_RADAR_METRIC, "引用RT候補", "根拠", 5,
+                          signature="xbuzz|ddd", post_text="岡本の一発また来た #巨人",
+                          focus_player="岡本和真", media_handle="hochi_giants")
+        sponichi = Candidate("動画岡本(スポニチ)", _VIDEO_RADAR_METRIC, "引用RT候補", "根拠", 5,
+                             signature="xbuzz|eee", post_text="岡本の一発、別カメラ #巨人",
+                             focus_player="岡本和真", media_handle="sponichi_giants")
+        by_group = {
+            "original": {_normalize_player_name("岡本和真")},
+            "reply": set(), "other": set(),
+        }
+        kept, dropped = apply_x_impression_policy(
+            [hochi, sponichi], now=ts,
+            recent_player_keys_by_group=by_group,
+            recent_video_player_media=recent_media,
+        )
+        kept_titles = {c.title for c in kept}
+        self.assertNotIn("動画岡本(報知)", kept_titles)
+        self.assertIn("動画岡本(スポニチ)", kept_titles)
+        self.assertIn("dedup_player_recent", {r for _c, r in dropped})
+
+    def test_impression_policy_video_without_media_handle_keeps_legacy(self) -> None:
+        # media_handle 無しの動画候補は従来の選手単位 recent 判定のまま。
+        ts = datetime(2026, 7, 2, 12, 0, tzinfo=JST)
+        from src.x_post_mail_lane import _VIDEO_RADAR_METRIC
+        by_group = {
+            "original": {_normalize_player_name("戸郷翔征")},
+            "reply": set(), "other": set(),
+        }
+        video = Candidate("動画戸郷", _VIDEO_RADAR_METRIC, "引用RT候補", "根拠", 5,
+                          post_text="戸郷の動画 #巨人", focus_player="戸郷翔征")
+        kept, dropped = apply_x_impression_policy(
+            [video], now=ts,
+            recent_player_keys_by_group=by_group,
+            recent_video_player_media=set(),
+        )
+        self.assertEqual(len(kept), 0)
+        self.assertIn("dedup_player_recent", {r for _c, r in dropped})
+
+    def test_video_player_media_within_cooldown_builds_keys(self) -> None:
+        from src.x_post_mail_lane import (
+            _video_player_media_within_cooldown, _VIDEO_RADAR_METRIC,
+        )
+        now = datetime(2026, 7, 2, 12, 0, tzinfo=JST)
+        records = [
+            {"ts": "2026-07-02T11:00:00+09:00", "metric": _VIDEO_RADAR_METRIC,
+             "focus_player": "岡本和真", "media_handle": "hochi_giants",
+             "signature": "xbuzz|aaa"},
+            # 窓の外 (13h 前) は含めない
+            {"ts": "2026-07-01T23:00:00+09:00", "metric": _VIDEO_RADAR_METRIC,
+             "focus_player": "戸郷翔征", "media_handle": "sponichi_giants",
+             "signature": "xbuzz|bbb"},
+            # 動画以外の lane は含めない
+            {"ts": "2026-07-02T11:30:00+09:00", "metric": "GEMMA_BRANDING",
+             "focus_player": "岡本和真", "media_handle": "hochi_giants",
+             "signature": "news|ccc"},
+            # media_handle 無しの旧 record は含めない
+            {"ts": "2026-07-02T11:30:00+09:00", "metric": _VIDEO_RADAR_METRIC,
+             "focus_player": "吉川尚輝", "signature": "xbuzz|ddd"},
+        ]
+        keys = _video_player_media_within_cooldown(records, now, 12)
+        self.assertEqual(
+            keys, {f"{_normalize_player_name('岡本和真')}|hochi_giants"}
+        )
+
     def test_players_within_cooldown_by_group_buckets_by_metric(self) -> None:
         from src.x_post_mail_lane import (
             _players_within_cooldown_by_group,
@@ -2478,6 +2586,7 @@ class XPostMailEntrypointFreshnessTests(unittest.TestCase):
             focus_players=["", "", "", ""],
             metrics=["OPS", "OPS", "OPS", "OPS"],
             period_labels=["直近5試合", "直近5試合", "直近5試合", "直近5試合"],
+            media_handles=["", "", "", ""],
         )
 
     def test_dedup_sufficient_candidates_do_not_retry(self) -> None:

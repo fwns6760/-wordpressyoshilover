@@ -1097,6 +1097,10 @@ class Candidate:
     image_bytes: bytes = b""
     image_alt_text: str = ""
     image_source_url: str = ""
+    # 2026-07-02 user 決定: 動画SNS (引用RT) はインプが取れるため、 同一選手でも
+    # 発信メディア (@handle) が違えば別候補として残す。 dedup の (選手×媒体) 判定に
+    # 使う元投稿アカウントの handle。 動画/引用RT lane 以外は空のまま。
+    media_handle: str = ""
 
 
 _DEFAULT_PLAYER_MAX_PER_MAIL = 1
@@ -2089,11 +2093,14 @@ def build_video_radar_candidates(
         if p.get("type_tag") == "選手の話題":
             LOG.info("x_buzz skip: low-signal tag=選手の話題 player=%s", player or "(none)")
             continue
-        # 一記事一本: 同じ選手は 1 本だけ
-        if player and player in used_players:
+        # 一記事一本 → (選手×媒体) 一本 (2026-07-02 user 決定): 動画SNS は
+        # インプが取れるため、 同じ選手でも発信メディア (@handle) が違えば
+        # 別候補として残す。 同一選手×同一媒体だけ 1 本に抑える。
+        _pm_key = f"{player}|{(p.get('handle') or '').strip().lower()}"
+        if player and _pm_key in used_players:
             continue
         if player:
-            used_players.add(player)
+            used_players.add(_pm_key)
         tag = p["type_tag"]
         src_text = _truncate_text(str(p.get("text") or "").replace("\n", " ").strip(), 140)
         handle = p.get("handle", "")
@@ -2164,6 +2171,7 @@ def build_video_radar_candidates(
             source_material_type="x_buzz_post",
             image_bytes=brand_img,
             image_alt_text=(f"ヨシラバー {player}" if player else "ヨシラバー"),
+            media_handle=(handle or "").strip().lower(),
         ))
     LOG.info("x_buzz: built %d candidates (from X posts via RSSHub)", len(out))
     return out
@@ -3063,7 +3071,13 @@ def _candidate_topic_key(candidate: Candidate) -> str:
     period = str(candidate.period_label or "").strip()
     if not player or not metric or not period:
         return ""
-    return f"{player}|{metric}|{period}"
+    key = f"{player}|{metric}|{period}"
+    # 2026-07-02 user 決定: 媒体つき動画候補は (選手×媒体) 単位で topic 判定
+    # (同一選手でも媒体が違えばインプが取れるため別 topic として残す)。
+    handle = (candidate.media_handle or "").strip().lower()
+    if metric == _VIDEO_RADAR_METRIC and handle:
+        key = f"{key}|{handle}"
+    return key
 
 
 # 2026-06-29 user 決定: recent-player クールダウン (dedup_player_recent) を
@@ -3096,6 +3110,7 @@ def apply_x_impression_policy(
     max_candidates: Optional[int] = None,
     recent_player_keys: Optional[set[str]] = None,
     recent_player_keys_by_group: Optional[dict[str, set[str]]] = None,
+    recent_video_player_media: Optional[set[str]] = None,
 ) -> tuple[list[Candidate], list[tuple[Candidate, str]]]:
     """Apply final API-free X impression policy before composing mail.
 
@@ -3113,6 +3128,12 @@ def apply_x_impression_policy(
     gate is scoped per lane-group (original / reply / other) so a player shown
     recently in one group does not suppress candidates in another group. Falls
     back to the flat ``recent_player_keys`` set when ``None``.
+
+    ``recent_video_player_media`` (2026-07-02 user 決定): "player|handle" keys
+    of video/引用RT candidates mailed recently. When provided, video candidates
+    with a ``media_handle`` use THIS media-aware set for the recent gate —
+    同一選手でも媒体 (@handle) が違えば動画はインプが取れるので落とさない。
+    ``None`` keeps the legacy player-level gate for videos.
     """
     if now is None:
         now = datetime.now(JST)
@@ -3125,6 +3146,7 @@ def apply_x_impression_policy(
     seen_text_hashes: set[str] = set()
     seen_image_hashes: set[str] = set()
     seen_players: set[str] = set()
+    seen_video_media: set[str] = set()
     recent_players: set[str] = set(recent_player_keys or ())
     # per-group が渡されたら群ごとに recent 判定 (群をまたぐ既出では落とさない)。
     recent_by_group = recent_player_keys_by_group
@@ -3140,7 +3162,18 @@ def apply_x_impression_policy(
             _HOCHI_REPLY_METRIC,
             _REPLY_CANDIDATE_METRIC,
         }
-        if recent_by_group is not None:
+        # 2026-07-02 user 決定: 動画SNS (引用RT) は同一選手でも媒体が違えば残す。
+        media_key = ""
+        if (
+            candidate.metric == _VIDEO_RADAR_METRIC
+            and player_key
+            and (candidate.media_handle or "").strip()
+        ):
+            media_key = f"{player_key}|{candidate.media_handle.strip().lower()}"
+        if media_key and recent_video_player_media is not None:
+            # 媒体つき動画候補は (選手×媒体) の media-aware recent 判定。
+            recent_hit = media_key in recent_video_player_media
+        elif recent_by_group is not None:
             recent_hit = player_key in recent_by_group.get(
                 _lane_group(candidate.metric), frozenset()
             )
@@ -3165,15 +3198,24 @@ def apply_x_impression_policy(
             # レス既出が動画/本人コメントのオリジナルを落とすことはない。
             reason = "dedup_player_recent"
         elif (
+            media_key
+            and media_key in seen_video_media
+        ):
+            # 同一選手×同一媒体の動画は同メールで 1 本 (媒体違いは下の exempt で残る)。
+            reason = "dedup_player_in_mail"
+        elif (
             player_key
             and player_key in seen_players
             and not is_reply_metric
+            and not media_key
         ):
             # 2026-06-04 user 決定:「引用RT＋記事を1選手1件に。リプは残す」。
             # 旧 exemption から video_radar (引用RT) を外し、 引用RT と記事voice
             # (GEMMA_BRANDING) を同選手で 1 件に。 append 順で高シグナルな動画引用RT が
             # 先に来るので、 同選手では動画が優先的に残る。 報知リプ (HOCHI/REPLY) は
             # 返信欄用の別アクションなので exempt のまま残す。
+            # 2026-07-02 user 決定の上書き: 媒体つき動画候補 (media_key あり) は
+            # 選手単位では落とさず (選手×媒体) 単位で判定 (動画はインプが取れる)。
             reason = "dedup_player_in_mail"
 
         if reason:
@@ -3197,6 +3239,8 @@ def apply_x_impression_policy(
             _REPLY_CANDIDATE_METRIC,
         }:
             seen_players.add(player_key)
+        if media_key:
+            seen_video_media.add(media_key)
     return kept, dropped
 
 
@@ -3653,6 +3697,44 @@ def _players_within_cooldown_by_group(
     return groups
 
 
+def _video_player_media_within_cooldown(
+    records: list[dict],
+    now: datetime,
+    cooldown_hours: float,
+) -> set[str]:
+    """2026-07-02 user 決定: 動画/引用RT lane の media-aware recent set。
+
+    直近 ``cooldown_hours`` に送った video 候補の "player|handle" key を返す。
+    同一選手でも媒体 (@handle) が違えば動画はインプが取れるので落とさない —
+    この set に (選手×媒体) が居る時だけ recent 落ちさせる。
+    media_handle の無い旧 record は key を作れないため対象外 (URL signature の
+    完全一致 dedup は別途効いている)。
+    """
+    out: set[str] = set()
+    if cooldown_hours <= 0:
+        return out
+    cutoff = now - timedelta(hours=cooldown_hours)
+    for rec in records:
+        if str(rec.get("metric") or "") != _VIDEO_RADAR_METRIC:
+            continue
+        player_key = _normalize_player_name(rec.get("focus_player"))
+        handle = str(rec.get("media_handle") or "").strip().lower()
+        if not player_key or not handle:
+            continue
+        ts_str = rec.get("ts") or ""
+        if not ts_str:
+            continue
+        try:
+            ts = datetime.fromisoformat(str(ts_str).replace("Z", "+00:00"))
+        except (ValueError, TypeError):
+            continue
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=JST)
+        if ts >= cutoff:
+            out.add(f"{player_key}|{handle}")
+    return out
+
+
 def _load_recent_player_counts(
     bucket_name: str,
     now: datetime,
@@ -3851,6 +3933,7 @@ def _record_dedup_signatures(
     focus_players: Optional[list[str]] = None,
     metrics: Optional[list[str]] = None,
     period_labels: Optional[list[str]] = None,
+    media_handles: Optional[list[str]] = None,
 ) -> bool:
     """355: append signatures to today's JSONL on GCS. Returns ``True``
     on success, ``False`` on any error. Failures are logged and never
@@ -3891,6 +3974,10 @@ def _record_dedup_signatures(
             period = str(period_labels[idx] or "").strip()
             if period:
                 rec["period_label"] = period
+        if media_handles is not None and idx < len(media_handles):
+            handle = str(media_handles[idx] or "").strip().lower()
+            if handle:
+                rec["media_handle"] = handle
         new_records.append(rec)
     new_lines = [_json.dumps(rec, ensure_ascii=False) for rec in new_records]
     new_block = "\n".join(new_lines) + "\n"

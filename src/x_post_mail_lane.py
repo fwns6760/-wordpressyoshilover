@@ -2206,12 +2206,26 @@ def build_video_radar_candidates(
 # voice は巨人記事と同じヨシラバーボイス (LLM 失敗時はテンプレで埋めず skip)。
 
 _MLB_WATCH_METRIC = "mlb_watch_post"
-_MLB_WATCH_HANDLES = ["MLBJapan", "SPOTVNOW_jp"]
+# 2026-07-02 user 決定「アメリカの所属チーム公式も入れる」(大谷速報アカ級の速さ狙い):
+# 日本語メディア (MLBJapan=数時間遅れの編集済 / SPOTVNOW_jp=日次ダイジェスト) に加え、
+# 分単位で clip が出る US 公式を追加。実 feed 検証済 (2026-07-02、動画率 5-13/20):
+# MLB=公式ハイライト最速 / Dodgers=大谷 / BlueJays=岡本 / Rockies=菅野。
+# 英語 feed でも選手 alias (英名) で拾い、voice LLM が日本語で書くので問題ない。
+_MLB_WATCH_HANDLES = [
+    "MLBJapan",
+    "SPOTVNOW_jp",
+    "MLB",
+    "Dodgers",
+    "BlueJays",
+    "Rockies",
+]
 # 表示名 → 検出 alias (部分一致)。MLB 文脈の feed なので姓のみで安全。
+# US チーム公式は first name だけで呼ぶ投稿があるため英 first name も入れる
+# (Shohei/Kazuma/Tomoyuki。MLB 文脈 feed 限定なので誤爆リスクは低い)。
 _MLB_WATCH_PLAYERS: dict[str, tuple[str, ...]] = {
-    "菅野智之": ("菅野", "Sugano"),
-    "岡本和真": ("岡本", "Okamoto"),
-    "大谷翔平": ("大谷", "Ohtani"),
+    "菅野智之": ("菅野", "Sugano", "Tomoyuki"),
+    "岡本和真": ("岡本", "Okamoto", "Kazuma"),
+    "大谷翔平": ("大谷", "Ohtani", "Shohei"),
 }
 _MLB_EX_GIANTS = frozenset({"菅野智之", "岡本和真"})
 

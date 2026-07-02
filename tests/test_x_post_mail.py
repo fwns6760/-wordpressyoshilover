@@ -4489,6 +4489,28 @@ class BuildMlbWatchCandidatesTests(unittest.TestCase):
         )
         self.assertEqual(cands, [])
 
+    def test_us_team_english_feed_detected(self):
+        # 2026-07-02 user「アメリカの所属チームとかか」: US 公式の英語 feed でも
+        # 英 alias (Shohei/Okamoto 等) で選手検出できる。
+        from src import x_post_mail_lane as lane
+        feed = (
+            "<rss><channel>"
+            "<item><title>Shohei goes yard! His 19th of the season</title>"
+            "<description>Shohei goes yard! "
+            "&lt;img src=&quot;https://pbs.twimg.com/amplify_video_thumb/21/img/x.jpg&quot;&gt;"
+            "</description>"
+            "<link>https://x.com/Dodgers/status/21</link></item>"
+            "</channel></rss>"
+        )
+        cands = lane.build_mlb_watch_candidates(
+            max_count=3,
+            fetch_fn=lambda url: feed if "twitter/user/Dodgers" in url else "<rss><channel></channel></rss>",
+            comment_fn=lambda pt, pl: f"{pl}、この一発は見逃せない。",
+        )
+        self.assertEqual(len(cands), 1)
+        self.assertEqual(cands[0].focus_player, "大谷翔平")
+        self.assertIn("/Dodgers/status/21", cands[0].quote_url)
+
 
 class XBuzzPlayerFactTests(unittest.TestCase):
     """451: 引用RT コメントを濃くする今季実数字 (insight.db read-only)。"""

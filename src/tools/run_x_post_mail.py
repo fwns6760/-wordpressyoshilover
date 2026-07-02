@@ -3221,12 +3221,19 @@ def main(argv: Sequence[str] | None = None) -> int:
                 try:
                     from src import x_post_branding_gen as _rep_xbg
 
-                    def rep_comment_fn(parent_text, player, _k=_rep_key, _g=_rep_xbg, _now=now_jst):  # noqa: E731
+                    def rep_comment_fn(parent_text, player, _k=_rep_key, _g=_rep_xbg, _now=now_jst, _db=db_path):  # noqa: E731
                         # 親ツイート本文に対するヨシラバーボイスのリプ (= 引用RTコメントと同型)。
                         # budget_site="reply" で予約枠から消費 (前段 lane の枯渇に巻き込まれない)。
+                        # 2026-07-02: リプにも verified db_fact を渡し、 親投稿に無い
+                        # データ気づきを 1 つ織り込ませる (納得感のある返信にする)。
+                        _fact = ""
+                        try:
+                            _fact = _g.build_db_fact_line(player, _db) if _db else ""
+                        except Exception:  # noqa: BLE001
+                            _fact = ""
                         return _g.build_quote_rt_comment(
                             parent_text, player, gemini_api_key=_k, now=_now,
-                            budget_site="reply",
+                            db_fact=_fact, budget_site="reply",
                         )
                 except Exception as _rep_imp_exc:  # noqa: BLE001
                     LOG.warning("reply_candidates LLM comment unavailable: %r", _rep_imp_exc)
@@ -3311,12 +3318,18 @@ def main(argv: Sequence[str] | None = None) -> int:
                 try:
                     from src import x_post_branding_gen as _fan_xbg
 
-                    def fan_comment_fn(parent_text, player, _k=_fan_key, _g=_fan_xbg, _now=now_jst):  # noqa: E731
+                    def fan_comment_fn(parent_text, player, _k=_fan_key, _g=_fan_xbg, _now=now_jst, _db=db_path):  # noqa: E731
                         # ファン投稿への value-add リプ (同調でなく数字/逆角度を1個足す)。 subject で
                         # 「ファン投稿への反応」と枠付け。 元ネタに無い数字は門番 (_extract_unverified_numbers) で弾く。
+                        # verified db_fact を渡してデータ裏付けの value-add にする (2026-07-02)。
+                        _fact = ""
+                        try:
+                            _fact = _g.build_db_fact_line(player, _db) if _db else ""
+                        except Exception:  # noqa: BLE001
+                            _fact = ""
                         return _g.build_quote_rt_comment(
                             parent_text, player, gemini_api_key=_k, now=_now, subject="巨人ファンの投稿",
-                            budget_site="reply",
+                            db_fact=_fact, budget_site="reply",
                         )
                 except Exception as _fan_imp_exc:  # noqa: BLE001
                     LOG.warning("fan_reply LLM comment unavailable: %r", _fan_imp_exc)

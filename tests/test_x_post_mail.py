@@ -4367,6 +4367,91 @@ class BuildVideoRadarCandidatesTests(unittest.TestCase):
         self.assertEqual(again, [])
 
 
+class BuildMlbWatchCandidatesTests(unittest.TestCase):
+    """2026-07-02 フォロワー増計画: 元巨人MLB組 (菅野/岡本) + 大谷別枠の引用RT候補。"""
+
+    @staticmethod
+    def _item(title: str, status_id: str, *, video: bool = True) -> str:
+        vid = (
+            "&lt;img src=&quot;https://pbs.twimg.com/amplify_video_thumb/"
+            f"{status_id}/img/x.jpg&quot;&gt;" if video else ""
+        )
+        return (
+            f"<item><title>{title}</title>"
+            f"<description>{title} {vid}</description>"
+            f"<link>https://x.com/MLBJapan/status/{status_id}</link></item>"
+        )
+
+    def _feed(self, *items: str) -> str:
+        return "<rss><channel>" + "".join(items) + "</channel></rss>"
+
+    def test_builds_ohtani_and_ex_giants_with_caps(self):
+        from src import x_post_mail_lane as lane
+        feed = self._feed(
+            self._item("大谷翔平が第30号ホームラン", "1"),
+            self._item("岡本和真がメジャー初の猛打賞", "2"),
+            self._item("大谷翔平がベンチで笑顔", "3"),  # 大谷 2 件目 → 別枠 cap 1 で落ちる
+            self._item("ヤンキースが連勝", "4"),        # 対象外選手 → 落ちる
+        )
+        cands = lane.build_mlb_watch_candidates(
+            max_count=3,
+            fetch_fn=lambda url: feed if "MLBJapan" in url else "<rss><channel></channel></rss>",
+            comment_fn=lambda pt, pl: f"{pl}、これは効く一発。",
+        )
+        players = [c.focus_player for c in cands]
+        self.assertEqual(sorted(players), ["大谷翔平", "岡本和真"])
+        for c in cands:
+            self.assertEqual(c.metric, "mlb_watch_post")
+            self.assertTrue(c.signature.startswith("mlbwatch|"))
+            self.assertTrue(c.quote_url.startswith("https://x.com/MLBJapan/status/"))
+            self.assertEqual(c.media_handle, "mlbjapan")
+            self.assertIn("コピペ用", c.draft_text)
+
+    def test_skip_when_voice_empty_no_template(self):
+        from src import x_post_mail_lane as lane
+        feed = self._feed(self._item("大谷翔平が第30号ホームラン", "1"))
+        cands = lane.build_mlb_watch_candidates(
+            max_count=3,
+            fetch_fn=lambda url: feed if "MLBJapan" in url else "<rss><channel></channel></rss>",
+            comment_fn=lambda pt, pl: "",  # voice 門番落ち → skip
+        )
+        self.assertEqual(cands, [])
+        # comment_fn 未設定でも skip (テンプレで埋めない)
+        cands2 = lane.build_mlb_watch_candidates(
+            max_count=3,
+            fetch_fn=lambda url: feed if "MLBJapan" in url else "<rss><channel></channel></rss>",
+        )
+        self.assertEqual(cands2, [])
+
+    def test_video_posts_preferred_over_text_only(self):
+        from src import x_post_mail_lane as lane
+        feed = self._feed(
+            self._item("菅野智之が今日先発", "1", video=False),
+            self._item("菅野智之 7回無失点のハイライト", "2", video=True),
+        )
+        cands = lane.build_mlb_watch_candidates(
+            max_count=3,
+            fetch_fn=lambda url: feed if "MLBJapan" in url else "<rss><channel></channel></rss>",
+            comment_fn=lambda pt, pl: f"{pl}、圧巻の投球。",
+        )
+        self.assertEqual(len(cands), 1)  # 同一選手は 1 本
+        self.assertIn("/status/2", cands[0].quote_url)  # 動画付きが優先
+
+    def test_dedup_set_skips_signature(self):
+        from src import x_post_mail_lane as lane
+        import hashlib as _h
+        url = "https://x.com/MLBJapan/status/1"
+        sig = "mlbwatch|" + _h.sha1(url.encode("utf-8")).hexdigest()[:16]
+        feed = self._feed(self._item("大谷翔平が第30号ホームラン", "1"))
+        cands = lane.build_mlb_watch_candidates(
+            max_count=3,
+            fetch_fn=lambda url: feed if "MLBJapan" in url else "<rss><channel></channel></rss>",
+            comment_fn=lambda pt, pl: f"{pl}、これは効く。",
+            dedup_set={sig},
+        )
+        self.assertEqual(cands, [])
+
+
 class XBuzzPlayerFactTests(unittest.TestCase):
     """451: 引用RT コメントを濃くする今季実数字 (insight.db read-only)。"""
 

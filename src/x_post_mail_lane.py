@@ -2196,6 +2196,154 @@ def build_video_radar_candidates(
     return out
 
 
+# ---------------------------------------------------------------------------
+# MLB watch lane (2026-07-02 user 決定: フォロワー増計画)
+# ---------------------------------------------------------------------------
+# メジャーへ行った元巨人 (菅野智之 / 岡本和真) + 別枠の大谷翔平 を、MLB の
+# 試合が動く日本時間の朝〜昼帯だけ引用RT候補としてメールに入れる。
+# source は実 feed 検証済 (2026-07-02): MLBJapan=MLB公式日本語 (動画多・
+# 大谷/岡本言及多)、SPOTVNOW_jp=MLB中継動画クリップ。日本語のみ採用。
+# voice は巨人記事と同じヨシラバーボイス (LLM 失敗時はテンプレで埋めず skip)。
+
+_MLB_WATCH_METRIC = "mlb_watch_post"
+_MLB_WATCH_HANDLES = ["MLBJapan", "SPOTVNOW_jp"]
+# 表示名 → 検出 alias (部分一致)。MLB 文脈の feed なので姓のみで安全。
+_MLB_WATCH_PLAYERS: dict[str, tuple[str, ...]] = {
+    "菅野智之": ("菅野", "Sugano"),
+    "岡本和真": ("岡本", "Okamoto"),
+    "大谷翔平": ("大谷", "Ohtani"),
+}
+_MLB_EX_GIANTS = frozenset({"菅野智之", "岡本和真"})
+
+
+def _detect_mlb_watch_player(text: str) -> str:
+    for name, aliases in _MLB_WATCH_PLAYERS.items():
+        if any(a in text for a in aliases):
+            return name
+    return ""
+
+
+def build_mlb_watch_candidates(
+    *,
+    now: Optional[datetime] = None,
+    max_count: int = 3,
+    ohtani_max: int = 1,
+    dedup_set: Optional[set[str]] = None,
+    fetch_fn=None,
+    comment_fn=None,
+    max_age_hours: float = 12.0,
+) -> list[Candidate]:
+    """元巨人MLB組 + 大谷の引用RT候補。動画付き優先、選手ごと 1 本/便。
+
+    - 大谷は別枠 ``ohtani_max`` (既定 1) で上限。元巨人は残り枠。
+    - voice (comment_fn) が空の候補は skip (テンプレで埋めない、
+      2026-07-02 余計なポスト方針と同じ)。comment_fn 未設定時も skip。
+    - 重複防止: URL signature (24h dedup_set) + 選手ごと 1 本/便。
+    """
+    from src import video_radar as _vr
+    from datetime import timezone as _tz
+
+    if now is None:
+        now = datetime.now(JST)
+    now_utc = now.astimezone(_tz.utc)
+    fetch = fetch_fn or _vr._default_fetch
+    posts: list[dict] = []
+    seen_urls: set[str] = set()
+    for h in _MLB_WATCH_HANDLES:
+        try:
+            xml = fetch(f"{_vr._RSSHUB_BASE}/twitter/user/{h}?limit=30")
+        except Exception as exc:  # noqa: BLE001
+            LOG.info("mlb_watch fetch skip handle=%s err=%r", h, exc)
+            continue
+        for item in _vr._extract_rss_items(xml):
+            text = item.get("text", "")
+            url = item.get("url", "")
+            if not text or not url or url in seen_urls:
+                continue
+            player = _detect_mlb_watch_player(text)
+            if not player:
+                continue
+            published_at = item.get("published_at")
+            if published_at is not None:
+                age_h = (now_utc - published_at).total_seconds() / 3600.0
+                if age_h > max_age_hours:
+                    continue
+            seen_urls.add(url)
+            posts.append({
+                "text": text,
+                "url": url,
+                "handle": h,
+                "player": player,
+                "has_video": bool(item.get("has_video")),
+            })
+    # 動画付き優先 (どうがあるとなお良し)。feed 順 (新しい順) は安定 sort で維持。
+    posts.sort(key=lambda p: (not p["has_video"],))
+    out: list[Candidate] = []
+    used_players: set[str] = set()
+    ohtani_used = 0
+    for p in posts:
+        if len(out) >= max_count:
+            break
+        player = p["player"]
+        if player in used_players:
+            continue
+        if player == "大谷翔平" and ohtani_used >= ohtani_max:
+            continue
+        url = p["url"]
+        signature = "mlbwatch|" + _hashlib.sha1(url.encode("utf-8")).hexdigest()[:16]
+        if dedup_set is not None and signature in dedup_set:
+            continue
+        post_text = ""
+        if comment_fn is not None:
+            try:
+                post_text = (comment_fn(p["text"], player) or "").strip()
+            except Exception as exc:  # noqa: BLE001
+                LOG.info("mlb_watch comment_fn failed: %r", exc)
+                post_text = ""
+        if not post_text:
+            # voice が取れない候補はテンプレで埋めず skip (余計なポスト防止)。
+            LOG.info(
+                "mlb_watch skip: voice empty player=%s handle=%s",
+                player, p["handle"],
+            )
+            continue
+        post_text = _cap_sentence(post_text, _video_post_char_cap())
+        handle = p["handle"]
+        frame = "大谷別枠" if player == "大谷翔平" else "元巨人MLB"
+        src_text = _truncate_text(p["text"].replace("\n", " ").strip(), 140)
+        draft = "\n".join([
+            f"【MLB引用RT候補: {frame}】 @{handle}",
+            f"対象選手: {player}",
+            f"▶ 元ツイート (タップで開く): {url}",
+            f"元投稿本文: {src_text}",
+            "",
+            f"▼ コピペ用（このコメントだけ貼って引用RT / {len(post_text)}字）",
+            post_text,
+            "── ここまで貼る ──",
+            "",
+            "※ 動画付き投稿は動画ごと引用RTされインプが伸びる。動画ファイルの転載はしない。",
+        ])
+        out.append(Candidate(
+            title=f"(MLB引用RT) {frame}｜@{handle}｜{player}",
+            metric=_MLB_WATCH_METRIC,
+            period_label="MLB引用RT候補",
+            draft_text=draft,
+            char_count=len(post_text),
+            signature=signature,
+            post_text=post_text,
+            focus_player=player,
+            quote_url=url,
+            why_now="MLB朝昼枠 (元巨人/大谷、午前〜午後がインプ強)",
+            source_material_type="mlb_watch_post",
+            media_handle=handle.strip().lower(),
+        ))
+        used_players.add(player)
+        if player == "大谷翔平":
+            ohtani_used += 1
+    LOG.info("mlb_watch: built %d candidates", len(out))
+    return out
+
+
 def _rebuild_ranks_within_central(rows: list[dict]) -> list[dict]:
     """After filtering to セ-only, rewrite ``rank`` so the column shows
     1..N within the 6-team scope (not the 12-team residual).

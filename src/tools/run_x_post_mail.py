@@ -328,6 +328,24 @@ def _reply_candidates_enabled() -> bool:
     return raw in {"1", "true", "yes", "on"}
 
 
+def _mlb_watch_enabled() -> bool:
+    """2026-07-02 user 決定 (フォロワー増計画): 元巨人MLB組 (菅野/岡本) +
+    大谷別枠 の引用RT候補をメールに出すか (default OFF)。"""
+    raw = (os.environ.get("ENABLE_X_POST_MLB_WATCH") or "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _mlb_watch_max_per_run() -> int:
+    """MLB watch 候補数 / fire の上限 (大谷別枠 1 を含む)。"""
+    return _resolve_int_env("X_POST_MLB_WATCH_MAX", 3, min_value=0)
+
+
+def _in_mlb_watch_window(now_jst) -> bool:
+    """MLB の試合が動く日本時間 朝〜昼帯 (7:00-15:59) のみ出す。
+    user: 「とくに午前中から午後はつよい」。夕方以降は巨人戦 lane を優先。"""
+    return 7 <= now_jst.hour < 16
+
+
 def _reply_candidates_max_per_run() -> int:
     """リプライ候補数 / fire の上限。 報知返信欄を厚くするため default 3。"""
     return _resolve_int_env("X_POST_REPLY_CANDIDATES_MAX", 3, min_value=0)
@@ -3207,6 +3225,55 @@ def main(argv: Sequence[str] | None = None) -> int:
                 LOG.info(
                     "video_radar appended: base=%d video=%d total=%d",
                     before, len(vr_new), len(candidates),
+                )
+
+    # 2026-07-02 user 決定 (フォロワー増計画): 元巨人MLB組 (菅野/岡本) + 大谷別枠。
+    # MLB の試合が動く朝〜昼帯 (7-15時) のみ、MLBJapan / SPOTVNOW_jp の動画付き
+    # 投稿への引用RT候補をヨシラバーボイスで append。voice 失敗はテンプレで
+    # 埋めず skip。枠は既存候補を潰さないよう extra_policy_slots に積む。
+    if _mlb_watch_enabled() and _in_mlb_watch_window(now_jst):
+        mlb_max = _mlb_watch_max_per_run()
+        if mlb_max > 0:
+            mlb_comment_fn = None
+            _mlb_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GEMMA_BRANDING_GEMINI_API_KEY") or ""
+            if _mlb_key:
+                try:
+                    from src import x_post_branding_gen as _mlb_xbg
+
+                    def mlb_comment_fn(parent_text, player, _k=_mlb_key, _g=_mlb_xbg, _now=now_jst):  # noqa: E731
+                        # 巨人ファン視点のフレーミング: 元巨人は「巨人から行った側」、
+                        # 大谷は別枠 (野球ファンとしての反応)。subject に SNS を含めて
+                        # 短文・具体場面ルール (70-120字) を効かせる (動画引用RT前提)。
+                        subject = (
+                            "大谷翔平のMLB動画SNS投稿" if player == "大谷翔平"
+                            else f"元巨人・{player}のMLB動画SNS投稿"
+                        )
+                        return _g.build_quote_rt_comment(
+                            parent_text, player, gemini_api_key=_k, now=_now,
+                            subject=subject,
+                        )
+                except Exception as _mlb_imp_exc:  # noqa: BLE001
+                    LOG.warning("mlb_watch LLM comment unavailable: %r", _mlb_imp_exc)
+                    mlb_comment_fn = None
+            try:
+                mlb_candidates = lane.build_mlb_watch_candidates(
+                    now=now_jst,
+                    max_count=mlb_max,
+                    dedup_set=dedup_set,
+                    comment_fn=mlb_comment_fn,
+                )
+            except Exception as _mlb_exc:  # noqa: BLE001
+                LOG.warning("mlb_watch build failed: %r", _mlb_exc)
+                mlb_candidates = []
+            _existing_sigs_mlb = {getattr(c, "signature", "") for c in candidates}
+            mlb_new = [c for c in mlb_candidates if c.signature not in _existing_sigs_mlb]
+            if mlb_new:
+                before = len(candidates)
+                candidates = candidates + mlb_new
+                extra_policy_slots += len(mlb_new)
+                LOG.info(
+                    "mlb_watch appended: base=%d mlb=%d total=%d",
+                    before, len(mlb_new), len(candidates),
                 )
 
     # 451: 「今日の動画引用キャプション」(ヨシラバーコメント+データ)。 user が X で動画を

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Yoshilover 063 Frontend (topic hub / SNS reactions / Phase 1 noindex)
  * Description: 062 contract §2 §3 §5 の front impl。topic hub / SNS block / noindex を基盤に、トップ速報帯・記事下回遊束・右カラム rail・上部密集ナビ・人気記事導線まで含めて SWELL front を高密度化する。既存 SWELL コメント欄は触らない。
- * Version: 0.23.7
+ * Version: 0.23.8
  * Author: yoshilover
  */
 
@@ -188,6 +188,10 @@ function yoshilover_063_render_home_data_hub() {
             'label' => '選手名鑑・歴史',
             'cards' => array(
                 array( 'href' => '/data#ys-player-search',    'ic' => '👤', 't' => '選手別 個人成績',   's' => '全選手のデータを検索' ),
+                // 2026-07-02 user 指摘「トップから歴代選手の導線がない」: 記録室には
+                // 王貞治・長嶋茂雄・松井秀喜ら歴代選手の個人ページ導線が既にあるが、
+                // トップからは 2-3 クリック奥で見えなかったため直通カードを追加。
+                array( 'href' => '/data/record',              'ic' => '🏛', 't' => '歴代選手・レジェンド', 's' => '王貞治・長嶋茂雄・松井秀喜ら歴代名鑑' ),
                 array( 'href' => '/data/salary',              'ic' => '💰', 't' => '年俸ランキング',     's' => '選手別の推移・契約金・通算' ),
                 array( 'href' => '/data/salary/salary-value', 'ic' => '⚖️', 't' => '年俸コスパ分析',     's' => '1安打あたりの年俸で割安度' ),
                 array( 'href' => '/data/jersey-numbers',      'ic' => '🔢', 't' => '歴代背番号',         's' => '永久欠番・番号変遷' ),

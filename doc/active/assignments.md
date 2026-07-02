@@ -1,6 +1,17 @@
 # assignments — 現場担当と次アクション
 
-最終更新: 2026-07-03 JST (x-post 発言者誤帰属 + record文面ノイズ修正 deploy)
+最終更新: 2026-07-03 JST (リプ補足型化 + リプ対象拡張 + MLBリプ lane deploy)
+
+## 2026-07-03 — X案リプ: 補足リプ型に短縮 + 対象アカ拡張 + MLBリプ lane (user 3指示)
+
+- **user 指示**: ①「リプの返し方型が長い。感想リプではなく補足リプ。相手が喜んでリツイートしてくれるもの」②「ay222000 / vto6u / sanspo_giants / koba_nikkan / GIANTSLIFE0801 にもリプ」③「30R9gmaMUy3guDJ やメジャー系の日本公式で大谷や岡本や菅野にもリプ」
+- **①型変更**: `build_quote_rt_comment` の budget_site=reply を 50〜90字・1〜2文の補足型に固定。元投稿に無い verified data (db_fact) を1つ足す。感想/講釈/逆張り/訂正は prompt で禁止。db_fact 無しはリプ不成立で skip (感想で埋めない)。MLB のみ require_db_fact=False で元投稿内の具体場面ベース。
+- **②対象拡張**: media リプ default = hochi_giants + **Sanspo_Giants + koba_nikkan** (+TokyoGiants 自動補完)。fan リプ default = フーガ + 缶詰 + **ay222000 + vto6u + GIANTSLIFE0801**、時刻ローテで先頭 handle の独占を防止。env 未設定のため repo default で発効。
+- **③MLBリプ lane**: `build_mlb_watch_candidates(as_reply=True)` で既存 MLB 検出を流用し、**30R9gmaMUy3guDJ / MLBJapan / SPOTVNOW_jp** の 大谷/岡本/菅野 投稿 (メディア付き・12h以内) へ手動リプ候補を朝昼帯 (7-16時) に最大1件/便。env `ENABLE_X_POST_MLB_REPLY=1` を Job に追加済み。US 公式 (MLB/Dodgers等) は英語返信欄のため default 外 (env で追加可)。
+- **付随修復**: `src/gemini_model_policy.py` が commit 漏れ (committed rss_fetcher.py:128 ほか 10+ file が import、clean worktree build に入らない) → test ごと commit。今朝の quote-attribution image は lineup focus の soft 劣化のみで実行前に発見・解消。
+- **test**: 368 passed (x_post_mail 251 + branding 115 + sns_topic_cards ほか)。`_patch_genai` の google module fake 残留 leak も patch.object 化で解消 (順序依存 fail 修復)。
+- **deploy**: クリーン worktree (5f444655) から Cloud Build `074d6944` SUCCESS (1m52s)、image `x-post-mail-lane:reply-supplement-5f444655`、Job generation `235`。09:06 便から適用。
+- **pending user 判断** (持ち越し): コメント速報の報道写真添付導線 + 長文丸引用の著作権姿勢 (推奨: 廃止)。
 
 ## 2026-07-03 — X案ポスト: 発言者誤帰属 + record文面ノイズ修正 (user「候補1おかしい」「候補2キャベッジの話題でない」)
 

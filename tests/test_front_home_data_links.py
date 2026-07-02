@@ -14,7 +14,7 @@ def test_home_data_hub_links_to_draft_topic_cluster() -> None:
     # 2026-07-02: 0.23.x 現状 (2グループ化・trailing slash 無し) に同期し、
     # 歴代選手・レジェンド導線 (user 指摘「トップから歴代選手の導線がない」) を追加。
     src = PLUGIN.read_text(encoding="utf-8")
-    assert "Version: 0.23.8" in src
+    assert "Version: 0.23.9" in src
     assert "'t' => '打撃成績ランキング'" in src
     assert "'href' => '/data/batting-ranking'" in src
     assert "'t' => '投手成績ランキング'" in src

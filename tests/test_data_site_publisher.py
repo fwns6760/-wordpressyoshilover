@@ -237,3 +237,59 @@ class NotableDataOnlyTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ThinPillarNoindexTests(unittest.TestCase):
+    """2026-07-02 SEO: 成績ゼロ OB のみ thin=noindex、データが 1 つでもあれば index。"""
+
+    def _info(self, **kw):
+        from src.data_site_template_pillar import PillarPlayerInfo
+        base = dict(name="テスト選手", slug="test-player", position="", jersey_number="")
+        base.update(kw)
+        return PillarPlayerInfo(**base)
+
+    def test_ob_without_any_stats_is_thin(self):
+        from src.data_site_publisher import is_thin_pillar
+        info = self._info(role="ob", ob_profile={"display_name": "テスト選手"})
+        self.assertTrue(is_thin_pillar(info))
+
+    def test_ob_with_yearly_career_not_thin(self):
+        from src.data_site_publisher import is_thin_pillar
+        info = self._info(role="ob", ob_profile={}, npb_career={"batting": {"rows": [1]}})
+        self.assertFalse(is_thin_pillar(info))
+
+    def test_ob_with_career_totals_not_thin(self):
+        from src.data_site_publisher import is_thin_pillar
+        info = self._info(role="ob", ob_profile={"npb": {"games": 1000}})
+        self.assertFalse(is_thin_pillar(info))
+
+    def test_active_player_never_thin(self):
+        from src.data_site_publisher import is_thin_pillar
+        info = self._info(role="player")
+        self.assertFalse(is_thin_pillar(info))
+
+
+class IndexNowTests(unittest.TestCase):
+    def test_payload_dedupes_and_filters(self):
+        from src.data_site_publisher import _indexnow_payload, _INDEXNOW_KEY
+        p = _indexnow_payload([
+            "https://yoshilover.com/data/a",
+            "https://yoshilover.com/data/a",
+            "/data/relative-skip",
+            "https://yoshilover.com/data/b",
+        ])
+        self.assertEqual(p["urlList"], ["https://yoshilover.com/data/a", "https://yoshilover.com/data/b"])
+        self.assertEqual(p["host"], "yoshilover.com")
+        self.assertEqual(p["keyLocation"], f"https://yoshilover.com/{_INDEXNOW_KEY}.txt")
+
+    def test_payload_empty_returns_none(self):
+        from src.data_site_publisher import _indexnow_payload
+        self.assertIsNone(_indexnow_payload([]))
+
+    def test_plugin_serves_same_key(self):
+        # publisher と 063 plugin の key 不一致は IndexNow 全滅になるため静的同期 check
+        from pathlib import Path
+        from src.data_site_publisher import _INDEXNOW_KEY
+        php = (Path(__file__).resolve().parents[1] / "src" / "yoshilover-063-frontend.php").read_text(encoding="utf-8")
+        assert f"define( 'YOSHILOVER_063_INDEXNOW_KEY', '{_INDEXNOW_KEY}' );" in php
+        assert "yoshi_noindex" in php

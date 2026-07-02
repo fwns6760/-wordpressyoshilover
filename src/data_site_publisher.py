@@ -440,14 +440,21 @@ def _upsert_page(
     parent: int = 0,
     featured_media_id: int | None = None,
     excerpt: str = "",
+    noindex: bool | None = None,
 ) -> UpsertResult:
-    """WP page を upsert (slug 一致なら PUT、 無ければ POST)."""
+    """WP page を upsert (slug 一致なら PUT、 無ければ POST).
+
+    noindex: True で page meta `yoshi_noindex=1` (063 plugin が robots noindex,follow を
+    出力)、 False で解除。 None は meta を触らない (2026-07-02 thin ページ方針)。
+    """
     if _dry_run_enabled():
         LOG.info("DRY_RUN upsert skipped slug=%s title=%s bytes=%d", slug, title, len(content_html))
         return UpsertResult(slug=slug, page_id=0, action="skipped", url=f"/data/{slug}")
 
     # 差分更新: 描画内容が前回と同じページは GET/POST を skip (親ページは常に実 upsert)
     sig = _content_sig(slug, title, content_html, excerpt, featured_media_id)
+    if noindex is not None:
+        sig = sig + f"|noindex={int(noindex)}"
     if slug not in _ALWAYS_FRESH_SLUGS and _incremental_enabled():
         cached = _load_hash_ledger().get(slug)
         if cached and cached.get("sig") == sig and cached.get("page_id"):
@@ -477,6 +484,10 @@ def _upsert_page(
         payload["featured_media"] = featured_media_id
     if excerpt:
         payload["excerpt"] = excerpt
+    if noindex is not None:
+        # 063 plugin 側で register_post_meta('page','yoshi_noindex',show_in_rest) 済み。
+        # thin 解除時は "" で meta を空に戻す (自動解除、外し忘れ防止)。
+        payload["meta"] = {"yoshi_noindex": "1" if noindex else ""}
 
     existing_id = _find_page_id_by_slug(slug, parent=parent)
     try:
@@ -507,10 +518,72 @@ def _upsert_page(
             url=str(page.get("link") or f"/data/{slug}"),
         )
         _record_hash(slug, sig, result.page_id, result.url)
+        if action in ("created", "updated") and not noindex:
+            _CHANGED_URLS.append(result.url)
         return result
     except Exception as exc:  # noqa: BLE001
         LOG.exception("upsert exception slug=%s: %r", slug, exc)
         return UpsertResult(slug=slug, page_id=0, action="error", url=f"/data/{slug}")
+
+
+# ---------------------------------------------------------------------------
+# 2026-07-02 SEO: thin ページ自動 noindex + IndexNow (Bing/Copilot 即時通知)
+# ---------------------------------------------------------------------------
+# IndexNow key は公開前提の仕様 (https://yoshilover.com/<key>.txt で配信、063 plugin)。
+# 秘密情報ではないので repo 直書きで可。
+_INDEXNOW_KEY = "e6b1f0c39a274d5c8b12a47f9d03e8b5"
+_INDEXNOW_ENDPOINT = "https://api.indexnow.org/indexnow"
+_CHANGED_URLS: list[str] = []
+
+
+def is_thin_pillar(info: PillarPlayerInfo) -> bool:
+    """真のガワだけページ判定 (2026-07-02 user 決定: スカスカは noindex)。
+
+    基準: 成績データが 1 つも無い OB ページのみ thin とする。
+    年度別 (npb_career) か通算 (ob_profile.npb) が 1 行でもあれば thin ではない —
+    競合の薄い OB 個人名クエリは唯一データとして射程圏 (三沢興一 22位 等) のため、
+    「選手ページ=薄い=noindex」の一括適用はしない。
+    現役・首脳陣は当年 stats / 通算が載るため対象外。
+    データが後日 enrich されたら判定が反転し、 upsert 側で自動解除される。
+    """
+    is_ob = info.role == "ob" or info.ob_profile is not None
+    if not is_ob:
+        return False
+    car = info.npb_career or {}
+    if car.get("batting") or car.get("pitching"):
+        return False
+    if (info.ob_profile or {}).get("npb"):
+        return False
+    return True
+
+
+def _indexnow_payload(urls: list[str]) -> dict | None:
+    """変更 URL 群から IndexNow POST body を作る (純関数、 test 可)。"""
+    uniq = list(dict.fromkeys(u for u in urls if u.startswith("http")))
+    if not uniq:
+        return None
+    return {
+        "host": "yoshilover.com",
+        "key": _INDEXNOW_KEY,
+        "keyLocation": f"https://yoshilover.com/{_INDEXNOW_KEY}.txt",
+        "urlList": uniq[:10000],
+    }
+
+
+def submit_indexnow() -> None:
+    """今回 run で created/updated になった URL を IndexNow へ通知 (Bing/Copilot 系)。
+
+    失敗しても publisher 本流は止めない。 dry-run 時は _upsert_page が skip する
+    ため _CHANGED_URLS は空になり no-op。
+    """
+    payload = _indexnow_payload(_CHANGED_URLS)
+    if payload is None:
+        return
+    try:
+        r = requests.post(_INDEXNOW_ENDPOINT, json=payload, timeout=15)
+        LOG.info("indexnow submitted urls=%d status=%d", len(payload["urlList"]), r.status_code)
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("indexnow submit failed (continue): %r", exc)
 
 
 def _build_pillar_info(player_name: str) -> PillarPlayerInfo | None:
@@ -1259,6 +1332,7 @@ def publish_phase1(only_slugs: set[str] | None = None) -> dict[str, object]:
             parent=cluster_page_id,
             featured_media_id=info.featured_media_id,
             excerpt=render_pillar_excerpt(info),
+            noindex=is_thin_pillar(info),
         )
         LOG.info(
             "pillar upsert slug=%s page_id=%s action=%s related=%d image=%s",
@@ -1560,6 +1634,7 @@ def main() -> int:
         except Exception as exc:  # noqa: BLE001
             LOG.exception("publisher fatal: %r", exc)
             return 1
+        submit_indexnow()
         return 0 if summary.get("status") == "ok" else 1
     if "--only-mlb" in argv:
         try:
@@ -1567,6 +1642,7 @@ def main() -> int:
         except Exception as exc:  # noqa: BLE001
             LOG.exception("publisher fatal: %r", exc)
             return 1
+        submit_indexnow()
         return 0 if summary.get("status") == "ok" else 1
     if "--retire-legacy-notable" in argv:
         try:
@@ -1583,6 +1659,7 @@ def main() -> int:
     except Exception as exc:  # noqa: BLE001
         LOG.exception("publisher fatal: %r", exc)
         return 1
+    submit_indexnow()
     return 0 if summary.get("status") == "ok" else 1
 
 

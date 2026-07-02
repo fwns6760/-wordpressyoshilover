@@ -2,13 +2,64 @@
 /**
  * Plugin Name: Yoshilover 063 Frontend (topic hub / SNS reactions / Phase 1 noindex)
  * Description: 062 contract §2 §3 §5 の front impl。topic hub / SNS block / noindex を基盤に、トップ速報帯・記事下回遊束・右カラム rail・上部密集ナビ・人気記事導線まで含めて SWELL front を高密度化する。既存 SWELL コメント欄は触らない。
- * Version: 0.23.8
+ * Version: 0.23.9
  * Author: yoshilover
  */
 
 if ( ! defined( 'ABSPATH' ) ) { exit; }
 
 add_action( 'rest_api_init', 'yoshilover_063_register_admin_routes' );
+
+/* ------------------------------------------------------------
+ * 0) thin データページ自動 noindex + IndexNow (2026-07-02)
+ *
+ *    - data-site-publisher が REST pages.meta.yoshi_noindex を書く
+ *      ("1" = noindex,follow / "" = 解除)。 成績データゼロの OB ページのみ対象。
+ *    - IndexNow key file: /<key>.txt を配信 (Bing / Copilot 系の即時インデックス。
+ *      key は IndexNow 仕様上、公開で正しい)。
+ * ---------------------------------------------------------- */
+
+define( 'YOSHILOVER_063_INDEXNOW_KEY', 'e6b1f0c39a274d5c8b12a47f9d03e8b5' );
+
+add_action( 'init', 'yoshilover_063_register_noindex_meta' );
+function yoshilover_063_register_noindex_meta() {
+    register_post_meta(
+        'page',
+        'yoshi_noindex',
+        array(
+            'type'          => 'string',
+            'single'        => true,
+            'show_in_rest'  => true,
+            'auth_callback' => function() {
+                return current_user_can( 'manage_options' );
+            },
+        )
+    );
+}
+
+add_filter( 'wp_robots', 'yoshilover_063_thin_page_robots' );
+function yoshilover_063_thin_page_robots( $robots ) {
+    if ( is_page() ) {
+        $flag = get_post_meta( get_queried_object_id(), 'yoshi_noindex', true );
+        if ( $flag === '1' ) {
+            $robots['noindex'] = true;
+            $robots['follow']  = true;
+        }
+    }
+    return $robots;
+}
+
+add_action( 'template_redirect', 'yoshilover_063_serve_indexnow_key', 0 );
+function yoshilover_063_serve_indexnow_key() {
+    $path = trim( (string) parse_url( $_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH ), '/' );
+    if ( $path === YOSHILOVER_063_INDEXNOW_KEY . '.txt' ) {
+        status_header( 200 );
+        header( 'Content-Type: text/plain; charset=utf-8' );
+        header( 'X-Robots-Tag: noindex' );
+        echo YOSHILOVER_063_INDEXNOW_KEY;
+        exit;
+    }
+}
 
 /* ------------------------------------------------------------
  * 1) トップ中央 topic hub (062 §2 / 063 §1)

@@ -3241,16 +3241,26 @@ def main(argv: Sequence[str] | None = None) -> int:
                     from src import x_post_branding_gen as _mlb_xbg
 
                     def mlb_comment_fn(parent_text, player, _k=_mlb_key, _g=_mlb_xbg, _now=now_jst):  # noqa: E731
-                        # 巨人ファン視点のフレーミング: 元巨人は「巨人から行った側」、
-                        # 大谷は別枠 (野球ファンとしての反応)。subject に SNS を含めて
+                        # フレーミング (2026-07-02 user 決定): 元巨人は「巨人から
+                        # 行った側」を見送ったファン視点。大谷は巨人ファン視点では
+                        # なく純粋に野球ファンとしての反応。subject に SNS を含めて
                         # 短文・具体場面ルール (70-120字) を効かせる (動画引用RT前提)。
-                        subject = (
-                            "大谷翔平のMLB動画SNS投稿" if player == "大谷翔平"
-                            else f"元巨人・{player}のMLB動画SNS投稿"
-                        )
+                        if player == "大谷翔平":
+                            subject = "大谷翔平のMLB動画SNS投稿"
+                            note = (
+                                "大谷は巨人と無関係の別枠。巨人ファン視点や巨人との"
+                                "比較は入れず、純粋に野球ファンとして大谷のプレーを"
+                                "楽しむ・驚く反応にする。"
+                            )
+                        else:
+                            subject = f"元巨人・{player}のMLB動画SNS投稿"
+                            note = (
+                                f"{player}は巨人からMLBへ行った選手。巨人ファンとして"
+                                "送り出した側の親心・誇りの視点で反応する。"
+                            )
                         return _g.build_quote_rt_comment(
                             parent_text, player, gemini_api_key=_k, now=_now,
-                            subject=subject,
+                            subject=subject, extra_voice_note=note,
                         )
                 except Exception as _mlb_imp_exc:  # noqa: BLE001
                     LOG.warning("mlb_watch LLM comment unavailable: %r", _mlb_imp_exc)

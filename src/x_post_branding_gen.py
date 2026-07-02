@@ -1392,11 +1392,16 @@ def build_quote_rt_comment(
     subject: str = "X投稿",
     db_fact: str = "",
     budget_site: str = "quote_rt",
+    extra_voice_note: str = "",
 ) -> str:
     """451: X バズ投稿への引用RTコメントを Gemini で生成。
 
     ``budget_site``: LLM budget の消費枠。 リプ lane は "reply" を渡すと
     予約枠 (set_llm_budget の reply_reserve) から消費できる。
+
+    ``extra_voice_note`` (2026-07-02): 視点の上書き指示を 1 行 prompt に
+    追加する。 例: MLB 大谷別枠は「巨人ファン視点ではなく純粋に野球ファン
+    として」(user 決定)。 空なら従来 prompt と完全一致。
 
     voice は spec (doc/reference/x_post_mail_branding_spec.md L70/104/105) の
     **フーガ (長文分析・試合後振り返り) + 缶詰 (試合中LIVE・連呼) 合成** をそのまま使う。
@@ -1487,6 +1492,7 @@ def build_quote_rt_comment(
             "----",
             f"【今回のタスク: {subject}への反応コメント】",
             retry_note + f"上記 voice のまま、 次の{subject}に反応するヨシラバーのコメントを書く。",
+            (f"【視点指定】{extra_voice_note}" if extra_voice_note else ""),
             f"対象選手: {who or '(不明)'}",
             len_rule,
             diff_instr,

@@ -2371,6 +2371,13 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         default="scheduled",
         help="DEPRECATED (424): mode は無視、 統合 path のみ。 引数は scheduler 移行猶予のため温存。",
     )
+    parser.add_argument(
+        "--window",
+        choices=("lineup", "game", ""),
+        default="",
+        help="試合帯 scheduler 便の目印 (2026-07-02 試合日 gate)。"
+             "lineup/game 指定時は今日の試合日程で実行可否を判定する。",
+    )
     return parser.parse_args(argv)
 
 
@@ -2579,6 +2586,18 @@ def _main_on_queue(args: argparse.Namespace, recipients: list[str]) -> int:
 def main(argv: Sequence[str] | None = None) -> int:
     _configure_logging()
     args = _parse_args(argv)
+
+    # 2026-07-02 試合日 gate: 試合帯/スタメン帯 scheduler 便 (--window 付き) は
+    # 今日の巨人戦の有無・開始時刻で間引く (試合なし日は LLM ゼロで即終了、
+    # デーゲームは昼帯に自動で寄る)。時刻不明・取得失敗はナイター窓に fail-open。
+    if getattr(args, "window", ""):
+        from datetime import timedelta as _td, timezone as _tz
+        from src import game_day_gate as _gate
+        _now_jst = datetime.now(_tz(_td(hours=9)))
+        _ok, _reason = _gate.should_proceed(args.window, _now_jst)
+        LOG.info("game_day_gate window=%s -> %s (%s)", args.window, _ok, _reason)
+        if not _ok:
+            return 0
 
     # per-fire LLM 生成上限 (2026-06-03 コスト削減)。1 fire の全 Gemini 経路
     # (buzz/reply/引用RT/queue/roundup) 合算の生成回数を上限で抑える。0 = 無制限。

@@ -1281,6 +1281,16 @@ def _metric_topic_family(metric: str) -> str:
     return ""
 
 
+# 2026-07-03: X 由来 RSS タイトルに混ざる URL (途中で切れた "https://hochi.n…" 含む) /
+# "▼記事を読む▼" 系マーカー / ハッシュタグを投稿文へ持ち込まない。
+_SOURCE_NOISE_RE = _re.compile(r"https?://\S+|▼[^▼]{0,24}▼|[#＃]\S+")
+
+
+def _player_core_name(player: str) -> str:
+    """表示名から冠イニシャルを外した核名 (例 'Ｆ．ウィットリー' → 'ウィットリー')。"""
+    return _re.sub(r"^[Ａ-ＺA-Z][．.]\s*", "", str(player or "").strip())
+
+
 def _extract_source_record_phrase(title: str, excerpt: str, player: str) -> str:
     """Return a short record phrase copied from source title/excerpt."""
     parts = [str(title or "").strip()]
@@ -1289,19 +1299,22 @@ def _extract_source_record_phrase(title: str, excerpt: str, player: str) -> str:
         for p in _re.split(r"[。\n\r]+", str(excerpt or ""))
         if p.strip()
     )
+    core = _player_core_name(player)
     for part in parts:
         if not any(term in part for term in _RECORD_TERMS):
             continue
         phrase = _re.sub(r"【[^】]{1,40}】", "", part)
-        phrase = phrase.replace(f"巨人・{player}", player)
-        phrase = phrase.replace(f"巨人の{player}", player)
-        phrase = phrase.replace(f"読売ジャイアンツ・{player}", player)
+        phrase = _SOURCE_NOISE_RE.sub(" ", phrase)
+        for name in {player, core} - {""}:
+            phrase = phrase.replace(f"巨人・{name}", name)
+            phrase = phrase.replace(f"巨人の{name}", name)
+            phrase = phrase.replace(f"読売ジャイアンツ・{name}", name)
         phrase = phrase.strip(" 　。、")
         for prefix in (f"{player}が", f"{player}は", f"{player}、", f"{player} "):
             if phrase.startswith(prefix):
                 phrase = phrase[len(prefix):].strip(" 　。、")
                 break
-        phrase = _re.sub(r"\s+", " ", phrase)
+        phrase = _re.sub(r"\s+", " ", phrase).strip(" 　。、")
         if phrase:
             return _truncate_text(phrase, 72).rstrip("。！？!?")
     return ""
@@ -1338,8 +1351,15 @@ def _build_source_backed_post_text(
         else:
             next_scene = "次の出番"
         if record_phrase:
+            core = _player_core_name(player)
+            if core and core in record_phrase:
+                # phrase 側に選手名が残っている時は冠名を重ねない
+                # ("Ｆ．ウィットリー、ウィットリーが..." の二重化防止)。
+                lead = f"{record_phrase}。"
+            else:
+                lead = f"{player}、{record_phrase}。"
             body = (
-                f"{player}、{record_phrase}。\n"
+                f"{lead}\n"
                 "こういう節目は、1本・1登板の重みがそのまま残る。\n"
                 f"{next_scene}でもう一つ積み上げられるか。"
             )

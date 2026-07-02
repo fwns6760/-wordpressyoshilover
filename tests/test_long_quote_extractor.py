@@ -130,6 +130,31 @@ class SpeakerProximityTests(unittest.TestCase):
         out = extract_long_quote(text, speaker_aliases=())
         self.assertGreater(len(out), 0)
 
+    def test_competing_speaker_between_alias_and_quote_rejected(self) -> None:
+        """2026-07-03: alias と 「 の間に別人の発言者表現 → 誤帰属として不採用.
+
+        実事故: 記事内にキャベッジの名前が出ただけで、 坂口智隆氏の発言を
+        キャベッジのコメント速報として mail に出した。
+        """
+        quote = "よくもなく悪くもなくといったところだと思います。" + "非常に球種が多い投手です。" * 5
+        text = f"５回にはキャベッジを空振り三振。解説の坂口智隆氏は「{quote}」と称賛した"
+        out = extract_long_quote(text, speaker_aliases=("キャベッジ",))
+        self.assertEqual(out, "")
+
+    def test_alias_own_title_suffix_not_competing(self) -> None:
+        """alias 直後の bare 役職 (橋上秀樹監督代行「...) は競合扱いしない。"""
+        quote = "今週も５試合なので最低でも２勝１敗で勝ち越したいですし" * 4
+        text = f"試合後、橋上秀樹監督代行は「{quote}」と語った"
+        out = extract_long_quote(text, speaker_aliases=("橋上秀樹", "橋上"))
+        self.assertGreater(len(out), 0)
+
+    def test_competing_speaker_with_role_word_rejected(self) -> None:
+        """名前+監督 形の別発言者 (阿部監督) が間に挟まる場合も不採用。"""
+        quote = "彼はよくやってくれているので信頼して送り出しました" * 3
+        text = f"この日２安打の浦田俊輔。試合後に阿部監督は「{quote}」と話した"
+        out = extract_long_quote(text, speaker_aliases=("浦田俊輔", "浦田"))
+        self.assertEqual(out, "")
+
 
 class ThresholdRelaxationTests(unittest.TestCase):
     """2026-05-28 PM3 lock: min_chars 100 (40→60→80→100 と段階引き上げ) /

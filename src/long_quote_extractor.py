@@ -40,6 +40,16 @@ _DEFAULT_MAX_CHARS = 180
 # 「」 のみ抽出 (『』 はネストとみなして対象外)。 ネスト無し前提で内側 chars を取る。
 _QUOTE_PATTERN = _re.compile(r"「([^「」]+)」")
 
+# 2026-07-03: alias と 「 の間に別人の発言者表現 (名前 2 字以上 + 敬称/役職) が
+# 挟まる quote は誤帰属とみなして不採用にする (例: "...キャベッジを空振り。
+# 坂口智隆氏「今日はシンカーが..." を キャベッジ 発言として拾った事故)。
+# 名前部 2 字以上必須なので、 alias 直後の bare 役職 ("橋上秀樹監督代行「...")
+# は競合扱いしない。
+_COMPETING_SPEAKER_RE = _re.compile(
+    r"[一-龥々ァ-ヶーＡ-Ｚａ-ｚA-Za-z．・]{2,12}"
+    r"(?:氏|さん|監督|ヘッドコーチ|コーチ|解説者|解説|記者|キャスター|アナウンサー|オーナー|会長|社長|ＧＭ|GM)"
+)
+
 # HTML cleaning: <script> / <style> ブロックを丸ごと除去
 _SCRIPT_RE = _re.compile(r"<script[^>]*>.*?</script>", _re.IGNORECASE | _re.DOTALL)
 _STYLE_RE = _re.compile(r"<style[^>]*>.*?</style>", _re.IGNORECASE | _re.DOTALL)
@@ -112,13 +122,27 @@ def _has_speaker_nearby(text: str, quote_start: int, aliases: tuple[str, ...], w
     """quote_start 直前 ``window`` 文字以内に aliases のどれかが現れるか.
 
     typical 形式: "{speaker}が「..." / "{speaker}は「..." / "{speaker}（職位）「..."
+
+    2026-07-03: alias が現れても、 alias の最終出現位置と 「 の間に別人の
+    発言者表現 (``_COMPETING_SPEAKER_RE``) が挟まる場合は False (誤帰属防止)。
+    proximity 100 字緩和 (2026-05-28) の副作用で、 記事内に名前が出ただけの
+    選手へ他者コメントが付く事故があったため。
     """
     if quote_start <= 0:
         return False
-    head = text[max(0, quote_start - window):quote_start]
+    head_start = max(0, quote_start - window)
+    head = text[head_start:quote_start]
     for alias in aliases:
-        if alias and alias in head:
-            return True
+        if not alias:
+            continue
+        alias_pos = head.rfind(alias)
+        if alias_pos < 0:
+            continue
+        between = head[alias_pos + len(alias):]
+        competing = _COMPETING_SPEAKER_RE.search(between)
+        if competing and not any(a and a in competing.group(0) for a in aliases):
+            continue
+        return True
     return False
 
 

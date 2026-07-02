@@ -1600,6 +1600,53 @@ class ComposeMailTests(unittest.TestCase):
         self.assertIn("材料種別: 記録/節目 (record)", cand.draft_text)
         self.assertIn("元記事タイトル: 巨人・岸田行倫がプロ初本塁打達成", cand.draft_text)
 
+    def test_record_news_candidate_strips_hashtags_urls_and_name_dup(self) -> None:
+        """2026-07-03: X 由来 RSS タイトルのハッシュタグ / 切れURL / ▼記事を読む▼ を
+        投稿文へ持ち込まない + 冠イニシャル表示名との名前二重化を防ぐ。
+
+        実事故: 「Ｆ．ウィットリー、巨人・ウィットリーがつかんだ好調の感覚
+        高校時代は３戦連続ノーノー #巨人 #giants ▼記事を読む▼ https://hochi.n…。」
+        """
+        ts = datetime(2026, 7, 3, 7, 0, tzinfo=JST)
+        cand = build_news_opinion_candidate(
+            source_title=(
+                "巨人・岸田行倫が達成した節目 高校時代は３戦連続ノーノー "
+                "#巨人 #giants ▼記事を読む▼ https://hochi.n…"
+            ),
+            source_url="https://x.com/hochi_giants/status/2072778250556739726",
+            source_name="スポーツ報知巨人班X",
+            player_name="岸田行倫",
+            now=ts,
+        )
+        self.assertIsNotNone(cand)
+        assert cand is not None
+        self.assertEqual(cand.source_material_type, "record")
+        self.assertNotIn("#巨人", cand.post_text)
+        self.assertNotIn("#giants", cand.post_text)
+        self.assertNotIn("▼", cand.post_text)
+        self.assertNotIn("https://", cand.post_text)
+        self.assertNotIn("hochi.n", cand.post_text)
+        # 名前二重化しない (既存 prefix 除去で phrase 先頭の選手名は落ちる)
+        self.assertNotIn("岸田行倫、岸田行倫", cand.post_text)
+        self.assertIn("岸田行倫、達成した節目 高校時代は３戦連続ノーノー", cand.post_text)
+
+    def test_record_phrase_core_name_dedup_with_initial_prefix(self) -> None:
+        """表示名 'Ｆ．ウィットリー' vs 記事表記 '巨人・ウィットリー' でも
+        名前二重化しない (核名 core match)。"""
+        from src.x_post_mail_lane import _build_source_backed_post_text
+
+        body = _build_source_backed_post_text(
+            "Ｆ．ウィットリー",
+            "record",
+            source_title="巨人・ウィットリーがつかんだ好調の感覚 高校時代は３戦連続ノーノー #巨人 ▼記事を読む▼ https://hochi.n…",
+            source_excerpt="",
+            source_topic_family="pitching",
+        )
+        self.assertNotIn("Ｆ．ウィットリー、", body)
+        self.assertIn("ウィットリーがつかんだ好調の感覚", body)
+        self.assertNotIn("#巨人", body)
+        self.assertNotIn("https://", body)
+
     def test_gemini_branding_mix_uses_news_label(self) -> None:
         # 仕様: news 派生候補 (article_info_branding=GEMMA_BRANDING) は
         # 画像なし、 1 件でも混ざれば「巨人Xポスト案」表示。

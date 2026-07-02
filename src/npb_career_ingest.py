@@ -139,6 +139,11 @@ def refresh_cache(
     if not ids:
         LOG.warning("roster ids empty — keep previous career cache")
         return prev or {"generated_at": _now_iso(), "ids": {}, "players": {}}
+    # 首脳陣の ID を merge (2026-07-02): NPB ロスターページは現役選手のみで
+    # コーチ陣が引けず、巨人在籍歴の無いコーチ (橋上監督代行 等 11 名) の
+    # 年度別成績が出せなかった。config/staff_npb_ids.json (全選手索引から
+    # 1 回解決した固定 ID) を合流させ、同じ日次 ingest で現役時代の年度別を取る。
+    ids.update(_staff_npb_ids())
 
     players: Dict[str, Any] = {}
     fetched = 0
@@ -163,6 +168,22 @@ def refresh_cache(
 
     LOG.info("career cache refreshed: fetched=%d total=%d ids=%d", fetched, len(players), len(ids))
     return {"generated_at": _now_iso(), "ids": ids, "players": players}
+
+
+def _staff_npb_ids() -> Dict[str, str]:
+    """config/staff_npb_ids.json の {正規化名: npb_id}。無ければ {}。"""
+    from src.npb_career_scraper import _normalize_name
+    path = Path(__file__).resolve().parents[1] / "config" / "staff_npb_ids.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return {
+            _normalize_name(str(k)): str(v)
+            for k, v in (data.get("ids") or {}).items()
+            if k and v
+        }
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("staff npb ids parse error: %r", exc)
+        return {}
 
 
 def _now_iso() -> str:

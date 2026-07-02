@@ -971,3 +971,14 @@ class RelatedPlayersQualityTests(unittest.TestCase):
             self.assertIn("山﨑伊織", out)                    # 残りは同ポジション回転
         finally:
             q._DRAFT_YEAR_CACHE = None
+
+
+class StaffNpbIdsTests(unittest.TestCase):
+    """2026-07-02 首脳陣の年度別成績: config 固定 ID が ingest に merge される。"""
+
+    def test_staff_ids_load_and_contain_hashigami(self):
+        from src.npb_career_ingest import _staff_npb_ids
+        from src.npb_career_scraper import _normalize_name
+        ids = _staff_npb_ids()
+        self.assertGreaterEqual(len(ids), 11)
+        self.assertEqual(ids.get(_normalize_name("橋上秀樹")), "81383866")

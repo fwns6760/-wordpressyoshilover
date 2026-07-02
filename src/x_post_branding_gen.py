@@ -10,7 +10,7 @@ start 不変)。
 - 検索は ``POST https://api.tavily.com/search`` で HTTP REST 直叩き。
   fastmcp / Node は使わない。
 - 生成は Gemini API 経由。 2026-06-11 以降は試合時間帯
-  (既定 JST 17:00-22:59) だけ ``gemini-3.5-flash``、それ以外や
+  (既定 JST 17:00-22:29) だけ ``gemini-3.5-flash``、それ以外や
   primary 不可時は ``gemini-3.1-flash-lite`` へ切替える。
 - spec 382 hard rule (URL / hashtag / 未検証数字 / 引用 / 媒体名 禁止) を
   system prompt + post-gen regex validator の二段で gate。
@@ -49,21 +49,57 @@ _GEMINI_BRANDING_METRIC = "GEMMA_BRANDING"
 # 1 fire で全経路 (buzz/reply/引用RT/queue/roundup) 合算の Gemini 生成回数を
 # 上限で抑える。run_x_post_mail が run 開始時に set_llm_budget() で設定。
 # job は fire ごとに新プロセス → module state は自然 reset (cross-run 漏れ無し)。
-_LLM_BUDGET = {"used": 0, "max": None}
+_LLM_BUDGET = {"used": 0, "max": None, "reply_reserve": 0, "reply_used": 0}
 
 
-def set_llm_budget(max_calls: Optional[int]) -> None:
-    """1 run の Gemini 生成呼び出し上限を設定。None / 0 / 負 = 無制限。"""
+def set_llm_budget(max_calls: Optional[int], *, reply_reserve: int = 0) -> None:
+    """1 run の Gemini 生成呼び出し上限を設定。None / 0 / 負 = 無制限。
+
+    ``reply_reserve``: 上限のうちリプ生成 (site="reply") に予約する呼び出し数。
+    2026-07-02 user 指摘: リプ lane は候補組み立ての後段のため、 前段 lane が
+    budget を使い切ると毎便テンプレ fallback に落ち、 同じ定型文リプが並ぶ。
+    総量は増やさず (無料枠 / コスト制約維持)、 non-reply lane を
+    ``max - reply_reserve`` で止めてリプ枠を確保する。
+    """
     _LLM_BUDGET["used"] = 0
+    _LLM_BUDGET["reply_used"] = 0
     _LLM_BUDGET["max"] = max_calls if (max_calls and max_calls > 0) else None
+    if _LLM_BUDGET["max"] is not None:
+        _LLM_BUDGET["reply_reserve"] = max(
+            0, min(int(reply_reserve or 0), _LLM_BUDGET["max"])
+        )
+    else:
+        _LLM_BUDGET["reply_reserve"] = 0
 
 
 def _llm_budget_guard(label: str = "") -> None:
     """generate_content 直前に呼ぶ。予算超過なら RuntimeError を上げ (各サイトの
-    既存 try/except が graceful skip)、未超過なら使用量を 1 消費する。"""
+    既存 try/except が graceful skip)、未超過なら使用量を 1 消費する。
+
+    site="reply" は総枠 (max) まで使える。 それ以外は max - reply_reserve で
+    止まる (リプ予約枠には食い込めない)。 総呼び出し数は常に max 以下。
+    """
     m = _LLM_BUDGET["max"]
-    if m is not None and _LLM_BUDGET["used"] >= m:
-        raise RuntimeError(f"llm_budget_exhausted used={_LLM_BUDGET['used']} max={m} site={label}")
+    if m is None:
+        _LLM_BUDGET["used"] += 1
+        return
+    reserve = _LLM_BUDGET["reply_reserve"]
+    if label == "reply":
+        total = _LLM_BUDGET["used"] + _LLM_BUDGET["reply_used"]
+        if total >= m:
+            raise RuntimeError(
+                f"llm_budget_exhausted used={total} max={m} site={label}"
+            )
+        _LLM_BUDGET["reply_used"] += 1
+        return
+    if (
+        _LLM_BUDGET["used"] >= m - reserve
+        or _LLM_BUDGET["used"] + _LLM_BUDGET["reply_used"] >= m
+    ):
+        raise RuntimeError(
+            f"llm_budget_exhausted used={_LLM_BUDGET['used']} "
+            f"max={m - reserve} (reply_reserve={reserve}) site={label}"
+        )
     _LLM_BUDGET["used"] += 1
 
 # X インプ向上 Phase 5 (2026-05-27): source URL → 公式 X @ handle のマッピング。
@@ -132,10 +168,28 @@ _X_POST_GEMINI_PRIMARY_MODEL = _os.environ.get("X_POST_GEMINI_MODEL", "gemini-3.
 _X_POST_GEMINI_FALLBACK_MODEL = _os.environ.get(
     "X_POST_GEMINI_FALLBACK_MODEL", "gemini-3.1-flash-lite"
 )
+_X_POST_DATA_LLM_MODEL = _os.environ.get("X_POST_DATA_LLM_MODEL", "gemini-3.1-flash-lite")
 # 2026-06-11 (user 決定): 3.5-flash の無料枠は 20回/日(project 単位、リセット JST 16時頃)。
-# 試合時間帯(既定 JST 17:00〜22:59)だけ primary(3.5)を使い、それ以外は最初から
+# 試合時間帯(既定 JST 17:00〜22:29)だけ primary(3.5)を使い、それ以外は最初から
 # fallback(lite)を使って枠を試合中の投稿に温存する。空文字で常時 primary。跨日窓(例 22-2)対応。
-_X_POST_GEMINI_PRIME_HOURS_JST = _os.environ.get("X_POST_GEMINI_PRIME_HOURS_JST", "17-23")
+_X_POST_GEMINI_PRIME_HOURS_JST = _os.environ.get("X_POST_GEMINI_PRIME_HOURS_JST", "17:00-22:30")
+
+
+def _parse_prime_time_point(value: str, *, allow_24: bool = False) -> int:
+    raw = value.strip()
+    if ":" in raw:
+        hour_s, minute_s = raw.split(":", 1)
+        hour = int(hour_s)
+        minute = int(minute_s)
+    else:
+        hour = int(raw)
+        minute = 0
+    max_hour = 24 if allow_24 else 23
+    if not (0 <= hour <= max_hour) or not (0 <= minute <= 59):
+        raise ValueError(f"invalid time point: {value!r}")
+    if hour == 24 and minute != 0:
+        raise ValueError(f"invalid 24h time point: {value!r}")
+    return hour * 60 + minute
 
 
 def _x_post_in_prime_hours(now=None) -> bool:
@@ -145,15 +199,19 @@ def _x_post_in_prime_hours(now=None) -> bool:
         return True
     try:
         start_s, end_s = spec.split("-", 1)
-        start, end = int(start_s), int(end_s)
+        start = _parse_prime_time_point(start_s)
+        end = _parse_prime_time_point(end_s, allow_24=True)
     except ValueError:
         return True
     from datetime import datetime, timezone, timedelta
 
-    hour = (now or datetime.now(timezone(timedelta(hours=9)))).hour
+    current = (now or datetime.now(timezone(timedelta(hours=9)))).astimezone(
+        timezone(timedelta(hours=9))
+    )
+    minute_of_day = current.hour * 60 + current.minute
     if start <= end:
-        return start <= hour < end
-    return hour >= start or hour < end
+        return start <= minute_of_day < end
+    return minute_of_day >= start or minute_of_day < end
 
 
 def _x_post_model_unavailable(exc: Exception) -> bool:
@@ -322,6 +380,12 @@ _SYSTEM_PROMPT_YOSHILOVER = """あなたは「ヨシラバー」という巨人�
   - 監督批判の雑な隣接: 「阿部監督 無能」 「監督 解任」 「采配 失格」 系
   - 他球団 / 相手ファン煽り: 「雑魚」 「カモ」 「負け犬」 「三流」 「お粗末」 「情けない」
   - 「打者A」 「投手X」 等 generic placeholder 名 (= roster 名で書く)
+  - 違反したら出力全体破棄
+- **【topic NG、 起用・評価の憶測語を使わない (この語が1つでも入ると gate で全破棄される)】**:
+  - 起用 / 昇格の憶測語: 「首脳陣」 「起用理由」 「監督評価」 「昇格候補」 「昇格待ったなし」 「ブレイク確定」 「覚醒」
+  - 「阿部監督」 は使わず 「阿部慎之助」 と書く (監督職呼びは起用憶測色が出るため)
+  - 優等生評価語: 「評価している」 「注目している」 「期待が高ま(る)」 「ファンの反応」
+  - 言い換え例: 「首脳陣にアピール」 → 「一軍で結果を見せて定着したい」、 「覚醒」 → 何がどう良くなったかを具体で書く
   - 違反したら出力全体破棄
 
 voice の核 (フーガ + 缶詰 を混ぜた本物のファン):
@@ -738,10 +802,14 @@ _VOICE_HOPIUM_MARKERS = _re.compile(
     r"新しい風が吹く|本物だ(よ|な|よな|わ)|持ってるな)"
 )
 # 抽象逃げ: 「何を見てそう言うか」が無いまま、評価っぽい語で締める型。
+# 2026-06-28: 末尾アンカー化。 非アンカーだと本物のフーガ分析が途中でこれらの語を
+# 使っただけで誤却下されていた (user: ポエムは却下したいが Gemini フーガ風は通したい)。
+# 「締めが抽象語」の時だけ弾く = docstring の本来意図 (評価っぽい語で締める型) に合わせる。
 _VOICE_ABSTRACT_MARKERS = _re.compile(
     r"(存在感|任せられる|任せたい|安定感|今後に注目|注目したい|期待が高まる|"
     r"大きな存在|大きい存在|存在は大きい|チームに(とって)?大きい|"
     r"ポイントになる|鍵になる|カギになる|流れを変える存在|大事な存在|重要な存在)"
+    r"[^。!！？\?…]{0,12}[。!！？\?…\s]*$"
 )
 
 
@@ -1323,8 +1391,12 @@ def build_quote_rt_comment(
     now=None,
     subject: str = "X投稿",
     db_fact: str = "",
+    budget_site: str = "quote_rt",
 ) -> str:
     """451: X バズ投稿への引用RTコメントを Gemini で生成。
+
+    ``budget_site``: LLM budget の消費枠。 リプ lane は "reply" を渡すと
+    予約枠 (set_llm_budget の reply_reserve) から消費できる。
 
     voice は spec (doc/reference/x_post_mail_branding_spec.md L70/104/105) の
     **フーガ (長文分析・試合後振り返り) + 缶詰 (試合中LIVE・連呼) 合成** をそのまま使う。
@@ -1346,7 +1418,15 @@ def build_quote_rt_comment(
     persona = "kandume" if 18 <= hour <= 21 else "fuuga"  # 試合中帯は缶詰寄り
     base_voice = _build_system_prompt(hour, today, persona=persona)
     is_live = 18 <= hour <= 21  # 試合中帯 = 缶詰ライブ (短文・即時反応OK)
-    if is_live:
+    is_video_sns = ("動画" in subject) or ("SNS" in subject.upper())
+    if is_video_sns:
+        len_rule = (
+            "動画SNS用。 70〜120字、 1〜2文。 元投稿にある場面を1つ具体名で書く。 "
+            "打球音 / スイング / 一歩目 / 送球 / 球の押し込み / 表情 / ベンチ反応 / 場面価値のどれかを必ず入れる。 "
+            "『好投』『ナイスゲーム』『楽しみ』『見ておきたい』『この流れ』だけで終わる抽象文は禁止。 "
+            "URL / ハッシュタグ / 媒体名 / 動画の転載は禁止。 元ネタに無い数字・事実は足さない。"
+        )
+    elif is_live:
         len_rule = (
             "即時反応 (2〜3文、 90〜150字)。 試合中の熱量でOK。 ただし一言の状況・読み (何が起きて何が効いたか) は入れる。 "
             "改行を1〜2個入れて読みやすく。 元ネタに無い数字・事実は足さない。"
@@ -1366,9 +1446,14 @@ def build_quote_rt_comment(
     except Exception as exc:  # noqa: BLE001 - silent skip, caller falls back to template
         log.warning("quote_rt_comment_skip reason=genai_import err=%r", exc)
         return ""
-    # 門番 + リトライ: flash-lite が優等生締め/ポエム/スカスカを漏らすので最大2回試し、
-    # safety + unverified + voice_quality を全通過した最初の文を返す。 全滅なら "" (caller fallback)。
+    # 門番 + リトライ: flash-lite が優等生締め/ポエム/スカスカを漏らすので最大3回試し、
+    # safety + unverified + voice_quality を全通過した最初の文を返す。
+    # 470 (user 2026-06-29): 全通過が無くても、 最終便 (3回目) で致命的NG (捏造数字 / 炎上
+    # pattern / URL・ハッシュタグ等 forbidden pattern / 文字数超過) が無ければ LLM 文を優先
+    # 採用し template に逃げない。 残る voice (定型締め) と topic-hygiene (首脳陣 等) のみ許容。
+    # 致命的NG を含む全滅時のみ "" を返す (caller は template fallback)。
     last_preview = ""
+    relaxed_text = ""  # 最終便 fallback (voice / topic-hygiene だけ fail した LLM 文)
     # 470-②: 差別化テイク。 元投稿が触れていない verified data (db_fact) を1つだけ
     # 織り込ませる (媒体と違う気づき=反応を生む)。 db_fact の数字は verified 扱いで
     # unverified ゲートを通す。
@@ -1381,11 +1466,21 @@ def build_quote_rt_comment(
             "視点・気づきを足す。 これ以外の数字は足さない。"
         )
     verified_text = f"{src} {who} {_fact}"
-    for attempt in range(2):
-        retry_note = "" if attempt == 0 else (
-            "※前回は優等生締め/ポエム/中身薄で却下された。 データ+フーガ風の読みで具体的に書き、 "
-            "『〜してほしい』 系で終わるな。\n"
-        )
+    _total_attempts = 3
+    for attempt in range(_total_attempts):
+        is_final_attempt = attempt == _total_attempts - 1
+        if attempt == 0:
+            retry_note = ""
+        elif is_video_sns:
+            retry_note = (
+                "※前回は抽象的で却下された。 動画内の具体場面を1つ選び、 打球音・一歩目・送球・表情・ベンチ反応など"
+                "目で見える要素から書く。 『見ておきたい』『楽しみ』『好投』だけで終わるな。\n"
+            )
+        else:
+            retry_note = (
+                "※前回は優等生締め/ポエム/中身薄で却下された。 データ+フーガ風の読みで具体的に書き、 "
+                "『〜してほしい』 系で終わるな。\n"
+            )
         prompt = "\n".join([
             base_voice,
             "",
@@ -1401,7 +1496,7 @@ def build_quote_rt_comment(
             "コメント:",
         ])
         try:
-            _llm_budget_guard("quote_rt")
+            _llm_budget_guard(budget_site)
             response = _x_post_generate_content(
                 client, model=model_id, contents=prompt, config={"temperature": temperature},
             )
@@ -1411,16 +1506,118 @@ def build_quote_rt_comment(
             return ""
         text = _finalize_post_text(text)
         last_preview = text[:60]
-        if not text or not _gemini_branding_safety_check(text, verified_text):
-            continue
-        if _extract_unverified_numbers(text, verified_text):
-            continue
-        if not _voice_quality_ok(text, live=is_live):
-            continue
-        log.info("quote_rt_comment_built player=%s text_len=%d attempt=%d", who, len(text), attempt + 1)
-        return text
+        safety_ok = bool(text) and _gemini_branding_safety_check(text, verified_text)
+        unverified = _extract_unverified_numbers(text, verified_text) if text else []
+        voice_ok = bool(text) and _voice_quality_ok(text, live=is_live)
+        if safety_ok and not unverified and voice_ok:
+            log.info("quote_rt_comment_built player=%s text_len=%d attempt=%d", who, len(text), attempt + 1)
+            return text
+        if not safety_ok:
+            log.info("quote_rt_gate_fail check=safety attempt=%d preview=%r", attempt + 1, text[:60])
+        elif unverified:
+            log.info("quote_rt_gate_fail check=unverified_number attempt=%d nums=%r preview=%r",
+                     attempt + 1, unverified, text[:60])
+        elif not voice_ok:
+            log.info("quote_rt_gate_fail check=voice attempt=%d tail=%r preview=%r",
+                     attempt + 1, text[-30:], text[:60])
+        # 470: 最終便は template に逃げず LLM を優先。 ただし致命的NG は最終便でも block:
+        # 捏造数字 (unverified) / 炎上 pattern (戦犯・断定・監督批判 等) / URL・ハッシュタグ等の
+        # forbidden pattern / 文字数超過。 残る voice (定型締め) と topic-hygiene (首脳陣 等) のみ許容。
+        if (
+            is_final_attempt
+            and text
+            and not unverified
+            and len(text) <= X_CHAR_LIMIT
+            and _matched_inflammatory_pattern(text) is None
+            and _matched_branding_forbidden_pattern(text, verified_text) is None
+        ):
+            relaxed_text = text
+    if relaxed_text:
+        log.info("quote_rt_comment_relaxed_fallback player=%s text_len=%d preview=%r",
+                 who, len(relaxed_text), relaxed_text[:60])
+        return relaxed_text
     log.warning("quote_rt_comment_skip reason=quality_or_safety preview=%r", last_preview)
     return ""
+
+
+def build_plain_data_post(
+    source_text: str,
+    *,
+    gemini_api_key: str,
+    fact_text: str = "",
+    player: str = "",
+    metric_label: str = "",
+    model_id: str = _X_POST_DATA_LLM_MODEL,
+    temperature: float = 0.25,
+) -> str:
+    """Rewrite a verified data candidate into plain, easy X copy.
+
+    This path is intentionally narrower than the branding/comment generators:
+    no Tavily, no extra facts, and every numeric token in the output must
+    already appear in the candidate text or its fact line.
+    """
+    log = _logging.getLogger("x_post_branding_gen")
+    src = (source_text or "").strip()
+    if not src or not gemini_api_key:
+        return ""
+    verified_text = " ".join(
+        part for part in [src, fact_text or "", player or "", metric_label or ""] if part
+    )
+    numeric_tokens = [m.group(0) for m in _NUMERIC_TOKEN_RE.finditer(verified_text)]
+    prompt = "\n".join(
+        [
+            "あなたは読売ジャイアンツ専門のデータ投稿を整える編集者です。",
+            "下の verified data だけを使い、X投稿文を作ってください。",
+            "",
+            "ルール:",
+            "- 2〜4行、90〜170字程度。",
+            "- 淡白に、分かりやすく。煽り・ポエム・大げさな断定は禁止。",
+            "- 数字・順位・選手名・対戦相手・期間は verified data にあるものだけ使う。",
+            "- verified data に無い数字や記録を足さない。",
+            "- URL、ハッシュタグ、媒体名、絵文字の連打は禁止。",
+            "- 「どう見ますか」「期待したい」「応援したい」で締めない。",
+            "- 本文だけを出力。説明や引用符は不要。",
+            "",
+            f"対象選手: {player or '(指定なし)'}",
+            f"指標/種別: {metric_label or '(指定なし)'}",
+            "verified data:",
+            verified_text,
+            "",
+            "投稿文:",
+        ]
+    )
+    try:
+        from google import genai
+
+        client = genai.Client(api_key=gemini_api_key)
+        _llm_budget_guard("data_plain")
+        response = _x_post_generate_content(
+            client,
+            model=model_id or _X_POST_DATA_LLM_MODEL,
+            contents=prompt,
+            config={"temperature": temperature},
+        )
+        text = _finalize_post_text((getattr(response, "text", None) or "").strip())
+    except Exception as exc:  # noqa: BLE001 - caller keeps deterministic text
+        log.warning("plain_data_post_skip reason=gemini_error err=%r", exc)
+        return ""
+    if not text or not _gemini_branding_safety_check(text, verified_text):
+        log.info("plain_data_post_skip reason=safety_check")
+        return ""
+    if _extract_unverified_numbers(text, verified_text):
+        log.info("plain_data_post_skip reason=unverified_numbers")
+        return ""
+    if player and _normalize_player_name(player) not in _normalize_player_name(text):
+        log.info("plain_data_post_skip reason=missing_player player=%s", player)
+        return ""
+    if numeric_tokens and not any(token in text for token in numeric_tokens):
+        log.info("plain_data_post_skip reason=no_verified_number_used")
+        return ""
+    if not _voice_quality_ok(text, live=True):
+        log.info("plain_data_post_skip reason=voice_quality")
+        return ""
+    log.info("plain_data_post_built player=%s metric=%s text_len=%d", player or "-", metric_label or "-", len(text))
+    return text
 
 
 def today_str(now_jst) -> str:
@@ -1996,7 +2193,7 @@ def build_x_post_from_article_info(
     title + summary literal」 に source 入れ替えるのみ。
 
     model_id 未指定時は primary model を渡し、_x_post_generate_content 側で時間帯により
-    自動切替: 既定 JST 17:00-22:59 は primary(3.5)、 それ以外は fallback(lite)。 caller が明示指定すれば
+    自動切替: 既定 JST 17:00-22:30 は primary(3.5)、 それ以外は fallback(lite)。 caller が明示指定すれば
     auto-select を override。
 
     silent skip 条件 (None 返却):

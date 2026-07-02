@@ -343,3 +343,47 @@ class LLMBudgetTests(unittest.TestCase):
         xbg.set_llm_budget(None)
         for _ in range(50):
             xbg._llm_budget_guard("t")
+
+    def test_reply_reserve_blocks_general_but_allows_reply(self):
+        # 2026-07-02 リプ定型文問題: 前段 lane は max - reserve で止まり、
+        # リプ (site="reply") は予約枠から総枠 max まで使える。
+        xbg.set_llm_budget(8, reply_reserve=3)
+        for _ in range(5):
+            xbg._llm_budget_guard("quote_rt")  # general 5 = max - reserve
+        with self.assertRaises(RuntimeError):
+            xbg._llm_budget_guard("quote_rt")  # 6 本目は予約枠に食い込むので block
+        for _ in range(3):
+            xbg._llm_budget_guard("reply")  # 予約枠 3 は通る
+        with self.assertRaises(RuntimeError):
+            xbg._llm_budget_guard("reply")  # 総枠 8 到達で block
+        xbg.set_llm_budget(None)
+
+    def test_reply_can_use_leftover_general_capacity(self):
+        # 前段 lane が軽い便では、 リプは予約枠を超えて総枠まで使える。
+        xbg.set_llm_budget(8, reply_reserve=3)
+        xbg._llm_budget_guard("quote_rt")  # general 1
+        for _ in range(7):
+            xbg._llm_budget_guard("reply")  # 1 + 7 = 総枠 8
+        with self.assertRaises(RuntimeError):
+            xbg._llm_budget_guard("reply")
+        xbg.set_llm_budget(None)
+
+    def test_reserve_default_zero_keeps_legacy_behavior(self):
+        # reply_reserve 未指定 (旧呼び出し) は従来と完全同一挙動。
+        xbg.set_llm_budget(2)
+        xbg._llm_budget_guard("quote_rt")
+        xbg._llm_budget_guard("quote_rt")
+        with self.assertRaises(RuntimeError):
+            xbg._llm_budget_guard("quote_rt")
+        xbg.set_llm_budget(None)
+
+    def test_reserve_clamped_to_max(self):
+        # reserve > max でも general が負枠にならず、 reply は max まで。
+        xbg.set_llm_budget(2, reply_reserve=5)
+        with self.assertRaises(RuntimeError):
+            xbg._llm_budget_guard("quote_rt")  # general 枠 0
+        xbg._llm_budget_guard("reply")
+        xbg._llm_budget_guard("reply")
+        with self.assertRaises(RuntimeError):
+            xbg._llm_budget_guard("reply")
+        xbg.set_llm_budget(None)

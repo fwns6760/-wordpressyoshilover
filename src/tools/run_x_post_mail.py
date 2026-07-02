@@ -2564,8 +2564,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     # 既定 8 (実測 8-18/fire → 高い回を 8 に抑制、 出力 1-7 候補は維持余地)。
     if _xbg is not None:
         _llm_budget_max = _resolve_int_env("X_POST_MAIL_MAX_LLM_PER_RUN", 8, min_value=0)
-        _xbg.set_llm_budget(_llm_budget_max)
-        LOG.info("per-fire LLM budget set: max=%s", _llm_budget_max or "unlimited")
+        # 2026-07-02 user 指摘 (リプ定型文問題): リプ lane は候補組み立ての後段の
+        # ため、 前段 lane が budget を使い切ると毎便テンプレ fallback に落ちて
+        # 同じ定型文リプが並ぶ。 総量は増やさず (無料枠 / コスト制約維持)、
+        # 上限のうち N 回をリプ生成 (site="reply") に予約する。
+        _reply_reserve = _resolve_int_env(
+            "X_POST_MAIL_REPLY_LLM_RESERVE", 3, min_value=0
+        )
+        _xbg.set_llm_budget(_llm_budget_max, reply_reserve=_reply_reserve)
+        LOG.info(
+            "per-fire LLM budget set: max=%s reply_reserve=%d",
+            _llm_budget_max or "unlimited",
+            _reply_reserve,
+        )
 
     recipients = _resolve_recipients(args.to)
     if not recipients and not args.dry_run:
@@ -3212,18 +3223,27 @@ def main(argv: Sequence[str] | None = None) -> int:
 
                     def rep_comment_fn(parent_text, player, _k=_rep_key, _g=_rep_xbg, _now=now_jst):  # noqa: E731
                         # 親ツイート本文に対するヨシラバーボイスのリプ (= 引用RTコメントと同型)。
-                        return _g.build_quote_rt_comment(parent_text, player, gemini_api_key=_k, now=_now)
+                        # budget_site="reply" で予約枠から消費 (前段 lane の枯渇に巻き込まれない)。
+                        return _g.build_quote_rt_comment(
+                            parent_text, player, gemini_api_key=_k, now=_now,
+                            budget_site="reply",
+                        )
                 except Exception as _rep_imp_exc:  # noqa: BLE001
                     LOG.warning("reply_candidates LLM comment unavailable: %r", _rep_imp_exc)
                     rep_comment_fn = None
             target_handles = _reply_target_handles()
             try:
                 from src import sns_topic_cards as _tc2
+                # 2026-07-02 user 指摘: リプは「ポストではない」ので、 LLM voice が
+                # 取れない時にテンプレ定型文で埋めない (同じ言い回しの連発は返信欄で
+                # 露骨に浮く)。 LLM 有効時は空なら候補ごとスキップ。 LLM 無効時のみ
+                # deterministic fallback を許容 (lane 自体を殺さない)。
                 reps = _tc2.build_reply_candidates(
                     db_path,
                     max_replies=rep_max,
                     comment_fn=rep_comment_fn,
                     handles=target_handles,
+                    skip_on_empty_comment=rep_comment_fn is not None,
                     avoid_player_names=live_duplicate_players,
                 )
             except Exception as _rep_exc:  # noqa: BLE001
@@ -3296,6 +3316,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                         # 「ファン投稿への反応」と枠付け。 元ネタに無い数字は門番 (_extract_unverified_numbers) で弾く。
                         return _g.build_quote_rt_comment(
                             parent_text, player, gemini_api_key=_k, now=_now, subject="巨人ファンの投稿",
+                            budget_site="reply",
                         )
                 except Exception as _fan_imp_exc:  # noqa: BLE001
                     LOG.warning("fan_reply LLM comment unavailable: %r", _fan_imp_exc)

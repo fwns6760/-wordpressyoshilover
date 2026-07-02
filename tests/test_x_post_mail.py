@@ -1645,13 +1645,14 @@ class ComposeMailTests(unittest.TestCase):
         assert cand is not None
         self.assertEqual(cand.metric, "NEWS_OPINION")
         self.assertEqual(cand.source_material_type, "record")
-        self.assertIn("要確認: 数値未照合｜記録/節目案｜岸田行倫", cand.title)
-        self.assertIn("岸田行倫、プロ初本塁打達成", cand.post_text)
-        self.assertIn("次の打席", cand.post_text)
+        # 2026-07-03 user「【選手名】 内容」「記事の数字ごと載せて出す」
+        self.assertIn("記事記載値｜記録/節目案｜岸田行倫", cand.title)
+        self.assertIn("【岸田行倫】プロ初本塁打達成", cand.post_text)
         self.assertNotIn("あと", cand.post_text)
         self.assertNotIn("https://example.test/giants-kishida-record", cand.post_text)
         self.assertIn("材料種別: 記録/節目 (record)", cand.draft_text)
         self.assertIn("元記事タイトル: 巨人・岸田行倫がプロ初本塁打達成", cand.draft_text)
+        self.assertIn("数値の扱い: 元記事記載の数字のみ掲載", cand.draft_text)
 
     def test_record_news_candidate_strips_hashtags_urls_and_name_dup(self) -> None:
         """2026-07-03: X 由来 RSS タイトルのハッシュタグ / 切れURL / ▼記事を読む▼ を
@@ -1679,9 +1680,29 @@ class ComposeMailTests(unittest.TestCase):
         self.assertNotIn("▼", cand.post_text)
         self.assertNotIn("https://", cand.post_text)
         self.assertNotIn("hochi.n", cand.post_text)
-        # 名前二重化しない (既存 prefix 除去で phrase 先頭の選手名は落ちる)
+        # 名前二重化しない (【】ヘッダ + phrase 先頭の選手名は除去済み)
         self.assertNotIn("岸田行倫、岸田行倫", cand.post_text)
-        self.assertIn("岸田行倫、達成した節目 高校時代は３戦連続ノーノー", cand.post_text)
+        self.assertIn("【岸田行倫】達成した節目 高校時代は３戦連続ノーノー", cand.post_text)
+
+    def test_record_news_candidate_carries_article_image(self) -> None:
+        """2026-07-03 user「【選手名】 内容 画像があるとよい」: 元記事画像を
+        候補に添付し、mail の画像つき投稿導線を有効化。"""
+        ts = datetime(2026, 7, 3, 9, 0, tzinfo=JST)
+        cand = build_news_opinion_candidate(
+            source_title="巨人・岸田行倫がプロ初本塁打達成",
+            source_url="https://example.test/giants-kishida-record",
+            source_name="テスト新聞",
+            player_name="岸田行倫",
+            now=ts,
+            image_bytes=b"\x89PNGfake",
+            image_source_url="https://example.test/images/kishida.jpg",
+        )
+        self.assertIsNotNone(cand)
+        assert cand is not None
+        self.assertEqual(cand.image_bytes, b"\x89PNGfake")
+        self.assertEqual(cand.image_source_url, "https://example.test/images/kishida.jpg")
+        self.assertIn("テスト新聞掲載画像", cand.image_alt_text)
+        self.assertIn("添付画像: https://example.test/images/kishida.jpg", cand.draft_text)
 
     def test_record_phrase_core_name_dedup_with_initial_prefix(self) -> None:
         """表示名 'Ｆ．ウィットリー' vs 記事表記 '巨人・ウィットリー' でも
@@ -1695,8 +1716,10 @@ class ComposeMailTests(unittest.TestCase):
             source_excerpt="",
             source_topic_family="pitching",
         )
+        # 【選手名】ヘッダ形式 + phrase 先頭の核名 (ウィットリーが) は除去
+        self.assertIn("【Ｆ．ウィットリー】つかんだ好調の感覚", body)
         self.assertNotIn("Ｆ．ウィットリー、", body)
-        self.assertIn("ウィットリーがつかんだ好調の感覚", body)
+        self.assertNotIn("【Ｆ．ウィットリー】ウィットリー", body)
         self.assertNotIn("#巨人", body)
         self.assertNotIn("https://", body)
 
@@ -3153,7 +3176,7 @@ class XPostMailEntrypointFreshnessTests(unittest.TestCase):
         generic_fallback.assert_not_called()
         request = send.call_args.args[0]
         self.assertEqual(request.metadata["candidate_count"], 3)
-        self.assertIn("岸田行倫、プロ初本塁打達成", request.text_body)
+        self.assertIn("【岸田行倫】プロ初本塁打達成", request.text_body)
         self.assertLess(
             request.text_body.index("プロ初本塁打達成"),
             request.text_body.index("DB候補 2"),

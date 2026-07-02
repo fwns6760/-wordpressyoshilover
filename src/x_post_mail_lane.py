@@ -1310,10 +1310,18 @@ def _extract_source_record_phrase(title: str, excerpt: str, player: str) -> str:
             phrase = phrase.replace(f"巨人の{name}", name)
             phrase = phrase.replace(f"読売ジャイアンツ・{name}", name)
         phrase = phrase.strip(" 　。、")
-        for prefix in (f"{player}が", f"{player}は", f"{player}、", f"{player} "):
-            if phrase.startswith(prefix):
-                phrase = phrase[len(prefix):].strip(" 　。、")
-                break
+        # 【選手名】ヘッダ形式 (2026-07-03) と重ならないよう、先頭の
+        # 選手名 (表示名 / 核名どちらの表記でも) は落とす。
+        stripped = False
+        for name in (player, core):
+            if stripped or not name:
+                continue
+            for suffix in ("が", "は", "、", " "):
+                prefix = f"{name}{suffix}"
+                if phrase.startswith(prefix):
+                    phrase = phrase[len(prefix):].strip(" 　。、")
+                    stripped = True
+                    break
         phrase = _re.sub(r"\s+", " ", phrase).strip(" 　。、")
         if phrase:
             return _truncate_text(phrase, 72).rstrip("。！？!?")
@@ -1351,18 +1359,10 @@ def _build_source_backed_post_text(
         else:
             next_scene = "次の出番"
         if record_phrase:
-            core = _player_core_name(player)
-            if core and core in record_phrase:
-                # phrase 側に選手名が残っている時は冠名を重ねない
-                # ("Ｆ．ウィットリー、ウィットリーが..." の二重化防止)。
-                lead = f"{record_phrase}。"
-            else:
-                lead = f"{player}、{record_phrase}。"
-            body = (
-                f"{lead}\n"
-                "こういう節目は、1本・1登板の重みがそのまま残る。\n"
-                f"{next_scene}でもう一つ積み上げられるか。"
-            )
+            # 2026-07-03 user 確定「【選手名】 内容 画像があるとよい」+
+            # 「記事の数字ごと載せて出す」: 記録系は headline 型のたんぱく事実で
+            # 出す。数字は元記事記載のものをそのまま使う (捏造なし)。
+            body = f"【{player}】{record_phrase}"
         else:
             body = (
                 f"{player}の記録・節目が記事で出ている。\n"
@@ -1502,6 +1502,9 @@ def build_news_opinion_candidate(
     now: Optional[datetime] = None,  # noqa: ARG001 - kept for caller symmetry/tests
     comment_fn=None,
     skip_on_empty_comment: bool = False,
+    image_bytes: bytes = b"",
+    image_source_url: str = "",
+    image_alt_text: str = "",
 ) -> Optional[Candidate]:
     """Build a fallback X candidate from explicit source text only.
 
@@ -1513,6 +1516,10 @@ def build_news_opinion_candidate(
     ものだけのポストは余計」): comment_fn (voice) が空を返した時、記事
     タイトル貼り直しの安全テンプレで埋めず None を返す。 record 系 lane
     (2026-06-27「記事にあるものでよい」) は False のまま従来挙動。
+
+    ``image_bytes`` / ``image_source_url`` (2026-07-03 user「【選手名】 内容
+    画像があるとよい」): 元記事の画像を候補に添付し、mail 側の
+    「画像つきで X に投稿」導線を有効にする (record 記事向け)。
     """
     title = _truncate_text(source_title, 70)
     player = str(player_name or "").strip()
@@ -1551,6 +1558,14 @@ def build_news_opinion_candidate(
             source_excerpt=excerpt,
             source_topic_family=source_topic_family,
         )
+    # 2026-07-03 user「記事の数字ごと載せて出す」: record は元記事記載の数字を
+    # 出典付き事実としてそのまま掲載する (DB照合は別途)。他 material は従来通り。
+    if material_type == "record":
+        numeric_policy = "数値の扱い: 元記事記載の数字のみ掲載（出典=元記事URL）"
+        title_prefix = "記事記載値"
+    else:
+        numeric_policy = "DB数値照合: なし（未照合のため投稿本文には数値を入れない）"
+        title_prefix = "要確認: 数値未照合"
     proof_lines = [
         "【根拠: RSS/ニュース候補】",
         f"材料種別: {material_label} ({material_type})",
@@ -1561,13 +1576,15 @@ def build_news_opinion_candidate(
         f"元記事タイトル: {title}",
         f"元記事URL: {url}",
         f"検出選手: {player}",
-        "DB数値照合: なし（未照合のため投稿本文には数値を入れない）",
+        numeric_policy,
     ]
     if excerpt:
         proof_lines.append(f"元記事抜粋: {excerpt}")
+    if image_source_url:
+        proof_lines.append(f"添付画像: {image_source_url}")
     signature_hash = _hashlib.sha1(f"{url}\n{player}".encode("utf-8")).hexdigest()[:16]
     return Candidate(
-        title=f"要確認: 数値未照合｜{material_label}案｜{player}｜{title}",
+        title=f"{title_prefix}｜{material_label}案｜{player}｜{title}",
         metric=_NEWS_OPINION_METRIC,
         period_label=material_label,
         draft_text="\n".join(proof_lines),
@@ -1577,6 +1594,12 @@ def build_news_opinion_candidate(
         focus_player=player,
         source_material_type=material_type,
         source_topic_family=source_topic_family,
+        image_bytes=image_bytes or b"",
+        image_source_url=image_source_url or "",
+        image_alt_text=(
+            image_alt_text
+            or (f"{source or '元記事'}掲載画像。{player}の記事" if image_source_url else "")
+        ),
     )
 
 

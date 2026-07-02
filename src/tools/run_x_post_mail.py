@@ -1526,6 +1526,10 @@ def _fetch_news_opinion_fallback_candidates(
                 # 2026-07-02 user 指摘: voice が取れない候補はスクレイプ由来の
                 # タイトル貼り直しテンプレで埋めず skip (record lane は従来通り)。
                 skip_on_empty_comment=comment_fn is not None,
+                # 2026-07-03 user「【選手名】 内容 画像があるとよい」: コメント
+                # 候補用に取得済みの元記事画像を record 等の news 候補にも添付。
+                image_bytes=image_bytes,
+                image_source_url=image_source_url,
             )
             if cand is None:
                 continue
@@ -1649,6 +1653,16 @@ def _fetch_record_article_priority_candidates(
             member_key = lane._normalize_player_name(member)
             if not member_key or member_key in existing_player_keys:
                 continue
+            # 2026-07-03 user「【選手名】 内容 画像があるとよい」: 記録記事の
+            # 元画像を取得して添付 (取れなければテキストのみで従来通り)。
+            try:
+                _rec_html, rec_image_bytes, rec_image_source_url = _fetch_comment_article_material(
+                    link,
+                    timeout_seconds=timeout_seconds,
+                )
+            except Exception as _rec_img_exc:  # noqa: BLE001
+                LOG.info("record_article_image_fetch_skip url=%s err=%r", link, _rec_img_exc)
+                rec_image_bytes, rec_image_source_url = b"", ""
             cand = lane.build_news_opinion_candidate(
                 source_title=title,
                 source_url=link,
@@ -1657,6 +1671,8 @@ def _fetch_record_article_priority_candidates(
                 player_name=member,
                 now=now,
                 comment_fn=None,
+                image_bytes=rec_image_bytes,
+                image_source_url=rec_image_source_url,
             )
             if cand is None or cand.source_material_type != "record":
                 continue

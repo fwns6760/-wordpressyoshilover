@@ -431,13 +431,26 @@ def render_salary_player_html(p: dict) -> str:
     latest = _latest(p)
     years_sorted = sorted(p["years"], key=lambda y: int(y["year"]))
     player_slug = f"{SLUG}/{p['slug']}"
-    nav = (
-        '<nav class="ys-breadcrumb" style="font-size:12px;color:#666;margin:0 0 12px;">'
-        f'<a href="{SITE_BASE}/" style="color:#666;">Home</a> › '
-        f'<a href="{CLUSTER_URL}" style="color:#666;">巨人選手データ</a> › '
-        f'<a href="{CLUSTER_URL}/{SLUG}" style="color:#666;">年俸ランキング</a> › '
-        f"<span>{_esc(p['name'])}の年俸推移</span></nav>"
-    )
+    # 2026-07-02 エンティティ統合: pillar (成績ページ) がある選手は、パンくずを
+    # 「データ > 選手名 > 年俸推移」の論理階層にする (URL は不変のまま、選手
+    # エンティティ配下のページであることを HTML/JSON-LD 両方で宣言)。
+    has_pillar = _pillar_exists(p["slug"])
+    if has_pillar:
+        nav = (
+            '<nav class="ys-breadcrumb" style="font-size:12px;color:#666;margin:0 0 12px;">'
+            f'<a href="{SITE_BASE}/" style="color:#666;">Home</a> › '
+            f'<a href="{CLUSTER_URL}" style="color:#666;">巨人選手データ</a> › '
+            f'<a href="{CLUSTER_URL}/{p["slug"]}" style="color:#666;">{_esc(p["name"])}</a> › '
+            "<span>年俸推移</span></nav>"
+        )
+    else:
+        nav = (
+            '<nav class="ys-breadcrumb" style="font-size:12px;color:#666;margin:0 0 12px;">'
+            f'<a href="{SITE_BASE}/" style="color:#666;">Home</a> › '
+            f'<a href="{CLUSTER_URL}" style="color:#666;">巨人選手データ</a> › '
+            f'<a href="{CLUSTER_URL}/{SLUG}" style="color:#666;">年俸ランキング</a> › '
+            f"<span>{_esc(p['name'])}の年俸推移</span></nav>"
+        )
     is_ob = p.get("active") is False
     prof = "・".join(t for t in (p.get("kana") or "", p.get("position") or "") if t)
     span_phrase = (
@@ -475,14 +488,29 @@ def render_salary_player_html(p: dict) -> str:
             "→ 巨人 年俸ランキング一覧へ戻る</a></p>"
         )
     )
+    # pillar がある選手は Dataset.about に成績ページ側と同じ Person @id を指し、
+    # 「同一選手エンティティの年俸面」を機械可読に宣言する。
+    about = None
+    if has_pillar:
+        about = [
+            {"@type": "Person",
+             "@id": f"{CLUSTER_URL}/{p['slug']}#person",
+             "name": p["name"],
+             "url": f"{CLUSTER_URL}/{p['slug']}"},
+            {"@type": "SportsTeam", "name": "読売ジャイアンツ"},
+        ]
     return (
-        breadcrumb_jsonld(f"{p['name']}の年俸推移", player_slug)
+        breadcrumb_jsonld(
+            "年俸推移", player_slug,
+            parent=(p["name"], f"{CLUSTER_URL}/{p['slug']}") if has_pillar else None,
+        )
         + dataset_jsonld(
             name=f"{p['name']} 年度別推定年俸（{_career_span(p)}）",
             description=render_salary_player_excerpt(p), slug=player_slug,
             temporal=_career_span(p).replace("〜", "/").replace("年", ""),
             keywords=[p["name"], "年俸", "推定年俸", "契約金", "通算年俸", "巨人",
                       "読売ジャイアンツ"],
+            about=about,
         )
         + _PAGE_STYLE
         + '<div class="ys-sl">'

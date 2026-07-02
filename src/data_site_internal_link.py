@@ -86,15 +86,27 @@ def roster_moves_nav(current: str) -> str:
             + "".join(chips) + '</div>')
 
 
-def breadcrumb_jsonld(name: str, slug: str) -> str:
+def breadcrumb_jsonld(name: str, slug: str,
+                      parent: tuple[str, str] | None = None) -> str:
+    """BreadcrumbList JSON-LD。
+
+    parent: (名前, URL) を渡すと「データ > parent > name」の論理階層にする
+    (2026-07-02 エンティティ統合: 年俸ページ等を選手エンティティ配下として
+    宣言する。URL の実階層は変えない)。
+    """
+    items = [
+        {"@type": "ListItem", "position": 1, "name": "ホーム", "item": f"{SITE_BASE}/"},
+        {"@type": "ListItem", "position": 2, "name": "巨人選手データ", "item": CLUSTER_URL},
+    ]
+    if parent:
+        items.append({"@type": "ListItem", "position": 3,
+                      "name": parent[0], "item": parent[1]})
+    items.append({"@type": "ListItem", "position": len(items) + 1,
+                  "name": name, "item": f"{SITE_BASE}/data/{slug}"})
     data = {
         "@context": "https://schema.org",
         "@type": "BreadcrumbList",
-        "itemListElement": [
-            {"@type": "ListItem", "position": 1, "name": "ホーム", "item": f"{SITE_BASE}/"},
-            {"@type": "ListItem", "position": 2, "name": "巨人選手データ", "item": CLUSTER_URL},
-            {"@type": "ListItem", "position": 3, "name": name, "item": f"{SITE_BASE}/data/{slug}"},
-        ],
+        "itemListElement": items,
     }
     return ('<script type="application/ld+json">'
             + _json.dumps(data, ensure_ascii=False) + '</script>')

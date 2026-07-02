@@ -293,3 +293,52 @@ class IndexNowTests(unittest.TestCase):
         php = (Path(__file__).resolve().parents[1] / "src" / "yoshilover-063-frontend.php").read_text(encoding="utf-8")
         assert f"define( 'YOSHILOVER_063_INDEXNOW_KEY', '{_INDEXNOW_KEY}' );" in php
         assert "yoshi_noindex" in php
+
+
+class EntityConsolidationTests(unittest.TestCase):
+    """2026-07-02 エンティティ統合: @id 共通化 + パンくず論理階層 + 首脳陣フル表。"""
+
+    def test_pillar_jsonld_declares_person_id(self):
+        from src.data_site_template_pillar import PillarPlayerInfo, _build_jsonld
+        info = PillarPlayerInfo(name="吉川尚輝", slug="yoshikawa-naoki",
+                                position="内野手", jersey_number="2")
+        out = _build_jsonld(info)
+        assert '"@id": "https://yoshilover.com/data/yoshikawa-naoki#person"' in out
+
+    def test_salary_player_page_references_same_person_id(self):
+        from src.data_site_template_salary import render_salary_player_html
+        p = {"name": "吉川尚輝", "slug": "yoshikawa-naoki", "kana": "よしかわ なおき",
+             "position": "内野手", "active": True,
+             "years": [{"year": 2025, "salary_man": 8000}, {"year": 2026, "salary_man": 12000}]}
+        with mock.patch("src.data_site_template_salary._pillar_exists", return_value=True):
+            out = render_salary_player_html(p)
+        assert '"@id": "https://yoshilover.com/data/yoshikawa-naoki#person"' in out
+        assert '"name": "吉川尚輝", "item": "https://yoshilover.com/data/yoshikawa-naoki"' in out
+        assert "の成績・選手データページへ" in out
+
+    def test_salary_player_without_pillar_keeps_ranking_breadcrumb(self):
+        from src.data_site_template_salary import render_salary_player_html
+        p = {"name": "テスト選手", "slug": "test-x", "active": False,
+             "years": [{"year": 2000, "salary_man": 5000}]}
+        with mock.patch("src.data_site_template_salary._pillar_exists", return_value=False):
+            out = render_salary_player_html(p)
+        assert "年俸ランキング" in out
+
+    def test_staff_page_includes_career_history_section(self):
+        from src.data_site_template_pillar import PillarPlayerInfo, render_pillar_html
+        info = PillarPlayerInfo(
+            name="阿部慎之助", slug="abe-shinnosuke", position="監督",
+            jersey_number="83", role="manager",
+            career_stats={"type": "batter", "games": 2282, "avg": ".284",
+                          "hits": 2132, "hr": 406, "rbi": 1285, "years": "2001-2019"},
+            npb_career={"is_pitcher": False, "batting": {
+                "columns": ["年度", "所属", "試合", "安打"],
+                "years": [
+                    {"年度": "2001", "所属": "巨人", "試合": "127", "安打": "87"},
+                    {"年度": "2002", "所属": "巨人", "試合": "127", "安打": "105"},
+                ],
+                "total": {"年度": "通算", "所属": "", "試合": "2282", "安打": "2132"},
+            }},
+        )
+        out = render_pillar_html(info)
+        assert "年度別成績・通算" in out

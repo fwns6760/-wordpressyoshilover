@@ -54,8 +54,14 @@ def related_data_links_html(current_slug: str) -> str:
 
 
 def dataset_jsonld(*, name: str, description: str, slug: str,
-                   temporal: str = "", keywords: list[str] | None = None) -> str:
-    """Dataset 構造化データ (JSON-LD)。Google データセット検索の対象になり得る。"""
+                   temporal: str = "", keywords: list[str] | None = None,
+                   about: dict | list | None = None) -> str:
+    """Dataset 構造化データ (JSON-LD)。Google データセット検索の対象になり得る。
+
+    about: 省略時は SportsTeam。選手個別データでは Person @id
+    (成績 pillar 側の `/data/<slug>#person`) を渡してエンティティ統合する
+    (2026-07-02 user 決定「エンティティの問題」対応、URL 階層は変えない)。
+    """
     data = {
         "@context": "https://schema.org",
         "@type": "Dataset",
@@ -64,7 +70,7 @@ def dataset_jsonld(*, name: str, description: str, slug: str,
         "url": f"{CLUSTER_URL}/{slug}",
         "isAccessibleForFree": True,
         "creator": {"@type": "Organization", "name": "ヨシラバー", "url": SITE_BASE + "/"},
-        "about": {"@type": "SportsTeam", "name": "読売ジャイアンツ"},
+        "about": about if about is not None else {"@type": "SportsTeam", "name": "読売ジャイアンツ"},
         "inLanguage": "ja",
     }
     if temporal:

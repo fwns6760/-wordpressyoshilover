@@ -1020,6 +1020,11 @@ def _build_jsonld(player: PillarPlayerInfo) -> str:
     sports_player = {
         "@context": "https://schema.org",
         "@type": "SportsPlayer",
+        # 2026-07-02 エンティティ統合: 成績/年俸など同一人物の別ページが同じ @id を
+        # 参照することで「1 選手 = 1 エンティティ」を機械可読に宣言する
+        # (年俸ページ側 Dataset.about が この @id を指す)。
+        "@id": f"{canonical}#person",
+        "mainEntityOfPage": canonical,
         "name": player.name,
         "nationality": "JP" if player.role == "player" and "・" not in player.name else None,
         "memberOf": {
@@ -1308,6 +1313,12 @@ def render_pillar_html(player: PillarPlayerInfo) -> str:
         stats_sections = [
             _build_staff_profile_html(player),
             _build_staff_career_html(player),
+            # 2026-07-02 user 指摘「現在の首脳陣の成績が通算になってない」:
+            # 通算 1 行サマリーだけでなく、OB と同じ現役時代の年度別フル表 +
+            # 通算マイルストーンを出す (npb_career は publisher が benchmark
+            # 由来で populate 済み。データ無しは空文字で安全)。
+            _build_career_milestones_html(player),
+            _build_career_history_html(player),
         ]
     elif _is_pitcher(player):
         stats_sections = [

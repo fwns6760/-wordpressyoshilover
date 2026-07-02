@@ -169,9 +169,10 @@ class ReplyTargetHandleTests(unittest.TestCase):
 
         with patch.dict("os.environ", {}, clear=True):
             # 2026-07-03 user 追加: Sanspo_Giants / koba_nikkan を default 化
+            # + 「特に公式と報知」で 報知 → 公式 を先頭固定
             self.assertEqual(
                 runner._reply_target_handles(),
-                ["hochi_giants", "Sanspo_Giants", "koba_nikkan", "TokyoGiants"],
+                ["hochi_giants", "TokyoGiants", "Sanspo_Giants", "koba_nikkan"],
             )
 
     def test_configured_reply_targets_keep_existing_and_add_tokyo_giants(self) -> None:
@@ -180,8 +181,21 @@ class ReplyTargetHandleTests(unittest.TestCase):
         with patch.dict("os.environ", {"X_POST_REPLY_TARGET_HANDLES": "hochi_giants,Sanspo_Giants"}):
             self.assertEqual(
                 runner._reply_target_handles(),
-                ["hochi_giants", "Sanspo_Giants", "TokyoGiants"],
+                ["hochi_giants", "TokyoGiants", "Sanspo_Giants"],
             )
+
+    def test_reply_target_tail_rotates_but_priority_fixed(self) -> None:
+        """2026-07-03 user「その他メディアは分散」: 報知/公式は先頭固定のまま、
+        残りメディアだけ時刻ローテする。"""
+        from src.tools import run_x_post_mail as runner
+
+        with patch.dict("os.environ", {}, clear=True):
+            h9 = runner._reply_target_handles(now=datetime(2026, 7, 3, 9, 0, tzinfo=JST))
+            h10 = runner._reply_target_handles(now=datetime(2026, 7, 3, 10, 0, tzinfo=JST))
+        self.assertEqual(h9[:2], ["hochi_giants", "TokyoGiants"])
+        self.assertEqual(h10[:2], ["hochi_giants", "TokyoGiants"])
+        self.assertEqual(sorted(h9[2:]), sorted(h10[2:]))
+        self.assertNotEqual(h9[2:], h10[2:])
 
     def test_fan_reply_default_handles_include_2026_07_03_additions(self) -> None:
         from src.tools import run_x_post_mail as runner
@@ -5074,10 +5088,10 @@ class ReplyCandidateRuntimeConfigTests(unittest.TestCase):
             clear=False,
         ):
             # 469: 読売巨人軍公式 TokyoGiants は env に依らず常時補完される
-            # 2026-07-03: Sanspo_Giants / koba_nikkan default 追加
+            # 2026-07-03: Sanspo_Giants / koba_nikkan default 追加 + 報知/公式 先頭固定
             self.assertEqual(
                 run_x_post_mail._reply_target_handles(),
-                ["hochi_giants", "Sanspo_Giants", "koba_nikkan", "TokyoGiants"],
+                ["hochi_giants", "TokyoGiants", "Sanspo_Giants", "koba_nikkan"],
             )
             self.assertEqual(run_x_post_mail._reply_candidates_max_per_run(), 3)
             self.assertTrue(run_x_post_mail._reply_llm_enabled())
@@ -5094,10 +5108,11 @@ class ReplyCandidateRuntimeConfigTests(unittest.TestCase):
             },
             clear=False,
         ):
-            # 469: env override しても公式 TokyoGiants は末尾に補完される
+            # 469: env override しても公式 TokyoGiants は補完される
+            # 2026-07-03: 報知/公式 先頭固定 (「特に公式と報知」)
             self.assertEqual(
                 run_x_post_mail._reply_target_handles(),
-                ["hochi_giants", "Sanspo_Giants", "TokyoGiants"],
+                ["hochi_giants", "TokyoGiants", "Sanspo_Giants"],
             )
             self.assertEqual(run_x_post_mail._reply_candidates_max_per_run(), 5)
             self.assertTrue(run_x_post_mail._reply_llm_enabled())

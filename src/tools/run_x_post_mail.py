@@ -734,18 +734,33 @@ def _unique_reply_handles(handles: list[str]) -> list[str]:
     return out
 
 
-def _reply_target_handles() -> list[str]:
+# 2026-07-03 user「特に公式と報知」: リプ枠は 報知 → 公式 を常に先頭固定で厚くする。
+_PRIORITY_REPLY_HANDLES = ("hochi_giants", _OFFICIAL_REPLY_HANDLE)
+
+
+def _reply_target_handles(now=None) -> list[str]:
     """リプライ候補の対象 X handle。
 
     既存 env / default はそのまま維持し、読売巨人軍公式 ``TokyoGiants`` を
     repo 側で補完する。Cloud Run env や Scheduler を変えずに、mail の手動リプ
     候補だけを追加するための narrow hook。
+
+    2026-07-03 user「特に公式と報知」「その他メディアは分散」: 報知 → 公式 を
+    先頭固定 (build_reply_candidates は先頭から採るので最も厚くなる)、残りの
+    メディア (サンスポ / 記者 等) は ``now`` の時刻でローテして偏りを防ぐ。
     """
     raw = (os.environ.get("X_POST_REPLY_TARGET_HANDLES") or "").strip()
     handles = [h.strip().lstrip("@") for h in raw.split(",") if h.strip()]
     if not handles:
         handles = list(_DEFAULT_REPLY_TARGET_HANDLES)
-    return _unique_reply_handles([*handles, _OFFICIAL_REPLY_HANDLE])
+    merged = _unique_reply_handles([*handles, _OFFICIAL_REPLY_HANDLE])
+    priority_lower = {p.lower() for p in _PRIORITY_REPLY_HANDLES}
+    head = [h for p in _PRIORITY_REPLY_HANDLES for h in merged if h.lower() == p.lower()]
+    tail = [h for h in merged if h.lower() not in priority_lower]
+    if now is not None and len(tail) > 1:
+        shift = (int(now.timetuple().tm_yday) * 24 + int(now.hour)) % len(tail)
+        tail = tail[shift:] + tail[:shift]
+    return head + tail
 
 
 def _reply_candidate_mail_labels(handle: str) -> tuple[str, str, str, str, tuple[str, ...]]:
@@ -3468,7 +3483,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 except Exception as _rep_imp_exc:  # noqa: BLE001
                     LOG.warning("reply_candidates LLM comment unavailable: %r", _rep_imp_exc)
                     rep_comment_fn = None
-            target_handles = _reply_target_handles()
+            target_handles = _reply_target_handles(now=now_jst)
             # 2026-07-02 user 決定「試合中のNTVなどの動画SNSのリプは試合中に」:
             # スタメン帯 (17:15-19:00) と試合中帯 (19:00-21:45) だけ、動画系
             # game handles (NTV/DAZN/スポニチ) をリプ対象に追加する。平常帯は

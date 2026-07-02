@@ -10,15 +10,6 @@
     ]
   },
   {
-    "name": "読売ジャイアンツX",
-    "url": "https://rsshub-487178857517.asia-northeast1.run.app/twitter/user/yomiuri_giants",
-    "type": "social_news",
-    "role": [
-      "article_source",
-      "media_quote_pool"
-    ]
-  },
-  {
     "name": "スポーツ報知巨人班X",
     "url": "https://rsshub-487178857517.asia-northeast1.run.app/twitter/user/hochi_giants",
     "type": "social_news",

@@ -3253,6 +3253,22 @@ def main(argv: Sequence[str] | None = None) -> int:
                     LOG.warning("reply_candidates LLM comment unavailable: %r", _rep_imp_exc)
                     rep_comment_fn = None
             target_handles = _reply_target_handles()
+            # 2026-07-02 user 決定「試合中のNTVなどの動画SNSのリプは試合中に」:
+            # スタメン帯 (17:15-19:00) と試合中帯 (19:00-21:45) だけ、動画系
+            # game handles (NTV/DAZN/スポニチ) をリプ対象に追加する。平常帯は
+            # 公式+報知のみ (試合外の古い動画クリップへの場違いリプを防ぐ)。
+            _timing_label = lane.x_impression_timing_label(now_jst)
+            if _timing_label in {
+                lane._X_IMPRESSION_TIMING_LABELS["lineup"],
+                lane._X_IMPRESSION_TIMING_LABELS["in_game_strong"],
+            }:
+                target_handles = _unique_reply_handles(
+                    [*target_handles, *lane._GAME_BUZZ_HANDLES]
+                )
+                LOG.info(
+                    "reply targets extended for game window (%s): %s",
+                    _timing_label, ",".join(target_handles),
+                )
             try:
                 from src import sns_topic_cards as _tc2
                 # 2026-07-02 user 指摘: リプは「ポストではない」ので、 LLM voice が

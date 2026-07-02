@@ -5051,8 +5051,8 @@ class VideoRadarSourceNarrowingTests(unittest.TestCase):
         self.assertEqual(self._handles_hit(18), self._GAME_SOURCES)
 
     def test_off_game_uses_all_sources(self):
-        # 10:00 = 試合外 → 全ソース (2026-07-02 差別化2アカ+日刊班アカ追加で 11)
-        self.assertEqual(len(self._handles_hit(10)), 11)
+        # 10:00 = 試合外 → 全ソース (2026-07-02 差別化2アカ+日刊班+報知水上記者追加で 12)
+        self.assertEqual(len(self._handles_hit(10)), 12)
 
 
 class VideoRadarInGameFreshnessFloorTests(unittest.TestCase):

@@ -1,13 +1,67 @@
 # assignments — 現場担当と次アクション
 
-最終更新: 2026-06-13 JST (YouTube Shorts Phase 1 repo 実装)
+最終更新: 2026-06-28 JST (Cloud Run / Scheduler 無駄 fire 監査で 3 Scheduler pause)
+
+## 2026-06-28 — Cloud Run / Scheduler 無駄 fire 全時間監査と停止 (user「全ての時間で。無駄があったら止めろ」)
+
+- **確認方法**: Cloud Run service URL / `/run` / `/health` は叩かず、Cloud Logging と Cloud Scheduler / Cloud Run Job 一覧の read-only 確認だけで監査。ログ保持範囲の最古 Cloud Run / Scheduler ログは 2026-05-29 頃。
+- **停止済み**: Cloud Scheduler job `x-post-mail-flush-game-2` を `ENABLED` から `PAUSED` へ変更。実機は `*/15 21-22 * * *` で 21:00-22:45 JST に毎日 8 fire していたが、`mkdocs_docs/operations/scheduler.md` / `mkdocs_docs/spec/x-post-mail.md` は `PAUSED` 扱いで矛盾していたため停止。
+- **停止済み**: Cloud Scheduler job `external-ping-trigger` を `ENABLED` から `PAUSED` へ変更。2026-06-20〜2026-06-27 の全確認日で 403 `PERMISSION_DENIED`、Cloud Run Job まで到達していなかったため無駄 fire と判断。
+- **停止済み**: Cloud Scheduler job `seo-fetch-daily` を `ENABLED` から `PAUSED` へ変更。2026-06-20〜2026-06-27 の全確認日で 403 `PERMISSION_DENIED`、Cloud Run Job まで到達していなかったため無駄 fire と判断。
+- **停止後状態**: `x-post-mail-flush-game-2` / `external-ping-trigger` / `seo-fetch-daily` は `PAUSED`、他 Scheduler は `ENABLED` 17 本。実 Scheduler が存在する location は `asia-northeast1` のみ。
+- **未削除**: 今回は即時の無駄 fire 停止を優先し、Scheduler delete は未実施。PAUSED job も Cloud Scheduler の月額課金対象になり得るため、恒久削除する場合は別途削除判断が必要。
+- **未変更**: Cloud Run Job image / env / Secret / IAM / WP / X live post / Cloud Run service traffic は変更していない。
+
+## 2026-06-14 — 本日13時試合向け X-post mail 一時 Scheduler 12:30開始 (user「12時30分から試合開始」)
+
+- **Scheduler 作成**: Cloud Scheduler job `x-post-mail-extra-20260614-daygame-a` / `x-post-mail-extra-20260614-daygame-b` / `x-post-mail-extra-20260614-daygame-c` を新規作成。timezone `Asia/Tokyo`、state `ENABLED`。
+- **実行時刻**: `30,45 12 14 6 *`、`0,15,30,45 13-16 14 6 *`、`0,15 17 14 6 *`。JST 2026-06-14 12:30 / 12:45 / 13:00-16:45(15分間隔) / 17:00 / 17:15。
+- **実行先**: `https://asia-northeast1-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/baseballsite/jobs/x-post-mail-lane:run`。OAuth service account は `487178857517-compute@developer.gserviceaccount.com`。
+- **override**: `X_POST_MAIL_EXTRA_GAME_DATE=2026-06-14`、`X_POST_MAIL_EXTRA_GAME_START=12:30`、`X_POST_MAIL_EXTRA_GAME_END=17:15` を per-run override で渡し、昼試合も「試合中強イベント枠」として扱う。
+- **変更範囲**: Scheduler 追加のみ。`x-post-mail-lane` Job image / env / secrets / WP / X live post / fetcher service / 通常 Scheduler は未変更。手動 fire は実行していない。
+- **後始末**: 2026-06-14 の試合後に、過去日 one-time Scheduler としてこの3本を delete 対象にする。
+
+## 2026-06-13 — YouTube Shorts Phase 1.5 Scheduler 月木10時 設定 (user「ならそう設定して」)
+
+- **Scheduler 作成**: Cloud Scheduler job `yt-shorts-gen-mon-thu-1000` を新規作成。schedule `0 10 * * 1,4`、timezone `Asia/Tokyo`、state `ENABLED`。
+- **実行先**: `https://asia-northeast1-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/baseballsite/jobs/yt-shorts-gen:run`。OAuth service account は `487178857517-compute@developer.gserviceaccount.com`。
+- **次回実行**: `2026-06-15T01:00:00Z` = 2026-06-15(月) 10:00 JST。
+- **変更範囲**: Scheduler のみ。images / `yt-shorts-gen` Job / `yoshilover-fetcher` service / secrets / env は未変更。live smoke は実行していない。
+- **運用方針**: 月曜・木曜 10:00 に private upload + 承認mail を出す。公開は user が mail button を押した時だけ。
+
+## 2026-06-13 — YouTube Shorts Phase 1.5 GCP deploy / private upload smoke (user「デプロイして」)
+
+- **deploy 実行**: dirty worktree をそのまま送らず、`/tmp/yoshi-yt-shorts-deploy-20260613150352` の一時 clean deploy tree に YouTube Shorts 関連ファイルだけを重ねて authenticated shell から実行。
+- **validation before deploy**: `tests/test_yt_shorts_topic.py` / `tests/test_yt_shorts_script.py` / `tests/test_yt_shorts_render.py` / `tests/test_yt_shorts_gen.py` / `tests/test_yt_shorts_youtube.py` / `tests/test_yt_shorts_youtube_token.py` / `tests/test_yt_shorts_publish_handler.py` / `tests/test_yt_shorts_gcp_job_config.py` = 43 passed。`compileall` と `bash -n scripts/setup_yt_shorts_phase15_gcp.sh` OK。
+- **Cloud Build**: `yt-shorts-gen` build `ffab0744-0e0b-4219-8ca6-3e37a68ea672` SUCCESS、image `yt-shorts-gen:yt-shorts-phase15-20260613-1508` digest `sha256:d6f71d49...`。`yoshilover-fetcher` build `216620c7-a5be-44e2-ad52-e3875b89892d` SUCCESS、image `yoshilover-fetcher:yt-shorts-approval-20260613-1508` digest `sha256:54572901...`。
+- **Cloud Run**: `yoshilover-fetcher` revision `yoshilover-fetcher-00520-d67` 100% traffic。`yt-shorts-gen` Job generation `10` / observed `10`、args `--live --youtube-private-upload`、YouTube OAuth / approval token / mail bridge secrets bound by secret name only。
+- **smoke**: execution `yt-shorts-gen-mpw2v` SUCCEEDED。ログ上は既存履歴により `daily_cap_already_used` で新規生成/新規mailはskip、既存 private upload は video_id `QPMtzfiAACs` / title `岸田 行倫 OPS .981をデータで見る` / GCS `yt_shorts/runs/2026-06-13-yt_shorts-2026-06-12-OPS-.981/short.mp4` を参照。公開は未実行。
+- **Scheduler**: 当初は未作成(`CREATE_SCHEDULER=0`)。その後 user 指示で `yt-shorts-gen-mon-thu-1000` を作成済み(月曜・木曜 10:00 JST)。
+- **次アクション**: user が YouTube Studio / 承認mailで private 動画を確認 → 「公開する」button を押して public 化 smoke。メールが見つからない場合は daily cap reset 後に再実行、または resend/force option を別途実装。
+
+## 2026-06-13 — YouTube Shorts Phase 1.5 GCP deploy helper ready (user OAuth完了後の「ではGO」)
+
+- **完了した user 側作業**: YouTube Data API v3 enable、Desktop OAuth client 認証、Secret Manager 登録。Secret 実値は chat / repo に出していない。
+- **repo追加**: `scripts/setup_yt_shorts_phase15_gcp.sh`。`yt-shorts-gen` image build、`yoshilover-fetcher` image build、fetcher `/yt-shorts-publish` deploy、Cloud Run Job create/update、YouTube OAuth secret binding、mail bridge secret binding までを authenticated executor が一括実行できる。
+- **安全側既定**: helper 単体の既定では Scheduler は作らない(`CREATE_SCHEDULER=0`)。live smoke も既定では実行しない(`EXECUTE_LIVE_SMOKE=0`)。現在は user 明示指示で月曜・木曜 10:00 JST の Scheduler を作成済み。
+- **残作業**: deploy と Scheduler は上記で実行済み。次は user が private 動画/承認mail を確認し、「公開する」button smoke。403ならYouTube API audit判断。
+
+## 2026-06-13 — YouTube Shorts Phase 1.5 半自動公開 repo 実装 (user「ではGO」)
+
+- **目的**: ショート動画をGCPで生成し、YouTubeへ private upload。HTML mail で確認後、user が「公開する」ボタンを押した時だけ public 化する。
+- **repo実装**: `src/yt_shorts_youtube.py` / `src/yt_shorts_youtube_token.py` / `src/yt_shorts_publish_handler.py` を追加。`src/yt_shorts_gen.py` に `--youtube-private-upload` を追加。`src/server.py` に `/yt-shorts-publish` GET/POST route を追加。
+- **HTML mail**: MP4確認、YouTube確認、Studio編集、公開buttonを表示。Gmail内直接再生ではなくリンク確認方式。
+- **安全側既定**: `--live` だけではYouTube uploadしない。`--youtube-private-upload` または `YT_SHORTS_YOUTUBE_PRIVATE_UPLOAD=1` が必要。GETは確認画面のみ、POSTだけ `privacyStatus=public`。
+- **live 状態**: YouTube Data API enable / OAuth refresh token取得 / Secret Manager登録 / fetcher deploy / Job update / Scheduler 作成は完了。publish button smoke は user 確認待ち。
 
 ## 2026-06-13 — YouTube Shorts Phase 1 repo 実装 (user「続きをやって」)
 
 - **目的**: `/data/notable` 系の既存データから、権利安全な縦型データ図解ショートを1日1本生成し、mail承認後に user が手動で YouTube 投稿する Phase 1。
 - **repo実装**: `src/yt_shorts_topic.py` / `src/yt_shorts_script.py` / `src/yt_shorts_render.py` / `src/yt_shorts_gen.py`、`Dockerfile.yt_shorts`、`cloudbuild_yt_shorts.yaml`、対応テストを追加。YouTube API upload / 自動公開は未実装。
-- **安全側既定**: CLI は dry-run、`--live` の時だけ GCS upload + 承認mail。映像・写真は使わず、Pillow生成カード + VOICEVOX音声 + ffmpeg合成。数値guardで未検証数字をabort。
+- **安全側既定**: CLI は dry-run、`--live` の時だけ GCS upload + 承認mail。数値guardで未検証数字をabort。第三者の試合映像/中継スクショ/無断写真は使わない。
+- **2026-06-15 user lock**: 次回以降はポップで躍動感があるBGM + 選手写真/ビジュアル枠を必須。BGMは権利安全なコード生成を既定、写真は topic raw/env/WP保存画像から解決し、未解決時も選手名ビジュアル枠を表示する。写真/選手名ビジュアルは全5カードに出し、選手が主役と分かるように横幅ほぼ全体・画面上半分以上で大きく見せる。VOICEVOX音声が短くても動画尺を途中で切って後半カードを落とさない。指定選手の一回生成は `--player`、既出選手回避は `--exclude-player` を使う。
 - **今回の追加fix**: `K/9` のような指標名内の数字を数値guardで誤検出しないよう label 数字を許可。live upload 後は mail 前に `uploaded` history を先に書き、SMTP失敗時の同日重複生成を避ける。
+- **GCP最安構成 follow-up**: user「ローカルよりGCPで安く」→ `Dockerfile.yt_shorts` を公式 `voicevox/voicevox_engine:cpu-latest` ベースへ変更し、`bin/run_yt_shorts_with_voicevox.sh` で Job 実行中だけ VOICEVOX を 127.0.0.1 起動。別常駐 Cloud Run Service は作らない。
 - **未実行**: Cloud Build / Cloud Run Job 作成更新 / Scheduler / live mail / YouTube投稿。live executor は user 承認後。
 
 ## 2026-06-11 — データ角度v2: 驚き系3角度 + 話題選手連動 (user「全部やるgo」)
@@ -462,7 +516,7 @@ next: (1) 11:00 JST 以降の自然 fire で実 Pattern A / Pattern B 成立比�
 | ticket | status | owner | 内容 |
 |---|---|---|---|
 | `doc/done/2026-05/425-OPS-gcp-expired-one-time-scheduler-cleanup.md` | CLOSED_EXECUTED_VERIFIED | Codex A | parent GH Issue #97。過去日 one-time Scheduler 2 件 (`publish-notice-extra-20260517-game`, `giants-game-extra-20260517-1400-1700`) を削除済み。Scheduler count `ENABLED 38 / PAUSED 18` → `ENABLED 36 / PAUSED 18`。通常 fetcher / publish-notice / x-post / fact-check は不変。想定削減は約 $0.20/month。 |
-| `doc/active/426-OPS-artifact-registry-safe-cleanup-preflight.md` | PREFLIGHT_STOPPED | Codex A | Artifact Registry `yoshilover` 約 98-103GB の安全 cleanup 前監査。`publish-notice:prefilter-a32bd79` が live image だが cleanup keep tag list に入っていないため STOP。Artifact delete / cleanup policy update は未実施。次は live tag/digest を keep 条件へ追加してから削除候補を作る。 |
+| `doc/done/2026-07/426-OPS-artifact-registry-safe-cleanup-preflight.md` | CLOSED (2026-07-02) | Claude | 実削除+恒久 policy 実行済み。132 versions 削除 (live 全保護)、delete-older-30d + keep-recent-10 + keep-live-pins 適用、cloudbuild bucket 30日 lifecycle。詳細 ticket §11。 |
 | `doc/active/427-OPS-publish-notice-skip-disabled-review-state-fetch.md` | REPO_IMPL_TESTED | Codex A | Cloud Run Jobs 最大 driver の `publish-notice` を、Scheduler 間引きなしで短縮する narrow fix。`DRAFT_ONLY_SCAN_MODE=1` / `ENABLE_PREFLIGHT_SKIP_NOTIFICATION=0` 時に、使わない review 履歴の GCS fetch だけ省く実装 + tests 済み。mail 判定、scan window、env、本番 job は不変。Cloud Run deploy は未実施。 |
 
 ## 2026-05-22 session update

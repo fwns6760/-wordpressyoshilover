@@ -197,23 +197,61 @@ def shihai_group_members(group: str) -> list[str]:
     return list(load_player_class().get("shihai", {}).get(group, []))
 
 
-def related_shihai_players(player_name: str, limit: int = 6) -> list[str]:
-    """同じ登録ポジションの他の支配下選手を limit 名返す (関連選手リンク用)。
+_DRAFT_YEAR_CACHE: Optional[dict] = None
 
-    自分を起点に config 順で「次の選手」を回転窓で拾い、 グループ内でリンクが
-    偏らないようにする (各選手が異なる相手にリンク = 内部リンク均等化)。
+
+def _draft_year_map() -> dict:
+    """支配下/育成の {正規化name: ドラフト年} (config/giants_draft_history.json 由来)。"""
+    global _DRAFT_YEAR_CACHE
+    if _DRAFT_YEAR_CACHE is not None:
+        return _DRAFT_YEAR_CACHE
+    path = Path(__file__).resolve().parents[1] / "config" / "giants_draft_history.json"
+    out: dict = {}
+    try:
+        data = _json.loads(path.read_text(encoding="utf-8"))
+        for key in ("draft_picks", "ikusei_picks"):
+            for row in data.get(key) or []:
+                n = _norm_name(str(row.get("name") or ""))
+                y = row.get("year")
+                if n and y and n not in out:
+                    out[n] = int(y)
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("draft year map parse error: %r", exc)
+    _DRAFT_YEAR_CACHE = out
+    return out
+
+
+def related_shihai_players(player_name: str, limit: int = 6) -> list[str]:
+    """現役の関連選手を limit 名返す (関連選手リンク用)。
+
+    2026-07-02 user 決定「現役もファンが納得する結びつきに」:
+    - 優先枠 2 名: 同期入団 (同じドラフト年、ポジション不問) — ファンが
+      「同期」でまとめて追う軸
+    - 残り: 従来どおり同じ登録ポジションの回転窓 (ポジション争いの軸、
+      内部リンクの均等化も維持)
     """
-    group = shihai_position_group(player_name)
-    if not group:
-        return []
-    members = shihai_group_members(group)
     norm = _norm_name(player_name)
+    group = shihai_position_group(player_name)
+    members = shihai_group_members(group) if group else []
     idx = next((i for i, n in enumerate(members) if _norm_name(n) == norm), None)
     if idx is None:
         others = [n for n in members if _norm_name(n) != norm]
     else:
         others = members[idx + 1:] + members[:idx]  # 自分の次から回転
-    return others[:limit]
+    # 同期入団の優先枠 (支配下に現存する同ドラフト年、config 順で安定)
+    peers: list[str] = []
+    my_year = _draft_year_map().get(norm)
+    if my_year:
+        dm = _draft_year_map()
+        for g in ("投手", "捕手", "内野手", "外野手"):
+            for n in shihai_group_members(g):
+                nn = _norm_name(n)
+                if nn != norm and dm.get(nn) == my_year:
+                    peers.append(n)
+        peers = peers[:2]
+    seen = {_norm_name(n) for n in peers}
+    merged = peers + [n for n in others if _norm_name(n) not in seen]
+    return merged[:limit]
 
 
 _OB_YEARLY_FULL_PATH = Path(__file__).resolve().parents[1] / "config" / "ob_career_yearly_full.json"
@@ -242,21 +280,79 @@ def _ob_type_index() -> dict:
     return _OB_TYPE_INDEX
 
 
-def related_ob_players(slug: str, is_pitcher: bool, limit: int = 6) -> list[tuple[str, str]]:
-    """同じ型 (投手/野手) の他 OB を limit 名返す (OB ページの内部リンク孤立解消)。
+def _ob_year_span(rec: dict) -> Optional[tuple[int, int]]:
+    """profile の years 文字列 ("1981-1995" / "NPB 1986-2006 / MLB 2007" 等) から
+    (開始年, 終了年) を取る。取れなければ None。"""
+    ys = re.findall(r"(?:19|20)\d{2}", str(rec.get("years") or ""))
+    if not ys:
+        return None
+    return int(ys[0]), int(ys[-1])
 
-    現役の related_shihai_players と同じく回転窓でリンクを均等化する。 OB は
-    shihai_position_group が None のため従来 related_players が空 = 孤立していた。
+
+def _ob_games(rec: dict) -> int:
+    try:
+        return int(str((rec.get("npb") or {}).get("games") or 0).replace(",", ""))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _ob_fame_score(rec: dict) -> float:
+    """実績スコア: 表彰・看板実績の数 + キャリアの長さ (通算試合/登板)。"""
+    return len(rec.get("honors") or []) * 3.0 + min(_ob_games(rec), 2000) / 100.0
+
+
+def related_ob_players(slug: str, is_pitcher: bool, limit: int = 6) -> list[tuple[str, str]]:
+    """OB の関連選手を「同時代 (在籍年の重なり) × 実績」スコアで返す。
+
+    2026-07-02 user 指摘「原辰徳の関連に無関係でスカスカな選手が並ぶ。中畑清・
+    桑田真澄が関連のはず」: 旧実装は同型 (投手/野手) の config 順回転窓で、
+    時代も実績も見ていなかった。
+    - 在籍年の重なり (同時代のチームメイト) を最重視
+    - 実績 (通算試合数 + 表彰数) で著名選手を優先 = ファンが知っている顔が並ぶ
+    - 通算が薄い選手 (野手 150 試合 / 投手 50 登板 未満で表彰なし) はリンク先に
+      しない (低品質ページへ回遊させない)
+    - 投手/野手は filter せず同型 bonus のみ (原辰徳→桑田真澄 は自然な関連)
+    スコアは config 決定的 (同 config なら同結果) で、差分更新の hash を無駄に
+    揺らさない。
     """
-    members = _ob_type_index()["pitcher" if is_pitcher else "batter"]
-    if not members:
+    stats = load_ob_legends().get("stats") or {}
+    subject = None
+    for rec in stats.values():
+        if rec.get("slug") == slug:
+            subject = rec
+            break
+    if subject is None:
         return []
-    idx = next((i for i, (s, _n) in enumerate(members) if s == slug), None)
-    if idx is None:
-        others = [m for m in members if m[0] != slug]
-    else:
-        others = members[idx + 1:] + members[:idx]
-    return others[:limit]
+    span = _ob_year_span(subject)
+    scored: list[tuple[float, str, str]] = []
+    for rec in stats.values():
+        cslug = rec.get("slug") or ""
+        if not cslug or cslug == slug:
+            continue
+        games = _ob_games(rec)
+        min_games = 50 if rec.get("type") == "pitcher" else 150
+        if games < min_games and not rec.get("honors"):
+            continue  # 薄いページはリンク先にしない
+        score = _ob_fame_score(rec)
+        cspan = _ob_year_span(rec)
+        if span and cspan:
+            overlap = min(span[1], cspan[1]) - max(span[0], cspan[0])
+            if overlap > 0:
+                score += overlap * 4.0  # 同時代を最重視
+        if (rec.get("type") == "pitcher") == bool(is_pitcher):
+            score += 2.0
+        scored.append((score, cslug, str(rec.get("display_name") or "")))
+    scored.sort(key=lambda t: (-t[0], t[1]))
+    out: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for _s, cslug, name in scored:
+        if cslug in seen:
+            continue  # 旧名/改名の重複 (篠塚利夫/篠塚和典 = 同一 slug) を除外
+        seen.add(cslug)
+        out.append((cslug, name))
+        if len(out) >= limit:
+            break
+    return out
 
 
 def load_ikusei_entries() -> list[tuple[str, str]]:

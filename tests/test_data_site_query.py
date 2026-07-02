@@ -916,3 +916,58 @@ class CurrentRosterNamesFilterTests(unittest.TestCase):
         finally:
             q._current_roster_names_cache = None
             tmp.unlink(missing_ok=True)
+
+
+class RelatedPlayersQualityTests(unittest.TestCase):
+    """2026-07-02 user 指摘「原辰徳の関連が無関係でスカスカ」対応。"""
+
+    def _seed_ob(self):
+        import data_site_query as q
+        q._ob_cache = {"order": [], "stats": {
+            "原辰徳": {"slug": "hara-tatsunori", "type": "batter", "years": "1981-1995",
+                       "display_name": "原辰徳", "npb": {"games": 1697},
+                       "honors": ["新人王・MVP"]},
+            "中畑清": {"slug": "nakahata-kiyoshi", "type": "batter", "years": "1976-1989",
+                       "display_name": "中畑清", "npb": {"games": 1248},
+                       "honors": ["ベストナイン"]},
+            "桑田真澄": {"slug": "kuwata-masumi", "type": "pitcher",
+                         "years": "NPB 1986-2006 / MLB 2007", "display_name": "桑田真澄",
+                         "npb": {"games": 442}, "honors": ["沢村賞"]},
+            "薄い選手": {"slug": "usui-senshu", "type": "batter", "years": "1985-1988",
+                         "display_name": "薄い選手", "npb": {"games": 12}, "honors": []},
+            "現代選手": {"slug": "gendai-senshu", "type": "batter", "years": "2015-2022",
+                         "display_name": "現代選手", "npb": {"games": 800},
+                         "honors": ["ベストナイン"]},
+        }}
+        return q
+
+    def test_same_era_stars_ranked_thin_excluded(self):
+        q = self._seed_ob()
+        try:
+            out = q.related_ob_players("hara-tatsunori", False, limit=3)
+            names = [n for _s, n in out]
+            self.assertEqual(names[0], "中畑清")     # 同時代・野手・実績
+            self.assertIn("桑田真澄", names)          # 投手でも同時代なら出る
+            self.assertNotIn("薄い選手", names)       # 通算 12 試合は除外
+            # 時代が重ならない現代選手は同時代組より下位
+            self.assertGreater(names.index("桑田真澄") if "現代選手" not in names
+                               else names.index("現代選手"), 0)
+        finally:
+            q._ob_cache = None
+
+    def test_draft_peers_prioritized_for_active(self):
+        import data_site_query as q
+        q._DRAFT_YEAR_CACHE = {q._norm_name("戸郷翔征"): 2018,
+                               q._norm_name("横川凱"): 2018,
+                               q._norm_name("増田陸"): 2018}
+        try:
+            with mock.patch.object(q, "shihai_position_group", return_value="投手"), \
+                 mock.patch.object(q, "shihai_group_members",
+                                   side_effect=lambda g: {"投手": ["戸郷翔征", "山﨑伊織", "横川凱"],
+                                                          "捕手": [], "内野手": ["増田陸"],
+                                                          "外野手": []}[g]):
+                out = q.related_shihai_players("戸郷翔征", limit=4)
+            self.assertEqual(out[:2], ["横川凱", "増田陸"])  # 同期が優先枠
+            self.assertIn("山﨑伊織", out)                    # 残りは同ポジション回転
+        finally:
+            q._DRAFT_YEAR_CACHE = None

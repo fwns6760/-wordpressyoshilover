@@ -4371,14 +4371,21 @@ class BuildMlbWatchCandidatesTests(unittest.TestCase):
     """2026-07-02 フォロワー増計画: 元巨人MLB組 (菅野/岡本) + 大谷別枠の引用RT候補。"""
 
     @staticmethod
-    def _item(title: str, status_id: str, *, video: bool = True) -> str:
-        vid = (
-            "&lt;img src=&quot;https://pbs.twimg.com/amplify_video_thumb/"
-            f"{status_id}/img/x.jpg&quot;&gt;" if video else ""
-        )
+    def _item(title: str, status_id: str, *, video: bool = True, image: bool = False) -> str:
+        media = ""
+        if video:
+            media += (
+                "&lt;img src=&quot;https://pbs.twimg.com/amplify_video_thumb/"
+                f"{status_id}/img/x.jpg&quot;&gt;"
+            )
+        if image:
+            media += (
+                "&lt;img src=&quot;https://pbs.twimg.com/media/"
+                f"photo{status_id}.jpg&quot;&gt;"
+            )
         return (
             f"<item><title>{title}</title>"
-            f"<description>{title} {vid}</description>"
+            f"<description>{title} {media}</description>"
             f"<link>https://x.com/MLBJapan/status/{status_id}</link></item>"
         )
 
@@ -4423,7 +4430,8 @@ class BuildMlbWatchCandidatesTests(unittest.TestCase):
         )
         self.assertEqual(cands2, [])
 
-    def test_video_posts_preferred_over_text_only(self):
+    def test_video_required_text_only_excluded(self):
+        # 2026-07-02 user「ポストに動画がついてないと意味ない」: 動画無しは候補にしない。
         from src import x_post_mail_lane as lane
         feed = self._feed(
             self._item("菅野智之が今日先発", "1", video=False),
@@ -4434,8 +4442,38 @@ class BuildMlbWatchCandidatesTests(unittest.TestCase):
             fetch_fn=lambda url: feed if "MLBJapan" in url else "<rss><channel></channel></rss>",
             comment_fn=lambda pt, pl: f"{pl}、圧巻の投球。",
         )
-        self.assertEqual(len(cands), 1)  # 同一選手は 1 本
-        self.assertIn("/status/2", cands[0].quote_url)  # 動画付きが優先
+        self.assertEqual(len(cands), 1)  # 動画付きのみ (同一選手 1 本)
+        self.assertIn("/status/2", cands[0].quote_url)
+
+    def test_all_text_only_feed_yields_nothing(self):
+        from src import x_post_mail_lane as lane
+        feed = self._feed(self._item("大谷翔平が記者会見", "9", video=False))
+        cands = lane.build_mlb_watch_candidates(
+            max_count=3,
+            fetch_fn=lambda url: feed if "MLBJapan" in url else "<rss><channel></channel></rss>",
+            comment_fn=lambda pt, pl: f"{pl}、注目。",
+        )
+        self.assertEqual(cands, [])
+
+    def test_image_only_post_accepted_video_still_first(self):
+        # 2026-07-02 user「画像でもよいが、動画多め」: 画像付きは候補OK、
+        # 同一選手では動画付きが優先。
+        from src import x_post_mail_lane as lane
+        feed = self._feed(
+            self._item("岡本和真のロッカールーム写真", "10", video=False, image=True),
+            self._item("大谷翔平の第30号写真", "11", video=False, image=True),
+            self._item("大谷翔平 第30号ホームラン動画", "12", video=True),
+        )
+        cands = lane.build_mlb_watch_candidates(
+            max_count=3,
+            fetch_fn=lambda url: feed if "MLBJapan" in url else "<rss><channel></channel></rss>",
+            comment_fn=lambda pt, pl: f"{pl}、これは見たい。",
+        )
+        by_player = {c.focus_player: c for c in cands}
+        self.assertIn("岡本和真", by_player)  # 画像のみでも候補になる
+        self.assertIn("大谷翔平", by_player)
+        # 大谷は動画付き (status/12) が画像 (status/11) より優先
+        self.assertIn("/status/12", by_player["大谷翔平"].quote_url)
 
     def test_dedup_set_skips_signature(self):
         from src import x_post_mail_lane as lane
@@ -5013,8 +5051,8 @@ class VideoRadarSourceNarrowingTests(unittest.TestCase):
         self.assertEqual(self._handles_hit(18), self._GAME_SOURCES)
 
     def test_off_game_uses_all_sources(self):
-        # 10:00 = 試合外 → 全8ソース
-        self.assertEqual(len(self._handles_hit(10)), 8)
+        # 10:00 = 試合外 → 全ソース (2026-07-02 差別化2アカ追加で 10)
+        self.assertEqual(len(self._handles_hit(10)), 10)
 
 
 class VideoRadarInGameFreshnessFloorTests(unittest.TestCase):

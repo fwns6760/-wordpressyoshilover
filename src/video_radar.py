@@ -32,6 +32,12 @@ _BUZZ_HANDLES = [
     "koba_nikkan",
     "ntv_baseball",
     "DAZNJPNBaseball",
+    # 2026-07-02 user 決定 (ライバル差別化の動画SNS)。実 feed 検証済。
+    # この lane は require_video=True なので動画付き投稿しか候補にならない。
+    # TeamUehara=上原浩治チーム (OB トーク/コラボ動画、巨人選手ゲスト回が狙い)
+    # samuraijapan_pr=侍ジャパン公式 (巨人選手選出/合宿時に動画が出るイベント駆動)
+    "TeamUehara",
+    "samuraijapan_pr",
 ]
 
 # 「懐かしい / 名場面」系シグナル
@@ -153,6 +159,11 @@ def _extract_rss_items(xml: str) -> list[dict]:
                 "text": text,
                 "url": url,
                 "has_video": _has_video_markup(desc_raw),
+                # 静止画 (写真) の添付判定。RSSHub は写真を
+                # <img src="https://pbs.twimg.com/media/..."> で埋め込む。
+                # 動画サムネ (amplify_video_thumb 等) は media/ を含まないので
+                # 動画と画像は独立に判定できる (2026-07-02 MLB watch 用)。
+                "has_image": "pbs.twimg.com/media/" in (desc_raw or ""),
                 "published_at": _parse_pubdate(item),
             })
     return out

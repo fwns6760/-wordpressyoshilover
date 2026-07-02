@@ -2268,6 +2268,11 @@ def build_mlb_watch_candidates(
                 age_h = (now_utc - published_at).total_seconds() / 3600.0
                 if age_h > max_age_hours:
                     continue
+            # 2026-07-02 user 決定「ポストに動画がついてないと意味ない」
+            # →「画像でもよいが、動画多め」: メディア付き (動画 or 画像) のみ
+            # 候補にし、下の sort で動画を優先する。文字だけの投稿は出さない。
+            if not (item.get("has_video") or item.get("has_image")):
+                continue
             seen_urls.add(url)
             posts.append({
                 "text": text,
@@ -2276,7 +2281,7 @@ def build_mlb_watch_candidates(
                 "player": player,
                 "has_video": bool(item.get("has_video")),
             })
-    # 動画付き優先 (どうがあるとなお良し)。feed 順 (新しい順) は安定 sort で維持。
+    # 動画多め: 動画付きを先に。feed 順 (新しい順) は安定 sort で維持。
     posts.sort(key=lambda p: (not p["has_video"],))
     out: list[Candidate] = []
     used_players: set[str] = set()

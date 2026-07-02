@@ -2006,6 +2006,7 @@ def build_video_radar_candidates(
     comment_fn=None,
     handles: Optional[list[str]] = None,
     avoid_player_names: Optional[set[str]] = None,
+    keep_low_signal: bool = False,
 ) -> list[Candidate]:
     """451: 巨人系 X account の投稿 (RSSHub 経由) から「懐かしい・ファンが面白い・いま話題」の
     投稿を拾い、 **引用RT / リプライ** 用の X 投稿候補 (メール) を作る。
@@ -2104,7 +2105,11 @@ def build_video_radar_candidates(
         # 元投稿に反応材料が無く、 LLM/テンプレ どちらでも選手名以外が同型の generic コメントに
         # なり候補が重複する (別選手で「同じセリフ」になる)。 出来事/懐かし/バズの hook がある
         # 投稿 (好プレー・反応 / 懐かし・名場面 / Xで話題) だけを引用RT候補に残す。
-        if p.get("type_tag") == "選手の話題":
+        # 2026-07-02 user 決定「試合前の動画付きSNSはお宝動画があるので逃さない」:
+        # 試合前帯は keep_low_signal=True で呼ばれ、 この除外を外す (動画付きが
+        # 前提の lane なので、練習動画等は動画そのものが hook)。 重複は URL
+        # signature / (選手×媒体) / 内容類似 dedup が従来通り効く。
+        if p.get("type_tag") == "選手の話題" and not keep_low_signal:
             LOG.info("x_buzz skip: low-signal tag=選手の話題 player=%s", player or "(none)")
             continue
         # 一記事一本 → (選手×媒体) 一本 (2026-07-02 user 決定): 動画SNS は

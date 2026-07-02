@@ -3170,6 +3170,21 @@ def main(argv: Sequence[str] | None = None) -> int:
                     except Exception as _vr_imp_exc:  # noqa: BLE001
                         LOG.warning("video_radar LLM comment unavailable: %r", _vr_imp_exc)
                         vr_comment_fn = None
+            # 2026-07-02 user 決定「試合前の動画付きSNSはお宝動画があるので
+            # 逃さない」: 午後〜スタメン帯 (15:00-19:00) は低シグナル除外を
+            # 外し、min_score も 1 に下げて練習動画等を拾う。重複は既存の
+            # URL signature / (選手×媒体) / 内容類似 dedup で防ぐ。
+            _vr_label = lane.x_impression_timing_label(now_jst)
+            _vr_pregame = _vr_label in {
+                lane._X_IMPRESSION_TIMING_LABELS["afternoon_data"],
+                lane._X_IMPRESSION_TIMING_LABELS["pregame_db"],
+                lane._X_IMPRESSION_TIMING_LABELS["lineup"],
+            }
+            if _vr_pregame:
+                LOG.info(
+                    "video_radar pregame treasure mode: keep_low_signal=1 "
+                    "min_score=1 (%s)", _vr_label,
+                )
             try:
                 vr_candidates = lane.build_video_radar_candidates(
                     db_path,
@@ -3178,6 +3193,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                     dedup_set=dedup_set,
                     comment_fn=vr_comment_fn,
                     avoid_player_names=live_duplicate_players,
+                    min_score=1 if _vr_pregame else 2,
+                    keep_low_signal=_vr_pregame,
                 )
             except Exception as _vr_exc:  # noqa: BLE001
                 LOG.warning("video_radar build failed: %r", _vr_exc)

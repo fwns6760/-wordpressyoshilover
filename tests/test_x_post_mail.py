@@ -4248,6 +4248,43 @@ class BuildVideoRadarCandidatesTests(unittest.TestCase):
         self.assertEqual(len(cands), 1)
         self.assertEqual(cands[0].post_text, "坂本勇人、最高だ！")  # LLM 出力を採用
 
+    # 2026-07-02 user 決定「試合前の動画付きSNSはお宝動画があるので逃さない」:
+    # 出来事語なしの練習動画 (tag=選手の話題) は既定では除外だが、
+    # keep_low_signal=True (試合前帯) では候補に残す。
+    _PRACTICE_FEED = (
+        "<rss><channel>"
+        "<item><title>坂本勇人 本日の様子です</title>"
+        "<description>坂本勇人 本日の様子です "
+        "&lt;img src=&quot;https://pbs.twimg.com/amplify_video_thumb/222/img/def.jpg&quot;&gt;</description>"
+        "<link>https://x.com/yomiuri_giants/status/222</link></item>"
+        "</channel></rss>"
+    )
+
+    def test_low_signal_video_skipped_by_default(self):
+        from src import x_post_mail_lane as lane
+        with self._detect_patch():
+            cands = lane.build_video_radar_candidates(
+                db_path=None, max_count=3,
+                fetch_fn=lambda url: self._PRACTICE_FEED,
+                handles=["TokyoGiants"],  # 1 handle = buzz 加点なし (言及1<2)
+            )
+        self.assertEqual(cands, [])
+
+    def test_low_signal_video_kept_in_pregame_treasure_mode(self):
+        from src import x_post_mail_lane as lane
+        with self._detect_patch():
+            cands = lane.build_video_radar_candidates(
+                db_path=None, max_count=3,
+                fetch_fn=lambda url: self._PRACTICE_FEED,
+                handles=["TokyoGiants"],
+                keep_low_signal=True, min_score=1,
+            )
+        self.assertEqual(len(cands), 1)
+        self.assertEqual(cands[0].focus_player, "坂本勇人")
+        self.assertEqual(
+            cands[0].quote_url, "https://x.com/yomiuri_giants/status/222"
+        )
+
     def test_avoid_player_skips_before_comment_fn(self):
         from src import x_post_mail_lane as lane
         calls = []

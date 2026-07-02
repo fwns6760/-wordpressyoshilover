@@ -1,6 +1,16 @@
 # assignments — 現場担当と次アクション
 
-最終更新: 2026-06-28 JST (Cloud Run / Scheduler 無駄 fire 監査で 3 Scheduler pause)
+最終更新: 2026-07-03 JST (x-post 発言者誤帰属 + record文面ノイズ修正 deploy)
+
+## 2026-07-03 — X案ポスト: 発言者誤帰属 + record文面ノイズ修正 (user「候補1おかしい」「候補2キャベッジの話題でない」)
+
+- **user 報告**: 07:07 JST 朝便の候補1が「Ｆ．ウィットリー、巨人・ウィットリーが…#巨人 #giants ▼記事を読む▼ https://hochi.n…。」と壊れ文面、候補2がキャベッジ名義で坂口智隆氏の発言(ソフトバンク大津評)を誤帰属。
+- **原因1 (誤帰属)**: `long_quote_extractor.py` の speaker proximity 100字緩和 (2026-05-28) により、記事内に名前が出ただけの選手へ他者の「」quote が付く。候補2はキャベッジが quote 前100字内に登場しただけ。
+- **原因2 (壊れ文面)**: `_extract_source_record_phrase` が X 由来 RSS タイトルの URL(切れURL含む)/ハッシュタグ/▼記事を読む▼ を未除去。さらに表示名「Ｆ．ウィットリー」と記事表記「巨人・ウィットリー」の不一致で名前二重化。
+- **修正** (commit `93c9f998`): (a) alias と「の間に別人の発言者表現(名前2字以上+氏/さん/監督/コーチ等)が挟まる quote を不採用 (alias 直後の bare 役職「橋上秀樹監督代行「…」は競合扱いしない)。(b) record phrase のノイズ除去 + 核名 core match で冠名二重化防止。
+- **test**: 新規5ケース含め test_long_quote_extractor + test_x_post_mail = 261 passed、依存レーン (branding 113 / voice digest 15) も passed。
+- **deploy**: クリーン worktree (93c9f998) から Cloud Build `6c6b9194` SUCCESS (1m34s)、image `x-post-mail-lane:quote-attribution-93c9f998`、Job generation `234`。次便から適用。
+- **pending user 判断**: コメント速報の報道写真添付導線 + 長文丸引用の著作権姿勢 (推奨: 廃止して要旨1文+記事リンク化)。
 
 ## 2026-06-28 — Cloud Run / Scheduler 無駄 fire 全時間監査と停止 (user「全ての時間で。無駄があったら止めろ」)
 

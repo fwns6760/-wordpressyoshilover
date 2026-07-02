@@ -125,6 +125,7 @@ from src.giants_news_banner import (
     summary_kicker as _summary_kicker,
 )
 from src import llm_call_dedupe as _llm_call_dedupe
+from src.gemini_model_policy import generate_content_url, select_gemini_model
 from src.gemini_cache import (
     DEFAULT_MODEL_NAME as GEMINI_CACHE_MODEL_NAME,
     GeminiCacheBackendError,
@@ -205,6 +206,8 @@ from src.body_contract_fail_ledger import (
 
 
 TRUE_VALUES = {"1", "true", "yes", "on"}
+WP_ARTICLE_SKIP_ROLE = "wp_article_skip"
+WP_ARTICLE_PRIORITY_ROLE = "wp_article_priority"
 HTTP_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
 DEFAULT_LOW_COST_AI_CATEGORIES = {"試合速報", "選手情報", "首脳陣"}
 DEFAULT_AUTO_TWEET_CATEGORIES = {"試合速報", "選手情報", "首脳陣", "ドラフト・育成"}
@@ -304,6 +307,8 @@ def _should_articleize_source(
     source: Mapping[str, Any],
     source_roles: set[str],
 ) -> bool:
+    if WP_ARTICLE_SKIP_ROLE in source_roles:
+        return False
     if "media_quote_only" not in source_roles:
         return True
     # 344-INGEST: YouTube source was originally quote-pool only, but the
@@ -8165,6 +8170,7 @@ def _request_gemini_strict_text(
 ) -> str:
     import urllib.request
     from src import llm_cost_emitter as _llm_cost
+    model = select_gemini_model(now=now)
 
     payload = json.dumps(
         {
@@ -8176,7 +8182,7 @@ def _request_gemini_strict_text(
             },
         }
     ).encode("utf-8")
-    logger.info("%s で記事生成中（最大%d回試行）...", log_label, attempt_limit)
+    logger.info("%s で記事生成中 model=%s（最大%d回試行）...", log_label, model, attempt_limit)
     for attempt in range(attempt_limit):
         try:
             if budget_record_enabled and budget_post_id is not None:
@@ -8186,10 +8192,10 @@ def _request_gemini_strict_text(
                     prompt_template_id=budget_prompt_template_id,
                     source_url_hash=budget_source_url_hash,
                     provider="gemini",
-                    model="gemini-2.5-flash",
+                    model=model,
                     now=now,
                 )
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+            url = generate_content_url(api_key, model)
             req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
             with urllib.request.urlopen(req, timeout=90) as res:
                 data = json.load(res)
@@ -8205,7 +8211,7 @@ def _request_gemini_strict_text(
                 post_id=None,
                 source_url=source_url,
                 content_hash=None,
-                model="gemini-2.5-flash",
+                model=model,
                 input_chars=len(prompt),
                 output_chars=len(raw_text),
                 token_in=token_in,
@@ -8235,7 +8241,7 @@ def _request_gemini_strict_text(
                 post_id=None,
                 source_url=source_url,
                 content_hash=None,
-                model="gemini-2.5-flash",
+                model=model,
                 input_chars=len(prompt),
                 output_chars=0,
                 token_in=None,
@@ -15861,7 +15867,7 @@ def fetch_fan_reactions_with_grok(title: str) -> list:
 # ハルシネーションチェック（生成後の数値をWeb検索で事実確認）
 # ──────────────────────────────────────────────────────────
 def _fact_check_article(title: str, article_text: str, api_key: str) -> str:
-    """生成記事の統計数値をGemini 2.0 Flash + Google Searchで事実確認・修正する。"""
+    """生成記事の統計数値をGemini + Google Searchで事実確認・修正する。"""
     import re
     import shutil
     from datetime import date
@@ -15898,14 +15904,15 @@ def _fact_check_article(title: str, article_text: str, api_key: str) -> str:
 9. HTMLタグなし・本文のみ出力"""
 
     try:
-        logger.info("ハルシネーションチェック開始（Gemini 2.0 Flash + Google Search）...")
+        model = select_gemini_model()
+        logger.info("ハルシネーションチェック開始（%s + Google Search）...", model)
         import urllib.request as _ureq
         payload = json.dumps({
             "contents": [{"parts": [{"text": check_prompt}]}],
             "tools": [{"google_search": {}}],
             "generationConfig": {"maxOutputTokens": 2048, "temperature": 0.1}
         }).encode("utf-8")
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
+        url = generate_content_url(api_key, model)
         req = _ureq.Request(url, data=payload, headers={"Content-Type": "application/json"})
         with _ureq.urlopen(req, timeout=30) as res:
             data = json.load(res)
@@ -15919,7 +15926,7 @@ def _fact_check_article(title: str, article_text: str, api_key: str) -> str:
             post_id=None,
             source_url=None,
             content_hash=None,
-            model="gemini-2.0-flash",
+            model=model,
             input_chars=len(check_prompt),
             output_chars=len(checked),
             token_in=token_in,
@@ -15943,7 +15950,7 @@ def _fact_check_article(title: str, article_text: str, api_key: str) -> str:
             post_id=None,
             source_url=None,
             content_hash=None,
-            model="gemini-2.0-flash",
+            model=model,
             input_chars=len(check_prompt),
             output_chars=0,
             token_in=None,
@@ -16418,7 +16425,7 @@ def generate_article_with_gemini(
 
     logger = logging.getLogger("rss_fetcher")
 
-    # Gemini 2.0 Flash + Google Search グラウンディング（Web検索付きAPI・CLIより高速）
+    # Gemini + Google Search グラウンディング（Web検索付きAPI・CLIより高速）
     payload_grounded = json.dumps({
         "contents": [{"parts": [{"text": prompt}]}],
         "tools": [{"google_search": {}}],
@@ -16430,10 +16437,11 @@ def generate_article_with_gemini(
     }).encode("utf-8")
 
     attempt_limit = get_gemini_attempt_limit(strict_mode=False)
-    logger.info("Gemini 2.5 Flash + Google Search 検索付きで記事生成中（最大%d回試行）...", attempt_limit)
+    model = select_gemini_model()
+    logger.info("%s + Google Search 検索付きで記事生成中（最大%d回試行）...", model, attempt_limit)
     for attempt in range(attempt_limit):
         try:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+            url = generate_content_url(api_key, model)
             req = urllib.request.Request(url, data=payload_grounded, headers={"Content-Type": "application/json"})
             with urllib.request.urlopen(req, timeout=90) as res:
                 data = json.load(res)
@@ -16450,7 +16458,7 @@ def generate_article_with_gemini(
                 post_id=None,
                 source_url=source_url_for_cost,
                 content_hash=None,
-                model="gemini-2.5-flash",
+                model=model,
                 input_chars=len(prompt),
                 output_chars=len(raw_text),
                 token_in=token_in,
@@ -16461,7 +16469,7 @@ def generate_article_with_gemini(
                 error_class=None,
             )
             if raw_text and len(raw_text) > 150:
-                logger.info(f"Gemini 2.5 Flash（Google検索付き）生成成功 {len(raw_text)}文字")
+                logger.info("%s（Google検索付き）生成成功 %d文字", model, len(raw_text))
                 return raw_text
             logger.warning("Gemini応答が短すぎる（%d文字）、試行 %d/%d", len(raw_text), attempt + 1, attempt_limit)
         except Exception as e:
@@ -16473,7 +16481,7 @@ def generate_article_with_gemini(
                 post_id=None,
                 source_url=source_url_for_cost,
                 content_hash=None,
-                model="gemini-2.5-flash",
+                model=model,
                 input_chars=len(prompt),
                 output_chars=0,
                 token_in=None,
@@ -16483,9 +16491,9 @@ def generate_article_with_gemini(
                 success=False,
                 error_class=type(e).__name__,
             )
-            logger.warning(f"Gemini 2.5 Flash失敗 試行{attempt+1}/{attempt_limit}: {e}")
+            logger.warning("%s 失敗 試行%d/%d: %s", model, attempt + 1, attempt_limit, e)
 
-    logger.error("Gemini 2.5 Flash（Google検索付き）が上限回数に達したため記事生成スキップ")
+    logger.error("%s（Google検索付き）が上限回数に達したため記事生成スキップ", model)
     return ""
 
 
@@ -20623,6 +20631,7 @@ def _maybe_insert_x_outbound_article_excerpt(
         from src.source_article_body_extractor import (
             classify_excerpt_paragraph,
             extract_article_body_excerpt,
+            is_blank_excerpt_paragraph,
             split_paragraph_sentences,
         )
         from src.speech_quote_emphasizer import wrap_speech_quotes
@@ -20654,7 +20663,11 @@ def _maybe_insert_x_outbound_article_excerpt(
             "x_unfurl_skip reason=extractor_empty article=%s", article_url
         )
         return rendered_html
-    paragraphs = [p.strip() for p in excerpt.split("\n") if p.strip()]
+    paragraphs = [
+        p.strip()
+        for p in excerpt.split("\n")
+        if not is_blank_excerpt_paragraph(p)
+    ]
     parts: list[str] = []
     for raw_p in paragraphs:
         kind = classify_excerpt_paragraph(raw_p)
@@ -22172,7 +22185,9 @@ def _prioritize_prepared_entries_for_creation(candidates: list[dict]) -> list[di
         source_roles = set(candidate.get("source_roles") or [])
         if "official_video_source" in source_roles:
             return 1
-        return 2
+        if WP_ARTICLE_PRIORITY_ROLE in source_roles:
+            return 2
+        return 3
 
     return sorted(candidates, key=_priority_rank)
 

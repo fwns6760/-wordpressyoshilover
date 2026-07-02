@@ -712,6 +712,93 @@ class ExcerptParagraphFormattingTests(unittest.TestCase):
         # 4 sentence finals → 4 chunks
         self.assertEqual(len(out), 4)
 
+    def test_split_does_not_break_inside_quotes(self):
+        # 引用洗練 2026-07-02: 「」内の 。！？ では分割しない。
+        # 複数文の発言が <br> でぶつ切りになるのを防ぐ。
+        from src.source_article_body_extractor import split_paragraph_sentences
+        text = (
+            "ジリオ氏は「本当に納得できない。むしろブーイングを浴びて"
+            "ほしいくらいだ。正直、この展開は全然好きじゃない」と語気を"
+            "強めた。共演者は「実際には大谷の投球を見たいファンも多いと"
+            "思うよ」と異論を唱えた。"
+        )
+        out = split_paragraph_sentences(text, threshold=20)
+        self.assertEqual(len(out), 2)
+        self.assertIn("全然好きじゃない」と語気を強めた。", out[0])
+        self.assertIn("と異論を唱えた。", out[1])
+
+    def test_split_quote_depth_recovers_after_unbalanced_close(self):
+        # 閉じ括弧過多でも depth は 0 で底打ちし、以降は通常分割に戻る。
+        from src.source_article_body_extractor import split_paragraph_sentences
+        text = "変な断片」が混ざった。それでも次の文で割れる。さらに続く。"
+        out = split_paragraph_sentences(text, threshold=10)
+        self.assertEqual(len(out), 3)
+
+
+class BlankExcerptParagraphTests(unittest.TestCase):
+    """is_blank_excerpt_paragraph — 本文抜粋の空行 (<p>&nbsp;</p>) 除去。"""
+
+    def test_nbsp_entity_only_is_blank(self):
+        from src.source_article_body_extractor import is_blank_excerpt_paragraph
+        self.assertTrue(is_blank_excerpt_paragraph("&nbsp;"))
+        self.assertTrue(is_blank_excerpt_paragraph(" &nbsp; &#160; "))
+
+    def test_whitespace_variants_are_blank(self):
+        from src.source_article_body_extractor import is_blank_excerpt_paragraph
+        self.assertTrue(is_blank_excerpt_paragraph(""))
+        self.assertTrue(is_blank_excerpt_paragraph("  \t"))
+        self.assertTrue(is_blank_excerpt_paragraph("　 ​"))
+
+    def test_real_text_not_blank(self):
+        from src.source_article_body_extractor import is_blank_excerpt_paragraph
+        self.assertFalse(is_blank_excerpt_paragraph("大谷翔平が語った。"))
+        self.assertFalse(is_blank_excerpt_paragraph(" 短い "))
+
+
+class PortalTitleSuffixTests(unittest.TestCase):
+    """strip_portal_title_suffix — タイトル末尾のポータル由来の余計な文字。"""
+
+    def test_dmenu_suffix_and_publisher_paren_stripped(self):
+        from src.source_article_body_extractor import strip_portal_title_suffix
+        self.assertEqual(
+            strip_portal_title_suffix(
+                "【MLB】大谷翔平がオールスターで投げたらブーイングしよう！ "
+                "開催地のラジオ局MCが過激呼びかけ（東スポWEB）｜ｄメニューニュース"
+            ),
+            "【MLB】大谷翔平がオールスターで投げたらブーイングしよう！ "
+            "開催地のラジオ局MCが過激呼びかけ",
+        )
+
+    def test_yahoo_news_suffix_stripped(self):
+        from src.source_article_body_extractor import strip_portal_title_suffix
+        self.assertEqual(
+            strip_portal_title_suffix(
+                "【ドジャース】大谷翔平と〝口論〟ラッシングが独白していた本音"
+                "（東スポWEB） - Yahoo!ニュース"
+            ),
+            "【ドジャース】大谷翔平と〝口論〟ラッシングが独白していた本音",
+        )
+
+    def test_title_without_portal_suffix_unchanged(self):
+        from src.source_article_body_extractor import strip_portal_title_suffix
+        title = "巨人・戸郷が７回２失点の好投｜先発ローテの柱に（続報）"
+        self.assertEqual(strip_portal_title_suffix(title), title)
+
+    def test_publisher_paren_kept_when_no_portal_suffix(self):
+        # ポータル接尾辞が無いタイトルの（…）は削らない。
+        from src.source_article_body_extractor import strip_portal_title_suffix
+        title = "巨人が接戦を制す（東京ドーム）"
+        self.assertEqual(strip_portal_title_suffix(title), title)
+
+    def test_empty_and_suffix_only_titles_safe(self):
+        from src.source_article_body_extractor import strip_portal_title_suffix
+        self.assertEqual(strip_portal_title_suffix(""), "")
+        # 接尾辞だけで空になってしまう場合は元の文字列へフォールバック。
+        self.assertEqual(
+            strip_portal_title_suffix("｜ｄメニューニュース"),
+            "｜ｄメニューニュース",
+        )
+
 
 class ScrapeNoiseCleanerTests(unittest.TestCase):
     """Media-side UI / nav chrome and CSS/JS leak removal.

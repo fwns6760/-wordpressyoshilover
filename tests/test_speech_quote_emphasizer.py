@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from src.speech_quote_emphasizer import wrap_speech_quotes
 
-SPAN_OPEN = '<span style="color:#c54500;font-weight:700;font-size:1.3em">'
+SPAN_OPEN = '<span style="color:#c54500;font-weight:700">'
 SPAN_CLOSE = "</span>"
 
 
@@ -17,12 +17,40 @@ def test_wraps_double_bracket_quote() -> None:
     assert out == f"作品『{SPAN_OPEN}青い空{SPAN_CLOSE}』を読んだ。"
 
 
+def test_no_font_size_inflation() -> None:
+    # 引用洗練 2026-07-02: 色+太字のみ。font-size は上げない。
+    out = wrap_speech_quotes("彼は「ありがとう」と返した。")
+    assert "font-size" not in out
+
+
 def test_wraps_quote_with_inner_br() -> None:
     src = "<p>父は「よっしゃー！<br />！<br />」と叫んだ。</p>"
     out = wrap_speech_quotes(src)
     assert (
         f"「{SPAN_OPEN}よっしゃー！<br />！<br />{SPAN_CLOSE}」" in out
     )
+
+
+def test_long_quote_not_emphasized() -> None:
+    # 引用洗練 2026-07-02: 48 表示文字を超える長い発言は強調しない
+    # (巨大な強調ブロックになって本文より目立つため)。
+    long_inner = (
+        "彼は若い投手じゃないし、ケガから復帰して素晴らしいシーズンを"
+        "送っている。でも、オールスター戦はフィラデルフィアで開催される"
+        "んだ。そんなのは茶番だ"
+    )
+    src = f"<p>ジリオ氏は「{long_inner}」と猛反発した。</p>"
+    out = wrap_speech_quotes(src)
+    assert SPAN_OPEN not in out
+    assert out == src
+
+
+def test_nested_double_bracket_inside_wrapped_kagi_not_double_wrapped() -> None:
+    # 「…『…』…」: 外側 「」 が強調されたら内側 『』 は二重に包まない。
+    src = "監督が「先発は『大谷だ』と言うなら茶番だ」と話した。"
+    out = wrap_speech_quotes(src)
+    assert out.count(SPAN_OPEN) == 1
+    assert f"「{SPAN_OPEN}先発は『大谷だ』と言うなら茶番だ{SPAN_CLOSE}」" in out
 
 
 def test_multiple_quotes_in_paragraph() -> None:

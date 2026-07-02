@@ -2417,6 +2417,16 @@ def render_short_news_url_card(data: Dict[str, Any]) -> Dict[str, Any]:
     _check_forbidden_phrasings(data)
 
     title_raw = (data.get("title") or "").strip()
+    # ポータル接尾辞(｜ｄメニューニュース / - Yahoo!ニュース 等)は WP
+    # title / banner 見出しに漏れる余計な文字なのでここで除去する
+    # (manual_intake 以外の lane も通る唯一の choke point)。
+    try:
+        from src.source_article_body_extractor import (
+            strip_portal_title_suffix,
+        )
+        title_raw = strip_portal_title_suffix(title_raw)
+    except Exception:  # pragma: no cover - cosmetic; never block render
+        pass
     summary_raw = (data.get("summary") or "").strip()
     source_url_raw = (data.get("source_url") or "").strip()
     source_name = (data.get("source_name") or "").strip()
@@ -2541,14 +2551,20 @@ def render_short_news_url_card(data: Dict[str, Any]) -> Dict[str, Any]:
 
     body_parts.append(_INLINE_CTA_HTML)
 
+    embed_added = False
     if x_embed_url:
         embed = _x_embed_block(
             x_embed_url, source_name, article_title=title_raw
         )
         if embed:
             body_parts.append(embed)
+            embed_added = True
 
-    body_parts.append(_INLINE_CTA_HTML)
+    # 2nd inline CTA only when an embed sits between the two placements —
+    # otherwise two identical 「💬 コメントする」 rows rendered back-to-back
+    # (余計な文字 / 引用洗練 2026-07-02).
+    if embed_added:
+        body_parts.append(_INLINE_CTA_HTML)
 
     body_parts.append("<h3>🔗 出典記事</h3>")
     body_parts.append(

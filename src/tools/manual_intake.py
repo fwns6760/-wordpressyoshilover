@@ -1507,11 +1507,16 @@ def _insert_body_excerpt_block(
     # - 1 段落が 80 字超で複数文 → 文末「。」「！」「？」で <br> 軽改行
     from src.source_article_body_extractor import (
         classify_excerpt_paragraph,
+        is_blank_excerpt_paragraph,
         split_paragraph_sentences,
     )
     from src.speech_quote_emphasizer import wrap_speech_quotes
 
-    paragraphs = [p.strip() for p in excerpt.split("\n") if p.strip()]
+    paragraphs = [
+        p.strip()
+        for p in excerpt.split("\n")
+        if not is_blank_excerpt_paragraph(p)
+    ]
     if paragraphs:
         parts: list[str] = []
         for raw_p in paragraphs:
@@ -4591,7 +4596,16 @@ def run_manual_intake(
             output["reason"] = f"fetch_failed:{friendly}"
             return EXIT_FETCH_FAILED, output
         if not title:
-            title = (meta.get("title", "") or "").strip()
+            # ポータル接尾辞(｜ｄメニューニュース / - Yahoo!ニュース 等)は
+            # WP title / hero alt / banner 見出しに漏れる余計な文字なので、
+            # og:title 由来のときだけここで除去する(operator 指定 title は
+            # そのまま尊重)。
+            from src.source_article_body_extractor import (
+                strip_portal_title_suffix,
+            )
+            title = strip_portal_title_suffix(
+                (meta.get("title", "") or "").strip()
+            )
         if not summary:
             summary = (meta.get("summary", "") or "").strip()
         og_image = (meta.get("image", "") or "").strip()

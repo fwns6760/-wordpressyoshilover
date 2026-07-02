@@ -1051,6 +1051,12 @@ def split_paragraph_sentences(text: str, *, threshold: int = _LONG_PARAGRAPH_THR
     Each returned sentence keeps its terminating punctuation. Leading
     / trailing whitespace is stripped.
 
+    Sentence finals INSIDE 「」/『』 quotes never split (2026-07-02
+    引用洗練): breaking direct speech mid-quote chopped multi-sentence
+    comments into ragged lines and hurt readability. The quote stays
+    on one flow; the split happens after the closing bracket's own
+    sentence final.
+
     Caller controls how to join (e.g. ``<br>`` for intra-paragraph soft
     breaks, ``</p><p>`` for hard paragraph breaks).
     """
@@ -1064,9 +1070,14 @@ def split_paragraph_sentences(text: str, *, threshold: int = _LONG_PARAGRAPH_THR
         return [t]
     chunks: list[str] = []
     buf = ""
+    quote_depth = 0
     for ch in t:
         buf += ch
-        if ch in _SENTENCE_FINALS:
+        if ch in "「『":
+            quote_depth += 1
+        elif ch in "」』":
+            quote_depth = max(0, quote_depth - 1)
+        elif ch in _SENTENCE_FINALS and quote_depth == 0:
             stripped = buf.strip()
             if stripped:
                 chunks.append(stripped)
@@ -1077,8 +1088,82 @@ def split_paragraph_sentences(text: str, *, threshold: int = _LONG_PARAGRAPH_THR
     return chunks
 
 
+# Visually-empty excerpt lines (2026-07-02 引用洗練): published articles
+# showed a blank ``<p>&nbsp;</p>`` at the top of 本文抜粋 blockquotes.
+# ``str.strip()`` misses entity-encoded / zero-width fillers, so the
+# excerpt builders skip any paragraph this reduces to nothing.
+_BLANK_EXCERPT_FILLER_RE = re.compile(
+    r"(?:&nbsp;|&#160;|&#xa0;|[\s 　​﻿])+",
+    re.IGNORECASE,
+)
+
+
+def is_blank_excerpt_paragraph(paragraph: str) -> bool:
+    """True when ``paragraph`` has no visible content (whitespace,
+    ``&nbsp;`` entities, full-width / zero-width spaces only)."""
+    if not paragraph:
+        return True
+    return _BLANK_EXCERPT_FILLER_RE.sub("", paragraph) == ""
+
+
+# News-portal / aggregator suffixes glued onto page titles (og:title /
+# <title>). These leak into the WP title, hero alt and banner headline
+# as 余計な文字 ("…（東スポWEB）｜ｄメニューニュース"). Conservative
+# whitelist — a bare "｜" alone never triggers a strip.
+_PORTAL_TITLE_SUFFIX_RE = re.compile(
+    r"[\s　]*[|｜\-−–—:：][\s　]*"
+    r"(?:"
+    r"[dｄD]メニュー(?:ニュース)?"
+    r"|Yahoo!?\s*ニュース"
+    r"|goo\s*ニュース"
+    r"|ライブドアニュース"
+    r"|livedoor\s*(?:ニュース|NEWS)"
+    r"|エキサイトニュース|excite\s*ニュース"
+    r"|ニフティニュース|@nifty\s*ニュース"
+    r"|Infoseek\s*ニュース"
+    r"|BIGLOBEニュース"
+    r"|dメニューニュース"
+    r")[\s　]*$",
+    re.IGNORECASE,
+)
+
+# Publisher credit parenthetical at the very end ("…（東スポWEB）").
+# Only stripped AFTER a portal suffix matched — i.e. the title clearly
+# came from an aggregator page whose 出典 is credited separately.
+_TRAILING_PUBLISHER_PAREN_RE = re.compile(
+    r"[\s　]*[（(][^（）()]{1,20}[）)][\s　]*$"
+)
+
+
+def strip_portal_title_suffix(title: str) -> str:
+    """Remove aggregator-portal suffixes (and, when one matched, the
+    trailing publisher credit parenthetical) from an article title.
+
+    "【MLB】…過激呼びかけ（東スポWEB）｜ｄメニューニュース"
+    → "【MLB】…過激呼びかけ"
+
+    Titles without a known portal suffix are returned unchanged, so
+    legitimate titles containing ｜ / （…） are never touched.
+    """
+    t = (title or "").strip()
+    if not t:
+        return t
+    stripped_portal = False
+    while True:
+        new = _PORTAL_TITLE_SUFFIX_RE.sub("", t)
+        if new == t:
+            break
+        t = new.strip()
+        stripped_portal = True
+    if stripped_portal:
+        t = _TRAILING_PUBLISHER_PAREN_RE.sub("", t).strip()
+    return t or (title or "").strip()
+
+
 __all__ = [
     "extract_article_body_excerpt",
     "classify_excerpt_paragraph",
     "split_paragraph_sentences",
+    "is_blank_excerpt_paragraph",
+    "strip_portal_title_suffix",
 ]

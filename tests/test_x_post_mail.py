@@ -3315,6 +3315,53 @@ class XPostMailEntrypointFreshnessTests(unittest.TestCase):
         self.assertNotIn("浦田俊輔", players)
         self.assertIn("岸田行倫", players)
 
+    def test_news_opinion_fallback_weak_surname_match_skipped(self) -> None:
+        """2026-07-03 実事故: サッカー記事「鈴木彩艶」が姓 alias「鈴木」で
+        巨人・鈴木大和に誤帰属。巨人文脈の無い記事は姓だけの一致では通さず、
+        フルネーム級 alias の一致がある記事だけ通す。"""
+        from src.tools import run_x_post_mail
+
+        entries = [
+            {
+                # 巨人文脈なし + 姓しか一致しない (別人フルネーム) → skip
+                "title": "「あそこは自分が出るべきでした」ブラジル戦後、鈴木彩艶が口にした後悔",
+                "link": "https://example.test/soccer",
+                "summary": "冨安健洋の移籍にも注目が集まる",
+                "published": "Mon, 18 May 2026 03:00:00 GMT",
+            },
+            {
+                # 巨人文脈なしでもフルネーム一致なら通す
+                "title": "鈴木大和が二軍戦で猛打賞の活躍",
+                "link": "https://example.test/yamato",
+                "summary": "若手野手の台頭が続く",
+                "published": "Mon, 18 May 2026 03:00:00 GMT",
+            },
+        ]
+        with patch.object(
+            run_x_post_mail,
+            "_load_news_fallback_sources",
+            return_value=[{"name": "テスト総合スポーツ", "url": "https://example.test/feed"}],
+        ), patch.object(
+            run_x_post_mail,
+            "_fetch_feed_entries",
+            return_value=entries,
+        ):
+            cands = run_x_post_mail._fetch_news_opinion_fallback_candidates(
+                [],
+                max_candidates=2,
+                now=datetime(2026, 5, 18, 13, 7, tzinfo=JST),
+            )
+
+        joined = " ".join(
+            (getattr(c, "draft_text", "") or "") + (getattr(c, "title", "") or "")
+            for c in cands
+        )
+        self.assertNotIn("example.test/soccer", joined)
+        self.assertTrue(
+            any("鈴木" in (c.focus_player or "") for c in cands),
+            f"full-name match should survive: {[c.title for c in cands]}",
+        )
+
     def test_news_opinion_fallback_reads_tag_scrape_sources(self) -> None:
         """巨人だけ総合: RSSなし媒体の tag_scrape も12時メール補完に使う。"""
         from src.tools import run_x_post_mail
@@ -4530,6 +4577,51 @@ class DetectPlayerBoundaryTests(unittest.TestCase):
             detect_giants_player_name("吉川尚輝が猛打賞", alias_map=self._AM),
             "吉川尚輝",
         )
+
+
+class MultiTeamHandleGiantsGateTests(unittest.TestCase):
+    """2026-07-03 実事故: DAZN (12球団アカ) のオリックス選手クリップが
+    「好プレー」語だけで候補入り。多球団 handle は巨人裏付け必須。"""
+
+    @staticmethod
+    def _feed(text: str) -> str:
+        return (
+            "<rss><channel>"
+            f"<item><title>{text}</title>"
+            f"<description>{text} "
+            "&lt;img src=&quot;https://pbs.twimg.com/amplify_video_thumb/111/img/a.jpg&quot;&gt;"
+            "</description>"
+            "<link>https://x.com/DAZNJPNBaseball/status/111</link></item>"
+            "</channel></rss>"
+        )
+
+    def test_multi_team_handle_without_giants_context_skipped(self) -> None:
+        from src import video_radar as vr
+        # fun marker (ファインプレー) + 年号で score 2 だが、巨人選手も巨人語も無い
+        posts = vr.gather_buzz_posts(
+            detect_player_fn=lambda t: "",
+            fetch_fn=lambda url: self._feed("2026年もえげつないファインプレー！"),
+            handles=["DAZNJPNBaseball"],
+        )
+        self.assertEqual(posts, [])
+
+    def test_multi_team_handle_with_giants_word_kept(self) -> None:
+        from src import video_radar as vr
+        posts = vr.gather_buzz_posts(
+            detect_player_fn=lambda t: "",
+            fetch_fn=lambda url: self._feed("2026年も巨人戦でえげつないファインプレー！"),
+            handles=["DAZNJPNBaseball"],
+        )
+        self.assertEqual(len(posts), 1)
+
+    def test_dedicated_handle_not_gated(self) -> None:
+        from src import video_radar as vr
+        posts = vr.gather_buzz_posts(
+            detect_player_fn=lambda t: "",
+            fetch_fn=lambda url: self._feed("2026年もえげつないファインプレー！"),
+            handles=["Sanspo_Giants"],
+        )
+        self.assertEqual(len(posts), 1)
 
 
 class GameBuzzHandlesTests(unittest.TestCase):

@@ -49,6 +49,15 @@ _BUZZ_HANDLES = [
     "chiehochi6",
 ]
 
+# 2026-07-03 実事故: DAZNJPNBaseball (12球団アカ) のオリックス選手クリップが
+# 「好プレー」語だけで score 2 に届き、巨人と無関係のまま候補入りした。
+# 巨人専門でない handle は、巨人選手の検出 or 巨人語の明示がある投稿のみ通す。
+_MULTI_TEAM_HANDLES = frozenset({
+    "DAZNJPNBaseball",
+    "TeamUehara",
+    "samuraijapan_pr",
+})
+
 # 「懐かしい / 名場面」系シグナル
 _NOSTALGIA_MARKERS = (
     "名場面", "名シーン", "名勝負", "名プレー", "名守備", "名言", "伝説", "レジェンド",
@@ -309,6 +318,14 @@ def gather_buzz_posts(
                 player = detect_player_fn(text) or ""
             except Exception:  # noqa: BLE001
                 player = ""
+            # 多球団 handle は巨人関連の裏付けが無い投稿を通さない (他球団クリップ誤爆防止)。
+            if (
+                h in _MULTI_TEAM_HANDLES
+                and not player
+                and "巨人" not in text
+                and "ジャイアンツ" not in text
+            ):
+                continue
             score, tag = classify_post(text, player=player, buzz_players=buzz_players)
             if score < min_score:
                 continue

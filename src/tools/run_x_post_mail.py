@@ -1470,13 +1470,32 @@ def _fetch_news_opinion_fallback_candidates(
                 skipped_stale += 1
                 continue
             # 2026-06-01 user「コーチ監督も全員名前を入れて」: 選手のみ → 全員 (player ∪ member) で検出。
-            player = lane.detect_giants_player_name(
-                f"{title} {summary}",
-                alias_map={**lane._load_giants_player_aliases(), **lane._load_giants_member_aliases()},
-            )
+            alias_map = {**lane._load_giants_player_aliases(), **lane._load_giants_member_aliases()}
+            entry_text_all = f"{title} {summary}"
+            player = lane.detect_giants_player_name(entry_text_all, alias_map=alias_map)
             player_key = lane._normalize_player_name(player)
             if not player_key or player_key in existing_player_keys:
                 continue
+            # 2026-07-03 実事故: 総合スポーツ系 source (Number Web X) のサッカー記事
+            # 「鈴木彩艶」が姓 alias「鈴木」で巨人・鈴木大和に誤帰属。巨人文脈の無い
+            # 記事は、姓だけの弱い一致では通さない (フルネーム級 alias がある時のみ)。
+            if "巨人" not in entry_text_all and "ジャイアンツ" not in entry_text_all:
+                canonical_nospace = str(player).replace(" ", "").replace("　", "")
+                strong_name_hit = (
+                    canonical_nospace and canonical_nospace in entry_text_all
+                ) or any(
+                    len(k) >= 4 and v == player and k in entry_text_all
+                    for k, v in alias_map.items()
+                )
+                if not strong_name_hit:
+                    LOG.info(
+                        "news_opinion_fallback_weak_name_match_skip source=%s "
+                        "player=%s url=%s",
+                        source.get("name"),
+                        player,
+                        link,
+                    )
+                    continue
             history_blocked = player_key in history_player_keys
             may_have_literal_comment = (
                 _looks_like_comment_article(title, summary)

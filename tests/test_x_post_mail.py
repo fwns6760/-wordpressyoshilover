@@ -217,6 +217,15 @@ class ReplyTargetHandleTests(unittest.TestCase):
         self.assertEqual(sorted(h9), sorted(h10))
         self.assertNotEqual(h9[0], h10[0])
 
+    def test_mlb_watch_max_age_hours_default_and_env(self) -> None:
+        """2026-07-03: MLB引用RTの鮮度は default 20h (朝便で昨日夜のクリップを出す)。"""
+        from src.tools import run_x_post_mail as runner
+
+        with patch.dict("os.environ", {}, clear=True):
+            self.assertEqual(runner._mlb_watch_max_age_hours(), 20.0)
+        with patch.dict("os.environ", {"X_POST_MLB_WATCH_MAX_AGE_HOURS": "12"}):
+            self.assertEqual(runner._mlb_watch_max_age_hours(), 12.0)
+
     def test_mlb_reply_defaults(self) -> None:
         """2026-07-03: MLBリプ lane は env gate (default OFF)、対象は日本語系 default。"""
         from src.tools import run_x_post_mail as runner

@@ -340,6 +340,17 @@ def _mlb_watch_max_per_run() -> int:
     return _resolve_int_env("X_POST_MLB_WATCH_MAX", 3, min_value=0)
 
 
+def _mlb_watch_max_age_hours() -> float:
+    """MLB 引用RT/リプ対象ポストの鮮度 (時間)。2026-07-03 実測: MLBJapan/SPOTV の
+    クリップは昼過ぎ (12-16時JST) にしか流れず、朝便は昨日分 (14-17h前) しか無い
+    ため 12h では全落ちする。default 20h で「昨日夜のハイライト」を朝に出せる。"""
+    raw = (os.environ.get("X_POST_MLB_WATCH_MAX_AGE_HOURS") or "").strip()
+    try:
+        return max(1.0, float(raw)) if raw else 20.0
+    except ValueError:
+        return 20.0
+
+
 def _in_mlb_watch_window(now_jst) -> bool:
     """MLB の試合が動く日本時間 朝〜昼帯 (7:00-15:59) のみ出す。
     user: 「とくに午前中から午後はつよい」。夕方以降は巨人戦 lane を優先。"""
@@ -3374,6 +3385,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     max_count=mlb_max,
                     dedup_set=dedup_set,
                     comment_fn=mlb_comment_fn,
+                    max_age_hours=_mlb_watch_max_age_hours(),
                 )
             except Exception as _mlb_exc:  # noqa: BLE001
                 LOG.warning("mlb_watch build failed: %r", _mlb_exc)
@@ -3433,6 +3445,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                     comment_fn=mlb_rep_comment_fn,
                     handles=_mlb_reply_target_handles(),
                     as_reply=True,
+                    # リプは返信欄の鮮度が命なので media リプと同じ 6h に絞る
+                    max_age_hours=_reply_max_age_hours() or 6.0,
                 )
             except Exception as _mlbr_exc:  # noqa: BLE001
                 LOG.warning("mlb_reply build failed: %r", _mlbr_exc)

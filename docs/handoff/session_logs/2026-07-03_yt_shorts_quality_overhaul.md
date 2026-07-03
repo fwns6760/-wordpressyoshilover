@@ -51,3 +51,6 @@
 - 12:1x JST | deploy | yt-shorts-gen Job generation 39 | image quality-5b43cbb4 | env/secret/scheduler 無変更
 - 12:1x JST | smoke | 確認用1本を強制生成 (execution yt-shorts-gen-f9pvs, --ignore-daily-cap) → 承認メールで user が新ルック+読みを直接確認する導線
 - 12:1x JST | incident | 強制1本目 execution yt-shorts-gen-f9pvs FAILED | ModuleNotFoundError src.data_site_jersey_source | 原因: committed コードが import する farm/jersey source module が未 commit で、clean worktree build に入らなかった(従来の dirty tree 同梱 build では偶然動作)。ae7b6cef で 2 module を commit、image quality-ae7b6cef で再 build → Job 更新 → 再実行
+- 12:2x JST | deploy | Cloud Build 5ceec341 SUCCESS (3m49s) | image quality-ae7b6cef | Job generation 40
+- 12:2x JST | smoke | execution yt-shorts-gen-blmm6 SUCCEEDED | topic=泉口友汰 長打率.500 (ファン向け指標が選定された) | tts=voicevox / mail=sent / YouTube private lF0pCflM3OY | 実フレーム目視: 写真フルブリード+1画面1メッセージ+ファン目線カード OK
+- 既知の残イシュー: 選手写真の crop が上1/3固定のため、写真によっては顔が切れる(泉口の回で顔なし)。顔位置を考慮した crop は次便候補

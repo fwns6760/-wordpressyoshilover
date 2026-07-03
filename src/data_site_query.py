@@ -555,6 +555,11 @@ def load_roster_player(canonical_name: str) -> Optional[RosterPlayer]:
         name = str(row.get("name", "") or "").replace(" ", "").replace("　", "")
         if name != target:
             continue
+        # 2026-07-03: active=false は退団済み (岡本和真 MLB移籍 等)。「現役在籍」
+        # として返すと pillar の OB 解決 (ob_legends) がブロックされ、退団後も
+        # 現役体裁ページが残り続けるため、名簿不在と同じ扱いにする。
+        if row.get("active") is False:
+            return None
         return RosterPlayer(
             name=str(row.get("name") or "").strip(),
             position=str(row.get("position") or "").strip(),

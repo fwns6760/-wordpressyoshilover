@@ -48,6 +48,38 @@ def _to_int(value: Any) -> int | None:
         return None
 
 
+_GB_NUMERIC_RE = re.compile(r"\d+(?:\.\d+)?")
+
+
+def _format_gb(value: float) -> str:
+    value = max(0.0, value)
+    return str(int(value)) if float(value).is_integer() else f"{value:.1f}"
+
+
+def _computed_gb(leader: Mapping[str, Any], row: Mapping[str, Any]) -> str:
+    """首位との勝敗差からゲーム差を自前計算(NPB 公式が "--" を返す場合の代替)。"""
+    lw, ll = _to_int(leader.get("w")), _to_int(leader.get("l"))
+    w, l = _to_int(row.get("w")), _to_int(row.get("l"))
+    if None in (lw, ll, w, l):
+        return ""
+    return _format_gb(((lw - ll) - (w - l)) / 2.0)
+
+
+def _normalized_gb(leader: Mapping[str, Any] | None, row: Mapping[str, Any]) -> str:
+    """行の gb を表示可能な数値文字列へ正規化する。
+
+    NPB 公式は首位や首位タイの球団に "--" を出すことがあり、そのまま描画すると
+    「首位とのゲーム差 --」事故になる(2026-07-02 便で実発生)。数値ならそのまま、
+    非数値なら首位行は "0"、それ以外は勝敗差から計算する。
+    """
+    raw = str(row.get("gb") or "").strip()
+    if _GB_NUMERIC_RE.fullmatch(raw):
+        return raw
+    if _to_int(row.get("rank")) == 1 or leader is None:
+        return "0"
+    return _computed_gb(leader, row)
+
+
 @dataclass(frozen=True)
 class StandingsTopic:
     rank: int
@@ -61,6 +93,8 @@ class StandingsTopic:
     player: str = "巨人"   # history / run_id 用ラベル
     source_url: str = STANDINGS_SOURCE_URL
     raw_item: dict[str, Any] = field(default_factory=dict)
+    # 順位表カード描画用の全球団行 (rank, team, w, l, t, gb, is_giants)
+    rows: tuple[tuple[Any, ...], ...] = ()
 
     @property
     def topic_key(self) -> str:
@@ -69,9 +103,15 @@ class StandingsTopic:
 
     @property
     def is_leading(self) -> bool:
-        # gb が "-" / 空 / 0 のとき首位扱い。
+        # 「巨人が首位」と言い切ってよいのは rank 1 のときだけ。gb "--" 等は
+        # データ表記ゆれの可能性があるため首位判定に使わない(gb は正規化済み前提)。
+        return self.rank == 1
+
+    @property
+    def is_co_leading(self) -> bool:
+        # 首位タイ(勝率同率などで rank は 2 以下だがゲーム差 0)。
         gb = (self.gb or "").strip()
-        return self.rank == 1 or gb in {"", "-", "0", "0.0", ".0"}
+        return not self.is_leading and gb in {"0", "0.0", ".0"}
 
 
 def standings_topic_from_rows(
@@ -81,11 +121,14 @@ def standings_topic_from_rows(
     source_url: str = STANDINGS_SOURCE_URL,
 ) -> StandingsTopic | None:
     """セ・リーグ順位表の行リストから巨人(is_giants)の topic を作る。"""
+    clean_rows: list[Mapping[str, Any]] = [row for row in (rows or []) if isinstance(row, Mapping)]
     giants_row: Mapping[str, Any] | None = None
-    for row in rows or []:
-        if isinstance(row, Mapping) and row.get("is_giants"):
+    leader_row: Mapping[str, Any] | None = None
+    for row in clean_rows:
+        if giants_row is None and row.get("is_giants"):
             giants_row = row
-            break
+        if leader_row is None and _to_int(row.get("rank")) == 1:
+            leader_row = row
     if giants_row is None:
         return None
     rank = _to_int(giants_row.get("rank"))
@@ -94,16 +137,29 @@ def standings_topic_from_rows(
     draws = str(giants_row.get("t") or "0").strip()
     if rank is None or not wins or not losses:
         return None
+    table_rows = tuple(
+        (
+            _to_int(row.get("rank")) or 0,
+            str(row.get("team") or "").strip(),
+            str(row.get("w") or "").strip(),
+            str(row.get("l") or "").strip(),
+            str(row.get("t") or "0").strip(),
+            _normalized_gb(leader_row, row),
+            bool(row.get("is_giants")),
+        )
+        for row in clean_rows
+    )
     return StandingsTopic(
         rank=rank,
         wins=wins,
         losses=losses,
         draws=draws,
         pct=str(giants_row.get("pct") or "").strip(),
-        gb=str(giants_row.get("gb") or "").strip(),
+        gb=_normalized_gb(leader_row, giants_row),
         as_of=str(as_of or "").strip(),
         source_url=source_url,
         raw_item=dict(giants_row),
+        rows=table_rows,
     )
 
 
@@ -131,6 +187,9 @@ def build_standings_script(topic: StandingsTopic) -> ShortsScript:
     if topic.is_leading:
         gap_line = "巨人が、セ・リーグの首位に立っています。"
         gap_caption = "巨人 首位"
+    elif topic.is_co_leading:
+        gap_line = "ゲーム差はなし。首位に並んでいます。"
+        gap_caption = "首位タイ"
     else:
         gap_line = f"首位とのゲーム差は、{_gb_speech(topic.gb)}。"
         gap_caption = f"首位とゲーム差 {topic.gb}"
@@ -149,7 +208,7 @@ def build_standings_script(topic: StandingsTopic) -> ShortsScript:
     title = f"巨人は今セ・リーグ{topic.rank}位｜巨人目線のペナントレース"
     desc_factual = (
         f"巨人 {topic.rank}位 / {topic.wins}勝{topic.losses}敗{topic.draws}分"
-        + ("" if topic.is_leading else f" / 首位とゲーム差{topic.gb}")
+        + ("" if topic.is_leading else ("（首位タイ）" if topic.is_co_leading else f" / 首位とゲーム差{topic.gb}"))
     )
     assert_number_guard(title + "\n" + desc_factual, allowed)
     desc_branding = (
@@ -179,7 +238,7 @@ def build_standings_script(topic: StandingsTopic) -> ShortsScript:
             f"【巨人 セ・リーグ{topic.rank}位】",
             "",
             f"{topic.wins}勝{topic.losses}敗{topic.draws}分"
-            + ("（首位）" if topic.is_leading else f" / 首位とゲーム差{topic.gb}"),
+            + ("（首位）" if topic.is_leading else ("（首位タイ）" if topic.is_co_leading else f" / 首位とゲーム差{topic.gb}")),
             "",
             _opinion(topic),
             "巨人目線でまとめました👇",

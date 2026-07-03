@@ -45,6 +45,24 @@ METRIC_LABEL_REPLACEMENTS = (
     ("SLG", "長打率"),
 )
 
+# 一般ファン向けの指標の平易な言い換え(カード表示用)。数字は「/9」由来の 9 だけ
+# 使えるため、それ以外の数値を含む説明文は書かない(number guard 対象)。
+METRIC_EXPLANATIONS = (
+    ("K/9", "9回あたりの奪三振数"),
+    ("BB/9", "9回あたりの与四球数"),
+    ("OPS", "出塁率+長打率"),
+    ("WHIP", "イニングあたりに許した走者数"),
+)
+
+
+def metric_explanation(label: str) -> str:
+    """K/9 等の略語指標を平易な日本語に言い換える(該当なしは空文字)。"""
+    source = str(label or "")
+    for raw, description in METRIC_EXPLANATIONS:
+        if re.search(rf"(?<![A-Za-z0-9]){re.escape(raw)}(?![A-Za-z0-9])", source, flags=re.IGNORECASE):
+            return description
+    return ""
+
 
 @dataclass(frozen=True)
 class ScriptCaption:
@@ -289,11 +307,15 @@ def _hashtag_player(player: str) -> str:
     return (player or "").replace(" ", "").replace("　", "").replace("・", "")
 
 
-def _fan_comment(topic: ShortsTopic) -> str:
+def fan_comment(topic: ShortsTopic) -> str:
     """ファン目線の一言コメントを deterministic に rotate して返す(数字なし)。"""
     seed = f"{topic.player}|{topic.as_of}|{topic.label}"
     idx = sum(ord(ch) for ch in seed) % len(FAN_COMMENT_POOL)
     return FAN_COMMENT_POOL[idx]
+
+
+# 旧名の互換 alias(既存呼び出し向け)
+_fan_comment = fan_comment
 
 
 def build_x_post(topic: ShortsTopic, *, date_label: str) -> str:
@@ -362,11 +384,12 @@ def build_script(topic: ShortsTopic) -> ShortsScript:
     )
     description = desc_factual + desc_branding
 
+    explanation = metric_explanation(topic.label)
     captions = (
         ScriptCaption(0.0, 2.2, f"{topic.hook} / {date_label}時点" if date_label else topic.hook),
-        ScriptCaption(2.2, 8.4, f"{topic.label} {topic.value}"),
+        ScriptCaption(2.2, 8.4, f"{topic.label} {topic.value}" + (f"｜{explanation}" if explanation else "")),
         ScriptCaption(8.4, 14.8, topic.note or "今の巨人で見逃せない数字"),
-        ScriptCaption(14.8, 21.0, "結果だけでなく、流れまで見る"),
+        ScriptCaption(14.8, 21.0, fan_comment(topic)),
         ScriptCaption(21.0, 27.0, "巨人データはヨシラバーで毎日更新中"),
     )
     assert_number_guard("\n".join(c.text for c in captions), allowed)
@@ -389,5 +412,7 @@ __all__ = [
     "build_script",
     "display_as_of_date",
     "extract_number_tokens",
+    "fan_comment",
+    "metric_explanation",
     "verify_number_guard",
 ]

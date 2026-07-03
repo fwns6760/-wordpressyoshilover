@@ -22,7 +22,7 @@ import wave
 import requests
 from PIL import Image, ImageDraw
 
-from src.yt_shorts_script import ShortsScript, display_as_of_date
+from src.yt_shorts_script import ShortsScript, display_as_of_date, fan_comment, metric_explanation
 from src.yt_shorts_topic import ShortsTopic
 
 
@@ -32,10 +32,10 @@ DEFAULT_FRAME_DURATIONS = (2.2, 6.2, 6.4, 6.2, 6.0)
 # Ken Burns motion: turn the 5 static cards into moving clips so the Short
 # reads as video, not a slideshow (the main "looks AI-mass-produced" tell).
 MOTION_FPS = 30
-MOTION_OPENING_ZOOM = 1.12
-MOTION_ZOOM = 1.08
-MOTION_MAX_ZOOM = 1.12  # overscan headroom = the strongest end zoom in use
-MOTION_DRIFT_PX = 40
+MOTION_OPENING_ZOOM = 1.20
+MOTION_ZOOM = 1.15
+MOTION_MAX_ZOOM = 1.20  # overscan headroom = the strongest end zoom in use
+MOTION_DRIFT_PX = 70
 MOTION_FADE_SECONDS = 0.35
 DEFAULT_VOICE_STYLE = "dynamic"
 DEFAULT_DYNAMIC_AUDIO_FILTER = (
@@ -312,53 +312,51 @@ def _draw_frame(topic: ShortsTopic, script: ShortsScript, index: int, path: Path
     img, draw = _frame_background()
     _draw_common_chrome(draw, label=f"{index + 1}/5", as_of=topic.as_of)
 
-    title_font = _font(72, bold=True)
-    big_font = _font(150, bold=True)
-    mid_font = _font(54, bold=True)
-    body_font = _font(42)
     small_font = _font(30)
 
+    # 下部の字幕バーは廃止(カード本文と同じ内容の三重表示になっていたため)。
+    # カード自体を下へ広げて「1画面1メッセージ」で見せる。
     if index == 0:
         x, y, w, h = OPENING_PLAYER_VISUAL_BOX
         _draw_player_visual(img, draw, topic, x=x, y=y, width=w, height=h)
-        draw.rounded_rectangle((64, 1266, WIDTH - 64, 1536), radius=48, fill="#ffffff", outline="#ffe0bf", width=4)
+        _soft_shadow(img, (64, 1266, WIDTH - 64, 1620), radius=48, dy=16, blur=20, alpha=70)
+        draw.rounded_rectangle((64, 1266, WIDTH - 64, 1620), radius=48, fill="#ffffff", outline="#ffe0bf", width=4)
         draw.text((WIDTH // 2, 1324), "今日の注目データ", font=_font(48, bold=True), fill="#c94700", anchor="ma")
-        _draw_centered_lines(draw, _wrap_text(draw, topic.hook, _font(62, bold=True), 840, max_lines=2), 1406, _font(62, bold=True), "#151515", gap=14)
-        draw.rounded_rectangle((230, 1474, WIDTH - 230, 1548), radius=37, fill="#151515")
-        draw.text((WIDTH // 2, 1511), "数字で見る巨人", font=_font(36, bold=True), fill="#ffffff", anchor="mm")
+        hook_font = _font(64, bold=True)
+        _draw_centered_lines(draw, _wrap_text(draw, topic.hook, hook_font, 860, max_lines=2), 1414, hook_font, "#151515", gap=16)
     elif index == 1:
         x, y, w, h = STANDARD_PLAYER_VISUAL_BOX
         _draw_player_visual(img, draw, topic, x=x, y=y, width=w, height=h)
         draw.rounded_rectangle((104, 1140, WIDTH - 104, 1516), radius=54, fill="#ff7a1a")
         draw.text((WIDTH // 2, 1220), topic.label, font=_font(50, bold=True), fill="#ffffff", anchor="ma")
         draw.text((WIDTH // 2, 1392), topic.value, font=_font(132, bold=True), fill="#ffffff", anchor="mm")
+        explanation = metric_explanation(topic.label)
+        if explanation:
+            _soft_shadow(img, (134, 1560, WIDTH - 134, 1668), radius=40, dy=12, blur=16, alpha=60)
+            draw.rounded_rectangle((134, 1560, WIDTH - 134, 1668), radius=40, fill="#ffffff", outline="#ffb36b", width=3)
+            draw.text((WIDTH // 2, 1614), f"{topic.label} = {explanation}", font=_font(36, bold=True), fill="#9a3f00", anchor="mm")
     elif index == 2:
         x, y, w, h = STANDARD_PLAYER_VISUAL_BOX
         _draw_player_visual(img, draw, topic, x=x, y=y, width=w, height=h)
-        draw.rounded_rectangle((84, 1140, WIDTH - 84, 1516), radius=48, fill="#151515")
-        draw.text((WIDTH // 2, 1208), "ここがポイント", font=_font(48, bold=True), fill="#ffd166", anchor="ma")
+        draw.rounded_rectangle((84, 1140, WIDTH - 84, 1620), radius=48, fill="#151515")
+        draw.text((WIDTH // 2, 1218), "ここがポイント", font=_font(48, bold=True), fill="#ffd166", anchor="ma")
         text = topic.note or "今の巨人で見逃せない数字"
-        _draw_centered_lines(draw, _wrap_text(draw, text, _font(66, bold=True), 820, max_lines=3), 1300, _font(66, bold=True), "#ffffff", gap=18)
+        _draw_centered_lines(draw, _wrap_text(draw, text, _font(66, bold=True), 820, max_lines=3), 1330, _font(66, bold=True), "#ffffff", gap=18)
     elif index == 3:
         x, y, w, h = STANDARD_PLAYER_VISUAL_BOX
         _draw_player_visual(img, draw, topic, x=x, y=y, width=w, height=h)
-        draw.rounded_rectangle((114, 1140, WIDTH - 114, 1516), radius=48, fill="#ffffff", outline="#f0d3bd", width=4)
-        draw.text((WIDTH // 2, 1210), "結果だけでなく", font=_font(54, bold=True), fill="#151515", anchor="ma")
-        draw.text((WIDTH // 2, 1284), "流れまで見る", font=_font(54, bold=True), fill="#c94700", anchor="ma")
-        body = f"{topic.player}の数字は、次の試合を見る目線を変える材料になります。"
-        _draw_centered_lines(draw, _wrap_text(draw, body, _font(38), 780, max_lines=3), 1372, _font(38), "#202020", gap=16)
+        draw.rounded_rectangle((114, 1140, WIDTH - 114, 1620), radius=48, fill="#ffffff", outline="#f0d3bd", width=4)
+        draw.text((WIDTH // 2, 1218), "巨人ファン目線のひとこと", font=_font(44, bold=True), fill="#c94700", anchor="ma")
+        comment_font = _font(50, bold=True)
+        _draw_centered_lines(draw, _wrap_text(draw, fan_comment(topic), comment_font, 800, max_lines=3), 1320, comment_font, "#151515", gap=18)
     else:
         x, y, w, h = STANDARD_PLAYER_VISUAL_BOX
         _draw_player_visual(img, draw, topic, x=x, y=y, width=w, height=h)
-        draw.rounded_rectangle((124, 1210, WIDTH - 124, 1516), radius=44, fill="#ffffff", outline="#ffb36b", width=4)
-        draw.text((WIDTH // 2, 1288), "続きはヨシラバーで", font=_font(54, bold=True), fill="#c94700", anchor="ma")
-        draw.text((WIDTH // 2, 1372), "巨人 注目データ", font=_font(44, bold=True), fill="#151515", anchor="ma")
-        draw.text((WIDTH // 2, 1456), "/data/notable?v=yt", font=small_font, fill="#555555", anchor="ma")
+        draw.rounded_rectangle((124, 1210, WIDTH - 124, 1620), radius=44, fill="#ffffff", outline="#ffb36b", width=4)
+        draw.text((WIDTH // 2, 1300), "続きはヨシラバーで", font=_font(54, bold=True), fill="#c94700", anchor="ma")
+        draw.text((WIDTH // 2, 1400), "巨人 注目データ", font=_font(44, bold=True), fill="#151515", anchor="ma")
+        draw.text((WIDTH // 2, 1490), "/data/notable?v=yt", font=small_font, fill="#555555", anchor="ma")
 
-    caption = script.captions[min(index, len(script.captions) - 1)].text
-    _soft_shadow(img, (74, HEIGHT - 340, WIDTH - 74, HEIGHT - 210), radius=36, dy=14, blur=18, alpha=66)
-    draw.rounded_rectangle((74, HEIGHT - 340, WIDTH - 74, HEIGHT - 210), radius=36, fill="#ffffff", outline="#f0d3bd", width=3)
-    _draw_centered_lines(draw, _wrap_text(draw, caption, _font(38, bold=True), 840, max_lines=2), HEIGHT - 296, _font(38, bold=True), "#151515", gap=10)
     _draw_footer(draw)
     img.save(path, "PNG")
 
@@ -401,34 +399,31 @@ def _draw_legend_frame(topic, script: ShortsScript, index: int, path: Path) -> N
         draw.rounded_rectangle((150, 372, WIDTH - 150, 448), radius=36, fill="#ff7a1a")
         draw.text((WIDTH // 2, 410), "今日の主役", font=_font(40, bold=True), fill="#ffffff", anchor="mm")
         if img_url:
-            _draw_photo_card(img, draw, url=img_url, name=name, x=290, y=500, width=500, height=620, name_size=46)
+            _draw_photo_card(img, draw, url=img_url, name=name, x=230, y=520, width=620, height=1000, name_size=46)
             _draw_legend_credit(img, draw, getattr(topic, "credit", ""))
         else:
-            _draw_centered_lines(draw, _wrap_text(draw, name, _font(140, bold=True), 940, max_lines=2), 560, _font(140, bold=True), "#ffffff", gap=10)
-            _draw_centered_lines(draw, _wrap_text(draw, topic.giants_context, _font(40), 880, max_lines=3), 1000, _font(40), "#e8d9b0", gap=12)
+            _draw_centered_lines(draw, _wrap_text(draw, name, _font(140, bold=True), 940, max_lines=2), 660, _font(140, bold=True), "#ffffff", gap=10)
+            _draw_centered_lines(draw, _wrap_text(draw, topic.giants_context, _font(40), 880, max_lines=3), 1100, _font(40), "#e8d9b0", gap=12)
     elif index == 1:
-        draw.text((WIDTH // 2, 420), "巨人での歩み", font=_font(54, bold=True), fill="#f5c542", anchor="ma")
-        _draw_centered_lines(draw, _wrap_text(draw, topic.giants_context, _font(62, bold=True), 900, max_lines=4), 560, _font(62, bold=True), "#ffffff", gap=18)
+        draw.text((WIDTH // 2, 520), "巨人での歩み", font=_font(54, bold=True), fill="#f5c542", anchor="ma")
+        _draw_centered_lines(draw, _wrap_text(draw, topic.giants_context, _font(62, bold=True), 900, max_lines=4), 680, _font(62, bold=True), "#ffffff", gap=18)
         if getattr(topic, "years", ""):
-            draw.text((WIDTH // 2, 1080), f"{topic.years}年", font=_font(48, bold=True), fill="#ff7a1a", anchor="ma")
+            draw.text((WIDTH // 2, 1240), f"{topic.years}年", font=_font(48, bold=True), fill="#ff7a1a", anchor="ma")
     elif index in (2, 3):
         rec = records[index - 2] if len(records) > index - 2 else (records[-1] if records else None)
-        draw.text((WIDTH // 2, 400), "巨人時代の記録", font=_font(46, bold=True), fill="#f5c542", anchor="ma")
-        draw.rounded_rectangle((110, 540, WIDTH - 110, 1190), radius=54, fill="#1c1814", outline="#f5c542", width=4)
+        draw.text((WIDTH // 2, 500), "巨人時代の記録", font=_font(46, bold=True), fill="#f5c542", anchor="ma")
+        draw.rounded_rectangle((110, 640, WIDTH - 110, 1290), radius=54, fill="#1c1814", outline="#f5c542", width=4)
         if rec is not None:
-            draw.text((WIDTH // 2, 660), rec.label, font=_font(56, bold=True), fill="#e8d9b0", anchor="ma")
-            _draw_centered_lines(draw, _wrap_text(draw, rec.value, _font(150, bold=True), 820, max_lines=2), 800, _font(150, bold=True), "#ffffff", gap=8)
+            draw.text((WIDTH // 2, 760), rec.label, font=_font(56, bold=True), fill="#e8d9b0", anchor="ma")
+            _draw_centered_lines(draw, _wrap_text(draw, rec.value, _font(150, bold=True), 820, max_lines=2), 900, _font(150, bold=True), "#ffffff", gap=8)
     else:
-        draw.text((WIDTH // 2, 430), "あなたにとって", font=_font(54, bold=True), fill="#ffffff", anchor="ma")
-        _draw_centered_lines(draw, _wrap_text(draw, name, _font(92, bold=True), 920, max_lines=2), 530, _font(92, bold=True), "#f5c542", gap=8)
-        draw.text((WIDTH // 2, 760), "は、巨人歴代何位？", font=_font(58, bold=True), fill="#ffffff", anchor="ma")
-        draw.rounded_rectangle((190, 900, WIDTH - 190, 982), radius=40, fill="#ff7a1a")
-        draw.text((WIDTH // 2, 941), "コメントで教えて", font=_font(40, bold=True), fill="#ffffff", anchor="mm")
-        draw.text((WIDTH // 2, 1080), "巨人の記録室はヨシラバーで", font=_font(36, bold=True), fill="#e8d9b0", anchor="ma")
+        draw.text((WIDTH // 2, 530), "あなたにとって", font=_font(54, bold=True), fill="#ffffff", anchor="ma")
+        _draw_centered_lines(draw, _wrap_text(draw, name, _font(92, bold=True), 920, max_lines=2), 630, _font(92, bold=True), "#f5c542", gap=8)
+        draw.text((WIDTH // 2, 860), "は、巨人歴代何位？", font=_font(58, bold=True), fill="#ffffff", anchor="ma")
+        draw.rounded_rectangle((190, 1000, WIDTH - 190, 1082), radius=40, fill="#ff7a1a")
+        draw.text((WIDTH // 2, 1041), "コメントで教えて", font=_font(40, bold=True), fill="#ffffff", anchor="mm")
+        draw.text((WIDTH // 2, 1180), "巨人の記録室はヨシラバーで", font=_font(36, bold=True), fill="#e8d9b0", anchor="ma")
 
-    caption = script.captions[min(index, len(script.captions) - 1)].text
-    draw.rounded_rectangle((74, HEIGHT - 340, WIDTH - 74, HEIGHT - 210), radius=36, fill="#1c1814", outline="#f5c542", width=3)
-    _draw_centered_lines(draw, _wrap_text(draw, caption, _font(38, bold=True), 840, max_lines=2), HEIGHT - 296, _font(38, bold=True), "#ffffff", gap=10)
     _draw_legend_footer(draw)
     img.save(path, "PNG")
 
@@ -440,7 +435,7 @@ def _draw_legend_credit(canvas, draw, credit: str) -> None:
         return
     lines = _wrap_text(draw, text, _font(22), WIDTH - 200, max_lines=1)
     if lines:
-        draw.text((WIDTH // 2, HEIGHT - 372), lines[0], font=_font(22), fill="#b6a98c", anchor="ma")
+        draw.text((WIDTH // 2, HEIGHT - 232), lines[0], font=_font(22), fill="#b6a98c", anchor="ma")
 
 
 def _draw_ranking_chrome(draw) -> None:
@@ -483,8 +478,8 @@ def _draw_ranking_frame(topic, script: ShortsScript, index: int, path: Path) -> 
         _draw_centered_lines(draw, _wrap_text(draw, f"{stat} TOP3", _font(110, bold=True), 900, max_lines=1), 396, _font(110, bold=True), "#151515")
         if top is not None:
             _draw_photo_card(img, draw, url=getattr(top, "image_url", ""), name=getattr(top, "player", ""),
-                             x=290, y=600, width=500, height=620, name_size=40)
-            _draw_rank_badge(draw, rank=getattr(top, "rank", 1), cx=320, cy=632, r=56)
+                             x=220, y=600, width=640, height=940, name_size=44)
+            _draw_rank_badge(draw, rank=getattr(top, "rank", 1), cx=252, cy=632, r=56)
             _draw_ranking_credit(img, draw, getattr(top, "credit", ""))
     elif index in (1, 2, 3):
         rank_idx = index - 1
@@ -492,24 +487,20 @@ def _draw_ranking_frame(topic, script: ShortsScript, index: int, path: Path) -> 
         draw.text((WIDTH // 2, 290), f"巨人 {stat} ランキング", font=_font(46, bold=True), fill="#c94700", anchor="ma")
         if e is not None:
             _draw_photo_card(img, draw, url=getattr(e, "image_url", ""), name=getattr(e, "player", ""),
-                             x=90, y=370, width=900, height=720, name_size=50)
+                             x=90, y=370, width=900, height=780, name_size=50)
             _draw_rank_badge(draw, rank=getattr(e, "rank", rank_idx + 1), cx=160, cy=440, r=72)
-            draw.rounded_rectangle((104, 1130, WIDTH - 104, 1400), radius=48, fill="#ff7a1a")
-            draw.text((WIDTH // 2, 1196), stat, font=_font(48, bold=True), fill="#ffffff", anchor="ma")
-            draw.text((WIDTH // 2, 1300), getattr(e, "display", ""), font=_font(108, bold=True), fill="#ffffff", anchor="mm")
+            draw.rounded_rectangle((104, 1200, WIDTH - 104, 1520), radius=48, fill="#ff7a1a")
+            draw.text((WIDTH // 2, 1272), stat, font=_font(48, bold=True), fill="#ffffff", anchor="ma")
+            draw.text((WIDTH // 2, 1400), getattr(e, "display", ""), font=_font(108, bold=True), fill="#ffffff", anchor="mm")
             _draw_ranking_credit(img, draw, getattr(e, "credit", ""))
         else:
             draw.text((WIDTH // 2, 760), "続きはヨシラバーで", font=_font(56, bold=True), fill="#c94700", anchor="ma")
     else:
-        draw.rounded_rectangle((124, 470, WIDTH - 124, 820), radius=48, fill="#ffffff", outline="#ffb36b", width=4)
-        draw.text((WIDTH // 2, 548), "続きはヨシラバーで", font=_font(56, bold=True), fill="#c94700", anchor="ma")
-        draw.text((WIDTH // 2, 648), "巨人 全選手データ", font=_font(46, bold=True), fill="#151515", anchor="ma")
-        draw.text((WIDTH // 2, 728), "/data/notable?v=yt", font=_font(34), fill="#555555", anchor="ma")
+        draw.rounded_rectangle((124, 600, WIDTH - 124, 1000), radius=48, fill="#ffffff", outline="#ffb36b", width=4)
+        draw.text((WIDTH // 2, 690), "続きはヨシラバーで", font=_font(56, bold=True), fill="#c94700", anchor="ma")
+        draw.text((WIDTH // 2, 800), "巨人 全選手データ", font=_font(46, bold=True), fill="#151515", anchor="ma")
+        draw.text((WIDTH // 2, 890), "/data/notable?v=yt", font=_font(34), fill="#555555", anchor="ma")
 
-    caption = script.captions[min(index, len(script.captions) - 1)].text
-    _soft_shadow(img, (74, HEIGHT - 340, WIDTH - 74, HEIGHT - 210), radius=36, dy=14, blur=18, alpha=66)
-    draw.rounded_rectangle((74, HEIGHT - 340, WIDTH - 74, HEIGHT - 210), radius=36, fill="#ffffff", outline="#f0d3bd", width=3)
-    _draw_centered_lines(draw, _wrap_text(draw, caption, _font(38, bold=True), 840, max_lines=2), HEIGHT - 296, _font(38, bold=True), "#151515", gap=10)
     _draw_footer(draw)
     img.save(path, "PNG")
 
@@ -521,7 +512,7 @@ def _draw_ranking_credit(canvas, draw, credit: str) -> None:
         return
     lines = _wrap_text(draw, text, _font(22), WIDTH - 200, max_lines=1)
     if lines:
-        draw.text((WIDTH // 2, HEIGHT - 372), lines[0], font=_font(22), fill="#8a7a68", anchor="ma")
+        draw.text((WIDTH // 2, HEIGHT - 232), lines[0], font=_font(22), fill="#8a7a68", anchor="ma")
 
 
 def _standings_background():
@@ -550,6 +541,27 @@ def _draw_standings_footer(draw) -> None:
     draw.text((72, HEIGHT - 86), "巨人の順位・データ → yoshilover.com/data", font=_font(28, bold=True), fill="#ffffff", anchor="lm")
 
 
+def _draw_standings_table(draw, rows, *, y: int = 470) -> None:
+    """セ・リーグ6球団の順位表を画面いっぱいに描く(巨人行を highlight)。"""
+    draw.text((WIDTH - 360, y - 54), "勝-敗", font=_font(30, bold=True), fill="#9fb4d6", anchor="rm")
+    draw.text((WIDTH - 130, y - 54), "首位差", font=_font(30, bold=True), fill="#9fb4d6", anchor="rm")
+    row_h = 158
+    gap = 24
+    for row in rows[:6]:
+        r_rank, r_team, r_w, r_l, _r_t, r_gb, r_is_giants = row
+        fill = "#ff7a1a" if r_is_giants else "#12294a"
+        outline = "#ffd166" if r_is_giants else "#27436e"
+        text_color = "#ffffff"
+        sub_color = "#ffffff" if r_is_giants else "#c7d5ec"
+        draw.rounded_rectangle((90, y, WIDTH - 90, y + row_h), radius=40, fill=fill, outline=outline, width=3)
+        draw.text((160, y + row_h // 2), f"{r_rank}", font=_font(62, bold=True), fill=text_color, anchor="mm")
+        draw.text((240, y + row_h // 2), r_team, font=_font(54, bold=True), fill=text_color, anchor="lm")
+        draw.text((WIDTH - 360, y + row_h // 2), f"{r_w}-{r_l}", font=_font(46, bold=True), fill=sub_color, anchor="rm")
+        gb_display = "-" if str(r_rank) == "1" else str(r_gb or "-")
+        draw.text((WIDTH - 130, y + row_h // 2), gb_display, font=_font(46, bold=True), fill=sub_color, anchor="rm")
+        y += row_h + gap
+
+
 def _draw_standings_frame(topic, script: ShortsScript, index: int, path: Path) -> None:
     img, draw = _standings_background()
     _draw_standings_chrome(draw)
@@ -559,35 +571,41 @@ def _draw_standings_frame(topic, script: ShortsScript, index: int, path: Path) -
     draws = getattr(topic, "draws", "")
     gb = getattr(topic, "gb", "")
     is_leading = bool(getattr(topic, "is_leading", False))
+    is_co_leading = bool(getattr(topic, "is_co_leading", False))
+    rows = tuple(getattr(topic, "rows", ()) or ())
 
     if index == 0:
-        draw.text((WIDTH // 2, 360), "巨人目線で見る", font=_font(58, bold=True), fill="#ffffff", anchor="ma")
-        draw.text((WIDTH // 2, 452), "今のセ・リーグ", font=_font(72, bold=True), fill="#ff7a1a", anchor="ma")
-        draw.rounded_rectangle((180, 700, WIDTH - 180, 940), radius=54, fill="#12294a", outline="#ff7a1a", width=4)
-        draw.text((WIDTH // 2, 760), "巨人", font=_font(48, bold=True), fill="#9fb4d6", anchor="ma")
-        draw.text((WIDTH // 2, 850), f"{rank}位", font=_font(120, bold=True), fill="#ffffff", anchor="mm")
+        draw.text((WIDTH // 2, 430), "巨人目線で見る", font=_font(58, bold=True), fill="#ffffff", anchor="ma")
+        draw.text((WIDTH // 2, 522), "今のセ・リーグ", font=_font(72, bold=True), fill="#ff7a1a", anchor="ma")
+        draw.rounded_rectangle((180, 820, WIDTH - 180, 1060), radius=54, fill="#12294a", outline="#ff7a1a", width=4)
+        draw.text((WIDTH // 2, 880), "巨人", font=_font(48, bold=True), fill="#9fb4d6", anchor="ma")
+        draw.text((WIDTH // 2, 970), f"{rank}位", font=_font(120, bold=True), fill="#ffffff", anchor="mm")
     elif index == 1:
-        draw.text((WIDTH // 2, 420), "セ・リーグ順位", font=_font(54, bold=True), fill="#ff7a1a", anchor="ma")
-        draw.text((WIDTH // 2, 720), f"{rank}位", font=_font(300, bold=True), fill="#ffffff", anchor="mm")
+        if rows:
+            draw.text((WIDTH // 2, 280), "セ・リーグ順位表", font=_font(56, bold=True), fill="#ff7a1a", anchor="ma")
+            _draw_standings_table(draw, rows, y=470)
+        else:
+            draw.text((WIDTH // 2, 520), "セ・リーグ順位", font=_font(54, bold=True), fill="#ff7a1a", anchor="ma")
+            draw.text((WIDTH // 2, 880), f"{rank}位", font=_font(300, bold=True), fill="#ffffff", anchor="mm")
     elif index == 2:
-        draw.text((WIDTH // 2, 440), "今シーズンの成績", font=_font(54, bold=True), fill="#ff7a1a", anchor="ma")
-        draw.rounded_rectangle((110, 600, WIDTH - 110, 980), radius=54, fill="#12294a", outline="#ff7a1a", width=4)
-        draw.text((WIDTH // 2, 790), f"{wins}勝 {losses}敗 {draws}分", font=_font(96, bold=True), fill="#ffffff", anchor="mm")
+        draw.text((WIDTH // 2, 540), "今シーズンの成績", font=_font(54, bold=True), fill="#ff7a1a", anchor="ma")
+        draw.rounded_rectangle((110, 700, WIDTH - 110, 1080), radius=54, fill="#12294a", outline="#ff7a1a", width=4)
+        draw.text((WIDTH // 2, 890), f"{wins}勝 {losses}敗 {draws}分", font=_font(96, bold=True), fill="#ffffff", anchor="mm")
     elif index == 3:
         if is_leading:
-            draw.text((WIDTH // 2, 560), "巨人が", font=_font(64, bold=True), fill="#ffffff", anchor="ma")
-            draw.text((WIDTH // 2, 680), "首位", font=_font(220, bold=True), fill="#ff7a1a", anchor="mm")
+            draw.text((WIDTH // 2, 660), "巨人が", font=_font(64, bold=True), fill="#ffffff", anchor="ma")
+            draw.text((WIDTH // 2, 830), "首位", font=_font(220, bold=True), fill="#ff7a1a", anchor="mm")
+        elif is_co_leading:
+            draw.text((WIDTH // 2, 600), "ゲーム差なし", font=_font(58, bold=True), fill="#ffffff", anchor="ma")
+            draw.text((WIDTH // 2, 860), "首位タイ", font=_font(170, bold=True), fill="#ff7a1a", anchor="mm")
         else:
-            draw.text((WIDTH // 2, 470), "首位とのゲーム差", font=_font(58, bold=True), fill="#ff7a1a", anchor="ma")
-            draw.text((WIDTH // 2, 720), f"{gb}", font=_font(240, bold=True), fill="#ffffff", anchor="mm")
+            draw.text((WIDTH // 2, 570), "首位とのゲーム差", font=_font(58, bold=True), fill="#ff7a1a", anchor="ma")
+            draw.text((WIDTH // 2, 860), f"{gb}", font=_font(240, bold=True), fill="#ffffff", anchor="mm")
     else:
-        draw.text((WIDTH // 2, 540), "巨人の今を、", font=_font(58, bold=True), fill="#ffffff", anchor="ma")
-        draw.text((WIDTH // 2, 640), "毎日データで。", font=_font(58, bold=True), fill="#ff7a1a", anchor="ma")
-        draw.text((WIDTH // 2, 800), "ヨシラバー", font=_font(64, bold=True), fill="#ffffff", anchor="ma")
+        draw.text((WIDTH // 2, 640), "巨人の今を、", font=_font(58, bold=True), fill="#ffffff", anchor="ma")
+        draw.text((WIDTH // 2, 740), "毎日データで。", font=_font(58, bold=True), fill="#ff7a1a", anchor="ma")
+        draw.text((WIDTH // 2, 900), "ヨシラバー", font=_font(64, bold=True), fill="#ffffff", anchor="ma")
 
-    caption = script.captions[min(index, len(script.captions) - 1)].text
-    draw.rounded_rectangle((74, HEIGHT - 340, WIDTH - 74, HEIGHT - 210), radius=36, fill="#12294a", outline="#ff7a1a", width=3)
-    _draw_centered_lines(draw, _wrap_text(draw, caption, _font(38, bold=True), 840, max_lines=2), HEIGHT - 296, _font(38, bold=True), "#ffffff", gap=10)
     _draw_standings_footer(draw)
     img.save(path, "PNG")
 

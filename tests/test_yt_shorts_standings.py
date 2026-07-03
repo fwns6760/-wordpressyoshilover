@@ -57,6 +57,33 @@ class YtShortsStandingsTests(unittest.TestCase):
         )
         self.assertTrue(ok_cap, leaked_cap)
 
+    def test_npb_double_dash_gb_is_computed_not_rendered(self):
+        # 2026-07-02 実事故: 首位と勝率同率の2位で NPB 公式 gb が "--" のまま
+        # 「首位とのゲーム差 --」と描画された。gb は勝敗差から自前計算する。
+        rows = _rows()
+        for r in rows:
+            if r["is_giants"]:
+                r["rank"] = 2
+                r["w"], r["l"] = "38", "32"   # 首位(38勝32敗)と同成績 → ゲーム差 0
+                r["gb"] = "--"
+        topic = standings_topic_from_rows(rows, as_of="2026-07-02")
+        self.assertEqual(topic.gb, "0")
+        self.assertFalse(topic.is_leading)
+        self.assertTrue(topic.is_co_leading)
+        script = build_standings_script(topic)
+        self.assertNotIn("--", script.narration)
+        self.assertIn("首位に並んでいます", script.narration)
+        self.assertIn("首位タイ", "\n".join(c.text for c in script.captions))
+
+    def test_topic_rows_carry_normalized_table_for_render(self):
+        rows = _rows(gb="3.5")
+        topic = standings_topic_from_rows(rows, as_of="2026-06-28")
+        self.assertEqual(len(topic.rows), 6)
+        leader = topic.rows[0]
+        self.assertEqual(leader[0], 1)
+        giants = next(r for r in topic.rows if r[6])
+        self.assertEqual(giants[5], "3.5")
+
     def test_leading_giants_uses_first_place_copy(self):
         # 巨人を1位 gb "-" に
         rows = _rows(is_giants_rank=1)

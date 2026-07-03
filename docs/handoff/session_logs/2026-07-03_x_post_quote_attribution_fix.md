@@ -23,3 +23,6 @@
 - 08:4x JST | env | user「今より倍に。特に公式と報知」「その他メディア分散」「他レーンも増やしていい」| generation 237-238 | REPLY 6→12 / FAN 2→4 / MLB 2→4 / RESERVE 8→20 / MAX_LLM 12→24→28 (非リプ 4→8) / VIDEO_RADAR 5→8。code側 e0b9fbc1 = 報知/公式 先頭固定 + その他ローテ (build 中)
 - 08:5x JST | deploy | Cloud Build 0a855941 SUCCESS (1m34s) | image x-post-mail-lane:reply-priority-e0b9fbc1 | Job generation 239 | 本日の最終形 = 補足リプ型 + 対象拡張 + MLBリプ + 枠倍増 + 報知/公式先頭固定 + その他ローテ + 非リプ枠8
 - 09:2x JST | deploy | user 確定「記事の数字ごと載せる」「【選手名】 内容 画像があるとよい」| commit 1bf25bfb | image record-headline-1bf25bfb | Job generation 240 | record post = 【選手名】+記事内容+記事画像添付、mail 表示「記事記載値」
+- 10:0x JST | deploy | user GO「見てる人がその時に欲しい情報でない」対応 | commit 94cb2df7 | image now-context-94cb2df7 | Job generation 241 | 今フック優先選定 (スタメン3/昨日結果2/話題1 + metric固有) + 文脈ゼロ候補2件上限 + pregame 午後再掲 + 死にハンドル除去も同梱
+- 09:05 便実測: mlb_reply 1件 / media リプ6件 / fan リプ3件 — 全新レーン初便で作動確認
+- 残: RSSHub コールドスタート timeout の無料リトライ修正 (次便) / 補足リプ・記録系・今フックの実物品質監査 (今日の便で)

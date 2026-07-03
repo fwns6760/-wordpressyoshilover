@@ -2037,6 +2037,52 @@ _GAME_BUZZ_HANDLES = [
     "DAZNJPNBaseball",
 ]
 
+_today_away_cache: dict[str, Optional[bool]] = {}
+
+
+def _today_giants_away(now: Optional[datetime] = None) -> Optional[bool]:
+    """今日の巨人戦がビジターか。試合なし/判定不能は None (fail-open)。
+
+    NPB公式月間日程 (data_site_query.parse_giants_upcoming) で判定。1 fire 内
+    memo cache 付き。
+    """
+    if now is None:
+        now = datetime.now(JST)
+    today = now.astimezone(JST).date().isoformat()
+    if today in _today_away_cache:
+        return _today_away_cache[today]
+    result: Optional[bool] = None
+    try:
+        from src.data_site_query import fetch_giants_upcoming
+        for g in fetch_giants_upcoming(limit=2) or []:
+            if str(g.get("date") or "") == today:
+                ha = str(g.get("home_away") or "").strip()
+                if ha:
+                    result = ha != "本拠地"
+                break
+    except Exception as exc:  # noqa: BLE001
+        LOG.info("today_giants_away lookup skipped: %r", exc)
+    _today_away_cache[today] = result
+    return result
+
+
+def game_buzz_handles(now: Optional[datetime] = None) -> list[str]:
+    """試合帯の動画/リプ用ソース handle 一覧 (優先順)。
+
+    2026-07-03 user「ホームでない場合は動画は DAZNJPNBaseball にできる？
+    恐らく日テレが出なくなる」: ビジター戦は日テレ中継が無くクリップが
+    出ないため、DAZN を日テレより先に並べる。ホーム/判定不能は従来順。
+    """
+    handles = list(_GAME_BUZZ_HANDLES)
+    if _today_giants_away(now) is True:
+        try:
+            handles.remove("DAZNJPNBaseball")
+            handles.insert(handles.index("ntv_baseball"), "DAZNJPNBaseball")
+            LOG.info("game_buzz_handles: away game -> DAZN prioritized over NTV")
+        except ValueError:
+            pass
+    return handles
+
 
 def build_video_radar_candidates(
     db_path: Optional[str] = None,
@@ -2068,7 +2114,7 @@ def build_video_radar_candidates(
         _X_IMPRESSION_TIMING_LABELS["in_game_strong"],
     }
     if handles is None and x_impression_timing_label(now) in _narrow_labels:
-        handles = _GAME_BUZZ_HANDLES
+        handles = game_buzz_handles(now)
         LOG.info("x_buzz dense window: source narrowed to %s", handles)
     try:
         from src import video_radar as _vr

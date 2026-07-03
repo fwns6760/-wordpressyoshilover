@@ -3534,7 +3534,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 lane._X_IMPRESSION_TIMING_LABELS["in_game_strong"],
             }:
                 target_handles = _unique_reply_handles(
-                    [*target_handles, *lane._GAME_BUZZ_HANDLES]
+                    [*target_handles, *lane.game_buzz_handles(now_jst)]
                 )
                 LOG.info(
                     "reply targets extended for game window (%s): %s",

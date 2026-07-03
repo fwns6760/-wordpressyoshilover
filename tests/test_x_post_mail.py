@@ -4503,6 +4503,23 @@ class BuildVideoRadarCandidatesTests(unittest.TestCase):
         self.assertEqual(again, [])
 
 
+class GameBuzzHandlesTests(unittest.TestCase):
+    """2026-07-03 user「ホームでない場合は動画は DAZN にできる？日テレが出なくなる」"""
+
+    def test_away_game_prioritizes_dazn_over_ntv(self) -> None:
+        from src import x_post_mail_lane as lane
+        with patch.object(lane, "_today_giants_away", return_value=True):
+            handles = lane.game_buzz_handles()
+        self.assertLess(handles.index("DAZNJPNBaseball"), handles.index("ntv_baseball"))
+        self.assertEqual(sorted(handles), sorted(lane._GAME_BUZZ_HANDLES))
+
+    def test_home_or_unknown_keeps_default_order(self) -> None:
+        from src import x_post_mail_lane as lane
+        for venue in (False, None):
+            with patch.object(lane, "_today_giants_away", return_value=venue):
+                self.assertEqual(lane.game_buzz_handles(), lane._GAME_BUZZ_HANDLES)
+
+
 class BuildMlbWatchCandidatesTests(unittest.TestCase):
     """2026-07-02 フォロワー増計画: 元巨人MLB組 (菅野/岡本) + 大谷別枠の引用RT候補。"""
 

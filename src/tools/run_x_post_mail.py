@@ -1377,6 +1377,26 @@ def _is_direct_article_url(link: str) -> bool:
     return not any(host in value for host in ("x.com/", "twitter.com/"))
 
 
+# 2026-07-03 user 指摘「サンスポのメジャー関連ポストが player 履歴 dedup で
+# 出なかった」: 選手の連続露出防止より優先すべき大型トピック。 該当候補は
+# 168h player history skip と最終 recent-player gate (history_exempt) を免除する。
+_HIGH_NEWS_VALUE_TERMS = (
+    "メジャー",
+    "MLB",
+    "ポスティング",
+    "移籍",
+    "トレード",
+    "FA",
+    "引退",
+    "戦力外",
+)
+
+
+def _is_high_news_value_topic(title: str, summary: str) -> bool:
+    text = f"{title} {summary}"
+    return any(term in text for term in _HIGH_NEWS_VALUE_TERMS)
+
+
 def _fetch_news_opinion_fallback_candidates(
     existing_candidates: list[lane.Candidate],
     *,
@@ -1462,7 +1482,17 @@ def _fetch_news_opinion_fallback_candidates(
                 _looks_like_comment_article(title, summary)
                 or _is_direct_article_url(link)
             )
-            if history_blocked and not may_have_literal_comment:
+            high_news_value = _is_high_news_value_topic(title, summary)
+            if history_blocked and high_news_value:
+                LOG.info(
+                    "news_opinion_high_value_override source=%s player=%s "
+                    "previous_count=%d url=%s",
+                    source.get("name"),
+                    player,
+                    history_player_counts.get(player_key, 0),
+                    link,
+                )
+            if history_blocked and not (may_have_literal_comment or high_news_value):
                 LOG.info(
                     "news_opinion_fallback_player_history_skip source=%s "
                     "player=%s previous_count=%d url=%s",
@@ -1501,6 +1531,8 @@ def _fetch_news_opinion_fallback_candidates(
                         link,
                     )
                     continue
+                if high_news_value:
+                    ccand = _dc_replace(ccand, history_exempt=True)
                 out.append(ccand)
                 seen_urls.add(link)
                 existing_player_keys.add(player_key)
@@ -1525,7 +1557,7 @@ def _fetch_news_opinion_fallback_candidates(
                 )
                 continue
 
-            if history_blocked:
+            if history_blocked and not high_news_value:
                 LOG.info(
                     "news_opinion_fallback_player_history_skip source=%s "
                     "player=%s previous_count=%d url=%s reason=no_literal_comment",
@@ -1565,6 +1597,8 @@ def _fetch_news_opinion_fallback_candidates(
                     link,
                 )
                 continue
+            if high_news_value:
+                cand = _dc_replace(cand, history_exempt=True)
             out.append(cand)
             seen_urls.add(link)
             existing_player_keys.add(player_key)
@@ -2425,10 +2459,32 @@ def _merge_news_priority_candidates(
         if _candidate_identity(candidate) in consumed_news:
             continue
         add(candidate, enforce_player=True)
+    # 2026-07-03 user 指摘「大谷のポストが出ない」: MLB watch (大谷/元巨人、
+    # フォロワー増計画の専用枠) は data list の末尾に append されるため、 news
+    # 優先 merge の枠上限で毎回押し出されていた。 news の直後・汎用 DB data の
+    # 前に入れて枠を確保する。
+    for candidate in data_candidates:
+        if candidate.metric != lane._MLB_WATCH_METRIC:
+            continue
+        if _candidate_identity(candidate) in consumed_data:
+            continue
+        add(candidate, enforce_player=True)
     for candidate in data_candidates:
         if _candidate_identity(candidate) in consumed_data:
             continue
         add(candidate, enforce_player=True)
+    # 押し出しの可視化 (silent cap 禁止): merge に入らなかった候補を必ず log に残す。
+    consumed = consumed_news | consumed_data
+    for candidate in list(news_candidates) + list(data_candidates):
+        identity = _candidate_identity(candidate)
+        if identity in seen_identities or identity in consumed:
+            continue
+        LOG.info(
+            "news_priority_merge_drop title=%s metric=%s player=%s",
+            candidate.title,
+            candidate.metric,
+            candidate.focus_player,
+        )
     return merged[:max_candidates]
 
 
@@ -4088,6 +4144,35 @@ def main(argv: Sequence[str] | None = None) -> int:
             before_policy,
             len(candidates),
         )
+    # 2026-07-03 user 指摘「13時便が 1 件だけになった」: recent-player gate で
+    # 最終候補が床 (dedup_min) を割った時は、 dedup_player_recent で落とした
+    # 候補を落下順に戻して最低本数を確保する (同一選手の再掲より 1 件メールの
+    # 情報量不足の方が損、 という判断)。
+    refill_floor = min(
+        dedup_min_candidates, args.max_candidates + extra_policy_slots
+    )
+    if candidates and len(candidates) < refill_floor:
+        refilled = 0
+        for dropped, reason in policy_drops:
+            if len(candidates) >= refill_floor:
+                break
+            if reason != "dedup_player_recent":
+                continue
+            candidates.append(dropped)
+            refilled += 1
+            LOG.info(
+                "recent_player_refill title=%s player=%s metric=%s",
+                dropped.title,
+                dropped.focus_player,
+                dropped.metric,
+            )
+        if refilled:
+            LOG.info(
+                "recent-player floor refill: +%d -> %d (floor=%d)",
+                refilled,
+                len(candidates),
+                refill_floor,
+            )
     if not candidates:
         LOG.warning("X impression policy left 0 candidates — skip send.")
         return 0

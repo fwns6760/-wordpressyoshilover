@@ -1101,6 +1101,10 @@ class Candidate:
     # 発信メディア (@handle) が違えば別候補として残す。 dedup の (選手×媒体) 判定に
     # 使う元投稿アカウントの handle。 動画/引用RT lane 以外は空のまま。
     media_handle: str = ""
+    # 2026-07-03 user 指摘「メジャー級の話題が player 履歴 dedup で出ない」:
+    # 高ニュース価値 (メジャー/移籍/引退 等) の候補は recent-player cooldown を
+    # 免除する。 news_opinion fallback 側 (runner) が判定して立てる。
+    history_exempt: bool = False
 
 
 _DEFAULT_PLAYER_MAX_PER_MAIL = 1
@@ -3533,10 +3537,16 @@ def apply_x_impression_policy(
             reason = "dedup_post_text_hash"
         elif image_hash and image_hash in seen_image_hashes:
             reason = "dedup_image_payload_hash"
-        elif player_key and recent_hit and not is_reply_metric:
+        elif (
+            player_key
+            and recent_hit
+            and not is_reply_metric
+            and not candidate.history_exempt
+        ):
             # 直近の毎時メールで既に出した選手は外す (井上・浦田 等が毎時連続
             # するのを止める)。 per-group 時は同じ群の既出のみで判定するので、
             # レス既出が動画/本人コメントのオリジナルを落とすことはない。
+            # history_exempt (メジャー/移籍 級の高ニュース価値) は免除。
             reason = "dedup_player_recent"
         elif (
             media_key

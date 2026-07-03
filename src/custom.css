@@ -10215,3 +10215,23 @@ div.bbp-template-notice {
   .yoshi-board-cta { flex-direction: column; align-items: flex-start; }
   .yoshi-board-cta__btn { align-self: stretch; text-align: center; }
 }
+
+/* ── [ydash-catchphrase] 2026-07-03 user「ヘッダーに巨人データサイトの title が欲しい、黒くて見えない」 ──
+   橙ヘッダー上で黒文字だった catchphrase を白太字に。モバイルは header shrink で
+   完全非表示だったが、データサイト宣言として 10.5px 1行だけ復活させる。 */
+.l-header .c-catchphrase {
+  color: #fff !important;
+  font-weight: 800;
+  opacity: 1;
+  text-shadow: 0 1px 2px rgba(0,0,0,.18);
+}
+@media (max-width: 768px) {
+  .l-header .c-catchphrase,
+  .l-header__bar .c-catchphrase,
+  .l-header__logo .c-catchphrase {
+    display: block !important;
+    font-size: 10.5px;
+    line-height: 1.2;
+    margin: 0;
+  }
+}

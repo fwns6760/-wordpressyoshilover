@@ -50,3 +50,4 @@
 - 12:0x JST | build | Cloud Build 93b0f3e8 SUCCESS (3m24s) | image yt-shorts-gen:quality-5b43cbb4 (第1+2弾)
 - 12:1x JST | deploy | yt-shorts-gen Job generation 39 | image quality-5b43cbb4 | env/secret/scheduler 無変更
 - 12:1x JST | smoke | 確認用1本を強制生成 (execution yt-shorts-gen-f9pvs, --ignore-daily-cap) → 承認メールで user が新ルック+読みを直接確認する導線
+- 12:1x JST | incident | 強制1本目 execution yt-shorts-gen-f9pvs FAILED | ModuleNotFoundError src.data_site_jersey_source | 原因: committed コードが import する farm/jersey source module が未 commit で、clean worktree build に入らなかった(従来の dirty tree 同梱 build では偶然動作)。ae7b6cef で 2 module を commit、image quality-ae7b6cef で再 build → Job 更新 → 再実行

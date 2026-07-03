@@ -35,8 +35,8 @@ KANA_DIGITS = {
     "9": "きゅう",
 }
 METRIC_LABEL_REPLACEMENTS = (
-    ("BB/9", "ビービーナイン"),
-    ("K/9", "ケーナイン"),
+    ("BB/9", "与四球率"),
+    ("K/9", "奪三振率"),
     ("OPS", "オーピーエス"),
     ("WHIP", "ウィップ"),
     ("ERA", "防御率"),
@@ -160,6 +160,23 @@ def _baseball_average_reading(match: re.Match[str]) -> str:
     return reading
 
 
+def _int_to_kanji(number: int) -> str:
+    """整数を位取りの漢数字にする(0-9999)。桁ごと読み(一一=いちいち)を防ぐ。"""
+    if number <= 0:
+        return "零"
+    if number >= 10000:
+        return str(number)
+    parts: list[str] = []
+    for div, unit in ((1000, "千"), (100, "百"), (10, "十")):
+        digit = number // div
+        if digit:
+            parts.append(("" if digit == 1 else JAPANESE_DIGITS[str(digit)]) + unit)
+            number %= div
+    if number:
+        parts.append(JAPANESE_DIGITS[str(number)])
+    return "".join(parts)
+
+
 def _decimal_point_reading(match: re.Match[str]) -> str:
     sign = match.group("sign") or ""
     value = match.group("value")
@@ -167,7 +184,10 @@ def _decimal_point_reading(match: re.Match[str]) -> str:
         return match.group(0)
     left, right = value.split(".", 1)
     left = left or "0"
-    left_reading = "".join(JAPANESE_DIGITS.get(digit, digit) for digit in left)
+    try:
+        left_reading = _int_to_kanji(int(left)) if int(left) > 0 else "零"
+    except ValueError:
+        left_reading = "".join(JAPANESE_DIGITS.get(digit, digit) for digit in left)
     right_reading = "".join(JAPANESE_DIGITS.get(digit, digit) for digit in right)
     reading = f"{left_reading}点{right_reading}"
     if sign == "+":

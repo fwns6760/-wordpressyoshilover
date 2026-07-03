@@ -180,7 +180,28 @@ class YtShortsScriptTests(unittest.TestCase):
         k9_script = build_script(k9_topic)
 
         self.assertIn("防御率二点三五", era_script.narration)
-        self.assertIn("ケーナイン 八点七", k9_script.narration)
+        # K/9 はジャーゴン読み(ケーナイン)ではなく一般名「奪三振率」で読む
+        self.assertIn("奪三振率 八点七", k9_script.narration)
+
+    def test_two_digit_decimal_reads_as_positional_number(self):
+        # 2026-07-03 user指摘「読み方がへん」: 11.28 が桁ごと読み(一一点二八=
+        # いちいち…)になっていた。位取り読み(十一点二八)にする。
+        topic = ShortsTopic(
+            player="戸郷翔征",
+            slug="togo-shosei",
+            label="K/9",
+            value="11.28",
+            note="",
+            category="form",
+            as_of="2026-07-01",
+            title="戸郷翔征 奪三振率 11.28をデータで見る",
+            hook="戸郷翔征、奪三振率 11.28",
+            priority=211.0,
+            raw_item={"player": "戸郷翔征", "label": "K/9", "value": "11.28"},
+        )
+        script = build_script(topic)
+        self.assertIn("十一点二八", script.narration)
+        self.assertNotIn("一一点", script.narration)
 
     def test_extract_number_tokens_normalizes_leading_zero_and_decimal(self):
         self.assertEqual(extract_number_tokens("07試合 .450 0.320"), ("7", ".450", ".320"))

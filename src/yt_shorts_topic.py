@@ -14,6 +14,53 @@ from typing import Any, Mapping
 
 DEFAULT_SOURCE_URL = "https://yoshilover.com/data/notable?v=yt"
 
+# 一般ファンに伝わる指標名(見出し・タイトル表示用)。略語のままだと意味が
+# 届かないものだけ言い換える。K/9 等の原ラベルは topic.label に残る。
+METRIC_DISPLAY = (
+    ("K/9", "奪三振率"),
+    ("BB/9", "与四球率"),
+    ("ERA", "防御率"),
+    ("AVG", "打率"),
+    ("OBP", "出塁率"),
+    ("SLG", "長打率"),
+)
+
+# ファンが楽しめる指標を優先するボーナス(同 priority 帯の中の並び替え用)。
+# 数字の大きい玄人指標(K/9 等)が毎回勝つのを防ぐ。最初に一致した1件を加算。
+METRIC_APPEAL_BONUS = (
+    ("本塁打", 90.0),
+    ("ホームラン", 90.0),
+    ("HR", 90.0),
+    ("打点", 70.0),
+    ("盗塁", 60.0),
+    ("セーブ", 60.0),
+    ("勝利", 60.0),
+    ("安打", 55.0),
+    ("打率", 55.0),
+    ("防御率", 50.0),
+    ("ホールド", 40.0),
+    ("OPS", 35.0),
+    ("出塁率", 30.0),
+    ("奪三振", 25.0),
+    ("K/9", 15.0),
+    ("WHIP", 10.0),
+    ("BB/9", 5.0),
+)
+
+
+def metric_display(label: str) -> str:
+    """略語指標をファン向け表示名に言い換える(該当なしは原文のまま)。"""
+    source = str(label or "")
+    for raw, display in METRIC_DISPLAY:
+        if re.search(rf"(?<![A-Za-z0-9]){re.escape(raw)}(?![A-Za-z0-9])", source, flags=re.IGNORECASE):
+            return re.sub(
+                rf"(?<![A-Za-z0-9]){re.escape(raw)}(?![A-Za-z0-9])",
+                display,
+                source,
+                flags=re.IGNORECASE,
+            )
+    return source
+
 
 @dataclass(frozen=True)
 class ShortsTopic:
@@ -73,9 +120,16 @@ def _priority_for_item(item: Mapping[str, Any]) -> float:
     else:
         base = 200.0
 
+    appeal = 0.0
+    source = f"{label} {note}"
+    for keyword, bonus in METRIC_APPEAL_BONUS:
+        if keyword in source or re.search(rf"(?<![A-Za-z0-9]){re.escape(keyword)}(?![A-Za-z0-9])", source, flags=re.IGNORECASE):
+            appeal = bonus
+            break
+
     # Stronger hooks win inside the same category.  Keep the boost capped so
     # category intent remains dominant.
-    return base + min(number, 99.0)
+    return base + appeal + min(number, 99.0)
 
 
 def _label_value_phrase(label: str, value: str) -> str:
@@ -99,7 +153,7 @@ def topic_from_notable_item(
     note = str(item.get("note") or "").strip()
     slug = str(item.get("slug") or "").strip()
     category = str(item.get("category") or "form").strip() or "form"
-    phrase = _label_value_phrase(label, value)
+    phrase = _label_value_phrase(metric_display(label), value)
     title = f"{player} {phrase}をデータで見る"
     hook = f"{player}、{phrase}"
     return ShortsTopic(
@@ -160,6 +214,7 @@ __all__ = [
     "DEFAULT_SOURCE_URL",
     "ShortsTopic",
     "list_topics_from_notable_data",
+    "metric_display",
     "select_topic_from_notable_data",
     "topic_from_notable_item",
 ]

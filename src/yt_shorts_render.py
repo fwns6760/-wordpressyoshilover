@@ -23,7 +23,7 @@ import requests
 from PIL import Image, ImageDraw
 
 from src.yt_shorts_script import ShortsScript, display_as_of_date, fan_comment, metric_explanation
-from src.yt_shorts_topic import ShortsTopic
+from src.yt_shorts_topic import ShortsTopic, metric_display
 
 
 WIDTH = 1080
@@ -32,11 +32,15 @@ DEFAULT_FRAME_DURATIONS = (2.2, 6.2, 6.4, 6.2, 6.0)
 # Ken Burns motion: turn the 5 static cards into moving clips so the Short
 # reads as video, not a slideshow (the main "looks AI-mass-produced" tell).
 MOTION_FPS = 30
-MOTION_OPENING_ZOOM = 1.20
-MOTION_ZOOM = 1.15
-MOTION_MAX_ZOOM = 1.20  # overscan headroom = the strongest end zoom in use
+# zoom はこれ以上上げない: 1.08 超はカード終端で header/footer が crop される
+# (下辺 crop = 1920*(1-1/zoom)/2 がフッター文字位置 86px を超える)。
+MOTION_OPENING_ZOOM = 1.12
+MOTION_ZOOM = 1.08
+MOTION_MAX_ZOOM = 1.12  # overscan headroom = the strongest end zoom in use
 MOTION_DRIFT_PX = 70
 MOTION_FADE_SECONDS = 0.35
+# カード間はハードカットではなく crossfade でつなぐ(スライドショー感の解消)。
+MOTION_XFADE_SECONDS = 0.45
 DEFAULT_VOICE_STYLE = "dynamic"
 DEFAULT_DYNAMIC_AUDIO_FILTER = (
     "highpass=f=85,"
@@ -294,6 +298,19 @@ def _draw_footer(draw) -> None:
     draw.text((72, HEIGHT - 86), "詳しいデータは yoshilover.com/data/notable?v=yt", font=_font(30, bold=True), fill="#ffffff", anchor="lm")
 
 
+def _diagonal_accents(img: Image.Image, *, color: tuple[int, int, int], alphas: tuple[int, ...] = (26, 14)) -> None:
+    """背景に淡い斜めストライプを敷いて「無地スライド」感を消す(カードの下層)。"""
+    layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    layer_draw = ImageDraw.Draw(layer)
+    for i, x in enumerate(range(560, img.width + 480, 150)):
+        alpha = alphas[i % len(alphas)]
+        layer_draw.polygon(
+            [(x, 0), (x + 60, 0), (x - 420, img.height), (x - 480, img.height)],
+            fill=(*color, alpha),
+        )
+    img.paste(layer, (0, 0), layer)
+
+
 def _frame_background():
     from PIL import Image, ImageDraw
 
@@ -305,6 +322,7 @@ def _frame_background():
         g = int(243 + (249 - 243) * ratio)
         b = int(237 + (231 - 237) * ratio)
         draw.rectangle((0, y, WIDTH, y + 8), fill=(r, g, b))
+    _diagonal_accents(img, color=(255, 122, 26), alphas=(26, 14))
     return img, draw
 
 
@@ -328,7 +346,7 @@ def _draw_frame(topic: ShortsTopic, script: ShortsScript, index: int, path: Path
         x, y, w, h = STANDARD_PLAYER_VISUAL_BOX
         _draw_player_visual(img, draw, topic, x=x, y=y, width=w, height=h)
         draw.rounded_rectangle((104, 1140, WIDTH - 104, 1516), radius=54, fill="#ff7a1a")
-        draw.text((WIDTH // 2, 1220), topic.label, font=_font(50, bold=True), fill="#ffffff", anchor="ma")
+        draw.text((WIDTH // 2, 1220), metric_display(topic.label), font=_font(50, bold=True), fill="#ffffff", anchor="ma")
         draw.text((WIDTH // 2, 1392), topic.value, font=_font(132, bold=True), fill="#ffffff", anchor="mm")
         explanation = metric_explanation(topic.label)
         if explanation:
@@ -372,6 +390,7 @@ def _legend_background():
         g = int(16 + (22 - 16) * ratio)
         b = int(12 + (14 - 12) * ratio)
         draw.rectangle((0, y, WIDTH, y + 8), fill=(r, g, b))
+    _diagonal_accents(img, color=(245, 197, 66), alphas=(13, 7))
     return img, draw
 
 
@@ -526,6 +545,7 @@ def _standings_background():
         g = int(31 + (40 - 31) * ratio)
         b = int(58 + (74 - 58) * ratio)
         draw.rectangle((0, y, WIDTH, y + 8), fill=(r, g, b))
+    _diagonal_accents(img, color=(120, 170, 255), alphas=(15, 8))
     return img, draw
 
 
@@ -825,19 +845,29 @@ def _motion_overscan_size() -> tuple[int, int]:
     return int(round(WIDTH * scale)), int(round(HEIGHT * scale))
 
 
+def _clip_seconds(durations: tuple[float, ...], index: int) -> float:
+    """カード index の入力クリップ長。crossfade の重なり分を最後以外に足す。"""
+    duration = durations[index]
+    if len(durations) > 1 and index < len(durations) - 1:
+        return duration + MOTION_XFADE_SECONDS
+    return duration
+
+
 def _build_video_filter_chain(durations: tuple[float, ...], duration_seconds: float) -> tuple[str, str]:
-    """Ken Burns (slow zoom + alternating horizontal drift) per still card.
+    """Ken Burns (slow zoom + alternating horizontal drift) + カード間 crossfade。
 
     Each frame becomes a moving clip instead of a held still, so the Short
     reads as video rather than a slideshow. The opening card gets a slightly
     stronger push for a 1-second hook; cards then alternate drift direction
-    for visual variety. A short fade in/out bookends the whole sequence.
+    for visual variety. カードの継ぎ目は xfade でつなぎ、末尾以外のクリップを
+    crossfade 分だけ延長するので合計尺は sum(durations) のまま変わらない。
+    A short fade in/out bookends the whole sequence.
     """
     over_w, over_h = _motion_overscan_size()
     parts: list[str] = []
-    labels: list[str] = []
-    for index, duration in enumerate(durations):
-        frame_count = max(1, int(round(duration * MOTION_FPS)))
+    for index in range(len(durations)):
+        clip_seconds = _clip_seconds(durations, index)
+        frame_count = max(1, int(round(clip_seconds * MOTION_FPS)))
         target_zoom = MOTION_OPENING_ZOOM if index == 0 else MOTION_ZOOM
         # Linear zoom driven by the output frame index ``on`` (d=1 means one
         # output per input frame, so no per-input frame multiplication).
@@ -851,15 +881,23 @@ def _build_video_filter_chain(durations: tuple[float, ...], duration_seconds: fl
             f"zoompan=z='{z_expr}':d=1:"
             f"x='{x_expr}':y='{y_expr}':s={WIDTH}x{HEIGHT}:fps={MOTION_FPS},setsar=1[v{index}]"
         )
-        labels.append(f"[v{index}]")
-    concat = "".join(labels) + f"concat=n={len(durations)}:v=1:a=0[vcat]"
+    merged = "[v0]"
+    offset = 0.0
+    for index in range(1, len(durations)):
+        offset += durations[index - 1]
+        out_label = f"[x{index}]"
+        parts.append(
+            f"{merged}[v{index}]xfade=transition=fade:"
+            f"duration={MOTION_XFADE_SECONDS:.3f}:offset={offset:.3f}{out_label}"
+        )
+        merged = out_label
     fade_out_start = max(0.0, duration_seconds - MOTION_FADE_SECONDS)
     vout = (
-        f"[vcat]format=yuv420p,"
+        f"{merged}format=yuv420p,"
         f"fade=t=in:st=0:d={MOTION_FADE_SECONDS},"
         f"fade=t=out:st={fade_out_start:.3f}:d={MOTION_FADE_SECONDS}[vout]"
     )
-    return ";".join(parts) + ";" + concat + ";" + vout, "[vout]"
+    return ";".join(parts) + ";" + vout, "[vout]"
 
 
 def compose_video(
@@ -879,8 +917,9 @@ def compose_video(
     target.parent.mkdir(parents=True, exist_ok=True)
 
     cmd = [ffmpeg_bin, "-y", "-hide_banner", "-loglevel", "error"]
-    for path, duration in zip(frame_paths, durations):
-        cmd.extend(["-framerate", str(MOTION_FPS), "-loop", "1", "-t", f"{duration:.3f}", "-i", str(path)])
+    for index, path in enumerate(frame_paths):
+        clip_seconds = _clip_seconds(durations, index)
+        cmd.extend(["-framerate", str(MOTION_FPS), "-loop", "1", "-t", f"{clip_seconds:.3f}", "-i", str(path)])
     cmd.extend(["-i", str(audio_path)])
     audio_index = len(frame_paths)
     if bgm_path:

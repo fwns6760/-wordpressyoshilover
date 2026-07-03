@@ -183,7 +183,10 @@ class YtShortsRenderTests(unittest.TestCase):
             self.assertIn("-filter_complex", cmd)
             filter_complex = cmd[cmd.index("-filter_complex") + 1]
             self.assertIn("zoompan", filter_complex)
-            self.assertIn("concat=n=5", filter_complex)
+            # カード間は concat のハードカットではなく crossfade でつなぐ
+            self.assertEqual(filter_complex.count("xfade=transition=fade"), 4)
+            self.assertIn("offset=2.200", filter_complex)
+            self.assertIn("offset=21.000", filter_complex)
             self.assertEqual(cmd[cmd.index("-map") + 1], "[vout]")
             self.assertIn("-t", cmd)
             # First -t values are per-loop input durations; the output -t is last.

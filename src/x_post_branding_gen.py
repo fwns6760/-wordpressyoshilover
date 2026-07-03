@@ -1083,14 +1083,20 @@ def build_db_fact_line(
                             else:
                                 break
                     streak_phrase = ""
-                    if current_mode == "win" and current_streak_wins > 0:
+                    # 2026-07-03 user「1連勝って言葉変でしょ」: 連勝/連敗は 2 以上のみ。
+                    # 1 の時は「前の試合は勝ち/負け」と書く。
+                    if current_mode == "win" and current_streak_wins >= 2:
                         streak_phrase = f"現在 {current_streak_wins}連勝中"
                         if current_streak_draws > 0:
                             streak_phrase += f" (間に△{current_streak_draws})"
-                    elif current_mode == "loss" and current_streak_losses > 0:
+                    elif current_mode == "win" and current_streak_wins == 1:
+                        streak_phrase = "前の試合は勝ち"
+                    elif current_mode == "loss" and current_streak_losses >= 2:
                         streak_phrase = f"現在 {current_streak_losses}連敗中"
                         if current_streak_draws > 0:
                             streak_phrase += f" (間に△{current_streak_draws})"
+                    elif current_mode == "loss" and current_streak_losses == 1:
+                        streak_phrase = "前の試合は負け"
                     elif current_mode is None and current_streak_draws > 0:
                         streak_phrase = f"直近{current_streak_draws}試合 引き分け続き"
                     if streak_phrase:

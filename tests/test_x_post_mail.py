@@ -3085,7 +3085,9 @@ class XPostMailEntrypointFreshnessTests(unittest.TestCase):
 
         self.assertEqual(result, 0)
         comment_priority.assert_called_once()
-        generic_fallback.assert_not_called()
+        # 2026-07-03: 優先ソースがあっても generic fallback は残枠 (3-1=2) で top-up
+        generic_fallback.assert_called_once()
+        self.assertEqual(generic_fallback.call_args.kwargs.get("max_candidates"), 2)
         request = send.call_args.args[0]
         self.assertEqual(request.metadata["candidate_count"], 3)
         self.assertIn("岸田行倫『", request.text_body)
@@ -3173,7 +3175,9 @@ class XPostMailEntrypointFreshnessTests(unittest.TestCase):
 
         self.assertEqual(result, 0)
         record_priority.assert_called_once()
-        generic_fallback.assert_not_called()
+        # 2026-07-03: 残枠 top-up 方式 (3-1=2)
+        generic_fallback.assert_called_once()
+        self.assertEqual(generic_fallback.call_args.kwargs.get("max_candidates"), 2)
         request = send.call_args.args[0]
         self.assertEqual(request.metadata["candidate_count"], 3)
         self.assertIn("【岸田行倫】プロ初本塁打達成", request.text_body)

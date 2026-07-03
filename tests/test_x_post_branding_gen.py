@@ -39,26 +39,32 @@ import src.x_post_branding_gen as xbg  # noqa: E402
 class PrimeHoursTests(unittest.TestCase):
     """3.5-flash 温存窓 (X_POST_GEMINI_PRIME_HOURS_JST) の判定と model 差替え。"""
 
-    def _jst(self, hour: int):
+    def _jst(self, hour: int, minute: int = 30):
         from datetime import datetime, timezone, timedelta
 
-        return datetime(2026, 6, 11, hour, 30, tzinfo=timezone(timedelta(hours=9)))
+        return datetime(2026, 6, 11, hour, minute, tzinfo=timezone(timedelta(hours=9)))
 
     def test_inside_window_true(self) -> None:
-        with patch.object(xbg, "_X_POST_GEMINI_PRIME_HOURS_JST", "17-23"):
+        with patch.object(xbg, "_X_POST_GEMINI_PRIME_HOURS_JST", "17:00-22:30"):
             self.assertTrue(xbg._x_post_in_prime_hours(self._jst(17)))
-            self.assertTrue(xbg._x_post_in_prime_hours(self._jst(22)))
+            self.assertTrue(xbg._x_post_in_prime_hours(self._jst(22, 29)))
 
     def test_outside_window_false(self) -> None:
-        with patch.object(xbg, "_X_POST_GEMINI_PRIME_HOURS_JST", "17-23"):
+        with patch.object(xbg, "_X_POST_GEMINI_PRIME_HOURS_JST", "17:00-22:30"):
             self.assertFalse(xbg._x_post_in_prime_hours(self._jst(16)))
-            self.assertFalse(xbg._x_post_in_prime_hours(self._jst(23)))
+            self.assertFalse(xbg._x_post_in_prime_hours(self._jst(22, 30)))
             self.assertFalse(xbg._x_post_in_prime_hours(self._jst(7)))
 
+    def test_legacy_hour_window_still_supported(self) -> None:
+        with patch.object(xbg, "_X_POST_GEMINI_PRIME_HOURS_JST", "17-23"):
+            self.assertTrue(xbg._x_post_in_prime_hours(self._jst(22, 59)))
+            self.assertFalse(xbg._x_post_in_prime_hours(self._jst(23, 0)))
+
     def test_cross_midnight_window(self) -> None:
-        with patch.object(xbg, "_X_POST_GEMINI_PRIME_HOURS_JST", "22-2"):
+        with patch.object(xbg, "_X_POST_GEMINI_PRIME_HOURS_JST", "22:30-2:00"):
             self.assertTrue(xbg._x_post_in_prime_hours(self._jst(23)))
-            self.assertTrue(xbg._x_post_in_prime_hours(self._jst(1)))
+            self.assertTrue(xbg._x_post_in_prime_hours(self._jst(1, 59)))
+            self.assertFalse(xbg._x_post_in_prime_hours(self._jst(22, 29)))
             self.assertFalse(xbg._x_post_in_prime_hours(self._jst(3)))
 
     def test_empty_or_invalid_spec_always_true(self) -> None:
@@ -456,6 +462,24 @@ class BuildDbFactLineTests(unittest.TestCase):
             self.assertIn("平山 功太 打撃", fact)
             self.assertIn("4打数2安打", fact)
             self.assertIn("1打点", fact)
+
+    def test_streak_of_one_not_phrased_as_renshou(self) -> None:
+        """2026-07-03 user「1連勝って言葉変でしょ」: 1 は連勝と書かない。"""
+        import os
+        import sqlite3
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            db = os.path.join(tmp, "insight.db")
+            self._seed_db(db)
+            con = sqlite3.connect(db)
+            # 昨日を負けに変更 → 今日勝ちで streak = 1勝
+            con.execute("UPDATE games SET result='loss', giants_score=2, opp_score=5 "
+                        "WHERE game_id='g-y1'")
+            con.commit()
+            con.close()
+            fact = xbg.build_db_fact_line("戸郷翔征", db)
+            self.assertNotIn("1連勝", fact)
+            self.assertIn("前の試合は勝ち", fact)
 
     def test_db_fact_line_empty_when_no_game(self) -> None:
         import os

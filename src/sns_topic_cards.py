@@ -37,6 +37,8 @@ def extract_rss_keywords(
     handles: Optional[list[str]] = None,
     limit: int = 15,
     require_event: bool = True,
+    max_age_hours: float = 0.0,
+    now=None,
 ) -> list[dict]:
     """RSS(巨人系X)から {player, events, title} を抽出。 選手 + 出来事語の両方ある投稿のみ。
 
@@ -44,9 +46,17 @@ def extract_rss_keywords(
     (default True で既存挙動=媒体見出し向け不変)。 ファンアカ (フーガ/缶詰) の反応文は
     「泉口！！！復活の一打！！！」 のように媒体見出し語を持たないため、 リプ候補化には
     選手検出のみで通す (巨人関連性は detect_player_fn + 後段 ``_is_giants`` で担保)。
+
+    ``max_age_hours`` (2026-07-03 user「リプは相手の新しいポストに付けたい」):
+    0 より大きい時、 pubDate がそれより古い item と pubDate 不明の item を落とし、
+    handle 内は新しい順に並べる (handle 間の優先順は維持)。 0 (default) は従来挙動。
     """
     fetch = fetch_fn or _vr._default_fetch
     handles = handles or _MEDIA_HANDLES
+    now_utc = None
+    if max_age_hours > 0:
+        from datetime import datetime as _dt, timezone as _tz
+        now_utc = (now or _dt.now(_tz.utc)).astimezone(_tz.utc)
     out: list[dict] = []
     seen: set[tuple] = set()
     for h in handles:
@@ -54,10 +64,21 @@ def extract_rss_keywords(
             xml = fetch(f"{_vr._RSSHUB_BASE}/twitter/user/{h}?limit={limit}")
         except Exception:  # noqa: BLE001
             continue
+        handle_out: list[dict] = []
         for item in _vr._extract_rss_items(xml):
             title = item.get("text", "")
             if not title:
                 continue
+            published_at = item.get("published_at")
+            if now_utc is not None:
+                if published_at is None:
+                    continue  # 日付不明 = 古い可能性があるので安全側で除外
+                try:
+                    age_h = (now_utc - published_at).total_seconds() / 3600.0
+                except (TypeError, ValueError):
+                    continue
+                if age_h > max_age_hours:
+                    continue
             try:
                 player = detect_player_fn(title) or ""
             except Exception:  # noqa: BLE001
@@ -71,13 +92,18 @@ def extract_rss_keywords(
             if key in seen:
                 continue
             seen.add(key)
-            out.append({
+            handle_out.append({
                 "player": player,
                 "events": events,
                 "title": title,
                 "url": item.get("url", ""),
                 "handle": h,
+                "published_at": published_at,
             })
+        if now_utc is not None and len(handle_out) > 1:
+            # 鮮度ゲート有効時は published_at 必須なので None は残っていない
+            handle_out.sort(key=lambda kw: kw["published_at"], reverse=True)
+        out.extend(handle_out)
     return out
 
 
@@ -335,6 +361,7 @@ def build_reply_candidates(
     require_event: bool = True,
     skip_on_empty_comment: bool = False,
     avoid_player_names: Optional[set[str]] = None,
+    max_age_hours: float = 0.0,
 ) -> list[dict]:
     """大手巨人アカ投稿への『リプライ候補』。 ヨシラバーボイスのリプ文 + 大手投稿URL/tweet_id。
 
@@ -371,6 +398,9 @@ def build_reply_candidates(
         fetch_fn=fetch_fn,
         handles=handles,
         require_event=require_event,
+        # 2026-07-03 user「リプは相手の新しいポストに付けたい」: 古い親ポストへの
+        # リプは返信欄でも埋もれる。鮮度ゲート + handle 内新しい順。
+        max_age_hours=max_age_hours,
     )
     out: list[dict] = []
     used: set[str] = set()

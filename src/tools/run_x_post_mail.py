@@ -377,6 +377,16 @@ def _reply_candidates_max_per_run() -> int:
     return _resolve_int_env("X_POST_REPLY_CANDIDATES_MAX", 3, min_value=0)
 
 
+def _reply_max_age_hours() -> float:
+    """リプ対象の親ポスト鮮度 (時間)。2026-07-03 user「相手の新しいポストに
+    リプしたい」: default 6h より古い親ポストはリプ候補にしない。0 で無効。"""
+    raw = (os.environ.get("X_POST_REPLY_MAX_AGE_HOURS") or "").strip()
+    try:
+        return max(0.0, float(raw)) if raw else 6.0
+    except ValueError:
+        return 6.0
+
+
 def _news_scrape_enabled() -> bool:
     """@Tigers_140609 風の速報スクレイプ型 post をメール便に出すか (default OFF)。
 
@@ -3529,6 +3539,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     handles=target_handles,
                     skip_on_empty_comment=rep_comment_fn is not None,
                     avoid_player_names=live_duplicate_players,
+                    max_age_hours=_reply_max_age_hours(),
                 )
             except Exception as _rep_exc:  # noqa: BLE001
                 LOG.warning("reply_candidates build failed: %r", _rep_exc)
@@ -3622,6 +3633,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     require_event=False,
                     skip_on_empty_comment=True,
                     avoid_player_names=live_duplicate_players,
+                    max_age_hours=_reply_max_age_hours(),
                 )
             except Exception as _fan_exc:  # noqa: BLE001
                 LOG.warning("fan_reply build failed: %r", _fan_exc)
@@ -3709,24 +3721,24 @@ def main(argv: Sequence[str] | None = None) -> int:
     else:
         news_fallback_enabled = not _news_fallback_disabled()
         fallback_candidates = []
-    generic_news_suppressed_by_priority_sources = False
     priority_source_candidates = comment_priority_candidates + record_priority_candidates
-    if priority_source_candidates and news_fallback_enabled:
-        news_fallback_enabled = False
-        generic_news_suppressed_by_priority_sources = True
     news_priority_count = _resolve_news_priority_candidates(args.max_candidates)
+    # 2026-07-03 user「9時台はリプしかなかった。ポストも出したい (1便5件増えてよい)」:
+    # 旧挙動は優先ソース (コメント/記録) が 1 件でもあると generic fallback を
+    # 丸ごと止めていた → ポスト側が 3 件で頭打ち。枠の残りを top-up する方式へ。
+    news_topup_count = max(0, news_priority_count - len(priority_source_candidates))
+    if news_fallback_enabled and priority_source_candidates and news_topup_count <= 0:
+        news_fallback_enabled = False
+        LOG.info(
+            "News/opinion generic fallback skipped: priority sources filled all %d slots",
+            len(priority_source_candidates),
+        )
     if not news_fallback_enabled and not gemini_enabled:
-        if generic_news_suppressed_by_priority_sources:
-            LOG.info(
-                "News/opinion generic fallback skipped because priority source supplied %d candidates",
-                len(priority_source_candidates),
-            )
-        else:
-            LOG.info("News/opinion fallback disabled by X_POST_MAIL_NEWS_FALLBACK_DISABLED")
-    if news_fallback_enabled and news_priority_count:
+        LOG.info("News/opinion generic fallback not running (disabled or slots filled)")
+    if news_fallback_enabled and news_topup_count:
         fallback_candidates = _fetch_news_opinion_fallback_candidates(
             [],
-            max_candidates=news_priority_count,
+            max_candidates=news_topup_count,
             now=now_jst,
             recent_player_counts=recent_player_counts,
             comment_fn=_make_voiced_comment_fn(now_jst, "ニュース記事"),  # A: フーガ+缶詰 voice

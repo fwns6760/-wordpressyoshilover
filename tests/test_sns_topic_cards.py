@@ -395,3 +395,53 @@ class FanReplyTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ExtractFreshnessTests(unittest.TestCase):
+    """2026-07-03 user「リプは相手の新しいポストに付けたい」: 鮮度ゲート + 新しい順。"""
+
+    @staticmethod
+    def _feed():
+        return (
+            "<rss><channel>"
+            "<item><title>竹丸和幸がプロ初完投</title><link>http://x/old</link>"
+            "<pubDate>Thu, 02 Jul 2026 10:00:00 +0900</pubDate></item>"
+            "<item><title>岡本和真が復帰即アーチの一発</title><link>http://x/new</link>"
+            "<pubDate>Fri, 03 Jul 2026 08:30:00 +0900</pubDate></item>"
+            "<item><title>坂本勇人がサヨナラ勝利</title><link>http://x/nodate</link></item>"
+            "</channel></rss>"
+        )
+
+    def _now(self):
+        from datetime import datetime, timezone, timedelta
+        return datetime(2026, 7, 3, 9, 0, tzinfo=timezone(timedelta(hours=9)))
+
+    def test_age_gate_drops_old_and_undated(self):
+        import src.sns_topic_cards as tc
+        kws = tc.extract_rss_keywords(
+            detect_player_fn=lambda t: t[:4] if any(
+                n in t for n in ("竹丸", "岡本", "坂本")) else "",
+            fetch_fn=lambda u: self._feed(), handles=["h"],
+            max_age_hours=6.0, now=self._now(),
+        )
+        urls = [k["url"] for k in kws]
+        self.assertEqual(urls, ["http://x/new"])  # 23h前と日付不明は落ちる
+
+    def test_age_gate_disabled_keeps_legacy_behavior(self):
+        import src.sns_topic_cards as tc
+        kws = tc.extract_rss_keywords(
+            detect_player_fn=lambda t: t[:4] if any(
+                n in t for n in ("竹丸", "岡本", "坂本")) else "",
+            fetch_fn=lambda u: self._feed(), handles=["h"],
+        )
+        self.assertEqual(len(kws), 3)  # 従来: 全部拾う
+
+    def test_newest_first_within_handle(self):
+        import src.sns_topic_cards as tc
+        kws = tc.extract_rss_keywords(
+            detect_player_fn=lambda t: t[:4] if any(
+                n in t for n in ("竹丸", "岡本")) else "",
+            fetch_fn=lambda u: self._feed(), handles=["h"],
+            max_age_hours=48.0, now=self._now(),
+        )
+        self.assertEqual([k["url"] for k in kws], ["http://x/new", "http://x/old"])

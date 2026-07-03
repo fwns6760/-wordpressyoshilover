@@ -1913,6 +1913,39 @@ class ComposeMailTests(unittest.TestCase):
         self.assertEqual(detect_giants_player_name("丸が出塁", alias_map=alias_map), "")
         self.assertEqual(detect_giants_player_name("巨人・丸が出塁", alias_map=alias_map), "丸佳浩")
 
+    def test_detect_skips_same_surname_other_team_player(self) -> None:
+        """2026-07-03 user 指摘「同じ苗字の他球団間違い多くない？」:
+        姓 alias が他球団選手フルネームの内側にしか無い時は誤マッチとして弾く
+        (実事故: DeNA・山﨑康晃 → 山﨑伊織)。巨人側の言及が独立にあれば通す。"""
+        alias_map = {"山﨑伊織": "山﨑伊織", "山﨑": "山﨑伊織"}
+        # 他球団フルネームの内側のみ → 弾く
+        self.assertEqual(
+            detect_giants_player_name(
+                "DeNA・山﨑康晃、一軍登録抹消 6月以降の防御率22.85と精彩欠く",
+                alias_map=alias_map,
+            ),
+            "",
+        )
+        self.assertEqual(
+            detect_giants_player_name("日本ハム・山﨑福也が完封", alias_map=alias_map), ""
+        )
+        # 巨人側の言及 (フルネーム / 独立した姓) は通す
+        self.assertEqual(
+            detect_giants_player_name("巨人・山﨑伊織が今季10勝目", alias_map=alias_map),
+            "山﨑伊織",
+        )
+        self.assertEqual(
+            detect_giants_player_name("山﨑、7回1失点の好投", alias_map=alias_map),
+            "山﨑伊織",
+        )
+        # 両者混在 (投げ合い) は巨人側の独立言及があるので通す
+        self.assertEqual(
+            detect_giants_player_name(
+                "巨人・山﨑とDeNA・山﨑康晃が投げ合い", alias_map=alias_map
+            ),
+            "山﨑伊織",
+        )
+
     def test_duplicate_surname_alias_is_not_loaded_as_player_alias(self) -> None:
         import json
         import tempfile

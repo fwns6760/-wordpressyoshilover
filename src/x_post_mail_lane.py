@@ -1507,6 +1507,55 @@ def _alias_hits_with_boundary(text: str, key: str) -> bool:
         start = i + 1
 
 
+_NPB12_ROSTER_PATH = _Path(__file__).resolve().parents[1] / "config" / "npb_12team_roster.json"
+_NON_GIANTS_FULLNAMES_CACHE: Optional[tuple[str, ...]] = None
+
+
+def _load_non_giants_fullnames() -> tuple[str, ...]:
+    """npb_12team_roster.json の巨人以外の在籍者フルネーム (正規化済み)。
+
+    2026-07-03 user 指摘「同じ苗字の他球団間違い多くない？」: 姓 alias
+    (山﨑/鈴木 等) は 12 球団で大量に重複し、他球団選手のフルネームの一部に
+    誤マッチする事故が続いた (DeNA・山﨑康晃 → 山﨑伊織 等)。alias 一致箇所が
+    他球団フルネームの内側だけなら巨人選手の言及ではないと判定するための台帳。
+    """
+    global _NON_GIANTS_FULLNAMES_CACHE
+    if _NON_GIANTS_FULLNAMES_CACHE is not None:
+        return _NON_GIANTS_FULLNAMES_CACHE
+    names: list[str] = []
+    try:
+        rows = _json.loads(_NPB12_ROSTER_PATH.read_text(encoding="utf-8"))
+        for row in rows:
+            if not row.get("active"):
+                continue
+            if str(row.get("team_code") or "").strip().lower() == "g":
+                continue
+            name = _normalize_player_name(row.get("name"))
+            if name:
+                names.append(name)
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("failed to load npb 12team roster for name guard: %r", exc)
+    _NON_GIANTS_FULLNAMES_CACHE = tuple(names)
+    return _NON_GIANTS_FULLNAMES_CACHE
+
+
+def _alias_shadowed_by_other_team_fullname(normalized_text: str, key: str) -> bool:
+    """alias 一致が他球団選手フルネームの内側にしか無い時 True (誤マッチ)。
+
+    他球団フルネーム (alias より長いもの) を text から潰した後も alias が
+    残れば、巨人側の言及が独立に存在する → False (通す)。
+    例: 「DeNA・山﨑康晃、登録抹消」は「山﨑」が山﨑康晃の内側のみ → True。
+    「巨人・山﨑とDeNA・山﨑康晃の投げ合い」は潰した後も「山﨑」が残る → False。
+    """
+    masked = normalized_text
+    for full in _load_non_giants_fullnames():
+        if len(full) > len(key) and key in full and full in masked:
+            masked = masked.replace(full, "\x00" * len(full))
+    if masked is normalized_text:
+        return False
+    return not _alias_hits_with_boundary(masked, key)
+
+
 def detect_giants_player_name(
     text: object,
     *,
@@ -1530,6 +1579,17 @@ def detect_giants_player_name(
         if len(key) < 2 and "巨人" not in str(text) and "ジャイアンツ" not in str(text):
             continue
         if key and _alias_hits_with_boundary(normalized_text, key):
+            # 2026-07-03: 同姓の他球団選手 (フルネームが text に居る) への
+            # 誤マッチを検出の中央で遮断。全 lane (news / x_buzz / リプ /
+            # 記録記事) に効く。
+            if _alias_shadowed_by_other_team_fullname(normalized_text, key):
+                LOG.info(
+                    "giants_name_guard_skip alias=%s canonical=%s "
+                    "(他球団フルネーム内の一致のみ)",
+                    key,
+                    canonical,
+                )
+                continue
             return str(canonical or "").strip()
     return ""
 

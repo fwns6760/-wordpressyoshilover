@@ -47,3 +47,4 @@
 - 16:1x JST | SEO | GSC「検出-未登録」多数の診断 = 新規ドメイン+1120頁一括が主因。gsc_indexing_submit 26 URL 投入 (Google 日次 quota 429 で残53は翌日)。sitemap/title/desc/構造化/内部リンクは点検済で健全
 - 17:0x JST | deploy | user「トップはデータページの作り+ユーザビリティ洗練」| commit 35747d5f | frontend v0.24.5 (REST self-update) | トップ=データダッシュボード化: 順位帯→好調タイル4→打率/防御率top3→支配下67人チップ→データメニュー→OB8人→ニュース小窓6件。全データは既存自動更新ページのserver-side切り出し(手動更新ゼロ)。live検証済 (.344/1.29等の実数値確認)。残: フロント固定ページ切替(投稿フィード完全分離)は user が今の見た目を確認してから
 - 17:2x JST | deploy | user「ニュースは目立たせない」| frontend v0.24.6 | トップ投稿リストを文字リスト化 (サムネ/抜粋/カード枠除去)、小窓は固定ページ化後に自動切替の条件分岐。live確認済
+- 17:4x JST | deploy | user「ヘッダーtitleが黒くて見えない」| tagline=巨人データ&速報サイト (WP設定REST) + custom.css [ydash-catchphrase] 白太字/モバイル1行復活 | live確認済

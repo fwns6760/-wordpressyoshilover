@@ -3987,20 +3987,40 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             return 0
 
-    # 2026-06-11 ①話題選手連動 (user「その試合で話題になった選手がインプとれそう」):
-    # RSSHub 巨人系 X の直近言及数で候補を先頭寄せ (本文・数字は不変、 並びと why_now のみ)。
-    # 下の policy gate は順序保持で先頭から cap するため、 boost はこの位置で効く。
+    # 2026-06-11 ①話題選手連動 → 2026-07-03 「今フック」優先へ拡張
+    # (user「データ系は良いが、見てる人がその時に欲しい情報ではない」)。
+    # 今日のスタメン / 直近試合の結果 / 今話題 の選手フック + metric 固有文脈
+    # (試合前見どころ等) で候補を並べ替え、文脈ゼロ候補 (二軍練習クリップ等) は
+    # 便あたり X_POST_MAIL_NON_CONTEXT_MAX 件 (default 2) に制限する。
+    # 下の policy gate は順序保持で先頭から cap するため、この位置で効く。
     if _topical_boost_enabled() and candidates:
+        _buzz = None
         try:
             from src import x_post_data_angles as _angles
 
             # data_angles block で取得済みなら再 fetch しない (RSSHub 叩き 1 回/便)
             _buzz = topical_counts if topical_counts is not None \
                 else _angles.fetch_topical_counts()
-            if _buzz:
-                candidates = _angles.boost_topical_candidates(candidates, _buzz)
+            _hooks = _angles.build_now_context_hooks(
+                db_path or "",
+                now=now_jst,
+                lineup_focus_names=lineup_focus_names,
+                topical_counts=_buzz,
+            )
+            candidates = _angles.apply_now_context_priority(
+                candidates,
+                _hooks,
+                non_context_max=_resolve_int_env(
+                    "X_POST_MAIL_NON_CONTEXT_MAX", 2, min_value=0),
+            )
         except Exception as _tb_exc:  # noqa: BLE001
-            LOG.info("topical boost skip: %r", _tb_exc)
+            LOG.info("now context priority skip: %r", _tb_exc)
+            try:
+                from src import x_post_data_angles as _angles
+                if _buzz:
+                    candidates = _angles.boost_topical_candidates(candidates, _buzz)
+            except Exception:  # noqa: BLE001
+                pass
 
     # 2026-05-27 x-impression-plan: final API-free policy gate.
     # Keep the 437 media/share path unchanged; only prune same-mail

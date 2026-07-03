@@ -101,9 +101,9 @@ def build_win_correlation_candidates(
     *,
     now: Optional[datetime] = None,
     max_count: int = 2,
-    min_cond_games: int = 8,
-    min_total_games: int = 20,
-    min_gap: float = 0.150,
+    min_cond_games: int = 10,
+    min_total_games: int = 40,
+    min_gap: float = 0.200,
     dedup_set: Optional[set[str]] = None,
     with_image: bool = True,
     preferred_players: Optional[set[str]] = None,
@@ -176,15 +176,15 @@ def build_win_correlation_candidates(
         total = cw + cl + nw + nl
         # たんぱく事実型 (主観なし、数字 = DB verified のみ)
         post = (
-            f"【{canon}】{label}、巨人は強い\n"
+            f"【{canon}】{label}の試合\n"
             f"あり {cw}勝{cl}敗 (勝率{_fmt3(cr)})\n"
             f"なし {nw}勝{nl}敗 (勝率{_fmt3(orr)})\n"
             + _streak_line(db_path, canon)
-            + f"今季{total}試合・勝率差+{_fmt3(gap)} #巨人 #ジャイアンツ"
+            + f"今季{total}試合の条件付き勝率差+{_fmt3(gap)} #巨人 #ジャイアンツ"
         )
         fact = (
             f"{label}: {cw}勝{cl}敗 勝率{_fmt3(cr)} ｜ それ以外: {nw}勝{nl}敗 "
-            f"勝率{_fmt3(orr)} ｜ 差 +{_fmt3(gap)} (今季{total}試合)"
+            f"勝率{_fmt3(orr)} ｜ 条件付き勝率差 +{_fmt3(gap)} (今季{total}試合)"
         )
         draft = "\n".join([
             "【根拠: 勝利相関 (条件付き勝率、大手未掲載)】",
@@ -221,7 +221,7 @@ def build_win_correlation_candidates(
             team_level="first",
             sample_size=total,
             sample_label=f"今季{total}試合",
-            why_now="勝敗に直結する条件付き勝率 (ML的相関 angle)",
+            why_now="試合結果と一緒に見たい条件付き勝率 angle",
             source_material_type="win_correlation",
             image_bytes=image,
         ))
@@ -237,15 +237,16 @@ def build_opponent_split_candidates(
     *,
     now: Optional[datetime] = None,
     max_count: int = 2,
-    min_opp_ab: int = 15,
-    min_season_ab: int = 60,
-    min_gap: float = 0.080,
+    min_opp_ab: int = 25,
+    min_season_ab: int = 80,
+    min_other_ab: Optional[int] = None,
+    min_gap: float = 0.120,
     dedup_set: Optional[set[str]] = None,
     with_image: bool = True,
     preferred_players: Optional[set[str]] = None,
     opponents: Optional[set[str]] = None,
 ) -> list:
-    """「対○○キラー」対戦カード別打率の驚き候補 (シーズン比 +min_gap 以上)。
+    """「対○○キラー」対戦カード別打率の驚き候補 (その他カード比 +min_gap 以上)。
 
     ``preferred_players`` (今夜の話題選手 等) は閾値を満たす限り gap より優先。
     ``opponents`` を渡すとそのカードに限定 (試合前枠 = 今日の相手のみ、
@@ -256,6 +257,10 @@ def build_opponent_split_candidates(
     if not db_path:
         return []
     Candidate = _candidate_cls()
+    if min_other_ab is None:
+        # ``min_season_ab`` は既存 caller/test 互換の総打数 gate として残しつつ、
+        # 比較対象の「その他カード」も薄すぎないようにする。
+        min_other_ab = max(5, min_season_ab - min_opp_ab)
     try:
         with _sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
             cur = conn.cursor()
@@ -284,19 +289,23 @@ def build_opponent_split_candidates(
         sab, sh = season.get(canon, (0, 0))
         if oab < min_opp_ab or sab < min_season_ab:
             continue
+        other_ab = sab - oab
+        other_h = sh - oh
+        if other_ab < min_other_ab or other_ab <= 0:
+            continue
         opp_avg = oh / oab
-        season_avg = sh / sab
-        gap = opp_avg - season_avg
+        other_avg = other_h / other_ab
+        gap = opp_avg - other_avg
         if gap < min_gap:
             continue
         if opponents is not None and str(opp) not in opponents:
             continue
-        scored.append((gap, canon, str(opp), oab, oh, orbi, opp_avg, season_avg))
+        scored.append((gap, canon, str(opp), oab, oh, orbi, opp_avg, other_avg, other_ab))
 
     pref = preferred_players or set()
     out: list = []
     used_players: set[str] = set()
-    for gap, canon, opp, oab, oh, orbi, oavg, savg in sorted(
+    for gap, canon, opp, oab, oh, orbi, oavg, other_avg, other_ab in sorted(
         scored, key=lambda t: (t[1] not in pref, -t[0])
     ):
         if len(out) >= max_count:
@@ -311,13 +320,13 @@ def build_opponent_split_candidates(
         post = (
             f"【{canon}】{opp}キラー\n"
             f"対{opp} {_fmt3(oavg)} ({oh}安打/{oab}打数・{orbi}打点)\n"
-            f"シーズン {_fmt3(savg)} — 対{opp}で+{_fmt3(gap)}\n"
+            f"他カード {_fmt3(other_avg)} — 対{opp}で+{_fmt3(gap)}\n"
             + _streak_line(db_path, canon)
             + f"#巨人 #ジャイアンツ"
         )
         fact = (
             f"対{opp} 打率{_fmt3(oavg)} ({oh}安打/{oab}打数・{orbi}打点) ｜ "
-            f"シーズン{_fmt3(savg)} ｜ 差 +{_fmt3(gap)}"
+            f"他カード{_fmt3(other_avg)} ({other_ab}打数) ｜ 差 +{_fmt3(gap)}"
         )
         draft = "\n".join([
             "【根拠: 対戦カード別 split (大手未掲載)】",
@@ -343,11 +352,11 @@ def build_opponent_split_candidates(
                 compare_bars=[
                     {"label": f"対{opp}", "value": oavg,
                      "display": _fmt3(oavg), "highlight": True},
-                    {"label": "シーズン", "value": savg, "display": _fmt3(savg)},
+                    {"label": "他カード", "value": other_avg, "display": _fmt3(other_avg)},
                 ],
             ))
         out.append(Candidate(
-            title=f"{canon} 対{opp} {_fmt3(oavg)} ({opp}キラー)",
+            title=f"{canon} 対{opp} {_fmt3(oavg)} (他カード比+{_fmt3(gap)})",
             metric=_OPP_SPLIT_METRIC,
             period_label="今シーズン",
             draft_text=draft,
@@ -574,6 +583,164 @@ def boost_topical_candidates(
     return boosted
 
 
+# ─── 4.5 今フック (now-context) 優先選定 ──────────────────────────────
+# 2026-07-03 user「データ系は良いが、見てる人がその時に欲しい情報ではない」:
+# 候補の選手が「今」と接続しているか (今日のスタメン / 直近試合の結果 / 今話題)
+# を判定し、文脈のある候補をメール先頭へ、文脈ゼロの候補 (例: 二軍練習動画) は
+# 便あたり上限で絞る。数字・本文は変えない (選定と並びとwhy_nowのみ)。
+
+# metric 自体が「今」に固定されている lane の固有スコア
+# (試合前見どころ=今日の試合 / 登録抹消・節目・今季初=直近試合起点)
+_INHERENT_CONTEXT_SCORES = {
+    "試合前見どころ": 3,
+    "登録抹消": 2,
+    "節目達成": 2,
+    "今季初・以来": 2,
+}
+# 独自の鮮度窓を持つ lane (ニュース/コメント/リプ/MLB 等) = 最低限の「今」保証
+_INHERENT_NOW_METRICS = frozenset({
+    "NEWS_OPINION", "PLAYER_COMMENT", "COMMENT_DB", "HOCHI_REPLY",
+    "reply_candidate", "news_scrape", "mlb_watch_post", "FAN_VOICE",
+    "GEMMA_BRANDING",
+})
+
+
+def build_now_context_hooks(
+    db_path: str,
+    *,
+    now: Optional[datetime] = None,
+    lineup_focus_names: Optional[list] = None,
+    topical_counts: Optional[dict] = None,
+    topical_min: int = 2,
+) -> dict[str, tuple[str, int]]:
+    """{正規化選手名: (フック文, スコア)} を返す。強い文脈が弱い文脈を上書き。
+
+    スコア: 今日のスタメン=3 / 直近試合の結果=2 / 今話題=1。
+    直近試合は今日/昨日のみ対象 (それより古い試合は「今」ではない)。
+    フック文は mail の why_now 用 (投稿本文には足さない)。失敗は部分結果で継続。
+    """
+    if now is None:
+        now = datetime.now(JST)
+    hooks: dict[str, tuple[str, int]] = {}
+    # 弱い順に書き、強い文脈で上書きする
+    for name, count in (topical_counts or {}).items():
+        if int(count or 0) >= topical_min:
+            key = _norm_name(name)
+            if key:
+                hooks[key] = (f"今X上で話題 ({count}件言及)", 1)
+    if db_path:
+        try:
+            with _sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
+                row = conn.execute(
+                    "SELECT MAX(g.game_date) FROM games g "
+                    "WHERE EXISTS (SELECT 1 FROM batting_logs b "
+                    "  WHERE b.game_id = g.game_id AND b.team_name = '巨人')"
+                ).fetchone()
+                latest = str(row[0] or "")[:10] if row else ""
+                today = now.date().isoformat()
+                yesterday = (now.date() - timedelta(days=1)).isoformat()
+                day_word = {today: "今日", yesterday: "昨日"}.get(latest, "")
+                if day_word:
+                    for canon, h, rbi in conn.execute(
+                        "SELECT b.player_canonical, COALESCE(b.H,0), COALESCE(b.RBI,0) "
+                        "FROM batting_logs b JOIN games g ON b.game_id = g.game_id "
+                        "WHERE g.game_date = ? AND b.team_name = '巨人'",
+                        (latest,),
+                    ).fetchall():
+                        key = _norm_name(canon)
+                        if not key:
+                            continue
+                        if int(h) >= 2:
+                            hooks[key] = (f"{day_word}{int(h)}安打", 2)
+                        elif int(rbi) >= 2:
+                            hooks[key] = (f"{day_word}{int(rbi)}打点", 2)
+                    for canon, ip, er in conn.execute(
+                        "SELECT p.player_canonical, COALESCE(p.IP,0.0), COALESCE(p.ER,0) "
+                        "FROM pitching_logs p JOIN games g ON p.game_id = g.game_id "
+                        "WHERE g.game_date = ? AND p.team_name = '巨人'",
+                        (latest,),
+                    ).fetchall():
+                        key = _norm_name(canon)
+                        if not key:
+                            continue
+                        if float(ip) >= 5.0:
+                            hooks[key] = (
+                                f"{day_word}先発{int(float(ip))}回{int(er)}失点", 2,
+                            )
+        except Exception as exc:  # noqa: BLE001
+            logger.info("now_context last-game hooks skipped: %r", exc)
+    for name in (lineup_focus_names or []):
+        key = _norm_name(name)
+        if key:
+            hooks[key] = ("今日のスタメン", 3)
+    if hooks:
+        logger.info("now_context hooks built: %d players", len(hooks))
+    return hooks
+
+
+def apply_now_context_priority(
+    candidates: list,
+    hooks: dict[str, tuple[str, int]],
+    *,
+    non_context_max: int = 2,
+    min_keep: int = 3,
+) -> list:
+    """文脈スコア降順の stable sort + 文脈ゼロ候補の便あたり上限。
+
+    スコア = max(選手フックのスコア, metric 固有スコア)。文脈ゼロ (score 0、
+    例: 二軍練習クリップの引用RT) は先頭から ``non_context_max`` 件だけ残す。
+    ただし総数が ``min_keep`` を割る場合は割らない所まで残す (メールを枯らさない)。
+    文脈ありが 1 件も無い便は並び・件数とも不変 (従来挙動)。
+    """
+    if not candidates:
+        return candidates
+
+    def _score(c) -> int:
+        metric = getattr(c, "metric", "") or ""
+        inherent = _INHERENT_CONTEXT_SCORES.get(metric, 0)
+        if not inherent and metric in _INHERENT_NOW_METRICS:
+            inherent = 1
+        hook_score = hooks.get(_norm_name(getattr(c, "focus_player", "")), ("", 0))[1]
+        return max(inherent, hook_score)
+
+    scored = [(c, _score(c)) for c in candidates]
+    if not any(s > 0 for _c, s in scored):
+        return candidates
+    ordered = sorted(scored, key=lambda cs: cs[1], reverse=True)
+    kept: list = []
+    zero_kept = 0
+    zero_budget = max(int(non_context_max), 0)
+    for c, s in ordered:
+        if s > 0:
+            kept.append(c)
+            continue
+        if zero_kept < zero_budget or len(kept) + 1 <= min_keep:
+            kept.append(c)
+            zero_kept += 1
+        else:
+            logger.info(
+                "now_context drop (no hook): metric=%s player=%s",
+                getattr(c, "metric", ""), getattr(c, "focus_player", ""),
+            )
+    # why_now へフックを前置 (選手フック由来のみ。metric 固有は既に文脈を書いている)
+    for c in kept:
+        hook, score = hooks.get(_norm_name(getattr(c, "focus_player", "")), ("", 0))
+        if hook and score > 0:
+            tag = f"⏰{hook}"
+            why = getattr(c, "why_now", "") or ""
+            if tag not in why:
+                try:
+                    c.why_now = f"{tag}" + (f" ｜ {why}" if why else "")
+                except Exception:  # noqa: BLE001
+                    pass
+    n_ctx = sum(1 for _c, s in ordered if s > 0)
+    logger.info(
+        "now_context priority: context=%d zero_kept=%d dropped=%d total=%d",
+        n_ctx, zero_kept, len(candidates) - len(kept), len(kept),
+    )
+    return kept
+
+
 # ─── 5. 週間MVP (月曜の定番企画) ─────────────────────────────────────
 
 
@@ -582,7 +749,7 @@ def build_weekly_mvp_candidates(
     *,
     now: Optional[datetime] = None,
     max_count: int = 1,
-    min_ab: int = 10,
+    min_ab: int = 15,
     dedup_set: Optional[set[str]] = None,
     with_image: bool = True,
     monday_only: bool = True,
@@ -1218,7 +1385,11 @@ def build_pregame_preview_candidates(
     place = str(g0.get("place") or "").strip()
     time_s = str(g0.get("time") or "").strip()
     head = f"今日の巨人 vs {opp}" + (f" ({place} {time_s})" if place or time_s else "")
-    signature = f"pregame|{now.date().isoformat()}|{opp}"
+    # 2026-07-03: 朝便で出た後 24h dedup で「一番欲しい 13-17 時帯」に出ない gap を
+    # 解消するため、署名に am/pm slot を入れて 1 日最大 2 回 (朝 + 午後) 出す。
+    # runner は sig_parts[2] で opp を読むため slot は末尾に足す (互換維持)。
+    slot = "am" if now.hour < 12 else "pm"
+    signature = f"pregame|{now.date().isoformat()}|{opp}|{slot}"
     if dedup_set is not None and signature in dedup_set:
         logger.info("pregame dedup skip %s", signature)
         return []

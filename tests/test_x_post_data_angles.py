@@ -108,6 +108,45 @@ def test_opponent_split_gap_threshold(tmp_path):
     assert out == []  # gap .5 を超える split は fixture に無い
 
 
+def test_opponent_split_compares_against_other_cards(tmp_path):
+    """対戦別splitはシーズン平均ではなく、当該カード以外との比較にする。"""
+    db = tmp_path / "opp_other.db"
+    conn = sqlite3.connect(db)
+    conn.executescript(
+        """
+        CREATE TABLE games (
+            game_id TEXT PRIMARY KEY, game_date TEXT, opponent TEXT,
+            result TEXT, giants_score INT, opp_score INT
+        );
+        CREATE TABLE batting_logs (
+            game_id TEXT, team_role TEXT, team_name TEXT,
+            player_canonical TEXT, AB INT, H INT, RBI INT
+        );
+        """
+    )
+    # 対阪神: 10安打/25打数 .400。その他: 10安打/50打数 .200。
+    for i in range(5):
+        gid = f"2026-05-{i + 1:02d}:g-t"
+        conn.execute("INSERT INTO games VALUES (?,?,?,?,0,0)", (gid, f"2026-05-{i + 1:02d}", "阪神", "win"))
+        conn.execute("INSERT INTO batting_logs VALUES (?,?,?,?,?,?,?)", (gid, "giants", "巨人", "精度選手", 5, 2, 1))
+    for i in range(10):
+        gid = f"2026-05-{i + 6:02d}:g-c"
+        conn.execute("INSERT INTO games VALUES (?,?,?,?,0,0)", (gid, f"2026-05-{i + 6:02d}", "広島", "loss"))
+        conn.execute("INSERT INTO batting_logs VALUES (?,?,?,?,?,?,?)", (gid, "giants", "巨人", "精度選手", 5, 1, 0))
+    conn.commit()
+    conn.close()
+
+    out = angles.build_opponent_split_candidates(
+        str(db), max_count=1, min_opp_ab=25, min_season_ab=75,
+        min_other_ab=50, min_gap=0.120, with_image=False,
+    )
+    assert len(out) == 1
+    c = out[0]
+    assert "他カード .200" in c.post_text
+    assert "差 +.200" in c.db_fact_line
+    assert "シーズン" not in c.post_text
+
+
 def test_alltime_chase_synthetic():
     rankings = {"hr": [
         {"rank": 10, "name": "OB大砲", "value": 250, "is_current": False, "slug": None},
@@ -619,7 +658,28 @@ def test_pregame_preview_builds_with_starter_and_keyman(tmp_path):
     assert "今季4先発 2勝2敗・防御率3.00・28奪三振" in p
     assert "対阪神 今季2勝1敗" in p
     assert "対阪神キーマン 好打者: 打率.500" in p
-    assert out[0].signature == "pregame|2026-06-12|阪神"
+    # 2026-07-03: am/pm slot 付き署名 (午後便でも 1 回再掲できる)
+    assert out[0].signature == "pregame|2026-06-12|阪神|pm"
+
+
+def test_pregame_preview_reappears_in_pm_slot(tmp_path):
+    """朝便で出た後も、午後便 (12時以降) では別署名で再掲される。"""
+    db = _pregame_db(tmp_path)
+    dedup: set = set()
+    am = angles.build_pregame_preview_candidates(
+        db, now=_pregame_now(hour=9), upcoming_fn=lambda: list(_TODAY_GAME),
+        dedup_set=dedup)
+    assert len(am) == 1 and am[0].signature.endswith("|am")
+    dedup.add(am[0].signature)
+    # 同じ午前はもう出ない
+    assert angles.build_pregame_preview_candidates(
+        db, now=_pregame_now(hour=10), upcoming_fn=lambda: list(_TODAY_GAME),
+        dedup_set=dedup) == []
+    # 午後は再掲される
+    pm = angles.build_pregame_preview_candidates(
+        db, now=_pregame_now(hour=15), upcoming_fn=lambda: list(_TODAY_GAME),
+        dedup_set=dedup)
+    assert len(pm) == 1 and pm[0].signature.endswith("|pm")
 
 
 def test_pregame_preview_gates(tmp_path):
@@ -893,3 +953,112 @@ def test_roster_move_dedup():
     assert angles.build_roster_move_candidates(
         now=now, moves_fn=lambda y: _moves_payload(y),
         dedup_set={"roster|2026|6/12|故障太郎,新戦力"}) == []
+
+
+# ─── 今フック (now-context) 優先選定 (2026-07-03) ─────────────────────
+
+
+def _ctx_db(tmp_path: Path) -> str:
+    db = tmp_path / "ctx.db"
+    conn = sqlite3.connect(db)
+    conn.executescript(
+        """
+        CREATE TABLE games (game_id TEXT PRIMARY KEY, game_date TEXT, opponent TEXT,
+            result TEXT, giants_score INT, opp_score INT);
+        CREATE TABLE batting_logs (game_id TEXT, team_role TEXT, team_name TEXT,
+            player_canonical TEXT, AB INT, H INT, RBI INT);
+        CREATE TABLE pitching_logs (game_id TEXT, team_role TEXT, team_name TEXT,
+            player_canonical TEXT, appearance_order INT, result_mark TEXT,
+            K INT, IP REAL, ER INT);
+        """
+    )
+    gid = "2026-07-02:g"
+    conn.execute("INSERT INTO games VALUES (?,?,?,?,0,0)",
+                 (gid, "2026-07-02", "ヤクルト", "win"))
+    conn.execute("INSERT INTO batting_logs VALUES (?,?,?,?,?,?,?)",
+                 (gid, "giants", "巨人", "好打者", 4, 3, 1))
+    conn.execute("INSERT INTO batting_logs VALUES (?,?,?,?,?,?,?)",
+                 (gid, "giants", "巨人", "凡退者", 4, 0, 0))
+    conn.execute("INSERT INTO pitching_logs VALUES (?,?,?,?,?,?,?,?,?)",
+                 (gid, "giants", "巨人", "先発好投", 1, "○", 8, 7.0, 1))
+    conn.commit()
+    conn.close()
+    return str(db)
+
+
+def _ctx_now():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    return datetime(2026, 7, 3, 13, 0, tzinfo=ZoneInfo("Asia/Tokyo"))
+
+
+def test_now_context_hooks_sources_and_precedence(tmp_path):
+    db = _ctx_db(tmp_path)
+    hooks = angles.build_now_context_hooks(
+        db,
+        now=_ctx_now(),
+        lineup_focus_names=["好打者"],  # 昨日3安打だがスタメンが上書き (score 3)
+        topical_counts={"話題選手": 2, "単発言及": 1},
+    )
+    assert hooks["好打者"] == ("今日のスタメン", 3)
+    assert hooks["先発好投"] == ("昨日先発7回1失点", 2)
+    assert hooks["話題選手"][1] == 1
+    assert "単発言及" not in hooks  # topical_min=2 未満
+    assert "凡退者" not in hooks  # 昨日出場のみでは hook にならない
+
+
+def test_now_context_hooks_stale_game_ignored(tmp_path):
+    """直近試合が一昨日以前なら last-game hook は付かない。"""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    db = _ctx_db(tmp_path)
+    hooks = angles.build_now_context_hooks(
+        db, now=datetime(2026, 7, 5, 13, 0, tzinfo=ZoneInfo("Asia/Tokyo")))
+    assert "好打者" not in hooks
+
+
+def test_now_context_priority_orders_and_caps(tmp_path):
+    from types import SimpleNamespace as NS
+    hooks = {"好打者": ("昨日3安打", 2), "スタメン男": ("今日のスタメン", 3)}
+    cands = [
+        NS(metric="x_buzz_post", focus_player="二軍練習A", why_now=""),
+        NS(metric="x_buzz_post", focus_player="二軍練習B", why_now=""),
+        NS(metric="x_buzz_post", focus_player="二軍練習C", why_now=""),
+        NS(metric="x_buzz_post", focus_player="好打者", why_now="動画"),
+        NS(metric="試合前見どころ", focus_player="", why_now="今日の試合"),
+        NS(metric="NEWS_OPINION", focus_player="ニュース選手", why_now=""),
+        NS(metric="x_buzz_post", focus_player="スタメン男", why_now=""),
+    ]
+    out = angles.apply_now_context_priority(cands, hooks, non_context_max=2, min_keep=3)
+    # 文脈スコア降順 (同スコアは入力順の stable sort):
+    # 見どころ(3) → スタメン(3) → 好打者(2) → ニュース(1) → 文脈ゼロは2件まで
+    players = [c.focus_player or c.metric for c in out]
+    assert players[:2] == ["試合前見どころ", "スタメン男"]
+    assert players[2] == "好打者"
+    assert len([p for p in players if p.startswith("二軍練習")]) == 2
+    assert len(out) == 6
+    # why_now にフックが前置される (選手フック由来のみ)
+    assert out[1].why_now.startswith("⏰今日のスタメン")
+    assert "⏰昨日3安打" in out[2].why_now
+
+
+def test_now_context_priority_no_context_unchanged():
+    from types import SimpleNamespace as NS
+    cands = [
+        NS(metric="x_buzz_post", focus_player="A", why_now=""),
+        NS(metric="x_buzz_post", focus_player="B", why_now=""),
+    ]
+    out = angles.apply_now_context_priority(cands, {}, non_context_max=1)
+    assert out == cands  # 文脈ありゼロの便は件数・並びとも不変
+
+
+def test_now_context_priority_min_keep_protects_mail():
+    from types import SimpleNamespace as NS
+    hooks = {"文脈男": ("今日のスタメン", 3)}
+    cands = [
+        NS(metric="x_buzz_post", focus_player="文脈男", why_now=""),
+        NS(metric="x_buzz_post", focus_player="ゼロ1", why_now=""),
+        NS(metric="x_buzz_post", focus_player="ゼロ2", why_now=""),
+    ]
+    out = angles.apply_now_context_priority(cands, hooks, non_context_max=0, min_keep=3)
+    assert len(out) == 3  # min_keep がメールを枯らさない

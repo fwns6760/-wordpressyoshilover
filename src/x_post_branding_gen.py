@@ -1041,6 +1041,42 @@ def build_db_fact_line(
                     if parts:
                         lines.append(f"- {player_canonical} 投球 (今日): " + " ".join(parts))
 
+            # 選手個人の今季集計 (2026-07-03): 当日出場の無い選手ではチーム
+            # 直近5試合しか fact が無く、全リプが同じ「直近5試合」補足になる
+            # ため、選手個人の season 数字を常に持たせる。防御率は IP 実数の
+            # 単純 SUM が 1/3 回表記とずれるため出さない (整数のみ = 誤記なし)。
+            cur.execute(
+                "SELECT COALESCE(SUM(AB),0), COALESCE(SUM(H),0), "
+                "COALESCE(SUM(RBI),0), COUNT(DISTINCT game_id) "
+                "FROM batting_logs "
+                "WHERE player_canonical = ? AND team_role = 'giants'",
+                (player_canonical,),
+            )
+            season_bat = cur.fetchone()
+            if season_bat and int(season_bat[0] or 0) >= 10:
+                ab, h, rbi, g = (int(v or 0) for v in season_bat)
+                avg = f"{h / ab:.3f}".lstrip("0")
+                lines.append(
+                    f"- {player_canonical} 今季打撃: 打率{avg}"
+                    f" ({ab}打数{h}安打 {rbi}打点)"
+                )
+            cur.execute(
+                "SELECT COUNT(*), "
+                "SUM(CASE WHEN result_mark='○' THEN 1 ELSE 0 END), "
+                "SUM(CASE WHEN result_mark='●' THEN 1 ELSE 0 END), "
+                "COALESCE(SUM(K),0) "
+                "FROM pitching_logs "
+                "WHERE player_canonical = ? AND team_role = 'giants'",
+                (player_canonical,),
+            )
+            season_pit = cur.fetchone()
+            if season_pit and int(season_pit[0] or 0) > 0:
+                g, w, l, k = (int(v or 0) for v in season_pit)
+                rec = f" {w}勝{l}敗" if (w or l) else ""
+                lines.append(
+                    f"- {player_canonical} 今季投球: {g}登板{rec} {k}奪三振"
+                )
+
             if streak_window > 0:
                 # 直近 loss が出るまで遡って「連勝中」 / 「連敗中」 / 「混在」
                 # を集計する。 引き分けは streak を切らない (NPB 慣習)。
@@ -1099,8 +1135,12 @@ def build_db_fact_line(
                         streak_phrase = "前の試合は負け"
                     elif current_mode is None and current_streak_draws > 0:
                         streak_phrase = f"直近{current_streak_draws}試合 引き分け続き"
+                    # 2026-07-03 user 指摘: 主語ラベルの無い「直近5試合」を LLM が
+                    # ファーム/選手個人の成績として誤帰属した実事故があるため、
+                    # チーム行は「巨人(一軍)チーム」を明記し、勝敗数も添える
+                    # (●○ marks の数え間違い捏造を防ぐ)。
                     if streak_phrase:
-                        lines.append(f"- {streak_phrase}")
+                        lines.append(f"- 巨人(一軍)チーム: {streak_phrase}")
                     # 直近 streak_window 試合の marks (補助情報)
                     short = recent[: max(streak_window, 5)]
                     marks_short = []
@@ -1113,9 +1153,14 @@ def build_db_fact_line(
                         else:
                             marks_short.append("△")
                     if marks_short:
+                        wins = marks_short.count("○")
+                        losses = marks_short.count("●")
+                        draws = marks_short.count("△")
+                        record = f"{wins}勝{losses}敗" + (f"{draws}分" if draws else "")
                         lines.append(
-                            f"- 直近{len(marks_short)}試合: "
+                            f"- 巨人(一軍)チーム 直近{len(marks_short)}試合: "
                             + "".join(marks_short)
+                            + f" ({record})"
                         )
         finally:
             con.close()
@@ -1504,7 +1549,9 @@ def build_quote_rt_comment(
         diff_instr = (
             f"【補足に使う verified data】{_fact}\n"
             "↑この中から元投稿が触れていない数字を1つだけ選び、 補足の核にする。 "
-            "これ以外の数字は足さない。"
+            "選手個人の行があればチーム成績の行より優先する。 "
+            "『巨人(一軍)チーム』の行は一軍チームの成績なので、 ファーム(二軍)の"
+            "成績や選手個人の成績として書き換えるのは禁止。 これ以外の数字は足さない。"
         )
     elif _fact:
         diff_instr = (

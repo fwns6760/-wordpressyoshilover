@@ -493,6 +493,45 @@ class BuildDbFactLineTests(unittest.TestCase):
             # No today game, no player log → 連勝 line のみ or 空
             self.assertNotIn("巨人 vs", fact)
 
+    def test_db_fact_team_lines_labeled_with_record_counts(self) -> None:
+        """2026-07-03 user 指摘: 主語なし「直近5試合」を LLM がファーム/選手
+        個人の成績として誤帰属した。チーム行はラベル + 勝敗数を明記する。"""
+        import os
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            db = os.path.join(tmp, "insight.db")
+            self._seed_db(db)
+            fact = xbg.build_db_fact_line("戸郷翔征", db)
+            self.assertIn("巨人(一軍)チーム 直近3試合: ○○● (2勝1敗)", fact)
+            self.assertIn("- 巨人(一軍)チーム: ", fact)
+            self.assertNotIn("\n- 直近", fact)
+
+    def test_db_fact_includes_player_season_lines(self) -> None:
+        """2026-07-03: 当日出場なしでも選手個人の今季集計を入れ、全リプが
+        チーム直近5試合の同型補足に潰れるのを防ぐ。"""
+        import os
+        import sqlite3
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            db = os.path.join(tmp, "insight.db")
+            self._seed_db(db)
+            fact = xbg.build_db_fact_line("戸郷翔征", db)
+            self.assertIn("戸郷翔征 今季投球: 1登板 1勝0敗 8奪三振", fact)
+            # 打者は 10 打数未満なら season 行を出さない (少数打率の誤誘導防止)
+            fact_bat = xbg.build_db_fact_line("平山 功太", db)
+            self.assertNotIn("今季打撃", fact_bat)
+            con = sqlite3.connect(db)
+            for i in range(3):
+                con.execute(
+                    "INSERT INTO batting_logs VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (f"g-extra{i}", "giants", 1, "中堅", "平山 功太", "平山 功太",
+                     0, 4, 0, 2, 0, 0, None, "巨人"),
+                )
+            con.commit()
+            con.close()
+            fact_bat2 = xbg.build_db_fact_line("平山 功太", db)
+            self.assertIn("平山 功太 今季打撃: 打率.500 (16打数8安打 1打点)", fact_bat2)
+
     def test_db_fact_line_missing_db_path_returns_empty(self) -> None:
         self.assertEqual(xbg.build_db_fact_line("戸郷翔征", ""), "")
 

@@ -1479,23 +1479,15 @@ def _fetch_news_opinion_fallback_candidates(
             # 2026-07-03 実事故: 総合スポーツ系 source (Number Web X) のサッカー記事
             # 「鈴木彩艶」が姓 alias「鈴木」で巨人・鈴木大和に誤帰属。巨人文脈の無い
             # 記事は、姓だけの弱い一致では通さない (フルネーム級 alias がある時のみ)。
-            if "巨人" not in entry_text_all and "ジャイアンツ" not in entry_text_all:
-                canonical_nospace = str(player).replace(" ", "").replace("　", "")
-                strong_name_hit = (
-                    canonical_nospace and canonical_nospace in entry_text_all
-                ) or any(
-                    len(k) >= 4 and v == player and k in entry_text_all
-                    for k, v in alias_map.items()
+            if not _is_strong_giants_name_match(player, entry_text_all, alias_map):
+                LOG.info(
+                    "news_opinion_fallback_weak_name_match_skip source=%s "
+                    "player=%s url=%s",
+                    source.get("name"),
+                    player,
+                    link,
                 )
-                if not strong_name_hit:
-                    LOG.info(
-                        "news_opinion_fallback_weak_name_match_skip source=%s "
-                        "player=%s url=%s",
-                        source.get("name"),
-                        player,
-                        link,
-                    )
-                    continue
+                continue
             history_blocked = player_key in history_player_keys
             may_have_literal_comment = (
                 _looks_like_comment_article(title, summary)
@@ -1666,6 +1658,24 @@ def _fetch_player_comment_priority_candidates(
     return [c for c in candidates if c.metric == lane._PLAYER_COMMENT_METRIC][:max_comments]
 
 
+def _is_strong_giants_name_match(player: str, text: str, alias_map: dict[str, str]) -> bool:
+    """巨人文脈の無い記事で、姓だけの弱い alias 一致を弾く。
+
+    2026-07-03 実事故 (2件目): DeNA・山﨑康晃の登録抹消記事が、自動生成の
+    姓 prefix alias「山﨑」で巨人・山﨑伊織に誤帰属し、記録記事優先パスから
+    候補化された。news_opinion fallback と同じ判定を共通化して両パスに適用する。
+    """
+    if "巨人" in text or "ジャイアンツ" in text:
+        return True
+    canonical_nospace = str(player).replace(" ", "").replace("　", "")
+    return (
+        bool(canonical_nospace) and canonical_nospace in text
+    ) or any(
+        len(k) >= 4 and v == player and k in text
+        for k, v in alias_map.items()
+    )
+
+
 def _fetch_record_article_priority_candidates(
     existing_candidates: list[lane.Candidate],
     *,
@@ -1720,12 +1730,25 @@ def _fetch_record_article_priority_candidates(
                 continue
             if (now - pub_dt).total_seconds() / 3600.0 > max_age_hours:
                 continue
+            record_alias_map = {
+                **lane._load_giants_player_aliases(),
+                **lane._load_giants_member_aliases(),
+            }
+            record_text_all = f"{title} {summary}"
             member = lane.detect_giants_player_name(
-                f"{title} {summary}",
-                alias_map={**lane._load_giants_player_aliases(), **lane._load_giants_member_aliases()},
+                record_text_all,
+                alias_map=record_alias_map,
             )
             member_key = lane._normalize_player_name(member)
             if not member_key or member_key in existing_player_keys:
+                continue
+            if not _is_strong_giants_name_match(member, record_text_all, record_alias_map):
+                LOG.info(
+                    "record_article_weak_name_match_skip source=%s player=%s url=%s",
+                    source.get("name"),
+                    member,
+                    link,
+                )
                 continue
             # 2026-07-03 user「【選手名】 内容 画像があるとよい」: 記録記事の
             # 元画像を取得して添付 (取れなければテキストのみで従来通り)。

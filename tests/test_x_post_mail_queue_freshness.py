@@ -67,5 +67,24 @@ class FilterStaleQueueItemsTests(unittest.TestCase):
         self.assertEqual(out, [])
 
 
+class StrongGiantsNameMatchTests(unittest.TestCase):
+    """2026-07-03 実事故: DeNA・山﨑康晃の記事が姓 prefix alias「山﨑」で
+    巨人・山﨑伊織に誤帰属し、記録記事優先パスから候補化された。"""
+
+    _ALIAS_MAP = {"山﨑伊織": "山﨑伊織", "山崎伊織": "山﨑伊織", "山﨑": "山﨑伊織"}
+
+    def test_other_team_surname_only_rejected(self):
+        text = "DeNA・山﨑康晃、一軍登録抹消 6月以降の防御率22.85と精彩欠く"
+        self.assertFalse(r._is_strong_giants_name_match("山﨑伊織", text, self._ALIAS_MAP))
+
+    def test_giants_context_accepts_surname_match(self):
+        text = "巨人の先発・山﨑が7回1失点の好投"
+        self.assertTrue(r._is_strong_giants_name_match("山﨑伊織", text, self._ALIAS_MAP))
+
+    def test_full_name_without_giants_context_accepts(self):
+        text = "山﨑伊織が今季10勝目に王手"
+        self.assertTrue(r._is_strong_giants_name_match("山﨑伊織", text, self._ALIAS_MAP))
+
+
 if __name__ == "__main__":
     unittest.main()

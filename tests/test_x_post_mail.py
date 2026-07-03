@@ -1713,6 +1713,22 @@ class ComposeMailTests(unittest.TestCase):
         self.assertIn("テスト新聞掲載画像", cand.image_alt_text)
         self.assertIn("添付画像: https://example.test/images/kishida.jpg", cand.draft_text)
 
+    def test_record_phrase_drops_name_bearing_hype_segment(self) -> None:
+        """2026-07-03 実事故: 「【Ｆ．ウィットリー】速いぞウィットリー 来日後
+        最速１５８キロ！…」と名前二重の見出し丸写しになった。選手名を含む
+        煽り節は落とし、記録事実の節だけ残す。"""
+        from src.x_post_mail_lane import _build_source_backed_post_text
+
+        body = _build_source_backed_post_text(
+            "Ｆ．ウィットリー",
+            "record",
+            source_title="【巨人】速いぞウィットリー 来日後最速１５８キロ！ またも記録更新",
+            source_excerpt="",
+            source_topic_family="pitching",
+        )
+        self.assertIn("【Ｆ．ウィットリー】来日後最速１５８キロ！ またも記録更新", body)
+        self.assertNotIn("速いぞ", body)
+
     def test_record_phrase_core_name_dedup_with_initial_prefix(self) -> None:
         """表示名 'Ｆ．ウィットリー' vs 記事表記 '巨人・ウィットリー' でも
         名前二重化しない (核名 core match)。"""

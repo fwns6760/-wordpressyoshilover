@@ -1326,6 +1326,17 @@ def _extract_source_record_phrase(title: str, excerpt: str, player: str) -> str:
                     phrase = phrase[len(prefix):].strip(" 　。、")
                     stripped = True
                     break
+        # 2026-07-03 実事故「【Ｆ．ウィットリー】速いぞウィットリー 来日後最速
+        # １５８キロ！…」: 見出し内の煽り節 (選手名入り) が残ると【選手名】ヘッダ
+        # と名前二重の丸写しになる。空白区切りの節のうち選手名を含む節は落とす
+        # (ヘッダで選手は既に立っている)。全節が落ちたら "" → 汎用文へ fallback。
+        segments = [s for s in _re.split(r"[ 　]+", phrase) if s]
+        name_terms = {n for n in (player, core) if n}
+        kept = [
+            s for s in segments
+            if not any(n in s for n in name_terms)
+        ]
+        phrase = " ".join(kept)
         phrase = _re.sub(r"\s+", " ", phrase).strip(" 　。、")
         if phrase:
             return _truncate_text(phrase, 72).rstrip("。！？!?")

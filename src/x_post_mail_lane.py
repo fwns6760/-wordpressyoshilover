@@ -2340,6 +2340,10 @@ _MLB_WATCH_HANDLES = [
     # 実 feed 検証済 (2026-07-03、RSSHub 経由で動画/画像マーカー確認)。
     "MLBStats",
     "PitchingNinja",
+    # 2026-07-03 user「巨人だけだと伸びが頭打ち。認証大手×日本人スターで枠を広げる」:
+    # Cubs=鈴木誠也 (実 feed 検証済 items16/video9/image11)。山本由伸は既存 Dodgers/
+    # MLB/MLBStats/PitchingNinja が拾う。
+    "Cubs",
 ]
 # 表示名 → 検出 alias (部分一致)。MLB 文脈の feed なので姓のみで安全。
 # US チーム公式は first name だけで呼ぶ投稿があるため英 first name も入れる
@@ -2348,8 +2352,16 @@ _MLB_WATCH_PLAYERS: dict[str, tuple[str, ...]] = {
     "菅野智之": ("菅野", "Sugano", "Tomoyuki"),
     "岡本和真": ("岡本", "Okamoto", "Kazuma"),
     "大谷翔平": ("大谷", "Ohtani", "Shohei"),
+    # 2026-07-03 user「山本由伸と鈴木誠也も軽めに入れる」(フォロワー増枠の拡張)。
+    # 姓のみ alias (山本/鈴木) は入れない: 同日実事故「鈴木彩艶→鈴木大和」と同じ
+    # 誤爆経路になるため、フルネーム + 英名のみで検出する。
+    "山本由伸": ("山本由伸", "Yamamoto", "Yoshinobu"),
+    "鈴木誠也": ("鈴木誠也", "Suzuki", "Seiya"),
 }
 _MLB_EX_GIANTS = frozenset({"菅野智之", "岡本和真"})
+# 「軽め」枠: 元巨人でも大谷でもない日本人スターは 1 便 1 人まで。
+# 元巨人 (菅野/岡本) と大谷の露出を食わないための上限。
+_MLB_EXTRA_STARS = frozenset({"山本由伸", "鈴木誠也"})
 
 
 def _detect_mlb_watch_player(text: str) -> str:
@@ -2431,6 +2443,7 @@ def build_mlb_watch_candidates(
     out: list[Candidate] = []
     used_players: set[str] = set()
     ohtani_used = 0
+    extra_star_used = 0
     for p in posts:
         if len(out) >= max_count:
             break
@@ -2438,6 +2451,9 @@ def build_mlb_watch_candidates(
         if player in used_players:
             continue
         if player == "大谷翔平" and ohtani_used >= ohtani_max:
+            continue
+        if player in _MLB_EXTRA_STARS and extra_star_used >= 1:
+            # 軽め枠 (山本由伸/鈴木誠也) は 1 便 1 人まで
             continue
         url = p["url"]
         tweet_id = ""
@@ -2466,7 +2482,12 @@ def build_mlb_watch_candidates(
             continue
         post_text = _cap_sentence(post_text, _video_post_char_cap())
         handle = p["handle"]
-        frame = "大谷別枠" if player == "大谷翔平" else "元巨人MLB"
+        if player == "大谷翔平":
+            frame = "大谷別枠"
+        elif player in _MLB_EXTRA_STARS:
+            frame = "日本人スター"
+        else:
+            frame = "元巨人MLB"
         src_text = _truncate_text(p["text"].replace("\n", " ").strip(), 140)
         # 2026-07-03 user「出来れば動画。米国独特のスタッツ画像も引用したい」:
         # どちらの素材か mail 上でひと目で選べるようマーカーを出す。
@@ -2528,6 +2549,8 @@ def build_mlb_watch_candidates(
         used_players.add(player)
         if player == "大谷翔平":
             ohtani_used += 1
+        if player in _MLB_EXTRA_STARS:
+            extra_star_used += 1
     LOG.info("mlb_watch: built %d candidates (as_reply=%s)", len(out), as_reply)
     return out
 

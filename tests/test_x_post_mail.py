@@ -4693,6 +4693,30 @@ class BuildMlbWatchCandidatesTests(unittest.TestCase):
             self.assertEqual(c.media_handle, "mlbjapan")
             self.assertIn("コピペ用", c.draft_text)
 
+    def test_extra_star_light_cap_one_per_mail(self):
+        """2026-07-03 user「山本由伸と鈴木誠也も軽めに」(1万フォロワー到達、
+        認証大手×日本人スターへ枠拡張): 軽め枠は 1 便 1 人まで、
+        元巨人/大谷の枠は食わない。frame は 日本人スター 表示。"""
+        from src import x_post_mail_lane as lane
+        feed = self._feed(
+            self._item("Yoshinobu Yamamoto strikes out 10", "11"),
+            self._item("Seiya Suzuki two-run blast", "12"),  # 軽め枠 2 人目 → cap 1 で落ちる
+            self._item("岡本和真がメジャー初の猛打賞", "13"),
+        )
+        cands = lane.build_mlb_watch_candidates(
+            max_count=3,
+            fetch_fn=lambda url: feed if "MLBJapan" in url else "<rss><channel></channel></rss>",
+            comment_fn=lambda pt, pl: f"{pl}、これは効く一発。",
+        )
+        players = [c.focus_player for c in cands]
+        self.assertIn("岡本和真", players)
+        self.assertEqual(
+            len([p for p in players if p in ("山本由伸", "鈴木誠也")]), 1
+        )
+        star = next(c for c in cands if c.focus_player in ("山本由伸", "鈴木誠也"))
+        self.assertIn("日本人スター", star.title)
+        self.assertNotIn("元巨人", star.title)
+
     def test_as_reply_builds_reply_candidates_with_custom_handles(self):
         """2026-07-03 user「メジャー系の日本公式で大谷や岡本や菅野にもリプしたい」:
         as_reply=True で reply_to_id 付きのリプ候補になり、handles 差し替えが効く。"""

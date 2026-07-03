@@ -32,3 +32,4 @@
 - 12:3x JST | env | user「(無料なら)増やしてもよくない？」| generation 244 | LLM不使用のポスト枠を増: PLAYER_COMMENT_PRIORITY 3→6 / RECORD_ARTICLE_PRIORITY 2→4 (literal引用+記録headline、無料枠消費なし)。LLM voice 系は日次無料枠が天井のため据え置き、今夜 18-22時の枠枯れをログ観測して必要なら時間帯別配分を実装
 - 12:5x JST | env | user「Gemini 3.1 Flash Lite (無料枠余裕)」| generation 245 | MAX_LLM_PER_RUN 28→48 / REPLY_RESERVE 20→36 (非リプ12)。Google側429は過去7日0件、枯渇は自前便内予算 (8時便 used=8 max=8) が原因と確認。今夜18-22時のGoogle枠429有無を観測
 - 14:xx JST | deploy | user「ビジターは日テレない。ホームだけ(地方主催もホーム=日テレ)」| commit bf230792 | image away-noNTV-bf230792 | Job generation 246 | ビジター戦(相手主催)のみ ntv_baseball を試合帯ソースから除外、DAZN が動画担当。主催判定は NPB日程 team1 ベースなので地方主催もホーム扱い(コード変更不要と確認)。今夜バンテリン中日戦=ビジターで初適用
+- 11:0x JST | deploy | user 報告「候補4サッカーだよ」| commit 713a4559 | image alias-boundary-713a4559 | Job generation 247 | alias「バル」がオヤルサバルに部分一致した誤爆を境界判定で修正。10:09便監査: 見どころ先頭・鮮度素材・画像付きは狙い通り、事故はこの1件のみ

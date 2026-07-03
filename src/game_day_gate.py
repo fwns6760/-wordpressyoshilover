@@ -88,14 +88,18 @@ def _minutes(now: datetime) -> int:
     return now.hour * 60 + now.minute
 
 
-def should_proceed(
+def evaluate(
     window: str,
     now: datetime,
     fetch_fn: Optional[Callable[[datetime], str]] = None,
-) -> tuple[bool, str]:
-    """(通すか, 理由) を返す。理由は log 用。"""
+) -> tuple[bool, str, Optional[datetime]]:
+    """(通すか, 理由, 開始時刻|None) を返す。
+
+    477: 開始時刻は caller (run_x_post_mail) がデイゲームの試合中モード窓を
+    自動注入するのに使う。時刻不明 / 試合なし / fetch 失敗は None。
+    """
     if window not in WINDOWS:
-        return True, f"window={window!r} は gate 対象外"
+        return True, f"window={window!r} は gate 対象外", None
     try:
         html = (fetch_fn or _fetch_month_html)(now)
         game = find_today_game(html, now)
@@ -103,14 +107,24 @@ def should_proceed(
         game = {"start": None}
         LOG.warning("gate fetch err (fail-open legacy): %r", exc)
     if game is None:
-        return False, "今日は巨人戦なし"
+        return False, "今日は巨人戦なし", None
     start = game.get("start")
     if start is None:
         lo, hi = _LEGACY_LINEUP if window == "lineup" else _LEGACY_GAME
         ok = lo <= _minutes(now) < hi
-        return ok, f"時刻不明 → 従来窓 {'内' if ok else '外'}"
+        return ok, f"時刻不明 → 従来窓 {'内' if ok else '外'}", None
     if window == "lineup":
         ok = start - timedelta(hours=2) <= now < start
-        return ok, f"start={start:%H:%M} lineup窓{'内' if ok else '外'}"
+        return ok, f"start={start:%H:%M} lineup窓{'内' if ok else '外'}", start
     ok = start - timedelta(minutes=15) <= now < start + timedelta(hours=4)
-    return ok, f"start={start:%H:%M} game窓{'内' if ok else '外'}"
+    return ok, f"start={start:%H:%M} game窓{'内' if ok else '外'}", start
+
+
+def should_proceed(
+    window: str,
+    now: datetime,
+    fetch_fn: Optional[Callable[[datetime], str]] = None,
+) -> tuple[bool, str]:
+    """(通すか, 理由) を返す。理由は log 用。後方互換 wrapper。"""
+    ok, reason, _ = evaluate(window, now, fetch_fn=fetch_fn)
+    return ok, reason

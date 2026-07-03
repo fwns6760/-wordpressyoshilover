@@ -22,7 +22,7 @@ import logging
 import os
 import re as _re
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from difflib import SequenceMatcher as _SequenceMatcher
 from pathlib import Path
 from typing import Sequence
@@ -2776,6 +2776,36 @@ def _main_on_queue(args: argparse.Namespace, recipients: list[str]) -> int:
     return 0
 
 
+def _maybe_inject_day_game_mode(game_start, now_jst) -> bool:
+    """デイゲームの試合中モード窓を EXTRA_GAME env へ in-process 注入する。
+
+    477 narrow (2026-07-03): game_day_gate が NPB 日程から取った開始時刻が
+    17時前 (デイゲーム) の時だけ、[start-15分, start+4h] を
+    ``X_POST_MAIL_EXTRA_GAME_*`` に書き、``x_impression_timing_label`` を
+    試合中モードに追従させる。
+
+    - ナイター (start>=17:00) は壁時計バンド (17:15/19:00/21:45) が既に
+      カバーしているため注入しない (既存挙動 100% 不変)。
+    - env が既に今日を指している時は注入しない (手動 override 優先)。
+    - 注入した時 True (log/test 用)。
+    """
+    if game_start is None or int(game_start.hour) >= 17:
+        return False
+    today_iso = now_jst.date().isoformat()
+    if (os.environ.get(lane.EXTRA_GAME_DATE_ENV) or "").strip() == today_iso:
+        return False
+    start_hhmm = (game_start - timedelta(minutes=15)).strftime("%H:%M")
+    end_hhmm = (game_start + timedelta(hours=4)).strftime("%H:%M")
+    os.environ[lane.EXTRA_GAME_DATE_ENV] = today_iso
+    os.environ[lane.EXTRA_GAME_START_ENV] = start_hhmm
+    os.environ[lane.EXTRA_GAME_END_ENV] = end_hhmm
+    LOG.info(
+        "day_game_mode_injected date=%s window=%s-%s (NPB start=%s)",
+        today_iso, start_hhmm, end_hhmm, game_start.strftime("%H:%M"),
+    )
+    return True
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     _configure_logging()
     args = _parse_args(argv)
@@ -2787,10 +2817,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         from datetime import timedelta as _td, timezone as _tz
         from src import game_day_gate as _gate
         _now_jst = datetime.now(_tz(_td(hours=9)))
-        _ok, _reason = _gate.should_proceed(args.window, _now_jst)
+        _ok, _reason, _game_start = _gate.evaluate(args.window, _now_jst)
         LOG.info("game_day_gate window=%s -> %s (%s)", args.window, _ok, _reason)
         if not _ok:
             return 0
+        # 477 narrow (2026-07-03 user「日曜13:30もわかるの？」): NPB 開始時刻が
+        # 取れたデイゲームは、試合中モード窓 (EXTRA_GAME env) を in-process で
+        # 自動注入し、毎回の手動 env 更新を不要にする。
+        _maybe_inject_day_game_mode(_game_start, _now_jst)
 
     # per-fire LLM 生成上限 (2026-06-03 コスト削減)。1 fire の全 Gemini 経路
     # (buzz/reply/引用RT/queue/roundup) 合算の生成回数を上限で抑える。0 = 無制限。

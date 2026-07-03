@@ -87,5 +87,75 @@ class ShouldProceedTests(unittest.TestCase):
         self.assertTrue(gate.should_proceed("", _dt(5, 12, 0), fetch_fn=lambda now: "")[0])
 
 
+class EvaluateStartTimeTests(unittest.TestCase):
+    """477: evaluate() は開始時刻も返す (デイゲーム モード自動注入用)。"""
+
+    def test_evaluate_returns_start_for_day_game(self):
+        ok, _, start = gate.evaluate("game", _dt(4, 14, 30), fetch_fn=lambda now: _FIX_DAY_GAME)
+        self.assertTrue(ok)
+        self.assertEqual((start.hour, start.minute), (14, 0))
+
+    def test_evaluate_start_none_when_no_game_or_unknown(self):
+        _, _, start = gate.evaluate("game", _dt(5, 14, 30), fetch_fn=lambda now: _FIX_NO_GIANTS)
+        self.assertIsNone(start)
+        _, _, start2 = gate.evaluate("game", _dt(6, 18, 0), fetch_fn=lambda now: _FIX_FINISHED)
+        self.assertIsNone(start2)
+
+
+class DayGameModeInjectionTests(unittest.TestCase):
+    """477 narrow: NPB 開始時刻 → EXTRA_GAME env の in-process 自動注入。"""
+
+    def setUp(self):
+        import os
+        from src.tools import run_x_post_mail as r
+        from src import x_post_mail_lane as lane
+        self.r = r
+        self.lane = lane
+        self.os = os
+        self._saved = {
+            k: os.environ.get(k)
+            for k in (lane.EXTRA_GAME_DATE_ENV, lane.EXTRA_GAME_START_ENV, lane.EXTRA_GAME_END_ENV)
+        }
+        for k in self._saved:
+            os.environ.pop(k, None)
+
+    def tearDown(self):
+        for k, v in self._saved.items():
+            if v is None:
+                self.os.environ.pop(k, None)
+            else:
+                self.os.environ[k] = v
+
+    def test_day_game_injects_window(self):
+        # 日曜 13:30 開始 → 13:15-17:30 が試合中扱い
+        injected = self.r._maybe_inject_day_game_mode(_dt(5, 13, 30), _dt(5, 13, 20))
+        self.assertTrue(injected)
+        self.assertEqual(self.os.environ[self.lane.EXTRA_GAME_DATE_ENV], "2026-07-05")
+        self.assertEqual(self.os.environ[self.lane.EXTRA_GAME_START_ENV], "13:15")
+        self.assertEqual(self.os.environ[self.lane.EXTRA_GAME_END_ENV], "17:30")
+        self.assertTrue(self.lane.is_extra_game_window(_dt(5, 14, 0)))
+        self.assertFalse(self.lane.is_extra_game_window(_dt(5, 18, 0)))
+
+    def test_night_game_does_not_inject(self):
+        # ナイター (18:00) は壁時計バンドが既にカバー → 挙動不変
+        self.assertFalse(self.r._maybe_inject_day_game_mode(_dt(4, 18, 0), _dt(4, 18, 30)))
+        self.assertNotIn(self.lane.EXTRA_GAME_DATE_ENV, self.os.environ)
+
+    def test_manual_env_for_today_wins(self):
+        self.os.environ[self.lane.EXTRA_GAME_DATE_ENV] = "2026-07-04"
+        self.os.environ[self.lane.EXTRA_GAME_START_ENV] = "13:45"
+        self.os.environ[self.lane.EXTRA_GAME_END_ENV] = "18:00"
+        self.assertFalse(self.r._maybe_inject_day_game_mode(_dt(4, 14, 0), _dt(4, 14, 0)))
+        self.assertEqual(self.os.environ[self.lane.EXTRA_GAME_START_ENV], "13:45")
+
+    def test_stale_env_date_is_overridden(self):
+        self.os.environ[self.lane.EXTRA_GAME_DATE_ENV] = "2026-06-07"
+        self.assertTrue(self.r._maybe_inject_day_game_mode(_dt(5, 13, 30), _dt(5, 13, 20)))
+        self.assertEqual(self.os.environ[self.lane.EXTRA_GAME_DATE_ENV], "2026-07-05")
+
+    def test_none_start_does_not_inject(self):
+        self.assertFalse(self.r._maybe_inject_day_game_mode(None, _dt(5, 13, 20)))
+
+
 if __name__ == "__main__":
     unittest.main()

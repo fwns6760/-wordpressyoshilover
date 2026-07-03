@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Yoshilover 063 Frontend (topic hub / SNS reactions / Phase 1 noindex)
  * Description: 062 contract §2 §3 §5 の front impl。topic hub / SNS block / noindex を基盤に、トップ速報帯・記事下回遊束・右カラム rail・上部密集ナビ・人気記事導線まで含めて SWELL front を高密度化する。既存 SWELL コメント欄は触らない。
- * Version: 0.24.5
+ * Version: 0.24.6
  * Author: yoshilover
  */
 
@@ -350,6 +350,16 @@ function yoshilover_063_home_dash_styles() {
         . '.ydash-chip{display:inline-flex;align-items:center;min-height:38px;padding:7px 12px;border:1px solid #e5e7eb;border-radius:999px;background:#fafafa;color:#111827;font-size:13px;font-weight:700;text-decoration:none;line-height:1.1;}'
         . '.ydash-chip--ob{background:#fff;border-style:dashed;color:#374151;}'
         . '@media(max-width:600px){.ydash-rank{grid-template-columns:1fr;}.ydash-tiles{grid-template-columns:repeat(2,1fr);}.ydash-tile__value{font-size:23px;}}'
+        // 2026-07-03 user「要はニュースページは目立たせない」: トップの投稿リストを
+        // カード+サムネの主役面から、控えめな文字リスト (付録) へ落とす (フロント限定)。
+        . '.home .p-postList__thumb{display:none!important;}'
+        . '.home .p-postList.-type-card{display:block!important;}'
+        . '.home .p-postList.-type-card .p-postList__item{width:100%!important;max-width:none!important;margin:0!important;border:none;border-top:1px solid #f1f3f6;border-radius:0;box-shadow:none!important;background:transparent!important;}'
+        . '.home .p-postList.-type-card .p-postList__item:first-child{border-top:none;}'
+        . '.home .p-postList__link{display:block;padding:8px 4px!important;}'
+        . '.home .p-postList__title{font-size:13.5px!important;font-weight:600!important;color:#374151!important;line-height:1.5!important;margin:0!important;}'
+        . '.home .p-postList__excerpt{display:none!important;}'
+        . '.home .p-postList__meta{font-size:11px!important;color:#9ca3af!important;margin:2px 0 0!important;}'
         . '</style>';
 }
 
@@ -858,7 +868,14 @@ function yoshilover_063_buffer_inject_header_titles( $buffer ) {
             $insert_pos = $m[0][1] + strlen( $m[0][0] );
             // 2026-07-03 データファースト化 Phase 2 (usability 優先の並び):
             // 順位帯 → 好調選手 → ランキング窓 → 選手チップ → データメニュー
-            // → レジェンド → 最新ニュース。数字が最初に見え、どの選手にも1タップ。
+            // → レジェンド → ニュース。数字が最初に見え、どの選手にも1タップ。
+            // ニュース部: フロント=投稿一覧の間は控えめ見出しのみ (下のフィードが本体、
+            // CSS で文字リスト化)。フロントを固定ページへ切替えたら小窓 (6件) に自動切替。
+            $news_part = ( get_option( 'show_on_front' ) === 'page' )
+                ? yoshilover_063_render_home_latest_news()
+                : '<div class="yoshi-home-news-h" style="display:flex;align-items:baseline;gap:9px;margin:20px 0 2px;padding:0 2px;">'
+                    . '<h2 style="margin:0;font-size:14px;font-weight:800;color:#6b7280;">📰 巨人ニュース</h2>'
+                    . '<span style="font-size:11px;color:#9ca3af;">最新の話題</span></div>';
             $buffer = substr_replace(
                 $buffer,
                 yoshilover_063_home_dash_styles()
@@ -868,7 +885,7 @@ function yoshilover_063_buffer_inject_header_titles( $buffer ) {
                     . yoshilover_063_render_home_player_chips()
                     . yoshilover_063_render_home_data_hub()
                     . yoshilover_063_render_home_legend_chips()
-                    . yoshilover_063_render_home_latest_news(),
+                    . $news_part,
                 $insert_pos,
                 0
             );

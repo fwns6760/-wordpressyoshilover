@@ -26,3 +26,5 @@
 - 10:0x JST | deploy | user GO「見てる人がその時に欲しい情報でない」対応 | commit 94cb2df7 | image now-context-94cb2df7 | Job generation 241 | 今フック優先選定 (スタメン3/昨日結果2/話題1 + metric固有) + 文脈ゼロ候補2件上限 + pregame 午後再掲 + 死にハンドル除去も同梱
 - 09:05 便実測: mlb_reply 1件 / media リプ6件 / fan リプ3件 — 全新レーン初便で作動確認
 - 残: RSSHub コールドスタート timeout の無料リトライ修正 (次便) / 補足リプ・記録系・今フックの実物品質監査 (今日の便で)
+- 11:0x JST | deploy | user 09:06便FB 3点 (ポスト無い/リプ古い/1連勝) | commit d6268850 | image post-topup-d6268850 | Job generation 242 | env NEWS_PRIORITY_CANDIDATES 3→8 | リプ親ポスト鮮度 6h (X_POST_REPLY_MAX_AGE_HOURS)
+- 観測: 11:05 便で (a) ポスト側候補が増えたか (b) リプ対象が6h以内か (c) 今フック並びが効いたか

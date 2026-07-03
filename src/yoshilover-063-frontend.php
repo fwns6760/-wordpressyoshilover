@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Yoshilover 063 Frontend (topic hub / SNS reactions / Phase 1 noindex)
  * Description: 062 contract §2 §3 §5 の front impl。topic hub / SNS block / noindex を基盤に、トップ速報帯・記事下回遊束・右カラム rail・上部密集ナビ・人気記事導線まで含めて SWELL front を高密度化する。既存 SWELL コメント欄は触らない。
- * Version: 0.23.9
+ * Version: 0.24.0
  * Author: yoshilover
  */
 
@@ -207,6 +207,96 @@ function yoshilover_063_render_home_starter_rotation_table() {
 
     $html .= '</tbody></table></div>';
     $html .= '</section>';
+    return $html;
+}
+
+/**
+ * 2026-07-03 user 決定「トップはデータが顔、ニュースは付録」Phase 1:
+ * /data/standings ページ (rotation-updater が毎朝 7:30 更新) からセ・リーグ
+ * 順位ミニ表を server-side で切り出し、トップ最上部に「今日の巨人」帯として出す。
+ * parse 失敗・ページ不在時は空文字 (無注入) で無害。transient 15 分 cache。
+ */
+function yoshilover_063_render_home_today_dashboard() {
+    $cached = get_transient( 'yoshi_home_today_dash' );
+    if ( is_string( $cached ) ) {
+        return $cached;
+    }
+    $html = '';
+    $page = get_page_by_path( 'data/standings' );
+    if ( $page instanceof WP_Post ) {
+        $content    = (string) $page->post_content;
+        $date_label = '';
+        if ( preg_match( '/セ・リーグ順位表[((]([^))]+)時点[))]/u', $content, $dm ) ) {
+            $date_label = trim( $dm[1] );
+        }
+        $rows = array();
+        if ( preg_match( '/<table[^>]*>.*?<\/table>/su', $content, $tm )
+            && preg_match_all( '/<tr[^>]*>(.*?)<\/tr>/su', $tm[0], $trs ) ) {
+            foreach ( $trs[1] as $tr ) {
+                if ( ! preg_match_all( '/<t[dh][^>]*>(.*?)<\/t[dh]>/su', $tr, $tds ) ) {
+                    continue;
+                }
+                $cells = array_map(
+                    static function ( $c ) {
+                        return trim( wp_strip_all_tags( $c ) );
+                    },
+                    $tds[1]
+                );
+                // 行形式: rank / team / g / w / l / t / pct / 貯金 (+拡張列)
+                if ( count( $cells ) < 8 || ! is_numeric( $cells[0] ) ) {
+                    continue;
+                }
+                $rows[] = $cells;
+                if ( count( $rows ) >= 6 ) {
+                    break;
+                }
+            }
+        }
+        if ( count( $rows ) >= 2 ) {
+            $body = '';
+            foreach ( $rows as $c ) {
+                $is_g  = ( strpos( $c[1], '巨人' ) !== false );
+                $body .= '<tr' . ( $is_g ? ' class="yoshi-today-dash__g"' : '' ) . '>'
+                    . '<td class="yoshi-today-dash__rank">' . esc_html( $c[0] ) . '</td>'
+                    . '<td class="yoshi-today-dash__team">' . esc_html( $c[1] ) . '</td>'
+                    . '<td>' . esc_html( $c[3] . '勝' . $c[4] . '敗' . $c[5] . '分' ) . '</td>'
+                    . '<td>' . esc_html( $c[6] ) . '</td>'
+                    . '<td>' . esc_html( $c[7] ) . '</td>'
+                    . '</tr>';
+            }
+            $style = '<style>'
+                . '.yoshi-today-dash{margin:0 0 14px;background:#fff;border:2px solid #ffcba8;border-radius:14px;box-shadow:0 4px 16px rgba(226,84,0,.12);overflow:hidden;}'
+                . '.yoshi-today-dash__head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 14px;background:linear-gradient(135deg,#e25400,#b34300);}'
+                . '.yoshi-today-dash__head h2{margin:0;font-size:16px;font-weight:900;color:#fff;letter-spacing:.02em;}'
+                . '.yoshi-today-dash__date{font-size:11px;font-weight:700;color:#ffe4d1;white-space:nowrap;}'
+                . '.yoshi-today-dash__scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;}'
+                . '.yoshi-today-dash table{width:100%;min-width:430px;border-collapse:collapse;font-size:13px;margin:0;}'
+                . '.yoshi-today-dash th,.yoshi-today-dash td{padding:6px 10px;border-top:1px solid #f6e7da;text-align:left;white-space:nowrap;font-variant-numeric:tabular-nums;}'
+                . '.yoshi-today-dash thead th{background:#fff6ec;color:#7a2d00;font-size:11px;border-top:none;}'
+                . '.yoshi-today-dash__rank{font-weight:900;width:34px;}'
+                . '.yoshi-today-dash__team{font-weight:800;}'
+                . '.yoshi-today-dash__g td{background:#fff1e6;font-weight:800;}'
+                . '.yoshi-today-dash__links{display:flex;flex-wrap:wrap;gap:7px;padding:9px 12px;}'
+                . '.yoshi-today-dash__links a{display:inline-flex;align-items:center;gap:4px;padding:5px 11px;border-radius:999px;background:#fff8f3;border:1.5px solid #ffd9bf;color:#b34300;font-size:12px;font-weight:800;text-decoration:none;}'
+                . '@media(max-width:600px){.yoshi-today-dash__head h2{font-size:14.5px;}.yoshi-today-dash table{font-size:12px;}}'
+                . '</style>';
+            $html  = $style;
+            $html .= '<section class="yoshi-today-dash" aria-label="セ・リーグ順位表 サマリー">';
+            $html .= '<div class="yoshi-today-dash__head"><h2>⚾ 今日の巨人｜セ・リーグ順位</h2>'
+                . ( $date_label !== '' ? '<span class="yoshi-today-dash__date">' . esc_html( $date_label ) . '時点・毎朝更新</span>' : '' )
+                . '</div>';
+            $html .= '<div class="yoshi-today-dash__scroll"><table>'
+                . '<thead><tr><th>順位</th><th>チーム</th><th>勝敗</th><th>勝率</th><th>貯金</th></tr></thead>'
+                . '<tbody>' . $body . '</tbody></table></div>';
+            $html .= '<div class="yoshi-today-dash__links">'
+                . '<a href="' . esc_url( home_url( '/data/standings' ) ) . '">📊 順位表・個人ランキング</a>'
+                . '<a href="' . esc_url( home_url( '/data/schedule' ) ) . '">🗓 試合日程・結果</a>'
+                . '<a href="' . esc_url( home_url( '/data#ys-player-search' ) ) . '">👤 選手データ検索</a>'
+                . '</div>';
+            $html .= '</section>';
+        }
+    }
+    set_transient( 'yoshi_home_today_dash', $html, 15 * MINUTE_IN_SECONDS );
     return $html;
 }
 
@@ -480,7 +570,17 @@ function yoshilover_063_buffer_inject_header_titles( $buffer ) {
     if ( is_front_page() && strpos( $buffer, '<section class="yoshi-home-data"' ) === false ) {
         if ( preg_match( '/<main\b[^>]*>/', $buffer, $m, PREG_OFFSET_CAPTURE ) ) {
             $insert_pos = $m[0][1] + strlen( $m[0][0] );
-            $buffer = substr_replace( $buffer, yoshilover_063_render_home_data_hub(), $insert_pos, 0 );
+            // 2026-07-03 データファースト化 Phase 1: 「今日の巨人」順位帯 → データハブ
+            // → ニュース見出し、の順で注入 (ニュースは付録の位置づけを見た目で明示)。
+            $news_heading = '<div class="yoshi-home-news-h" style="display:flex;align-items:baseline;gap:9px;margin:20px 0 4px;padding:0 2px;">'
+                . '<h2 style="margin:0;font-size:17px;font-weight:900;color:#1a1a1a;">📰 巨人ニュース速報</h2>'
+                . '<span style="font-size:11px;color:#888;">最新の話題・記事まとめ</span></div>';
+            $buffer = substr_replace(
+                $buffer,
+                yoshilover_063_render_home_today_dashboard() . yoshilover_063_render_home_data_hub() . $news_heading,
+                $insert_pos,
+                0
+            );
         }
     }
 

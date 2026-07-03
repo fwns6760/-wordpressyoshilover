@@ -2069,18 +2069,14 @@ def _today_giants_away(now: Optional[datetime] = None) -> Optional[bool]:
 def game_buzz_handles(now: Optional[datetime] = None) -> list[str]:
     """試合帯の動画/リプ用ソース handle 一覧 (優先順)。
 
-    2026-07-03 user「ホームでない場合は動画は DAZNJPNBaseball にできる？
-    恐らく日テレが出なくなる」: ビジター戦は日テレ中継が無くクリップが
-    出ないため、DAZN を日テレより先に並べる。ホーム/判定不能は従来順。
+    2026-07-03 user「ビジターは日テレないよ。ホームだけ」: 日テレは
+    ホーム戦の中継局なので、ビジター戦では ntv_baseball を外し、動画は
+    DAZN 側で拾う。ホーム/判定不能 (fail-open) は従来通り日テレを含む。
     """
     handles = list(_GAME_BUZZ_HANDLES)
     if _today_giants_away(now) is True:
-        try:
-            handles.remove("DAZNJPNBaseball")
-            handles.insert(handles.index("ntv_baseball"), "DAZNJPNBaseball")
-            LOG.info("game_buzz_handles: away game -> DAZN prioritized over NTV")
-        except ValueError:
-            pass
+        handles = [h for h in handles if h != "ntv_baseball"]
+        LOG.info("game_buzz_handles: away game -> NTV excluded, DAZN covers video")
     return handles
 
 

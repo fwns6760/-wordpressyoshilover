@@ -4506,12 +4506,17 @@ class BuildVideoRadarCandidatesTests(unittest.TestCase):
 class GameBuzzHandlesTests(unittest.TestCase):
     """2026-07-03 user「ホームでない場合は動画は DAZN にできる？日テレが出なくなる」"""
 
-    def test_away_game_prioritizes_dazn_over_ntv(self) -> None:
+    def test_away_game_excludes_ntv(self) -> None:
+        """ビジター戦は日テレ中継なし → ntv_baseball を外し DAZN が動画を担う。"""
         from src import x_post_mail_lane as lane
         with patch.object(lane, "_today_giants_away", return_value=True):
             handles = lane.game_buzz_handles()
-        self.assertLess(handles.index("DAZNJPNBaseball"), handles.index("ntv_baseball"))
-        self.assertEqual(sorted(handles), sorted(lane._GAME_BUZZ_HANDLES))
+        self.assertNotIn("ntv_baseball", handles)
+        self.assertIn("DAZNJPNBaseball", handles)
+        self.assertEqual(
+            handles,
+            [h for h in lane._GAME_BUZZ_HANDLES if h != "ntv_baseball"],
+        )
 
     def test_home_or_unknown_keeps_default_order(self) -> None:
         from src import x_post_mail_lane as lane

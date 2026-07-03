@@ -53,3 +53,4 @@
 - 21:1x JST | fix | user「同じ苗字の他球団間違い多くない？」| commit 80a28b91 | detect_giants_player_name に中央ガード: npb_12team_roster の他球団フルネーム台帳で、姓aliasの一致が他球団フルネーム内側のみなら skip。全lane一括。山﨑姓は他球団7人 | tests 395 passed | build+jobs update 済 (latest-job)
 - 21:2x JST | fix | user「今日やったことで弊害あるか考えて」→ 自己点検で2件検出・修正 | commit ce289151 | ①今季集計が team_role='giants' 頼みで他球団同士試合の同名選手を混ぜ得た→ games JOIN (giants_scoreあり) で巨人試合限定 ②投手の「今季打撃: 打率.000」がリプ補足核になる事故→ 登板ありは30打数未満で打撃行抑制 | tests 371 passed | build+jobs update 済。残観察: 数字ゲート緩み/不調選手への失礼補足/記録候補の取りこぼし(安全側)
 - 21:4x JST | ops | user「明日は午後2時から試合(18時でなく)」| x-post-mail-lane job env 更新: X_POST_MAIL_EXTRA_GAME_DATE=2026-07-04 (START=13:45/END=18:00 は 6/7 デイゲーム実績値を継続)。13:45-18:00 が試合中扱いになる。発火帯は既存 */15 13-21時で足りる。DATE gate なので翌日以降は自動で無効
+- 22:0x JST | ticket | user「NPBを見て変える仕組み入ってなかった？」→ 調査: game_day_gate (7/2) が NPB 日程から発火間引きは全自動 (明日も 13:45-18:00 だけ試合帯便が飛ぶ)。ただし試合中モード判定 (label) は壁時計+EXTRA_GAME env のままのギャップ → 477-XPOST-daygame-mode-auto-wiring 起票 (7/4 運用実績を見てから着手)

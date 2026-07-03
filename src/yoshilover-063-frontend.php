@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Yoshilover 063 Frontend (topic hub / SNS reactions / Phase 1 noindex)
  * Description: 062 contract §2 §3 §5 の front impl。topic hub / SNS block / noindex を基盤に、トップ速報帯・記事下回遊束・右カラム rail・上部密集ナビ・人気記事導線まで含めて SWELL front を高密度化する。既存 SWELL コメント欄は触らない。
- * Version: 0.24.0
+ * Version: 0.24.5
  * Author: yoshilover
  */
 
@@ -301,6 +301,292 @@ function yoshilover_063_render_home_today_dashboard() {
 }
 
 /**
+ * 2026-07-03 Phase 2 ダッシュボード共通: 統一デザイン (usability 優先)。
+ * - 白カード + 1px hairline (#e5e7eb)、影なし、角丸 12px
+ * - 強調色 #e25400 は「今日の巨人ヘッダ / 巨人行 / 数値ハイライト」だけに限定
+ * - 全 tap 対象 40px 以上、表は tabular-nums、装飾テキストなし
+ * 共通ヘッダ: 左=タイトル、右=「もっと見る」導線 (毎ブロック同じ位置 = 迷わない)。
+ */
+function yoshilover_063_home_card_open( $title, $more_url = '', $more_label = 'もっと見る' ) {
+    $h = '<section class="ydash-card">'
+        . '<div class="ydash-card__head"><h2>' . $title . '</h2>';
+    if ( $more_url !== '' ) {
+        $h .= '<a class="ydash-card__more" href="' . esc_url( $more_url ) . '">' . esc_html( $more_label ) . ' ＞</a>';
+    }
+    return $h . '</div>';
+}
+
+function yoshilover_063_home_dash_styles() {
+    static $done = false;
+    if ( $done ) {
+        return '';
+    }
+    $done = true;
+    return '<style>'
+        . '.ydash-card{margin:0 0 14px;background:#fff;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;}'
+        . '.ydash-card__head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:11px 14px 9px;border-bottom:1px solid #f1f3f6;}'
+        . '.ydash-card__head h2{margin:0;font-size:15px;font-weight:900;color:#111827;letter-spacing:.01em;}'
+        . '.ydash-card__more{flex:0 0 auto;font-size:12px;font-weight:700;color:#6b7280;text-decoration:none;padding:6px 10px;border:1px solid #e5e7eb;border-radius:999px;line-height:1;}'
+        . '.ydash-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1px;background:#f1f3f6;}'
+        . '.ydash-tile{background:#fff;padding:12px 14px;text-decoration:none;display:block;}'
+        . '.ydash-tile__label{font-size:11px;font-weight:700;color:#6b7280;margin:0 0 2px;}'
+        . '.ydash-tile__value{font-size:26px;font-weight:800;color:#e25400;line-height:1.15;}'
+        . '.ydash-tile__name{font-size:13.5px;font-weight:800;color:#111827;margin-top:3px;}'
+        . '.ydash-tile__ctx{font-size:11px;color:#9ca3af;margin-top:1px;}'
+        . '.ydash-rank{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:#f1f3f6;}'
+        . '.ydash-rank__col{background:#fff;padding:10px 14px 12px;}'
+        . '.ydash-rank__t{font-size:12px;font-weight:800;color:#6b7280;margin:0 0 6px;}'
+        . '.ydash-rank table{width:100%;border-collapse:collapse;font-size:13px;margin:0;}'
+        . '.ydash-rank td{padding:6px 4px;border-top:1px solid #f6f7f9;white-space:nowrap;font-variant-numeric:tabular-nums;}'
+        . '.ydash-rank tr:first-child td{border-top:none;}'
+        . '.ydash-rank__no{width:22px;color:#9ca3af;font-weight:700;}'
+        . '.ydash-rank__nm{font-weight:700;color:#111827;overflow:hidden;text-overflow:ellipsis;max-width:9em;}'
+        . '.ydash-rank__nm--g{color:#e25400;}'
+        . '.ydash-rank__v{text-align:right;font-weight:800;color:#111827;}'
+        . '.ydash-chips{padding:10px 12px 12px;}'
+        . '.ydash-chips__group{margin:0 0 8px;}'
+        . '.ydash-chips__label{font-size:11px;font-weight:800;color:#6b7280;margin:6px 2px 5px;}'
+        . '.ydash-chips__row{display:flex;flex-wrap:wrap;gap:6px;}'
+        . '.ydash-chip{display:inline-flex;align-items:center;min-height:38px;padding:7px 12px;border:1px solid #e5e7eb;border-radius:999px;background:#fafafa;color:#111827;font-size:13px;font-weight:700;text-decoration:none;line-height:1.1;}'
+        . '.ydash-chip--ob{background:#fff;border-style:dashed;color:#374151;}'
+        . '@media(max-width:600px){.ydash-rank{grid-template-columns:1fr;}.ydash-tiles{grid-template-columns:repeat(2,1fr);}.ydash-tile__value{font-size:23px;}}'
+        . '</style>';
+}
+
+/**
+ * いま好調な選手 (最大4タイル)。/data/notable ページ (毎試合更新) の
+ * 「いま好調な選手」カードを server-side で切り出す。transient 15分。
+ */
+function yoshilover_063_render_home_hot_players() {
+    $cached = get_transient( 'yoshi_home_hot_players' );
+    if ( is_string( $cached ) ) {
+        return $cached;
+    }
+    $html = '';
+    $page = get_page_by_path( 'data/notable' );
+    if ( $page instanceof WP_Post ) {
+        $content = (string) $page->post_content;
+        $pos     = mb_strpos( $content, 'いま好調な選手' );
+        if ( $pos !== false ) {
+            $seg   = mb_substr( $content, $pos, 6000 );
+            $tiles = '';
+            $count = 0;
+            if ( preg_match_all( '/<article[^>]*>(.*?)<\/article>/su', $seg, $arts ) ) {
+                foreach ( $arts[1] as $a ) {
+                    if ( $count >= 4 ) {
+                        break;
+                    }
+                    if ( ! preg_match( '/<p[^>]*>([^<]{1,14})<\/p>\s*<div[^>]*>([^<]{1,10})<\/div>/su', $a, $lv ) ) {
+                        continue;
+                    }
+                    if ( ! preg_match( '/<a href="(\/data\/[a-z0-9-]+)"[^>]*>([^<]{2,14})<\/a>(?:<span[^>]*>([^<]{0,40})<\/span>)?/su', $a, $nm ) ) {
+                        continue;
+                    }
+                    $ctx    = isset( $nm[3] ) ? trim( str_replace( '・', ' ', $nm[3] ) ) : '';
+                    $tiles .= '<a class="ydash-tile" href="' . esc_url( home_url( $nm[1] ) ) . '">'
+                        . '<p class="ydash-tile__label">' . esc_html( trim( $lv[1] ) ) . '</p>'
+                        . '<div class="ydash-tile__value">' . esc_html( trim( $lv[2] ) ) . '</div>'
+                        . '<div class="ydash-tile__name">' . esc_html( trim( $nm[2] ) ) . '</div>'
+                        . ( $ctx !== '' ? '<div class="ydash-tile__ctx">' . esc_html( $ctx ) . '</div>' : '' )
+                        . '</a>';
+                    $count++;
+                }
+            }
+            if ( $count >= 2 ) {
+                $html = yoshilover_063_home_card_open( '🔥 いま好調な選手', home_url( '/data/notable' ), '注目データ' )
+                    . '<div class="ydash-tiles">' . $tiles . '</div></section>';
+            }
+        }
+    }
+    set_transient( 'yoshi_home_hot_players', $html, 15 * MINUTE_IN_SECONDS );
+    return $html;
+}
+
+/**
+ * ランキング窓: 打率 top3 / 防御率 top3。/data/standings ページの
+ * 個人ランキング表 (毎朝更新) から top3 行を切り出す。transient 15分。
+ */
+function yoshilover_063_render_home_ranking_mini() {
+    $cached = get_transient( 'yoshi_home_ranking_mini_v3' );
+    if ( is_string( $cached ) ) {
+        return $cached;
+    }
+    $html = '';
+    $page = get_page_by_path( 'data/standings' );
+    if ( $page instanceof WP_Post ) {
+        $content = (string) $page->post_content;
+        $cols    = array();
+        foreach ( array(
+            // 見出しは「個人打撃成績ランキング」等。文言ゆれに耐えるよう短い部分一致で探す
+            array( 'head' => '個人打撃', 'title' => '打率 TOP3' ),
+            array( 'head' => '個人投手', 'title' => '防御率 TOP3' ),
+        ) as $spec ) {
+            $pos = mb_strpos( $content, $spec['head'] );
+            if ( $pos === false ) {
+                continue;
+            }
+            // 表は inline style 込みで長い (行10本×11列で 8000 字超) ため広めに切る
+            $seg = mb_substr( $content, $pos, 60000 );
+            if ( ! preg_match( '/<table[^>]*>.*?<\/table>/su', $seg, $tm )
+                || ! preg_match_all( '/<tr[^>]*>(.*?)<\/tr>/su', $tm[0], $trs ) ) {
+                continue;
+            }
+            $rows = '';
+            $n    = 0;
+            foreach ( $trs[1] as $tr ) {
+                if ( $n >= 3 ) {
+                    break;
+                }
+                if ( ! preg_match_all( '/<t[dh][^>]*>(.*?)<\/t[dh]>/su', $tr, $tds ) ) {
+                    continue;
+                }
+                $c = array_map( static function ( $x ) {
+                    return trim( wp_strip_all_tags( $x ) );
+                }, $tds[1] );
+                // 行形式 (実測 2026-07-03): 順位 / 選手(チーム込 例「佐藤 輝明(神)」) / 指標値 / ...
+                if ( count( $c ) < 3 || ! is_numeric( $c[0] ) ) {
+                    continue;
+                }
+                $is_g  = ( strpos( $c[1], '(巨)' ) !== false );
+                $rows .= '<tr><td class="ydash-rank__no">' . esc_html( $c[0] ) . '</td>'
+                    . '<td class="ydash-rank__nm' . ( $is_g ? ' ydash-rank__nm--g' : '' ) . '">' . esc_html( $c[1] ) . '</td>'
+                    . '<td class="ydash-rank__v">' . esc_html( $c[2] ) . '</td></tr>';
+                $n++;
+            }
+            if ( $n >= 3 ) {
+                $cols[] = '<div class="ydash-rank__col"><p class="ydash-rank__t">' . esc_html( $spec['title'] ) . '</p>'
+                    . '<table><tbody>' . $rows . '</tbody></table></div>';
+            }
+        }
+        if ( count( $cols ) === 2 ) {
+            $html = yoshilover_063_home_card_open( '🏆 セ・リーグ個人ランキング', home_url( '/data/batting-ranking' ), 'ランキング' )
+                . '<div class="ydash-rank">' . implode( '', $cols ) . '</div></section>';
+        }
+    }
+    set_transient( 'yoshi_home_ranking_mini_v3', $html, 15 * MINUTE_IN_SECONDS );
+    return $html;
+}
+
+/**
+ * 選手から探す: 支配下全員の名前チップ (ポジション別、1タップで個人ページ)。
+ * /data/ cluster ページの「◯◯ 一覧」表からリンクを切り出す。transient 1時間。
+ */
+function yoshilover_063_render_home_player_chips() {
+    $cached = get_transient( 'yoshi_home_player_chips' );
+    if ( is_string( $cached ) ) {
+        return $cached;
+    }
+    $html = '';
+    $page = get_page_by_path( 'data' );
+    if ( $page instanceof WP_Post ) {
+        $content = (string) $page->post_content;
+        $groups  = array();
+        $labels  = array( '投手', '捕手', '内野手', '外野手' );
+        foreach ( $labels as $i => $label ) {
+            $start = mb_strpos( $content, $label . ' 一覧' );
+            if ( $start === false ) {
+                continue;
+            }
+            $end = false;
+            for ( $j = $i + 1; $j < count( $labels ); $j++ ) {
+                $end = mb_strpos( $content, $labels[ $j ] . ' 一覧', $start + 1 );
+                if ( $end !== false ) {
+                    break;
+                }
+            }
+            if ( $end === false ) {
+                $end = mb_strpos( $content, '育成選手 一覧', $start + 1 );
+            }
+            $seg = ( $end !== false )
+                ? mb_substr( $content, $start, $end - $start )
+                : mb_substr( $content, $start, 20000 );
+            $chips = '';
+            if ( preg_match_all( '/<a href="(\/data\/[a-z0-9-]+)"[^>]*>([^<]{2,12})<\/a>/u', $seg, $ls, PREG_SET_ORDER ) ) {
+                $seen = array();
+                foreach ( $ls as $l ) {
+                    if ( isset( $seen[ $l[1] ] ) ) {
+                        continue;
+                    }
+                    $seen[ $l[1] ] = true;
+                    $chips .= '<a class="ydash-chip" href="' . esc_url( home_url( $l[1] ) ) . '">' . esc_html( $l[2] ) . '</a>';
+                }
+            }
+            if ( $chips !== '' ) {
+                $groups[] = '<div class="ydash-chips__group"><p class="ydash-chips__label">' . esc_html( $label ) . '</p>'
+                    . '<div class="ydash-chips__row">' . $chips . '</div></div>';
+            }
+        }
+        if ( count( $groups ) >= 3 ) {
+            $html = yoshilover_063_home_card_open( '👤 選手から探す', home_url( '/data#ys-player-search' ), '検索' )
+                . '<div class="ydash-chips">' . implode( '', $groups ) . '</div></section>';
+        }
+    }
+    set_transient( 'yoshi_home_player_chips', $html, HOUR_IN_SECONDS );
+    return $html;
+}
+
+/**
+ * レジェンド (OB 厳選8人)。全員は出さず看板だけ → 記録室へ誘導。static で安全。
+ */
+function yoshilover_063_render_home_legend_chips() {
+    $legends = array(
+        array( 'oh-sadaharu', '王貞治' ),
+        array( 'nagashima-shigeo', '長嶋茂雄' ),
+        array( 'matsui-hideki', '松井秀喜' ),
+        array( 'hara-tatsunori', '原辰徳' ),
+        array( 'egawa-suguru', '江川卓' ),
+        array( 'kuwata-masumi', '桑田真澄' ),
+        array( 'uehara-koji', '上原浩治' ),
+        array( 'takahashi-yoshinobu', '高橋由伸' ),
+    );
+    $chips = '';
+    foreach ( $legends as $l ) {
+        $chips .= '<a class="ydash-chip ydash-chip--ob" href="' . esc_url( home_url( '/data/' . $l[0] ) ) . '">' . esc_html( $l[1] ) . '</a>';
+    }
+    return yoshilover_063_home_card_open( '🏛 レジェンド・歴代選手', home_url( '/data/record' ), '記録室' )
+        . '<div class="ydash-chips"><div class="ydash-chips__row">' . $chips . '</div></div></section>';
+}
+
+/**
+ * 2026-07-03 Phase 2 (固定ページフロント化): フロントが固定ページになると
+ * 投稿フィードが /news/ へ分離されるため、トップに「最新ニュース」小窓を出す。
+ * 6 件 + /news/ への導線。取得失敗時は空で無害。
+ */
+function yoshilover_063_render_home_latest_news() {
+    $posts = get_posts( array(
+        'numberposts'      => 6,
+        'post_status'      => 'publish',
+        'suppress_filters' => true,
+    ) );
+    if ( ! $posts ) {
+        return '';
+    }
+    $items = '';
+    foreach ( $posts as $p ) {
+        $items .= '<li><a href="' . esc_url( get_permalink( $p ) ) . '">'
+            . '<span class="yoshi-home-news__time">' . esc_html( get_the_date( 'n/j H:i', $p ) ) . '</span>'
+            . '<span class="yoshi-home-news__t">' . esc_html( get_the_title( $p ) ) . '</span>'
+            . '</a></li>';
+    }
+    $style = '<style>'
+        . '.yoshi-home-news{margin:18px 0 8px;background:#fff;border:2px solid #d7dce4;border-radius:14px;overflow:hidden;}'
+        . '.yoshi-home-news__head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 14px;background:#1f2937;}'
+        . '.yoshi-home-news__head h2{margin:0;font-size:15px;font-weight:900;color:#fff;}'
+        . '.yoshi-home-news__more{font-size:12px;font-weight:800;color:#1f2937;background:#fff;text-decoration:none;padding:4px 11px;border-radius:999px;white-space:nowrap;}'
+        . '.yoshi-home-news ul{list-style:none;margin:0;padding:4px 0;}'
+        . '.yoshi-home-news li a{display:flex;gap:10px;align-items:baseline;padding:7px 14px;text-decoration:none;border-top:1px solid #f1f3f6;}'
+        . '.yoshi-home-news li:first-child a{border-top:none;}'
+        . '.yoshi-home-news__time{flex:0 0 auto;font-size:11px;font-weight:700;color:#9aa3af;font-variant-numeric:tabular-nums;}'
+        . '.yoshi-home-news__t{font-size:13px;color:#1a1a1a;line-height:1.45;}'
+        . '</style>';
+    return $style
+        . '<section class="yoshi-home-news" aria-label="最新の巨人ニュース">'
+        . '<div class="yoshi-home-news__head"><h2>📰 巨人ニュース</h2>'
+        . '<a class="yoshi-home-news__more" href="' . esc_url( home_url( '/news/' ) ) . '">ニュース一覧 ＞</a></div>'
+        . '<ul>' . $items . '</ul></section>';
+}
+
+/**
  * 2026-06-02: トップpage 最上部に出す「巨人データ」トピクラ入口ブロック。
  * /data/ (pillar hub) と spoke (ランキング / 順位 / レジェンド / 検索) への導線。
  * is_front_page でのみ <main> 直後に注入 (速報フィードの上)。self-contained CSS。
@@ -570,14 +856,19 @@ function yoshilover_063_buffer_inject_header_titles( $buffer ) {
     if ( is_front_page() && strpos( $buffer, '<section class="yoshi-home-data"' ) === false ) {
         if ( preg_match( '/<main\b[^>]*>/', $buffer, $m, PREG_OFFSET_CAPTURE ) ) {
             $insert_pos = $m[0][1] + strlen( $m[0][0] );
-            // 2026-07-03 データファースト化 Phase 1: 「今日の巨人」順位帯 → データハブ
-            // → ニュース見出し、の順で注入 (ニュースは付録の位置づけを見た目で明示)。
-            $news_heading = '<div class="yoshi-home-news-h" style="display:flex;align-items:baseline;gap:9px;margin:20px 0 4px;padding:0 2px;">'
-                . '<h2 style="margin:0;font-size:17px;font-weight:900;color:#1a1a1a;">📰 巨人ニュース速報</h2>'
-                . '<span style="font-size:11px;color:#888;">最新の話題・記事まとめ</span></div>';
+            // 2026-07-03 データファースト化 Phase 2 (usability 優先の並び):
+            // 順位帯 → 好調選手 → ランキング窓 → 選手チップ → データメニュー
+            // → レジェンド → 最新ニュース。数字が最初に見え、どの選手にも1タップ。
             $buffer = substr_replace(
                 $buffer,
-                yoshilover_063_render_home_today_dashboard() . yoshilover_063_render_home_data_hub() . $news_heading,
+                yoshilover_063_home_dash_styles()
+                    . yoshilover_063_render_home_today_dashboard()
+                    . yoshilover_063_render_home_hot_players()
+                    . yoshilover_063_render_home_ranking_mini()
+                    . yoshilover_063_render_home_player_chips()
+                    . yoshilover_063_render_home_data_hub()
+                    . yoshilover_063_render_home_legend_chips()
+                    . yoshilover_063_render_home_latest_news(),
                 $insert_pos,
                 0
             );

@@ -28,3 +28,4 @@
 - 残: RSSHub コールドスタート timeout の無料リトライ修正 (次便) / 補足リプ・記録系・今フックの実物品質監査 (今日の便で)
 - 11:0x JST | deploy | user 09:06便FB 3点 (ポスト無い/リプ古い/1連勝) | commit d6268850 | image post-topup-d6268850 | Job generation 242 | env NEWS_PRIORITY_CANDIDATES 3→8 | リプ親ポスト鮮度 6h (X_POST_REPLY_MAX_AGE_HOURS)
 - 観測: 11:05 便で (a) ポスト側候補が増えたか (b) リプ対象が6h以内か (c) 今フック並びが効いたか
+- 12:0x JST | deploy | user「メジャーは朝からやってる」| commit e3c1d42d | image mlb-age-e3c1d42d | Job generation 243 | MLB引用RT鮮度 12h→20h (MLBJapan/SPOTVは夕方後追い、朝はUS公式+昨日夜分で出す)。MLBリプは6hに統一。20hゲートで朝2件出ることを実feedで確認済

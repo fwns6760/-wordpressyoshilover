@@ -2334,6 +2334,12 @@ _MLB_WATCH_HANDLES = [
     "Dodgers",
     "BlueJays",
     "Rockies",
+    # 2026-07-03 user「メジャーで作られた動画や米国独特のスタッツ画像も引用RTしたい」:
+    # MLBStats=公式スタッツカード画像 (大谷言及多、動画混在) /
+    # PitchingNinja=投球オーバーレイ動画 (大谷登板日・菅野クリップ)。
+    # 実 feed 検証済 (2026-07-03、RSSHub 経由で動画/画像マーカー確認)。
+    "MLBStats",
+    "PitchingNinja",
 ]
 # 表示名 → 検出 alias (部分一致)。MLB 文脈の feed なので姓のみで安全。
 # US チーム公式は first name だけで呼ぶ投稿があるため英 first name も入れる
@@ -2462,6 +2468,9 @@ def build_mlb_watch_candidates(
         handle = p["handle"]
         frame = "大谷別枠" if player == "大谷翔平" else "元巨人MLB"
         src_text = _truncate_text(p["text"].replace("\n", " ").strip(), 140)
+        # 2026-07-03 user「出来れば動画。米国独特のスタッツ画像も引用したい」:
+        # どちらの素材か mail 上でひと目で選べるようマーカーを出す。
+        media_mark = "🎬動画" if p["has_video"] else "🖼画像"
         if as_reply:
             draft = "\n".join([
                 f"【MLBリプ候補: {frame}】 @{handle}",
@@ -2492,6 +2501,7 @@ def build_mlb_watch_candidates(
             draft = "\n".join([
                 f"【MLB引用RT候補: {frame}】 @{handle}",
                 f"対象選手: {player}",
+                f"素材: {media_mark}付き投稿",
                 f"▶ 元ツイート (タップで開く): {url}",
                 f"元投稿本文: {src_text}",
                 "",
@@ -2499,10 +2509,10 @@ def build_mlb_watch_candidates(
                 post_text,
                 "── ここまで貼る ──",
                 "",
-                "※ 動画付き投稿は動画ごと引用RTされインプが伸びる。動画ファイルの転載はしない。",
+                "※ 動画/画像は引用RTでそのまま表示されインプが伸びる。ファイルの転載はしない。",
             ])
             out.append(Candidate(
-                title=f"(MLB引用RT) {frame}｜@{handle}｜{player}",
+                title=f"(MLB引用RT{media_mark[0]}) {frame}｜@{handle}｜{player}",
                 metric=_MLB_WATCH_METRIC,
                 period_label="MLB引用RT候補",
                 draft_text=draft,

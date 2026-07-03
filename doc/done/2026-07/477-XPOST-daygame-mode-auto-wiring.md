@@ -1,11 +1,11 @@
 # 477-XPOST-daygame-mode-auto-wiring
 
-- status: READY
+- status: CLOSED (2026-07-03 narrow 実装 ba69bc51、deploy 済み)
 - priority: P2
 - owner: Claude
 - lane: dev
 - created: 2026-07-03
-- blocked_by: なし (ただし 7/4 デイゲームで現行手動 override の運用実績を見てから着手)
+- blocked_by: なし
 
 ## 背景
 

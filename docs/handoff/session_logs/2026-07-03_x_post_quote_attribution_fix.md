@@ -37,3 +37,4 @@
 - 14:1x JST | 監査 | 14:07便 (gen248 初便) で大谷引用RT がメール到達 (4候補, status=sent)。merge_drop は大谷リプのみ (選手1本/便ゲート、設計通り)。「大谷出ない」クローズ
 - 14:1x JST | 監査 | 枠ソース実測: media リプ cap12→実0 (昼帯3便連続 raw=1)、news cap8→実2-3 (sanspo/sponichi タグページ非巨人全滅)、MLB watch cap3→実1-2。cap でなく素材が律速。media リプ handle 追加を推奨として user に提示済
 - 14:2x JST | deploy | user「メジャー製の動画・米国独特のスタッツ画像を引用RTしたい」| commit c3613958 | image mlb-us-sources-c3613958 | Job generation 249 | MLB watch handles に MLBStats (スタッツカード画像)+PitchingNinja (投球オーバーレイ動画) 追加 (feed 検証済)、引用RT候補に 🎬動画/🖼画像 マーカー表示。tests 259 passed。観測: 15:07便で US 素材候補が出るか、動画優先 sort が効くか
+- 14:3x JST | deploy | user 14:10便報告 誤帰属2件 (サッカー鈴木彩艶→鈴木大和 / DAZNオリックスクリップ) | commit e2e4bcf5 | image misattr-fix-e2e4bcf5 | Job generation 250 | ①news_opinion: 巨人文脈なし記事は姓aliasのみの一致で帰属しない (フルネーム級一致必須)。朝の high_value_override がこの誤爆を増幅していた (override 自体は維持、入口で遮断) ②video_radar: 多球団handle (DAZN/TeamUehara/侍J) は巨人選手検出or巨人語必須。回帰テスト4本追加、tests 263 passed。観測: 15:07便で誤帰属0か

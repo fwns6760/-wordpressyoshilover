@@ -4503,6 +4503,35 @@ class BuildVideoRadarCandidatesTests(unittest.TestCase):
         self.assertEqual(again, [])
 
 
+class DetectPlayerBoundaryTests(unittest.TestCase):
+    """2026-07-03 実事故: alias「バル」がサッカー記事「オヤルサバル」に部分一致。"""
+
+    _AM = {"バル": "バルドナード", "バルドナード": "バルドナード", "吉川尚輝": "吉川尚輝"}
+
+    def test_short_katakana_alias_inside_word_rejected(self) -> None:
+        from src.x_post_mail_lane import detect_giants_player_name
+        out = detect_giants_player_name(
+            "スペインがオヤルサバルの2ゴールでオーストリアを下す W杯決勝T",
+            alias_map=self._AM,
+        )
+        self.assertEqual(out, "")
+
+    def test_short_katakana_alias_with_boundary_accepted(self) -> None:
+        from src.x_post_mail_lane import detect_giants_player_name
+        self.assertEqual(
+            detect_giants_player_name("バルが三者凡退で試合を締めた", alias_map=self._AM),
+            "バルドナード",
+        )
+        self.assertEqual(
+            detect_giants_player_name("巨人・バルドナードが今季初セーブ", alias_map=self._AM),
+            "バルドナード",
+        )
+        self.assertEqual(
+            detect_giants_player_name("吉川尚輝が猛打賞", alias_map=self._AM),
+            "吉川尚輝",
+        )
+
+
 class GameBuzzHandlesTests(unittest.TestCase):
     """2026-07-03 user「ホームでない場合は動画は DAZN にできる？日テレが出なくなる」"""
 

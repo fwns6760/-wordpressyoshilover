@@ -1465,6 +1465,33 @@ def build_comment_numeric_candidate(
     )
 
 
+_KATAKANA_CHAR_RE = _re.compile(r"[ァ-ヶー]")
+
+
+def _alias_hits_with_boundary(text: str, key: str) -> bool:
+    """短いカタカナ alias が長いカタカナ語の内部に埋まる誤爆を防ぐ一致判定。
+
+    2026-07-03 実事故: alias「バル」(バルドナード略称) がサッカー記事の
+    「オヤルサバル」に部分一致し、W杯記事から巨人ポストが生成された。
+    全カタカナ 3 文字以下の alias は、一致位置の前後がカタカナでない時だけ
+    有効とする。それ以外の alias は従来の部分一致のまま。
+    """
+    if not (len(key) <= 3 and all(_KATAKANA_CHAR_RE.match(ch) for ch in key)):
+        return key in text
+    start = 0
+    while True:
+        i = text.find(key, start)
+        if i < 0:
+            return False
+        before = text[i - 1] if i > 0 else ""
+        after = text[i + len(key)] if i + len(key) < len(text) else ""
+        if not (before and _KATAKANA_CHAR_RE.match(before)) and not (
+            after and _KATAKANA_CHAR_RE.match(after)
+        ):
+            return True
+        start = i + 1
+
+
 def detect_giants_player_name(
     text: object,
     *,
@@ -1487,7 +1514,7 @@ def detect_giants_player_name(
             continue
         if len(key) < 2 and "巨人" not in str(text) and "ジャイアンツ" not in str(text):
             continue
-        if key and key in normalized_text:
+        if key and _alias_hits_with_boundary(normalized_text, key):
             return str(canonical or "").strip()
     return ""
 

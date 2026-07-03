@@ -522,11 +522,31 @@ class BuildDbFactLineTests(unittest.TestCase):
             self.assertNotIn("今季打撃", fact_bat)
             con = sqlite3.connect(db)
             for i in range(3):
+                # season 集計は「巨人の試合 (giants_score あり)」JOIN で限定
+                # されるため、games 側も一緒に積む。
+                con.execute(
+                    "INSERT INTO games VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (f"g-extra{i}", f"2026-04-0{i + 1}", "中日", "away", 4, 2,
+                     "win", None, None, None, None, None, None, None,
+                     "2026-04-01T13:00:00Z"),
+                )
                 con.execute(
                     "INSERT INTO batting_logs VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     (f"g-extra{i}", "giants", 1, "中堅", "平山 功太", "平山 功太",
                      0, 4, 0, 2, 0, 0, None, "巨人"),
                 )
+            # 他球団同士の試合 (giants_score NULL) に同名選手が居ても混ぜない
+            con.execute(
+                "INSERT INTO games VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                ("g-other", "2026-04-05", "DeNA", "home", None, None,
+                 None, None, None, None, None, None, None, None,
+                 "2026-04-05T13:00:00Z"),
+            )
+            con.execute(
+                "INSERT INTO batting_logs VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                ("g-other", "giants", 1, "中堅", "平山 功太", "平山 功太",
+                 0, 4, 0, 4, 3, 0, None, "ヤクルト"),
+            )
             con.commit()
             con.close()
             fact_bat2 = xbg.build_db_fact_line("平山 功太", db)

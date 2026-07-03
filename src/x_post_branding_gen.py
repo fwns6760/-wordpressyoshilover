@@ -1045,32 +1045,42 @@ def build_db_fact_line(
             # 直近5試合しか fact が無く、全リプが同じ「直近5試合」補足になる
             # ため、選手個人の season 数字を常に持たせる。防御率は IP 実数の
             # 単純 SUM が 1/3 回表記とずれるため出さない (整数のみ = 誤記なし)。
+            # games JOIN + giants_score IS NOT NULL で「巨人の試合」に限定する:
+            # logs には他球団同士の試合 (12球団成績用) も入っており、そこでは
+            # team_role='giants' がホーム側に付くため、team_role だけでは
+            # 同名の他球団選手成績が混ざる (同日点検 2026-07-03)。
             cur.execute(
-                "SELECT COALESCE(SUM(AB),0), COALESCE(SUM(H),0), "
-                "COALESCE(SUM(RBI),0), COUNT(DISTINCT game_id) "
-                "FROM batting_logs "
-                "WHERE player_canonical = ? AND team_role = 'giants'",
+                "SELECT COALESCE(SUM(b.AB),0), COALESCE(SUM(b.H),0), "
+                "COALESCE(SUM(b.RBI),0), COUNT(DISTINCT b.game_id) "
+                "FROM batting_logs b JOIN games g ON g.game_id = b.game_id "
+                "WHERE b.player_canonical = ? AND b.team_role = 'giants' "
+                "AND g.giants_score IS NOT NULL",
                 (player_canonical,),
             )
             season_bat = cur.fetchone()
-            if season_bat and int(season_bat[0] or 0) >= 10:
+            cur.execute(
+                "SELECT COUNT(*), "
+                "SUM(CASE WHEN p.result_mark='○' THEN 1 ELSE 0 END), "
+                "SUM(CASE WHEN p.result_mark='●' THEN 1 ELSE 0 END), "
+                "COALESCE(SUM(p.K),0) "
+                "FROM pitching_logs p JOIN games g ON g.game_id = p.game_id "
+                "WHERE p.player_canonical = ? AND p.team_role = 'giants' "
+                "AND g.giants_score IS NOT NULL",
+                (player_canonical,),
+            )
+            season_pit = cur.fetchone()
+            pit_games = int(season_pit[0] or 0) if season_pit else 0
+            # 打撃行は 10 打数以上のみ。さらに投手 (登板あり) は打席が少なく
+            # 「打率.000」がリプの補足核に選ばれる事故のもとなので、野手級の
+            # 打数 (30) が無ければ出さない。
+            if season_bat and int(season_bat[0] or 0) >= (30 if pit_games > 0 else 10):
                 ab, h, rbi, g = (int(v or 0) for v in season_bat)
                 avg = f"{h / ab:.3f}".lstrip("0")
                 lines.append(
                     f"- {player_canonical} 今季打撃: 打率{avg}"
                     f" ({ab}打数{h}安打 {rbi}打点)"
                 )
-            cur.execute(
-                "SELECT COUNT(*), "
-                "SUM(CASE WHEN result_mark='○' THEN 1 ELSE 0 END), "
-                "SUM(CASE WHEN result_mark='●' THEN 1 ELSE 0 END), "
-                "COALESCE(SUM(K),0) "
-                "FROM pitching_logs "
-                "WHERE player_canonical = ? AND team_role = 'giants'",
-                (player_canonical,),
-            )
-            season_pit = cur.fetchone()
-            if season_pit and int(season_pit[0] or 0) > 0:
+            if pit_games > 0:
                 g, w, l, k = (int(v or 0) for v in season_pit)
                 rec = f" {w}勝{l}敗" if (w or l) else ""
                 lines.append(

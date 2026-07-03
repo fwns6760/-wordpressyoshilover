@@ -358,7 +358,7 @@
       "kana": "おかもと かずま",
       "position": "内野手",
       "jersey": "25",
-      "active": true,
+      "active": false,
       "nenshuu_id": "11515130",
       "years": [
         {
@@ -431,7 +431,8 @@
       "draft": {
         "desc": "2014年ドラフト1位",
         "keiyakukin_man": 8000
-      }
+      },
+      "ob_note": "巨人 2015-2025、2026年MLB移籍"
     },
     {
       "name": "中川皓太",

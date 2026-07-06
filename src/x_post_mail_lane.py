@@ -2532,6 +2532,9 @@ _MLB_WATCH_HANDLES = [
     "TalkinBaseball_",
     # 鈴木誠也。村上宗隆は所属チーム未固定のため MLBJapan/MLB/MLBStats 側で拾う。
     "Cubs",
+    # 2026-07-06 user「入れて」: 吉田正尚 (Red Sox)。佐々木朗希=Dodgers、
+    # 今永昇太=Cubs は既存 handle でカバー済み。
+    "RedSox",
 ]
 # 表示名 → 検出 alias (部分一致)。MLB 文脈の feed なので姓のみで安全。
 # US チーム公式は first name だけで呼ぶ投稿があるため英 first name も入れる
@@ -2543,11 +2546,20 @@ _MLB_WATCH_PLAYERS: dict[str, tuple[str, ...]] = {
     "山本由伸": ("山本由伸", "Yamamoto", "Yoshinobu"),
     "鈴木誠也": ("鈴木誠也", "Suzuki", "Seiya"),
     "村上宗隆": ("村上宗隆", "Murakami", "Munetaka"),
+    # 2026-07-06 user 追加。姓のみ alias は巨人・佐々木俊輔 / 他球団吉田との
+    # 衝突があるためフルネーム+英名のみ (MLB 文脈 feed 限定でも安全側)。
+    "佐々木朗希": ("佐々木朗希", "朗希", "Sasaki", "Roki"),
+    "今永昇太": ("今永", "Imanaga", "Shota"),
+    "吉田正尚": ("吉田正尚", "Yoshida", "Masataka"),
 }
 _MLB_EX_GIANTS = frozenset({"菅野智之", "岡本和真"})
 # 2026-07-05 user lock: 山本由伸/鈴木誠也/村上宗隆も対象。ただし元巨人では
 # ないので、LLM framing では「巨人から送り出した」文脈にしない。
-_MLB_EXTRA_STARS = frozenset({"山本由伸", "鈴木誠也", "村上宗隆"})
+_MLB_EXTRA_STARS = frozenset({
+    "山本由伸", "鈴木誠也", "村上宗隆",
+    # 2026-07-06 user 追加 (非元巨人 = ニュートラル framing)
+    "佐々木朗希", "今永昇太", "吉田正尚",
+})
 
 
 def _detect_mlb_watch_player(text: str) -> str:

@@ -2,9 +2,12 @@
 
 狙い (user 決定):
 - 記事URLをおりポスに貼ると X の外部リンク抑制でインプが下がる
-- おりポス = 記事の価値を出し切る本文 (URLなし) + アイキャッチ画像のネイティブ添付
+- おりポス = フック1行 (ヨシラバーの見立て) + 記事タイトル（媒体名） + 要約 (URLなし)
+  + アイキャッチ画像のネイティブ添付 (2026-07-06 v2「記事のポストと分かる形」)
+- タイトル行は code で literal 組み立て (LLM はフック/要約/リプの3部品のみ生成)
 - リプ = 記事の続きのような1〜2文 + 記事URL (URLはリプに退避)
 - 「続きはこちら」だけの空チラ見せは禁止 (おりポス単体で読み物として成立させる)
+- フック生成が弱い時 (echo / 文体NG / 字数) はタイトル先頭型へ自動フォールバック
 
 構成:
 - list_recent_published()   最近の公開記事 (WP REST)
@@ -14,7 +17,8 @@
 
 安全側:
 - 記事に無い数字は _extract_unverified_numbers で棄却 (LLM 失敗時は deterministic fallback)
-- 本文に URL / ハッシュタグ / 媒体名を入れない
+- LLM 生成部 (フック/要約/リプ) に URL / ハッシュタグ / 媒体名を入れない
+  (媒体名は code 組み立ての「タイトル（媒体名）」行のみ)
 - X の weighted 文字数 (CJK=2, URL=23) を事前チェックして API エラーを防ぐ
 """
 
@@ -35,28 +39,32 @@ _URL_RE = re.compile(r"https?://\S+")
 _X_URL_WEIGHT = 23
 _X_WEIGHTED_LIMIT = 280
 
-# 型ごとの LLM 指示 (おりポス)。共通: URLなし / ハッシュタグなし / 媒体名なし /
-# 記事に無い数字禁止 / 選手はフルネーム敬称なし / 空チラ見せ禁止。
-_MAIN_STYLE = {
-    "comment": (
-        "型: 選手・首脳陣コメント記事。\n"
-        "- 1行目: 発言が出た状況を短く (〜30字)。\n"
-        "- 2行目以降: 本人のセリフを『』で出し切る (記事内の発言を literal に、"
-        "長すぎる時は文の切れ目で自然に短縮)。\n"
-        "- 最後に1行だけヨシラバーの評価・読みを足す (数字根拠か観察、優等生締め禁止)。"
-    ),
-    "data": (
-        "型: データ・記録記事。\n"
-        "- 1行目: 一番強い数字・記録を言い切る (選手フルネーム + 数字)。\n"
-        "- 2〜3行目: その数字が何を意味するかを淡白に (記事記載の事実のみ)。\n"
-        "- 煽り・ポエム禁止。数字は記事にあるものだけ。"
-    ),
-    "news": (
-        "型: ニュース・速報記事。\n"
-        "- 事実を2〜3行でたんぱくに伝える (誰が・何を)。\n"
-        "- 最後に1行だけヨシラバーの一言 (巨人ファン視点、短く)。"
-    ),
+# 型ごとのフック指示 (おりポス1行目 = ヨシラバーの見立て)。
+_HOOK_STYLE = {
+    "comment": "セリフの意味・裏側を一言で突く (なぜその発言が出たか、何が変わったのか)。",
+    "data": "その数字が示す意味を言い切る (すごさ・異常さ・流れの変化)。",
+    "news": "この動きが巨人に何をもたらすかを一言で言い切る。",
 }
+
+# 出典媒体名の判定 (title 行の「（媒体名）」用)。domain 優先、text 内 literal は補助。
+_MEDIA_DOMAIN_MAP = [
+    ("hochi.news", "スポーツ報知"),
+    ("sanspo.com", "サンスポ"),
+    ("nikkansports.com", "日刊スポーツ"),
+    ("sponichi.co.jp", "スポニチ"),
+    ("daily.co.jp", "デイリースポーツ"),
+    ("chunichi.co.jp", "中日スポーツ"),
+    ("tokyo-sports.co.jp", "東スポ"),
+    ("yomiuri.co.jp", "読売新聞"),
+    ("full-count.jp", "Full-Count"),
+    ("baseballking.jp", "BASEBALL KING"),
+    ("news.yahoo.co.jp", "Yahoo!ニュース"),
+    ("npb.jp", "NPB公式"),
+]
+_MEDIA_TEXT_NAMES = [
+    "スポーツ報知", "サンスポ", "日刊スポーツ", "スポニチ",
+    "デイリースポーツ", "中日スポーツ", "東スポ", "読売新聞",
+]
 
 
 def x_weighted_len(text: str) -> int:
@@ -136,7 +144,19 @@ def fetch_article_material(post_id: int) -> dict:
         "status": str(post.get("status") or ""),
         "body_text": body_text,
         "image_url": image_url,
+        "media_name": _detect_media_name(str(content or ""), body_text),
     }
+
+
+def _detect_media_name(content_html: str, body_text: str) -> str:
+    """出典媒体名。本文HTML内の出典リンク domain 優先、text 内 literal は補助。"""
+    for domain, name in _MEDIA_DOMAIN_MAP:
+        if domain in content_html:
+            return name
+    for name in _MEDIA_TEXT_NAMES:
+        if name in body_text:
+            return name
+    return ""
 
 
 def classify_share_type(title: str, body_text: str) -> str:
@@ -174,24 +194,32 @@ def build_share_drafts(
     *,
     gemini_api_key: str = "",
 ) -> dict:
-    """おりポス案 + リプ案。LLM 失敗時は deterministic fallback。"""
+    """おりポス案 + リプ案。LLM 失敗時は deterministic fallback。
+
+    おりポス構成 (2026-07-06 v2): フック \n\n タイトル（媒体名） \n\n 要約。
+    タイトル行は code で literal 組み立て、LLM はフック/要約/リプのみ。
+    """
     title = material.get("title") or ""
     body = material.get("body_text") or ""
     link = material.get("link") or ""
+    media_name = material.get("media_name") or ""
+    title_line = f"{title.strip()}（{media_name}）" if media_name else title.strip()
     share_type = classify_share_type(title, body)
     main_text = ""
     reply_body = ""
     used_llm = False
     if gemini_api_key:
         try:
-            main_text, reply_body = _build_drafts_llm(
+            hook, summary, reply_body = _build_drafts_llm(
                 title, body, share_type, gemini_api_key=gemini_api_key
             )
-            used_llm = bool(main_text and reply_body)
+            if hook and summary and reply_body:
+                main_text = _assemble_main(title_line, hook, summary)
+                used_llm = True
         except Exception as exc:  # noqa: BLE001
             LOG.warning("x_share llm draft failed: %r", exc)
     if not main_text:
-        main_text, reply_body = _build_drafts_fallback(title, body, share_type)
+        main_text, reply_body = _build_drafts_fallback(title_line, body)
     reply_text = f"{reply_body}\n{link}".strip()
     return {
         "ok": True,
@@ -209,7 +237,8 @@ def build_share_drafts(
 
 def _build_drafts_llm(
     title: str, body: str, share_type: str, *, gemini_api_key: str
-) -> tuple[str, str]:
+) -> tuple[str, str, str]:
+    """(hook, summary, reply_body)。全ゲート通過分のみ返す (不合格は空 tuple)。"""
     from google import genai
 
     from src.x_post_branding_gen import (
@@ -220,29 +249,39 @@ def _build_drafts_llm(
 
     lead = body[:2500]
     verified_text = f"{title} {lead}"
-    style = _MAIN_STYLE.get(share_type, _MAIN_STYLE["news"])
+    hook_style = _HOOK_STYLE.get(share_type, _HOOK_STYLE["news"])
     prompt = "\n".join([
         "あなたは読売ジャイアンツ専門メディア「ヨシラバー」のX担当編集者です。",
-        "下の自社記事から、X投稿のセット (おりポス + そのリプ) を作ってください。",
+        "自社記事のX共有ポストの部品を3つ作ってください。",
+        "投稿はこちらで次の形に組み立てます (タイトル行はこちらで入れるので書かない):",
         "",
-        "【おりポス (メイン投稿)】",
-        style,
-        "- 記事タイトルと同じ話題で作る。タイトルの核 (選手名・セリフ・出来事) を軸に置く。",
-        "- タイトルが約束している中身 (セリフの背景・理由・根拠) を記事本文から拾い、"
-        "読んだだけでその答えが得られる内容にする。タイトルと無関係な話題に逸れない。",
-        "- 80〜130字、2〜4行。読んだだけで価値が完結する内容にする。",
-        "- 『続きはこちら』『詳細は記事で』のような誘導だけの文は禁止。",
-        "- URL・ハッシュタグ・媒体名・絵文字連打は禁止。絵文字は多くても1個。",
-        "- 選手はフルネーム敬称なし (坂本勇人 / 岡本和真)。",
-        "- 記事に無い数字・事実は書かない。",
+        "<フック 1行>",
+        "<記事タイトル（媒体名）>",
+        "<要約 1〜2文>",
         "",
-        "【リプ (おりポスへの返信、末尾に記事URLが自動で付く)】",
+        "【フック (HOOK)】",
+        f"- 15〜28字、1文。タイムラインで手を止めさせる「ヨシラバーの見立て」。{hook_style}",
+        "- 断定で言い切る。タイトルの言葉をそのまま繰り返さない。要約の先取りもしない。",
+        "- 「〜ですね」「〜してほしい」「注目です」等の優等生・実況文体は禁止。",
+        "",
+        "【要約 (SUMMARY)】",
+        "- 45〜70字、1〜2文。タイトルが約束している中身 (理由・背景・根拠) への答えを"
+        "記事本文から拾い、読んだだけで完結させる。",
+        "- 記事に無い数字・事実は書かない。煽り・ポエム禁止。",
+        "",
+        "【リプ (REPLY、おりポスへの返信。末尾に記事URLが自動で付く)】",
         "- 40〜80字、1〜2文。おりポスの続きとして自然に読める文。",
-        "- 記事にしか無い残りの要素 (背景・追加データ・次の見どころ) を1つ示す。",
+        "- 記事にしか無い残りの要素 (経緯・追加データ・次の見どころ) を1つ示す。",
         "- 『こちら』『チェック』のような誘導語だけにしない。URL は書かない。",
         "",
-        "出力形式 (この2行ラベルを必ず使う):",
-        "MAIN: <おりポス本文 (改行は\\nで)>",
+        "【共通・日本語品質】",
+        "- 完結した自然な日本語。翻訳調・不自然な体言止めの連発・意味の通らない比喩は禁止。",
+        "- URL・ハッシュタグ・媒体名・絵文字は書かない。",
+        "- 選手はフルネーム敬称なし (坂本勇人 / 岡本和真)。",
+        "",
+        "出力形式 (この3行ラベルを必ず使う):",
+        "HOOK: <フック>",
+        "SUMMARY: <要約 (改行は\\nで)>",
         "REPLY: <リプ本文>",
         "",
         f"記事タイトル: {title}",
@@ -255,15 +294,16 @@ def _build_drafts_llm(
             client,
             model=_X_POST_DATA_LLM_MODEL,
             contents=prompt if attempt == 0 else (
-                prompt + "\n\n※前回は形式違反か記事に無い数字があった。ラベル形式と数字ルールを厳守。"
+                prompt + "\n\n※前回は形式違反・タイトルの繰り返し・記事に無い数字の"
+                "いずれかがあった。ラベル形式と各ルールを厳守。"
             ),
             config={"temperature": 0.6},
         )
         raw = (getattr(response, "text", None) or "").strip()
-        main_text, reply_body = _parse_labeled_output(raw)
-        if not main_text or not reply_body:
+        hook, summary, reply_body = _parse_labeled_output(raw)
+        if not hook or not summary or not reply_body:
             continue
-        combined = f"{main_text}\n{reply_body}"
+        combined = f"{hook}\n{summary}\n{reply_body}"
         if _extract_unverified_numbers(combined, verified_text):
             LOG.info("x_share draft gate_fail=unverified_numbers attempt=%d", attempt + 1)
             continue
@@ -273,38 +313,72 @@ def _build_drafts_llm(
                 _forbidden_in_post(combined), attempt + 1,
             )
             continue
-        if x_weighted_len(main_text) > _X_WEIGHTED_LIMIT:
-            LOG.info("x_share draft gate_fail=main_too_long attempt=%d", attempt + 1)
+        if _hook_echoes_title(hook, title):
+            LOG.info("x_share draft gate_fail=hook_echoes_title attempt=%d", attempt + 1)
+            continue
+        if len(hook) > 40:
+            LOG.info("x_share draft gate_fail=hook_too_long attempt=%d", attempt + 1)
             continue
         LOG.info(
-            "x_share draft built type=%s main_len=%d reply_len=%d",
-            share_type, len(main_text), len(reply_body),
+            "x_share draft built type=%s hook_len=%d summary_len=%d reply_len=%d",
+            share_type, len(hook), len(summary), len(reply_body),
         )
-        return main_text, reply_body
-    return "", ""
+        return hook, summary, reply_body
+    return "", "", ""
 
 
-def _parse_labeled_output(raw: str) -> tuple[str, str]:
-    main_text, reply_body = "", ""
-    m = re.search(r"MAIN:\s*(.+?)(?=\nREPLY:|\Z)", raw, re.DOTALL)
-    r = re.search(r"REPLY:\s*(.+)\Z", raw, re.DOTALL)
-    if m:
-        main_text = m.group(1).strip().replace("\\n", "\n")
-    if r:
-        reply_body = r.group(1).strip().replace("\\n", "\n").splitlines()
-        reply_body = " ".join(line.strip() for line in reply_body if line.strip())
-    return main_text, reply_body
+def _parse_labeled_output(raw: str) -> tuple[str, str, str]:
+    """HOOK / SUMMARY / REPLY の3ラベルを取り出す。HOOK とリプは1行に潰す。"""
+    out = {}
+    for label in ("HOOK", "SUMMARY", "REPLY"):
+        m = re.search(rf"{label}:\s*(.+?)(?=\n[A-Z]+:|\Z)", raw, re.DOTALL)
+        if m:
+            out[label] = m.group(1).strip().replace("\\n", "\n")
+    hook = " ".join(out.get("HOOK", "").split())
+    summary = out.get("SUMMARY", "").strip()
+    reply_body = " ".join(out.get("REPLY", "").split())
+    return hook, summary, reply_body
 
 
-def _build_drafts_fallback(title: str, body: str, share_type: str) -> tuple[str, str]:
-    """LLM なし fallback: 記事冒頭ベースのたんぱく版 (数字捏造リスクゼロ)。"""
+def _hook_echoes_title(hook: str, title: str) -> bool:
+    """フックがタイトルの言い直しになっていないか (10字窓の一致で判定)。"""
+    h = re.sub(r"\s", "", hook or "")
+    t = re.sub(r"\s", "", title or "")
+    if not h:
+        return True
+    for i in range(max(1, len(h) - 9)):
+        window = h[i:i + 10]
+        if len(window) == 10 and window in t:
+            return True
+    return False
+
+
+def _assemble_main(title_line: str, hook: str, summary: str) -> str:
+    """フック → タイトル行 → 要約。weighted 超過時は段階的に間引く。"""
+    candidates = [
+        "\n\n".join(p for p in (hook, title_line, summary) if p),
+        "\n".join(p for p in (hook, title_line, summary) if p),
+        "\n\n".join(p for p in (hook, title_line) if p),
+        title_line,
+    ]
+    for text in candidates:
+        if text and x_weighted_len(text) <= _X_WEIGHTED_LIMIT:
+            return text
+    # title_line 単体でも超過する異常系: 文字境界で切り詰め
+    text = title_line
+    while text and x_weighted_len(text + "…") > _X_WEIGHTED_LIMIT:
+        text = text[:-1]
+    return f"{text}…" if text else title_line
+
+
+def _build_drafts_fallback(title_line: str, body: str) -> tuple[str, str]:
+    """LLM なし fallback: タイトル（媒体名）+ 記事冒頭1文 (数字捏造リスクゼロ)。"""
     lead_sentences = [s.strip() for s in re.split(r"[。\n]", body) if s.strip()][:2]
-    main_text = title.strip()
+    main_text = title_line
     if lead_sentences:
-        main_text = f"{title.strip()}\n{lead_sentences[0]}。"
-    # weighted 超過なら title のみ
+        main_text = f"{title_line}\n{lead_sentences[0]}。"
     if x_weighted_len(main_text) > _X_WEIGHTED_LIMIT:
-        main_text = title.strip()
+        main_text = _assemble_main(title_line, "", "")
     reply_body = "試合の流れと背景も含めて記事にまとめています。"
     return main_text, reply_body
 

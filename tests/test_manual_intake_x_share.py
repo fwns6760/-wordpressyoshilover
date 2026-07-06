@@ -53,14 +53,41 @@ class ClassifyShareTypeTests(unittest.TestCase):
 
 
 class ParseLabeledOutputTests(unittest.TestCase):
-    def test_parses_main_and_reply(self):
-        raw = "MAIN: 1行目\\n2行目\nREPLY: 続きの文です。"
-        main, reply = xshare._parse_labeled_output(raw)
-        self.assertEqual(main, "1行目\n2行目")
+    def test_parses_hook_summary_reply(self):
+        raw = "HOOK: 見立ての一言。\nSUMMARY: 要約1文目。\\n要約2文目。\nREPLY: 続きの文です。"
+        hook, summary, reply = xshare._parse_labeled_output(raw)
+        self.assertEqual(hook, "見立ての一言。")
+        self.assertEqual(summary, "要約1文目。\n要約2文目。")
         self.assertEqual(reply, "続きの文です。")
 
     def test_missing_labels_returns_empty(self):
-        self.assertEqual(xshare._parse_labeled_output("ただの文"), ("", ""))
+        self.assertEqual(xshare._parse_labeled_output("ただの文"), ("", "", ""))
+
+
+class HookEchoTests(unittest.TestCase):
+    _TITLE = "【巨人】勝ち頭の井上温大「成功体験が増えてきている」　捕手のサインに首振らない理由も説明"
+
+    def test_title_copy_is_echo(self):
+        self.assertTrue(xshare._hook_echoes_title("勝ち頭の井上温大「成功体験が増えてきている」", self._TITLE))
+
+    def test_original_hook_passes(self):
+        self.assertFalse(xshare._hook_echoes_title("首を振らない勇気じゃなくて、合理性。", self._TITLE))
+
+    def test_empty_hook_is_echo(self):
+        self.assertTrue(xshare._hook_echoes_title("", self._TITLE))
+
+
+class AssembleMainTests(unittest.TestCase):
+    def test_full_three_blocks(self):
+        text = xshare._assemble_main("タイトル（スポーツ報知）", "フック。", "要約文。")
+        self.assertEqual(text, "フック。\n\nタイトル（スポーツ報知）\n\n要約文。")
+
+    def test_degrades_when_over_limit(self):
+        long_summary = "あ" * 135  # weighted 270 で3ブロック合計は必ず超過
+        text = xshare._assemble_main("タイトル（報知）", "フックの一言。", long_summary)
+        self.assertNotIn(long_summary, text)
+        self.assertIn("タイトル（報知）", text)
+        self.assertLessEqual(xshare.x_weighted_len(text), 280)
 
 
 class BuildShareDraftsTests(unittest.TestCase):
@@ -81,6 +108,36 @@ class BuildShareDraftsTests(unittest.TestCase):
         self.assertIn("https://yoshilover.com/archives/9999", drafts["reply_text"])
         self.assertIn("井上温大", drafts["main_text"])
         self.assertEqual(drafts["image_url"], self._MATERIAL["image_url"])
+
+    def test_fallback_title_line_includes_media_name(self):
+        material = dict(self._MATERIAL, media_name="スポーツ報知")
+        drafts = xshare.build_share_drafts(material, gemini_api_key="")
+        self.assertTrue(
+            drafts["main_text"].startswith("井上温大が7回無失点で今季3勝目（スポーツ報知）")
+        )
+
+    def test_llm_path_assembles_hook_title_summary(self):
+        material = dict(self._MATERIAL, media_name="スポーツ報知")
+        with patch.object(
+            xshare, "_build_drafts_llm",
+            return_value=("低めの制球が答え。", "丁寧に低めを突く投球で7回無失点。", "次戦はカード頭で先発予定。"),
+        ):
+            drafts = xshare.build_share_drafts(material, gemini_api_key="k")
+        self.assertTrue(drafts["used_llm"])
+        self.assertEqual(
+            drafts["main_text"],
+            "低めの制球が答え。\n\n井上温大が7回無失点で今季3勝目（スポーツ報知）\n\n"
+            "丁寧に低めを突く投球で7回無失点。",
+        )
+        self.assertIn("次戦はカード頭で先発予定。", drafts["reply_text"])
+
+    def test_detect_media_name_domain_first(self):
+        self.assertEqual(
+            xshare._detect_media_name('<a href="https://hochi.news/articles/1">出典</a>', ""),
+            "スポーツ報知",
+        )
+        self.assertEqual(xshare._detect_media_name("", "スポニチの記事によると"), "スポニチ")
+        self.assertEqual(xshare._detect_media_name("", "出典なし本文"), "")
 
     def test_forbidden_pattern_helper(self):
         self.assertEqual(xshare._forbidden_in_post("スポーツ報知によると"), "media_name")

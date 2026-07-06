@@ -51,6 +51,14 @@ _GEMINI_BRANDING_METRIC = "GEMMA_BRANDING"
 # job は fire ごとに新プロセス → module state は自然 reset (cross-run 漏れ無し)。
 _LLM_BUDGET = {"used": 0, "max": None, "reply_reserve": 0, "reply_used": 0}
 
+# 2026-07-06 user「(コメント速報) なぜこのコメントか入れて」「(記録/節目) LLM
+# つかってもいい」: 後段で走る補助 LLM (状況説明1行 / record 可読化) は、 前段
+# voice が使い切る共有 non-reply 枠に入れると毎便枯渇する (dry-run 実測)。
+# 総共有枠は据え置きのまま、 flash-lite の小さな専用枠 (各 4 回/便) を別勘定で
+# 持つ。 caps を上げる時はコスト gate (user 判断) を通す。
+_AUX_LLM_BUDGET_CAPS = {"comment_context": 4, "record_plain": 4}
+_AUX_LLM_BUDGET_USED: dict[str, int] = {}
+
 
 def set_llm_budget(max_calls: Optional[int], *, reply_reserve: int = 0) -> None:
     """1 run の Gemini 生成呼び出し上限を設定。None / 0 / 負 = 無制限。
@@ -63,6 +71,7 @@ def set_llm_budget(max_calls: Optional[int], *, reply_reserve: int = 0) -> None:
     """
     _LLM_BUDGET["used"] = 0
     _LLM_BUDGET["reply_used"] = 0
+    _AUX_LLM_BUDGET_USED.clear()
     _LLM_BUDGET["max"] = max_calls if (max_calls and max_calls > 0) else None
     if _LLM_BUDGET["max"] is not None:
         _LLM_BUDGET["reply_reserve"] = max(
@@ -78,7 +87,18 @@ def _llm_budget_guard(label: str = "") -> None:
 
     site="reply" は総枠 (max) まで使える。 それ以外は max - reply_reserve で
     止まる (リプ予約枠には食い込めない)。 総呼び出し数は常に max 以下。
+    _AUX_LLM_BUDGET_CAPS にある site (comment_context / record_plain) は共有枠と
+    別勘定の専用小枠で数える (2026-07-06、 前段 voice の枯渇に巻き込まない)。
     """
+    if label in _AUX_LLM_BUDGET_CAPS:
+        aux_used = _AUX_LLM_BUDGET_USED.get(label, 0)
+        if aux_used >= _AUX_LLM_BUDGET_CAPS[label]:
+            raise RuntimeError(
+                f"llm_budget_exhausted aux_used={aux_used} "
+                f"aux_cap={_AUX_LLM_BUDGET_CAPS[label]} site={label}"
+            )
+        _AUX_LLM_BUDGET_USED[label] = aux_used + 1
+        return
     m = _LLM_BUDGET["max"]
     if m is None:
         _LLM_BUDGET["used"] += 1
@@ -885,10 +905,15 @@ def _extract_unverified_numbers(text: str, verified_text: str) -> list[str]:
     if not text:
         return []
     safe_verified = verified_text or ""
+    # 2026-07-06: 記事タイトルの全角数字 (２０回１／３) を LLM が半角 (20回1/3) で
+    # 書き戻すと literal 比較で誤棄却される (record 可読化 dry-run 実測で全滅)。
+    # NFKC 正規化した verified も照合対象にする (捏造数字は正規化後も存在しない)。
+    import unicodedata as _ud
+    nfkc_verified = _ud.normalize("NFKC", safe_verified)
     found: list[str] = []
     for match in _NUMERIC_TOKEN_RE.finditer(text):
         token = match.group(0)
-        if token not in safe_verified:
+        if token not in safe_verified and token not in nfkc_verified:
             found.append(token)
     return found
 
@@ -1723,6 +1748,7 @@ def build_plain_data_post(
     metric_label: str = "",
     model_id: str = _X_POST_DATA_LLM_MODEL,
     temperature: float = 0.25,
+    budget_site: str = "data_plain",
 ) -> str:
     """Rewrite a verified data candidate into plain, easy X copy.
 
@@ -1764,7 +1790,7 @@ def build_plain_data_post(
         from google import genai
 
         client = genai.Client(api_key=gemini_api_key)
-        _llm_budget_guard("data_plain")
+        _llm_budget_guard(budget_site)
         response = _x_post_generate_content(
             client,
             model=model_id or _X_POST_DATA_LLM_MODEL,

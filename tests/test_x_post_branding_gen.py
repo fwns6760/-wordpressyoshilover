@@ -815,6 +815,15 @@ class HallucinationPreventionAxisCTests414(unittest.TestCase):
     def test_extract_unverified_numbers_handles_empty_text(self) -> None:
         self.assertEqual(xbg._extract_unverified_numbers("", "anything"), [])
 
+    def test_extract_unverified_numbers_accepts_fullwidth_verified(self) -> None:
+        # 2026-07-06: 記事タイトルの全角数字を LLM が半角で書き戻しても捏造扱いしない
+        # (record 可読化 dry-run で「２０回１／３」→「20回1/3」が全滅した実測不具合)。
+        text = "井上温大が20回1/3連続無失点を継続中です。"
+        verified = "巨人・井上温大が２０回１／３連続無失点 チームトップ"
+        self.assertEqual(xbg._extract_unverified_numbers(text, verified), [])
+        # 正規化後にも存在しない数字は従来通り unverified。
+        self.assertIn("30", xbg._extract_unverified_numbers("30回無失点", verified))
+
     # axis C5: temperature default
     def test_build_gemini_branding_candidate_default_temperature(self) -> None:
         import inspect

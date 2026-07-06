@@ -1839,6 +1839,7 @@ def _fetch_record_article_priority_candidates(
                         return _g.build_plain_data_post(
                             src_text, gemini_api_key=_k,
                             player=rec_player, metric_label="記録/節目 (記事記載値)",
+                            budget_site="record_plain",
                         )
                 except Exception as _rec_llm_exc:  # noqa: BLE001
                     LOG.info("record_plain_fn unavailable: %r", _rec_llm_exc)

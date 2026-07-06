@@ -358,6 +358,26 @@ class LLMBudgetTests(unittest.TestCase):
             xbg._llm_budget_guard("reply")  # 総枠 8 到達で block
         xbg.set_llm_budget(None)
 
+    def test_aux_budget_independent_of_shared_pool(self):
+        # 2026-07-06: comment_context / record_plain は共有枠と別勘定の専用小枠。
+        # 前段 voice が共有枠を使い切っても補助 LLM は動き、逆に専用 cap で止まる。
+        xbg.set_llm_budget(2)
+        xbg._llm_budget_guard("quote_rt")
+        xbg._llm_budget_guard("quote_rt")  # 共有枠 2/2 で満杯
+        with self.assertRaises(RuntimeError):
+            xbg._llm_budget_guard("quote_rt")
+        for _ in range(4):
+            xbg._llm_budget_guard("comment_context")  # 専用枠 4 は共有満杯でも通る
+        with self.assertRaises(RuntimeError):
+            xbg._llm_budget_guard("comment_context")  # 専用 cap 4 到達で block
+        for _ in range(4):
+            xbg._llm_budget_guard("record_plain")  # site ごとに独立
+        with self.assertRaises(RuntimeError):
+            xbg._llm_budget_guard("record_plain")
+        xbg.set_llm_budget(None)  # reset で専用枠も 0 に戻る
+        xbg._llm_budget_guard("comment_context")
+        xbg.set_llm_budget(None)
+
     def test_reply_can_use_leftover_general_capacity(self):
         # 前段 lane が軽い便では、 リプは予約枠を超えて総枠まで使える。
         xbg.set_llm_budget(8, reply_reserve=3)

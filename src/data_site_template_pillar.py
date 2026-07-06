@@ -272,6 +272,55 @@ def _build_season_stats_html(player: PillarPlayerInfo) -> str:
     )
 
 
+def _build_recent_digest_html(player: PillarPlayerInfo) -> str:
+    """冒頭ダイジェスト (2026-07-06 差別化UX): 開いた瞬間に「今どうなのか」が
+    1行でわかる要約。打者=直近5試合の打撃、投手=直近5登板の投球。
+    OB/首脳陣/データ無しは空文字で omit (既存表示に影響しない)。"""
+    if _is_ob(player) or _is_staff(player):
+        return ""
+    marker = ""
+    line = ""
+    if _is_pitcher(player) and player.recent_pitching_games:
+        rows = player.recent_pitching_games[:5]
+        outs = 0
+        er_total = 0
+        k_total = 0
+        for (_d, _o, _m, ip, _h, k, _bb, er) in rows:
+            outs += int(ip) * 3 + round((float(ip) - int(ip)) * 10)  # 0.1/0.2=1/3表記
+            er_total += int(er)
+            k_total += int(k)
+        if outs <= 0:
+            return ""
+        ip_disp = f"{outs // 3}回" + (f"{outs % 3}/3" if outs % 3 else "")
+        era = er_total * 27.0 / outs
+        marker = "🔥" if era <= 2.0 else ("⚠️" if era >= 5.0 else "➖")
+        line = (
+            f"直近{len(rows)}登板: {ip_disp}・自責{er_total}・{k_total}奪三振"
+            f"（防御率 {era:.2f}）"
+        )
+    elif player.recent_games:
+        rows = player.recent_games[:5]
+        ab = h = hr = rbi = 0
+        for (_d, _o, a, hh, hhr, rr, _sb) in rows:
+            ab += int(a)
+            h += int(hh)
+            hr += int(hhr)
+            rbi += int(rr)
+        if ab <= 0:
+            return ""
+        avg = h / ab
+        avg_disp = f"{avg:.3f}".lstrip("0")
+        marker = "🔥" if avg >= 0.300 else ("❄️" if avg <= 0.150 else "➖")
+        line = f"直近{len(rows)}試合: 打率 {avg_disp}（{ab}打数{h}安打）・{hr}本塁打・{rbi}打点"
+    if not line:
+        return ""
+    return (
+        '<div class="ys-card" style="border-left:4px solid #f57f17;">'
+        f'<p style="margin:0;font-size:15px;font-weight:700;">{marker} {_esc(line)}</p>'
+        "</div>"
+    )
+
+
 def _build_recent_games_html(player: PillarPlayerInfo) -> str:
     """当季 (2026) 全試合の打撃結果表。 data 無ければ section omit。"""
     if not player.recent_games:
@@ -1357,6 +1406,7 @@ def render_pillar_html(player: PillarPlayerInfo) -> str:
         _build_lead_html(player),
         _build_breadcrumb_html(player.name),
         _build_featured_image_html(player),
+        _build_recent_digest_html(player),
         _build_profile_html(player),
         _build_short_review_html(player),
         _build_player_prose(player),  # SEO: split を index される解説文に

@@ -475,21 +475,32 @@ def _eeat_footer_html() -> str:
     )
 
 
-def _jsonld_script_html(slug: str, title: str, jsonld_extra: "list[dict] | None" = None) -> str:
-    """BreadcrumbList + Dataset (+ページ固有 extra) の JSON-LD script tag。"""
+def _jsonld_script_html(
+    slug: str,
+    title: str,
+    jsonld_extra: "list[dict] | None" = None,
+    *,
+    dataset_only: bool = False,
+) -> str:
+    """BreadcrumbList + Dataset (+ページ固有 extra) の JSON-LD script tag。
+
+    dataset_only: pillar ページは template 側が SportsPlayer+Person+Breadcrumb を
+    既に出力する (data_site_template_pillar._build_jsonld) ため、重複を避けて
+    Dataset だけを足す。
+    """
     page_url = f"{_SITE_BASE_URL}/data/{slug}" if slug != "data" else f"{_SITE_BASE_URL}/data"
     as_of = _eeat_as_of()
-    graph: list[dict] = [
-        {
-            "@type": "BreadcrumbList",
-            "itemListElement": [
-                {"@type": "ListItem", "position": 1, "name": "ヨシラバー",
-                 "item": _SITE_BASE_URL},
-                {"@type": "ListItem", "position": 2, "name": "巨人データ",
-                 "item": f"{_SITE_BASE_URL}/data"},
-                {"@type": "ListItem", "position": 3, "name": title, "item": page_url},
-            ],
-        },
+    breadcrumb = {
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            {"@type": "ListItem", "position": 1, "name": "ヨシラバー",
+             "item": _SITE_BASE_URL},
+            {"@type": "ListItem", "position": 2, "name": "巨人データ",
+             "item": f"{_SITE_BASE_URL}/data"},
+            {"@type": "ListItem", "position": 3, "name": title, "item": page_url},
+        ],
+    }
+    graph: list[dict] = ([] if dataset_only else [breadcrumb]) + [
         {
             "@type": "Dataset",
             "name": title,
@@ -543,6 +554,7 @@ def _upsert_page(
     excerpt: str = "",
     noindex: bool | None = None,
     jsonld_extra: "list[dict] | None" = None,
+    jsonld_dataset_only: bool = False,
 ) -> UpsertResult:
     """WP page を upsert (slug 一致なら PUT、 無ければ POST).
 
@@ -552,7 +564,7 @@ def _upsert_page(
     # E-E-A-T: 信頼ブロック + JSON-LD を全ページ共通で末尾注入 (sig 計算前 =
     # 差分更新の対象。基準日ベースなので試合日以外は sig 不変)。
     content_html = content_html + _eeat_footer_html() + _jsonld_script_html(
-        slug, title, jsonld_extra
+        slug, title, jsonld_extra, dataset_only=jsonld_dataset_only
     )
     if _dry_run_enabled():
         LOG.info("DRY_RUN upsert skipped slug=%s title=%s bytes=%d", slug, title, len(content_html))
@@ -1376,7 +1388,7 @@ def publish_phase1(only_slugs: set[str] | None = None) -> dict[str, object]:
                 parent=cluster_page_id,
                 featured_media_id=info.featured_media_id,
                 excerpt=render_pillar_excerpt(info),
-                jsonld_extra=[_pillar_person_jsonld(info)],
+                jsonld_dataset_only=True,
             )
             LOG.info("CANARY pillar upsert slug=%s page_id=%s action=%s", result.slug, result.page_id, result.action)
             canary_results.append(result)
@@ -1440,7 +1452,7 @@ def publish_phase1(only_slugs: set[str] | None = None) -> dict[str, object]:
             parent=cluster_page_id,
             featured_media_id=info.featured_media_id,
             excerpt=render_pillar_excerpt(info),
-            jsonld_extra=[_pillar_person_jsonld(info)],
+            jsonld_dataset_only=True,
             noindex=is_thin_pillar(info),
         )
         LOG.info(

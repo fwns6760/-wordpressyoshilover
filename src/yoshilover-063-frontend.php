@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Yoshilover 063 Frontend (topic hub / SNS reactions / Phase 1 noindex)
  * Description: 062 contract §2 §3 §5 の front impl。topic hub / SNS block / noindex を基盤に、トップ速報帯・記事下回遊束・右カラム rail・上部密集ナビ・人気記事導線まで含めて SWELL front を高密度化する。既存 SWELL コメント欄は触らない。
- * Version: 0.24.6
+ * Version: 0.24.7
  * Author: yoshilover
  */
 
@@ -291,6 +291,8 @@ function yoshilover_063_render_home_today_dashboard() {
             $html .= '<div class="yoshi-today-dash__links">'
                 . '<a href="' . esc_url( home_url( '/data/standings' ) ) . '">📊 順位表・個人ランキング</a>'
                 . '<a href="' . esc_url( home_url( '/data/schedule' ) ) . '">🗓 試合日程・結果</a>'
+                . '<a href="' . esc_url( home_url( '/data/injured' ) ) . '">🏥 離脱選手・復帰予定</a>'
+                . '<a href="' . esc_url( home_url( '/data/players' ) ) . '">👥 選手一覧（五十音）</a>'
                 . '<a href="' . esc_url( home_url( '/data#ys-player-search' ) ) . '">👤 選手データ検索</a>'
                 . '</div>';
             $html .= '</section>';

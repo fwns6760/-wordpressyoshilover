@@ -1487,6 +1487,31 @@ def publish_phase1(only_slugs: set[str] | None = None) -> dict[str, object]:
     except Exception as exc:  # noqa: BLE001 - 索引失敗で本体 publish は止めない
         LOG.warning("player index upsert failed: %r", exc)
 
+    # 歴代開幕投手 /data/opening-pitchers (2026-07-06 user GO): 季節性の恒久資産。
+    try:
+        from src.data_site_template_opening_pitchers import (
+            load_opening_pitchers,
+            render_opening_pitchers_excerpt,
+            render_opening_pitchers_html,
+            render_opening_pitchers_title,
+        )
+
+        op_rows = load_opening_pitchers()
+        if op_rows:
+            op_result = _upsert_page(
+                slug="opening-pitchers",
+                title=render_opening_pitchers_title(op_rows),
+                content_html=render_opening_pitchers_html(op_rows),
+                parent=cluster_page_id,
+                excerpt=render_opening_pitchers_excerpt(op_rows),
+            )
+            LOG.info(
+                "opening-pitchers upsert page_id=%s action=%s years=%d",
+                op_result.page_id, op_result.action, len(op_rows),
+            )
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("opening-pitchers upsert failed: %r", exc)
+
     # schedule ページ upsert (日程・結果カレンダー、Phase B 452) — parent=cluster → /data/schedule/
     sched_rows = fetch_giants_schedule()
     sched_result = _upsert_page(

@@ -97,3 +97,24 @@ class PlayerIndexTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OpeningPitchersTests(unittest.TestCase):
+    def test_baked_data_loads_90_years(self):
+        from src.data_site_template_opening_pitchers import load_opening_pitchers
+
+        rows = load_opening_pitchers()
+        self.assertGreaterEqual(len(rows), 90)
+        self.assertEqual(rows[0], {"year": 1936, "name": "沢村栄治"})
+        self.assertEqual(rows[-1]["year"], 2026)
+        self.assertEqual(rows[-1]["name"], "竹丸和幸")  # npb.jp cross-check済
+
+    def test_render_has_ranking_and_year_table(self):
+        from src.data_site_template_opening_pitchers import (
+            load_opening_pitchers, render_opening_pitchers_html,
+        )
+
+        html = render_opening_pitchers_html(load_opening_pitchers())
+        self.assertIn("回数ランキング", html)
+        self.assertIn("沢村栄治", html)
+        self.assertIn("/data/rotation", html)

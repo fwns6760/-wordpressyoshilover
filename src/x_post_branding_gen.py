@@ -1763,7 +1763,12 @@ def build_plain_data_post(
     verified_text = " ".join(
         part for part in [src, fact_text or "", player or "", metric_label or ""] if part
     )
-    numeric_tokens = [m.group(0) for m in _NUMERIC_TOKEN_RE.finditer(verified_text)]
+    # 2026-07-06: 記事タイトルは全角数字 (２０回１／３) が多く、 LLM は半角で
+    # 書き戻すため、 数字 token の抽出・使用チェックは NFKC 正規化側で行う
+    # (record 可読化 dry-run で unverified / no_verified_number_used 全滅の実測対策)。
+    import unicodedata as _ud
+    verified_nfkc = _ud.normalize("NFKC", verified_text)
+    numeric_tokens = [m.group(0) for m in _NUMERIC_TOKEN_RE.finditer(verified_nfkc)]
     prompt = "\n".join(
         [
             "あなたは読売ジャイアンツ専門のデータ投稿を整える編集者です。",
@@ -1773,6 +1778,7 @@ def build_plain_data_post(
             "- 2〜4行、90〜170字程度。",
             "- 淡白に、分かりやすく。煽り・ポエム・大げさな断定は禁止。",
             "- 数字・順位・選手名・対戦相手・期間は verified data にあるものだけ使う。",
+            "- 数字は半角で、verified data の表記のまま使う。日付・年など verified data に無い数字は書かない。",
             "- verified data に無い数字や記録を足さない。",
             "- URL、ハッシュタグ、媒体名、絵文字の連打は禁止。",
             "- 「どう見ますか」「期待したい」「応援したい」で締めない。",
@@ -1810,7 +1816,8 @@ def build_plain_data_post(
     if player and _normalize_player_name(player) not in _normalize_player_name(text):
         log.info("plain_data_post_skip reason=missing_player player=%s", player)
         return ""
-    if numeric_tokens and not any(token in text for token in numeric_tokens):
+    text_nfkc = _ud.normalize("NFKC", text)
+    if numeric_tokens and not any(token in text_nfkc for token in numeric_tokens):
         log.info("plain_data_post_skip reason=no_verified_number_used")
         return ""
     if not _voice_quality_ok(text, live=True):
@@ -1881,7 +1888,8 @@ def build_comment_context_line(
         return ""
     text = text.splitlines()[0].strip() if text else ""
     text = text.strip("「」『』\"'")
-    if not text or len(text) > 60:
+    # 10字未満は状況説明として情報が無い (「打線について。」等) ので出さない。
+    if not text or len(text) < 10 or len(text) > 60:
         log.info("comment_context_skip reason=length len=%d", len(text or ""))
         return ""
     if _extract_unverified_numbers(text, verified_text):

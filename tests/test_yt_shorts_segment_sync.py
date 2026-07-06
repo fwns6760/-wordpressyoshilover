@@ -174,3 +174,37 @@ class RefinementTests(unittest.TestCase):
             with _patch.dict(os.environ, {"YT_SHORTS_SEGMENT_SE": "1"}):
                 out = _concat_wavs_with_padding(paths, (2.0, 2.0), base / "o.wav")
             self.assertAlmostEqual(_wav_seconds(out), 4.0, places=2)
+
+
+class CountupTests(unittest.TestCase):
+    """洗練① (2026-07-06 user「洗練させる」): 数字カウントアップ clip。"""
+
+    def test_format_preserves_value_style(self):
+        from src.yt_shorts_render import _format_count_value
+
+        # 先頭ドット+3桁 (.350) / 整数 (7) / 小数2桁 (2.10) の表記形式を維持
+        self.assertEqual(_format_count_value(1.0, ".350"), ".350")
+        self.assertEqual(_format_count_value(0.5, ".350"), ".175")
+        self.assertEqual(_format_count_value(1.0, "7"), "7")
+        self.assertEqual(_format_count_value(1.0, "2.10"), "2.10")
+
+    def test_clip_renders_and_matches_duration(self):
+        from src.yt_shorts_render import render_prehook_countup_clip
+        from src.yt_shorts_topic import ShortsTopic
+
+        t = ShortsTopic(player="泉口友汰", slug="izuguchi-yuta", label="連続試合安打",
+                        value="7試合", note="", category="streak", as_of="2026-07-06",
+                        title="t", hook="h")
+        with TemporaryDirectory() as td:
+            clip = render_prehook_countup_clip(t, Path(td), seconds=0.8)
+            self.assertIsNotNone(clip)
+            self.assertTrue(clip.exists())
+
+    def test_non_numeric_value_returns_none(self):
+        from src.yt_shorts_render import render_prehook_countup_clip
+        from src.yt_shorts_topic import ShortsTopic
+
+        t = ShortsTopic(player="x", slug="x", label="l", value="プロ初本塁打",
+                        note="", category="c", as_of="2026-07-06", title="t", hook="h")
+        with TemporaryDirectory() as td:
+            self.assertIsNone(render_prehook_countup_clip(t, Path(td), seconds=0.8))

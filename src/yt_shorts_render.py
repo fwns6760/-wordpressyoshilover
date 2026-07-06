@@ -646,20 +646,20 @@ def _prehook_enabled() -> bool:
     return raw not in {"0", "false", "no", "off"}
 
 
-def render_prehook_frame(topic: ShortsTopic, output_dir: Path) -> Path:
-    """巨大数字だけの一撃フレーム (topic.value 主役、選手名は小さく)。"""
+def _draw_prehook_image(topic: ShortsTopic, value_text: str):
+    """数字ドン画面の描画本体 (静止frame と count-up clip の共有)。"""
     img, draw = _frame_background()
-    value = str(getattr(topic, "value", "") or "").strip()
     player = str(getattr(topic, "player", "") or "").strip()
-    # 数字は画面幅いっぱいまで拡大 (長い値は自動縮小)
+    # font size は最終値 (最も長い表示) 基準で固定し、カウント中に文字が跳ねないようにする
+    final_value = str(getattr(topic, "value", "") or "").strip() or value_text
     size = 340
     font = _font(size, bold=True)
-    while _text_width(draw, value, font) > WIDTH - 120 and size > 80:
+    while _text_width(draw, final_value, font) > WIDTH - 120 and size > 80:
         size -= 20
         font = _font(size, bold=True)
-    w = _text_width(draw, value, font)
+    w = _text_width(draw, value_text, font)
     y = HEIGHT // 2 - size // 2 - 60
-    draw.text(((WIDTH - w) // 2, y), value, font=font, fill="#e65100",
+    draw.text(((WIDTH - w) // 2, y), value_text, font=font, fill="#e65100",
               stroke_width=6, stroke_fill="#ffffff")
     if player:
         pfont = _font(72, bold=True)
@@ -668,9 +668,91 @@ def render_prehook_frame(topic: ShortsTopic, output_dir: Path) -> Path:
                   fill="#1a1a1a", stroke_width=3, stroke_fill="#ffffff")
     _draw_common_chrome(draw, label="巨人データ速報")
     _draw_footer(draw)
+    return img
+
+
+def render_prehook_frame(topic: ShortsTopic, output_dir: Path) -> Path:
+    """巨大数字だけの一撃フレーム (topic.value 主役、選手名は小さく)。"""
+    value = str(getattr(topic, "value", "") or "").strip()
+    img = _draw_prehook_image(topic, value)
     path = output_dir / "frame_00_prehook.png"
     img.save(path)
     return path
+
+
+# ── 洗練① (2026-07-06 user「洗練させる」): 数字カウントアップ clip ──
+# prehook を静止画でなく「数字が回って final 値でスナップする」動画クリップにする。
+# 既存 filter chain (zoompan/xfade) は動画入力でもそのまま働くため、入力0だけ
+# 事前レンダリングした mp4 に差し替える (compose_video が拡張子で判別)。
+_VALUE_NUM_RE = _re.compile(r"^([0-9]*\.?[0-9]+)(.*)$") if False else None
+import re as _re2  # noqa: E402
+
+_VALUE_NUM_RE = _re2.compile(r"^(\.?[0-9]+(?:\.[0-9]+)?)(.*)$")
+
+
+def _countup_enabled() -> bool:
+    raw = (os.environ.get("YT_SHORTS_COUNTUP") or "").strip().lower()
+    if not raw:
+        return True
+    return raw not in {"0", "false", "no", "off"}
+
+
+def _format_count_value(progress: float, num_text: str) -> str:
+    """final 値の表記形式 (先頭ドット/小数桁/整数) を保ったまま途中値を作る。"""
+    leading_dot = num_text.startswith(".")
+    normalized = ("0" + num_text) if leading_dot else num_text
+    decimals = len(normalized.split(".")[1]) if "." in normalized else 0
+    final = float(normalized)
+    cur = final * progress
+    text = f"{cur:.{decimals}f}"
+    if leading_dot and text.startswith("0."):
+        text = text[1:]
+    return text
+
+
+def render_prehook_countup_clip(
+    topic: ShortsTopic,
+    output_dir: Path,
+    *,
+    seconds: float,
+    ffmpeg_bin: str = "ffmpeg",
+) -> Path | None:
+    """カウントアップ clip (長さ seconds、30fps)。数値が取れない value は None。
+
+    数字は ease-out (最初速く最後ゆっくり) で 6 割地点までに final へ到達し、
+    残りは final 値で静止 (「回って、ピタッと止まる」)。
+    """
+    value = str(getattr(topic, "value", "") or "").strip()
+    m = _VALUE_NUM_RE.match(value)
+    if not m:
+        return None
+    num_text, suffix = m.group(1), m.group(2)
+    total = max(6, int(round(seconds * MOTION_FPS)))
+    count_frames = max(3, int(total * 0.6))
+    frames_dir = output_dir / "prehook_frames"
+    frames_dir.mkdir(parents=True, exist_ok=True)
+    for i in range(total):
+        if i < count_frames:
+            t = (i + 1) / count_frames
+            progress = 1.0 - (1.0 - t) ** 3  # ease-out cubic
+            text = _format_count_value(progress, num_text) + suffix
+        else:
+            text = value
+        img = _draw_prehook_image(topic, text)
+        img.save(frames_dir / f"pre_{i:03d}.png")
+    clip = output_dir / "prehook.mp4"
+    subprocess.run(
+        [
+            ffmpeg_bin, "-y", "-hide_banner", "-loglevel", "error",
+            "-framerate", str(MOTION_FPS),
+            "-i", str(frames_dir / "pre_%03d.png"),
+            "-t", f"{seconds:.3f}",
+            "-c:v", "libx264", "-preset", "fast", "-pix_fmt", "yuv420p",
+            str(clip),
+        ],
+        check=True,
+    )
+    return clip
 
 
 # ── 洗練③ (2026-07-06 user GO): セグメント頭のポップSE ──
@@ -995,7 +1077,12 @@ def compose_video(
     cmd = [ffmpeg_bin, "-y", "-hide_banner", "-loglevel", "error"]
     for index, path in enumerate(frame_paths):
         clip_seconds = _clip_seconds(durations, index)
-        cmd.extend(["-framerate", str(MOTION_FPS), "-loop", "1", "-t", f"{clip_seconds:.3f}", "-i", str(path)])
+        if str(path).endswith(".mp4"):
+            # 洗練①: 事前レンダリング済み clip (count-up prehook)。長さは clip 側で
+            # clip_seconds 以上に作られている前提 (足りない分は最終フレームで持つ)。
+            cmd.extend(["-t", f"{clip_seconds:.3f}", "-i", str(path)])
+        else:
+            cmd.extend(["-framerate", str(MOTION_FPS), "-loop", "1", "-t", f"{clip_seconds:.3f}", "-i", str(path)])
     cmd.extend(["-i", str(audio_path)])
     audio_index = len(frame_paths)
     if bgm_path:
@@ -1197,11 +1284,23 @@ def render_short(
     # ナレーション対応の無い無音フレームとして durations/audio 側で先頭に足す。
     prehook_path: Path | None = None
     if fmt == "data" and _prehook_enabled():
-        try:
-            prehook_path = render_prehook_frame(topic, out)
-        except Exception as exc:  # noqa: BLE001 - 装飾失敗で本体は止めない
-            logger.warning("prehook_frame_skip err=%r", exc)
-            prehook_path = None
+        # 洗練①: count-up clip を優先 (clip は xfade 延長分まで持つ長さで作る)。
+        if _countup_enabled():
+            try:
+                prehook_path = render_prehook_countup_clip(
+                    topic, out,
+                    seconds=PREHOOK_SECONDS + MOTION_XFADE_SECONDS + 0.2,
+                    ffmpeg_bin=ffmpeg_bin,
+                )
+            except Exception as exc:  # noqa: BLE001 - 静止 prehook へ fallback
+                logger.warning("prehook_countup_skip err=%r", exc)
+                prehook_path = None
+        if prehook_path is None:
+            try:
+                prehook_path = render_prehook_frame(topic, out)
+            except Exception as exc:  # noqa: BLE001 - 装飾失敗で本体は止めない
+                logger.warning("prehook_frame_skip err=%r", exc)
+                prehook_path = None
     # セグメント同期TTS (2026-07-06): 字幕フレームと音声を1:1同期。成立しない
     # フォーマット (segments無し / VOICEVOX無し / 本数不一致) は従来経路へ。
     seg_result = None

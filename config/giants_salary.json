@@ -7598,6 +7598,40 @@
         }
       ],
       "shube_id": "19870006"
+    },
+    {
+      "name": "ウィットリー",
+      "slug": "whitley-26",
+      "kana": "",
+      "position": "投手",
+      "jersey": "26",
+      "active": true,
+      "nenshuu_id": null,
+      "years": [
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 20000
+        }
+      ]
+    },
+    {
+      "name": "小笠原慎之介",
+      "slug": "ogasawara-shinnosuke",
+      "kana": "",
+      "position": "投手",
+      "jersey": "98",
+      "active": true,
+      "nenshuu_id": null,
+      "years": [
+        {
+          "year": 2026,
+          "team": "巨人",
+          "league": "NPB",
+          "salary_man": 18000
+        }
+      ]
     }
   ]
 }

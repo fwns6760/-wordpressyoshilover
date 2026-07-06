@@ -74,12 +74,39 @@ def _esc(t) -> str:
     return _html.escape(str(t if t is not None else ""), quote=True)
 
 
+def _reconcile_actives_with_roster(data: dict) -> None:
+    """baked の active フラグを現ロースターと突合して補正する (in-place)。
+
+    2026-07-06 実事故: 2025年限りで引退した長野久義が baked の active=True の
+    まま現役年俸ランキングに表示された。現ロースター (NPB live + fallback) に
+    居ない選手は OB 枠へ落とす。roster 取得失敗時は baked のまま (fail-safe)。
+    """
+    try:
+        from src.giants_roster_loader import load_active_roster
+
+        roster = {
+            str(r.get("name") or "").replace(" ", "").replace("　", "")
+            for r in load_active_roster()
+            if r.get("active") and r.get("role") in {"player", "shihaikako", "ikusei"}
+        }
+    except Exception:  # noqa: BLE001 - roster不能時は補正しない
+        return
+    if not roster:
+        return
+    for p in data.get("players", []) or []:
+        name = str(p.get("name") or "").replace(" ", "").replace("　", "")
+        if p.get("active") and name not in roster:
+            p["active"] = False
+
+
 def load_salary_data() -> dict:
     try:
         with open(_DATA_PATH, encoding="utf-8") as fh:
-            return _json.load(fh)
+            data = _json.load(fh)
     except Exception:
         return {}
+    _reconcile_actives_with_roster(data)
+    return data
 
 
 def _fmt_man(man: int) -> str:

@@ -125,3 +125,25 @@ class MergePromotionTests(unittest.TestCase):
         row = [r for r in merged if "丸" in r["name"]][0]
         # 支配下⇔支配下で区分一致 → 手キュレーションの "player" label 温存
         self.assertEqual(row["role"], "player")
+
+
+class RetirementDetectionTests(unittest.TestCase):
+    def test_player_absent_from_npb_is_deactivated(self):
+        """2026-07-06 実事故: 引退済み長野久義が静的jsonのactive=Trueのまま残存。
+        NPB名鑑に居ない選手roleのentryは退団/引退扱いでactive=False。"""
+        from src.giants_roster_loader import _merge_with_fallback
+
+        json_entries = [
+            {"name": "長野 久義", "aliases": ["長野久義"], "role": "player",
+             "position": "外野手", "jersey_number": "7", "active": True},
+            {"name": "阿部 慎之助", "aliases": ["阿部慎之助"], "role": "manager",
+             "position": "", "jersey_number": "83", "active": True},
+        ]
+        npb_entries = [
+            {"name": "坂本 勇人", "aliases": ["坂本勇人"], "role": "shihaikako",
+             "position": "", "jersey_number": "6", "active": True},
+        ]
+        merged = {r["name"]: r for r in _merge_with_fallback(npb_entries, json_entries)}
+        self.assertFalse(merged["長野 久義"]["active"])   # NPB不在の選手 → 退役
+        self.assertTrue(merged["阿部 慎之助"]["active"])  # 監督はNPB名鑑外でも維持
+        self.assertTrue(merged["坂本 勇人"]["active"])

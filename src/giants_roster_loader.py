@@ -239,6 +239,19 @@ def _merge_with_fallback(
                 existing["role"] = npb_role
         else:
             by_key[key] = entry
+    # 2026-07-06 実事故: 2025年限りで引退した長野久義が静的 json の active=True の
+    # まま残り、年俸ページ等に現役として表示された。NPB 名鑑 (支配下+育成) に
+    # 存在しない選手 role の entry は退団/引退扱いで active=False にする。
+    # 監督・コーチは NPB 名鑑ページに載らないため対象外。npb_entries が空の時は
+    # この関数自体が呼ばれない (fallback 経路) ので、NPB 障害時の誤退役化は起きない。
+    npb_keys = {_dedupe_key(str(e.get("name") or "")) for e in npb_entries}
+    for key, entry in by_key.items():
+        if (
+            key not in npb_keys
+            and entry.get("active")
+            and str(entry.get("role") or "") in {"player", "shihaikako", "ikusei"}
+        ):
+            entry["active"] = False
     return list(by_key.values())
 
 

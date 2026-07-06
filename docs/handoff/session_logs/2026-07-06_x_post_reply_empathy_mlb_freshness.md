@@ -23,3 +23,14 @@ user 指摘 3 件を同セッションで対応。
 - 次の実 mail 便でファンリプ/MLBリプの文面トーンを user が確認 (共感になっているか、数字が消えたか)
 - MLB引用RT は鮮度3hで 0 件の便が増える見込み (埋め草で出さないのは仕様)
 - 報知など媒体リプは補足型のまま。user から同様の指摘が出たら empathy 切替を検討
+
+## 第2便 (同日 10:00-10:50 JST): ファンリプ数字全廃 + コメント速報文脈 + 記録/節目可読化
+
+- user 追加指摘: ①ファンリプの数字は1/3でも不要(「交流に知識を見せつけてるだけ」) ②コメント速報が唐突(なぜの文脈を前に) ③記録/節目がポストとして見づらい(LLM可) ④「未確認の数字は足さず…」の内部ルール文が読者に漏れる
+- 実装: fan lane db_fact 全廃 / build_comment_context_line (状況説明1行、記事lead根拠+数字門番+10〜60字gate) / record候補を build_plain_data_post で可読化 (budget_site=record_plain)
+- flag: ENABLE_X_POST_COMMENT_CONTEXT=1 / ENABLE_X_POST_RECORD_PLAIN_LLM=1 (code default OFF、prod job env で ON。test/dev の helper 直呼びで実LLM発火させないため)
+- 補助LLM専用小枠: comment_context / record_plain 各4回/便 (共有 non-reply 枠の枯渇に巻き込まれない別勘定、cap 増はコスト gate)
+- 数字門番 NFKC 対応: 記事の全角数字(２０回１／３)を LLM が半角で書き戻すと literal 比較で全滅していた実測不具合を修正 (_extract_unverified_numbers + build_plain_data_post)
+- commits: 4d05f6b4 / d43b1432 / c729a398、image nfkc-fix-c729a398 deploy 済
+- dry-run verify (x-post-mail-lane-gsftp): record 可読化 4/4 built (76-94字) / comment_context 3 built + len=8 は min gate で正しく skip / fan_reply 純共感型 / Completed
+- 残観察: comment_context の cap4 は候補建て順で消費 (最終mailに入らない候補で浪費しうる)。実mailで文脈付与率が低ければ lazy 生成 or cap 調整を検討

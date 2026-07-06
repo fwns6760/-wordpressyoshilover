@@ -510,7 +510,11 @@ def _jsonld_script_html(
                 "@type": "Organization",
                 "name": "ヨシラバー",
                 "url": _SITE_BASE_URL,
-                "sameAs": ["https://x.com/yoshilover6760"],
+                "sameAs": [
+                    "https://x.com/yoshilover6760",
+                    # YouTube: ヨシラバー🐰巨人データ速報 (Shorts lane 投稿先、2026-07-06 API実取得)
+                    "https://www.youtube.com/channel/UCnlpwb6SBrQTZJNWTIHGFGA",
+                ],
             },
             "isAccessibleForFree": True,
             **({"dateModified": as_of} if as_of else {}),

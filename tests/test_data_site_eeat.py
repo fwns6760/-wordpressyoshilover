@@ -63,6 +63,10 @@ class JsonLdTests(unittest.TestCase):
         self.assertEqual(ds["dateModified"], "2026-07-05")
         self.assertEqual(ds["url"], "https://yoshilover.com/data/sakamoto-hayato")
         self.assertIn("https://x.com/yoshilover6760", ds["creator"]["sameAs"])
+        self.assertIn(
+            "https://www.youtube.com/channel/UCnlpwb6SBrQTZJNWTIHGFGA",
+            ds["creator"]["sameAs"],
+        )
 
     def test_person_extra_appended(self):
         person = pub._pillar_person_jsonld(_Info())

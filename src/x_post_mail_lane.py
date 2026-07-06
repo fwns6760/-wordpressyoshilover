@@ -2457,7 +2457,8 @@ def build_video_radar_candidates(
 # ---------------------------------------------------------------------------
 # MLB watch lane (2026-07-02 user 決定: フォロワー増計画)
 # ---------------------------------------------------------------------------
-# メジャーへ行った元巨人 (菅野智之 / 岡本和真) + 別枠の大谷翔平 を、MLB の
+# メジャーへ行った元巨人 (菅野智之 / 岡本和真) + 別枠の大谷翔平 +
+# 日本人スター枠 (山本由伸 / 鈴木誠也 / 村上宗隆) を、MLB の
 # 試合が動く日本時間の朝〜昼帯だけ引用RT候補としてメールに入れる。
 # source は実 feed 検証済 (2026-07-02): MLBJapan=MLB公式日本語 (動画多・
 # 大谷/岡本言及多)、SPOTVNOW_jp=MLB中継動画クリップ。日本語のみ採用。
@@ -2482,9 +2483,18 @@ _MLB_WATCH_HANDLES = [
     # 実 feed 検証済 (2026-07-03、RSSHub 経由で動画/画像マーカー確認)。
     "MLBStats",
     "PitchingNinja",
-    # 2026-07-03 user「巨人だけだと伸びが頭打ち。認証大手×日本人スターで枠を広げる」:
-    # Cubs=鈴木誠也 (実 feed 検証済 items16/video9/image11)。山本由伸は既存 Dodgers/
-    # MLB/MLBStats/PitchingNinja が拾う。
+    # Dodgers / 日本人MLBの動画・現地記者投稿。英語 feed でも player alias で拾う。
+    "SportsNetLA",
+    "BLPJapanese",
+    "FabianArdaya",
+    # 海外動画・大手野球メディア。大谷/山本系は Dodgers/SportsNetLA/FabianArdaya/
+    # PitchingNinja を維持しつつ、公式/大手の clip・highlight 供給を増やす。
+    "MLBONFOX",
+    "MLBNetwork",
+    "DodgersNation",
+    "DodgerBlue1958",
+    "TalkinBaseball_",
+    # 鈴木誠也。村上宗隆は所属チーム未固定のため MLBJapan/MLB/MLBStats 側で拾う。
     "Cubs",
 ]
 # 表示名 → 検出 alias (部分一致)。MLB 文脈の feed なので姓のみで安全。
@@ -2494,16 +2504,14 @@ _MLB_WATCH_PLAYERS: dict[str, tuple[str, ...]] = {
     "菅野智之": ("菅野", "Sugano", "Tomoyuki"),
     "岡本和真": ("岡本", "Okamoto", "Kazuma"),
     "大谷翔平": ("大谷", "Ohtani", "Shohei"),
-    # 2026-07-03 user「山本由伸と鈴木誠也も軽めに入れる」(フォロワー増枠の拡張)。
-    # 姓のみ alias (山本/鈴木) は入れない: 同日実事故「鈴木彩艶→鈴木大和」と同じ
-    # 誤爆経路になるため、フルネーム + 英名のみで検出する。
     "山本由伸": ("山本由伸", "Yamamoto", "Yoshinobu"),
     "鈴木誠也": ("鈴木誠也", "Suzuki", "Seiya"),
+    "村上宗隆": ("村上宗隆", "Murakami", "Munetaka"),
 }
 _MLB_EX_GIANTS = frozenset({"菅野智之", "岡本和真"})
-# 「軽め」枠: 元巨人でも大谷でもない日本人スターは 1 便 1 人まで。
-# 元巨人 (菅野/岡本) と大谷の露出を食わないための上限。
-_MLB_EXTRA_STARS = frozenset({"山本由伸", "鈴木誠也"})
+# 2026-07-05 user lock: 山本由伸/鈴木誠也/村上宗隆も対象。ただし元巨人では
+# ないので、LLM framing では「巨人から送り出した」文脈にしない。
+_MLB_EXTRA_STARS = frozenset({"山本由伸", "鈴木誠也", "村上宗隆"})
 
 
 def _detect_mlb_watch_player(text: str) -> str:
@@ -3643,7 +3651,9 @@ def apply_x_impression_policy(
     recent mails (cross-run, all lanes). Pre-seeding them drops candidates for
     a player who was just mailed — this is the single choke point that stops
     the same hot player (buzz / comment / image / record lanes alike) from
-    recurring in every hourly candidate mail. Reply-lane actions are exempt.
+    recurring in every hourly candidate mail. Reply-lane actions are exempt in
+    legacy flat mode; per-group history still cools down repeats inside the
+    reply group itself.
 
     ``recent_player_keys_by_group`` (2026-06-29): when provided, the recent
     gate is scoped per lane-group (original / reply / other) so a player shown
@@ -3700,6 +3710,11 @@ def apply_x_impression_policy(
             )
         else:
             recent_hit = player_key in recent_players
+        reply_group_recent_hit = (
+            is_reply_metric
+            and recent_by_group is not None
+            and recent_hit
+        )
         data_precision_reason = _data_precision_drop_reason(candidate)
         if data_precision_reason:
             reason = data_precision_reason
@@ -3716,7 +3731,7 @@ def apply_x_impression_policy(
         elif (
             player_key
             and recent_hit
-            and not is_reply_metric
+            and (not is_reply_metric or reply_group_recent_hit)
             and not candidate.history_exempt
         ):
             # 直近の毎時メールで既に出した選手は外す (井上・浦田 等が毎時連続
@@ -5694,6 +5709,7 @@ def _compose_html_body(
     context_note: str = "",
     candidate_image_cids: list[str | None] | None = None,
     share_x_button_urls: list[str | None] | None = None,
+    direct_post_button_urls: list[str | None] | None = None,
     dropped: "Sequence[tuple[Candidate, str]] | None" = None,
 ) -> str:
     band = time_band_label(now.hour)
@@ -5756,6 +5772,19 @@ def _compose_html_body(
         share_x_url = ""
         if share_x_button_urls and idx - 1 < len(share_x_button_urls):
             share_x_url = share_x_button_urls[idx - 1] or ""
+        # 2026-07-06: API 直投稿ボタン (X app を開かない = アカウント切替不要)。
+        # スマホ側のアクティブアカウントに関係なく @yoshilover6760 から投稿される。
+        direct_post_url = ""
+        if direct_post_button_urls and idx - 1 < len(direct_post_button_urls):
+            direct_post_url = direct_post_button_urls[idx - 1] or ""
+        direct_post_html = ""
+        if direct_post_url:
+            direct_post_html = (
+                f"<a href=\"{_html.escape(direct_post_url)}\" "
+                "style=\"display:inline-block;padding:8px 14px;background:#f57f17;"
+                "color:#fff;text-decoration:none;border-radius:6px;font-size:13px;"
+                "font-weight:700;\">🚀 @yoshilover6760で即投稿 (切替不要)</a>"
+            )
         button_href = share_x_url or intent_url
         # 2026-06-11 user「次へ遷移せず戻る」: 画像つき share (navigator.share →
         # X app の画像編集ステップ) が端末/X app 側で詰まると投稿手段が無くなる
@@ -5820,6 +5849,7 @@ def _compose_html_body(
             f"{proof_html}"
             "<div style=\"display:flex;gap:10px;align-items:center;"
             "margin-top:8px;flex-wrap:wrap;\">"
+            f"{direct_post_html}"
             f"<a href=\"{_html.escape(button_href)}\" "
             "style=\"display:inline-block;padding:8px 14px;background:#000;"
             "color:#fff;text-decoration:none;border-radius:6px;font-size:13px;"
@@ -5929,6 +5959,24 @@ def compose_mail(
                     post_text=_candidate_post_text(cand),
                 )
         share_x_urls.append(share_x_url or None)
+    # 2026-07-06: API 直投稿 URL (画像有無に関係なく全候補分)。
+    # FETCHER_PUBLIC_BASE_URL があれば有効。reply / 引用RT も API param で引き継ぐ。
+    direct_post_urls: list[str | None] = []
+    xdp_base = (os.environ.get("FETCHER_PUBLIC_BASE_URL") or "").strip().rstrip("/")
+    if xdp_base:
+        from src.x_direct_post_handler import build_direct_post_button_url
+
+        for cand in candidates:
+            url = build_direct_post_button_url(
+                _candidate_post_text(cand),
+                account="baseball",
+                base_url=xdp_base,
+                reply_to_id=getattr(cand, "reply_to_id", "") or "",
+                quote_url=getattr(cand, "quote_url", "") or "",
+            )
+            direct_post_urls.append(url or None)
+    else:
+        direct_post_urls = [None] * len(candidates)
     text_body = _compose_text_body(
         candidates, now, context_note=context_note, dropped=dropped
     )
@@ -5938,6 +5986,7 @@ def compose_mail(
         context_note=context_note,
         candidate_image_cids=cids_for_html,
         share_x_button_urls=share_x_urls,
+        direct_post_button_urls=direct_post_urls,
         dropped=dropped,
     )
     return ComposedMail(

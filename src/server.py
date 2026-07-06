@@ -788,6 +788,37 @@ def _run_share_x_cand_image_proxy(
     )
 
 
+def _run_x_direct_post(
+    method: str,
+    acct: str,
+    text: str,
+    token: str,
+    *,
+    orig_digest: str = "",
+    reply_to: str = "",
+    quote: str = "",
+) -> tuple[int, str, dict]:
+    """2026-07-06: /x-direct-post (mail ボタン → 確認ページ → API 直投稿)。
+
+    アカウント切替不要化: intent と違い X app を開かず、acct 別 API key で
+    server が直接投稿する (baseball=@yoshilover6760 / naka=@yoshilover_naka)。
+    """
+    log = logging.getLogger("server.x_direct_post")
+    try:
+        from src.x_direct_post_handler import (
+            handle_direct_post_get,
+            handle_direct_post_post,
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.warning("x_direct_post_import_failed err=%s", exc)
+        return 500, "<h2>内部エラー</h2><p>x_direct_post_handler import 失敗</p>", {}
+    if method == "POST":
+        return handle_direct_post_post(
+            acct, text, token, orig_digest, reply_to=reply_to, quote=quote
+        )
+    return handle_direct_post_get(acct, text, token, reply_to=reply_to, quote=quote)
+
+
 def _unpublish_html(status: str, message: str, post_id: int | None = None) -> str:
     """unpublish endpoint 用の簡易 HTML response。"""
     title = "非公開化 完了" if status == "success" else "非公開化 エラー"
@@ -916,6 +947,18 @@ class Handler(BaseHTTPRequestHandler):
             token = (qs.get("token", [""])[0] or "").strip()
             code, body_bytes, content_type, extra_headers = _run_share_x_cand_image_proxy(blob_key, token)
             self._respond_bytes(code, body_bytes, content_type=content_type, extra_headers=extra_headers)
+        elif parsed.path == "/x-direct-post":
+            # 2026-07-06: mail ボタン → 確認ページ (アカウント別 API 直投稿)。
+            qs = parse_qs(parsed.query or "")
+            code, body, extra_headers = _run_x_direct_post(
+                "GET",
+                (qs.get("acct", [""])[0] or "").strip(),
+                qs.get("text", [""])[0] or "",
+                (qs.get("token", [""])[0] or "").strip(),
+                reply_to=(qs.get("reply_to", [""])[0] or "").strip(),
+                quote=(qs.get("quote", [""])[0] or "").strip(),
+            )
+            self._respond(code, body, content_type="text/html; charset=utf-8", extra_headers=extra_headers)
         elif parsed.path == "/x-intent":
             # 2026-05-22: x_post_mail X button.
             # iOS / Android Universal Link intercepts x.com taps from
@@ -984,6 +1027,22 @@ class Handler(BaseHTTPRequestHandler):
             if hashtags_param:
                 location += f"&hashtags={_q(hashtags_param, safe=',')}"
             self._respond(302, "", content_type="text/plain", extra_headers={"Location": location})
+            return
+        if parsed.path == "/x-direct-post":
+            # 2026-07-06: 確認ページから submit された API 直投稿。
+            length = int(self.headers.get("Content-Length", 0))
+            raw_body = self.rfile.read(length).decode() if length else ""
+            form = parse_qs(raw_body)
+            code, body, extra_headers = _run_x_direct_post(
+                "POST",
+                (form.get("acct", [""])[0] or "").strip(),
+                form.get("text", [""])[0] or "",
+                (form.get("token", [""])[0] or "").strip(),
+                orig_digest=(form.get("orig_digest", [""])[0] or "").strip(),
+                reply_to=(form.get("reply_to", [""])[0] or "").strip(),
+                quote=(form.get("quote", [""])[0] or "").strip(),
+            )
+            self._respond(code, body, content_type="text/html; charset=utf-8", extra_headers=extra_headers)
             return
         if parsed.path == "/publish-and-tweet":
             # 379-OPS (GH #53): confirmation page から submit された publish + X intent。

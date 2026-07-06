@@ -127,3 +127,50 @@ class PrepareAudioSegmentedTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RefinementTests(unittest.TestCase):
+    """洗練②③ (2026-07-06 user GO): 数字ドン prehook + カード切替 pop SE。"""
+
+    def test_prehook_frame_renders(self):
+        from src.yt_shorts_render import render_prehook_frame
+        from src.yt_shorts_topic import ShortsTopic
+
+        t = ShortsTopic(player="泉口友汰", slug="izuguchi-yuta", label="連続試合安打",
+                        value="7試合", note="", category="streak", as_of="2026-07-06",
+                        title="t", hook="h")
+        with TemporaryDirectory() as td:
+            path = render_prehook_frame(t, Path(td))
+            self.assertTrue(path.exists())
+            self.assertGreater(path.stat().st_size, 10000)
+
+    def test_prepend_silence_extends_duration(self):
+        from src.yt_shorts_render import _prepend_silence
+
+        with TemporaryDirectory() as td:
+            src = Path(td) / "n.wav"
+            _write_wav(src, 2.0)
+            out = _prepend_silence(src, 0.7)
+            self.assertAlmostEqual(_wav_seconds(out), 2.7, places=2)
+
+    def test_pop_se_bounded(self):
+        from src.yt_shorts_render import _pop_se_samples
+
+        samples = _pop_se_samples(24000)
+        self.assertLess(max(abs(v) for v in samples), 32768 * 0.3)
+        self.assertLess(len(samples), 24000 // 2)
+
+    def test_concat_with_se_keeps_length(self):
+        import os
+        from unittest.mock import patch as _patch
+
+        with TemporaryDirectory() as td:
+            base = Path(td)
+            paths = []
+            for i in range(2):
+                p2 = base / f"s{i}.wav"
+                _write_wav(p2, 1.0)
+                paths.append(p2)
+            with _patch.dict(os.environ, {"YT_SHORTS_SEGMENT_SE": "1"}):
+                out = _concat_wavs_with_padding(paths, (2.0, 2.0), base / "o.wav")
+            self.assertAlmostEqual(_wav_seconds(out), 4.0, places=2)

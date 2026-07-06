@@ -634,6 +634,78 @@ def _draw_standings_frame(topic, script: ShortsScript, index: int, path: Path) -
     img.save(path, "PNG")
 
 
+# ── 洗練② (2026-07-06 user GO): 冒頭0.7秒の「数字ドン」フレーム ──
+# スワイプ判定の最初の一瞬を巨大数字のインパクトで掴む。data format のみ。
+PREHOOK_SECONDS = 0.7
+
+
+def _prehook_enabled() -> bool:
+    raw = (os.environ.get("YT_SHORTS_PREHOOK") or "").strip().lower()
+    if not raw:
+        return True
+    return raw not in {"0", "false", "no", "off"}
+
+
+def render_prehook_frame(topic: ShortsTopic, output_dir: Path) -> Path:
+    """巨大数字だけの一撃フレーム (topic.value 主役、選手名は小さく)。"""
+    img, draw = _frame_background()
+    value = str(getattr(topic, "value", "") or "").strip()
+    player = str(getattr(topic, "player", "") or "").strip()
+    # 数字は画面幅いっぱいまで拡大 (長い値は自動縮小)
+    size = 340
+    font = _font(size, bold=True)
+    while _text_width(draw, value, font) > WIDTH - 120 and size > 80:
+        size -= 20
+        font = _font(size, bold=True)
+    w = _text_width(draw, value, font)
+    y = HEIGHT // 2 - size // 2 - 60
+    draw.text(((WIDTH - w) // 2, y), value, font=font, fill="#e65100",
+              stroke_width=6, stroke_fill="#ffffff")
+    if player:
+        pfont = _font(72, bold=True)
+        pw = _text_width(draw, player, pfont)
+        draw.text(((WIDTH - pw) // 2, y + size + 80), player, font=pfont,
+                  fill="#1a1a1a", stroke_width=3, stroke_fill="#ffffff")
+    _draw_common_chrome(draw, label="巨人データ速報")
+    _draw_footer(draw)
+    path = output_dir / "frame_00_prehook.png"
+    img.save(path)
+    return path
+
+
+# ── 洗練③ (2026-07-06 user GO): セグメント頭のポップSE ──
+def _se_enabled() -> bool:
+    raw = (os.environ.get("YT_SHORTS_SEGMENT_SE") or "").strip().lower()
+    if not raw:
+        return True
+    return raw not in {"0", "false", "no", "off"}
+
+
+def _pop_se_samples(sample_rate: int, *, seconds: float = 0.12, amp: float = 0.22) -> list[int]:
+    """カード切替の「ポン」— 減衰サイン波 (880→660Hz sweep)。16bit PCM sample列。"""
+    total = int(seconds * sample_rate)
+    out: list[int] = []
+    for i in range(total):
+        t = i / sample_rate
+        freq = 880.0 - 220.0 * (t / seconds)
+        envelope = (1.0 - t / seconds) ** 2
+        out.append(int(32767 * amp * envelope * math.sin(2 * math.pi * freq * t)))
+    return out
+
+
+def _mix_pop_into_frames(frames: bytearray, offset_samples: int, sample_rate: int,
+                         *, channels: int = 1, width: int = 2) -> None:
+    """PCM bytearray の指定位置に pop SE を加算 mix (クリップガード付き)。"""
+    pop = _pop_se_samples(sample_rate)
+    for i, se in enumerate(pop):
+        pos = (offset_samples + i) * width * channels
+        if pos + width > len(frames):
+            break
+        cur = int.from_bytes(frames[pos:pos + width], "little", signed=True)
+        mixed = max(-32768, min(32767, cur + se))
+        frames[pos:pos + width] = mixed.to_bytes(width, "little", signed=True)
+
+
 def render_frames(
     topic: ShortsTopic,
     script: ShortsScript,
@@ -967,6 +1039,22 @@ def compose_video(
     return target
 
 
+def _prepend_silence(audio_path: Path, seconds: float) -> Path:
+    """narration wav の先頭に無音を足す (prehook フレーム分の音声オフセット)。"""
+    src = Path(audio_path)
+    with wave.open(str(src), "rb") as w:
+        params = w.getparams()
+        data = w.readframes(w.getnframes())
+    pad = b"\x00" * (int(round(seconds * params.framerate)) * params.sampwidth * params.nchannels)
+    target = src.with_name(src.stem + "_prehook.wav")
+    with wave.open(str(target), "wb") as out:
+        out.setnchannels(params.nchannels)
+        out.setsampwidth(params.sampwidth)
+        out.setframerate(params.framerate)
+        out.writeframes(pad + data)
+    return target
+
+
 def _wav_duration(path: Path | str) -> float:
     """WAV の実尺(秒)。読めなければ 0.0。"""
     try:
@@ -1033,7 +1121,9 @@ def _concat_wavs_with_padding(
         params = w0.getparams()
     rate, width, channels = params.framerate, params.sampwidth, params.nchannels
     out_frames = bytearray()
+    boundaries: list[int] = []  # 各セグメント開始位置 (sample単位、SE mix 用)
     for path, frame_dur in zip(seg_paths, frame_durations):
+        boundaries.append(len(out_frames) // (width * channels))
         with wave.open(str(path), "rb") as w:
             if (w.getframerate(), w.getsampwidth(), w.getnchannels()) != (rate, width, channels):
                 raise ValueError(f"wav format mismatch: {path}")
@@ -1042,6 +1132,10 @@ def _concat_wavs_with_padding(
         out_frames.extend(data)
         pad_seconds = max(0.0, frame_dur - seg_seconds)
         out_frames.extend(b"\x00" * (int(round(pad_seconds * rate)) * width * channels))
+    # 洗練③: カード切替 (2枚目以降のセグメント頭) に「ポン」SE を焼き込む
+    if _se_enabled() and channels == 1 and width == 2:
+        for off in boundaries[1:]:
+            _mix_pop_into_frames(out_frames, off, rate, channels=channels, width=width)
     target = Path(output_wav)
     with wave.open(str(target), "wb") as out:
         out.setnchannels(channels)
@@ -1099,6 +1193,15 @@ def render_short(
     out.mkdir(parents=True, exist_ok=True)
     duration = float(sum(DEFAULT_FRAME_DURATIONS))
     frames = render_frames(topic, script, out, fmt=fmt)
+    # 洗練② (2026-07-06): data format は冒頭に 0.7 秒の「数字ドン」フレーム。
+    # ナレーション対応の無い無音フレームとして durations/audio 側で先頭に足す。
+    prehook_path: Path | None = None
+    if fmt == "data" and _prehook_enabled():
+        try:
+            prehook_path = render_prehook_frame(topic, out)
+        except Exception as exc:  # noqa: BLE001 - 装飾失敗で本体は止めない
+            logger.warning("prehook_frame_skip err=%r", exc)
+            prehook_path = None
     # セグメント同期TTS (2026-07-06): 字幕フレームと音声を1:1同期。成立しない
     # フォーマット (segments無し / VOICEVOX無し / 本数不一致) は従来経路へ。
     seg_result = None
@@ -1116,7 +1219,6 @@ def render_short(
     if seg_result is not None:
         audio_path, durations = seg_result
         tts_mode = "voicevox_seg"
-        duration = float(sum(durations))
     else:
         audio_path, tts_mode = prepare_audio(
             script,
@@ -1128,7 +1230,11 @@ def render_short(
         )
         # ナレーション実尺に動画尺を合わせる(固定 27 秒だと長い台本が途中で切れるため)。
         durations = _fit_durations_to_audio(DEFAULT_FRAME_DURATIONS, _wav_duration(audio_path))
-        duration = float(sum(durations))
+    if prehook_path is not None:
+        frames = (prehook_path,) + tuple(frames)
+        durations = (PREHOOK_SECONDS,) + tuple(durations)
+        audio_path = _prepend_silence(audio_path, PREHOOK_SECONDS)
+    duration = float(sum(durations))
     audio_filter = _audio_filter_for_style(tts_mode)
     bgm_path, bgm_style = _prepare_bgm(out, duration_seconds=duration)
     video_path = compose_video(

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Yoshilover 063 Frontend (topic hub / SNS reactions / Phase 1 noindex)
  * Description: 062 contract §2 §3 §5 の front impl。topic hub / SNS block / noindex を基盤に、トップ速報帯・記事下回遊束・右カラム rail・上部密集ナビ・人気記事導線まで含めて SWELL front を高密度化する。既存 SWELL コメント欄は触らない。
- * Version: 0.24.7
+ * Version: 0.24.8
  * Author: yoshilover
  */
 
@@ -6433,6 +6433,22 @@ function yoshilover_063_rest_clear_cache() {
         wp_cache_flush();
         $results['wp_object_cache'] = 'flushed';
     }
+    // 2026-07-06: 本 plugin の home 系 transient を明示削除。wp_cache_flush は
+    // DB 保存 transient を消さないため、plugin 更新後もダッシュ等が最長 15-60 分
+    // 旧 HTML のまま残っていた (deploy 即反映のため列挙削除)。
+    $yoshi_transients = array(
+        'yoshi_home_today_dash',
+        'yoshi_home_hot_players',
+        'yoshi_home_ranking_mini_v3',
+        'yoshi_home_player_chips',
+        'yoshi_topic_hub_auto_v2',
+        'yoshilover_063_board_hot_topic_v1',
+        'yoshilover_063_data_sitemap_xml',
+    );
+    foreach ( $yoshi_transients as $tkey ) {
+        delete_transient( $tkey );
+    }
+    $results['yoshi_transients'] = count( $yoshi_transients );
 
     return $results;
 }

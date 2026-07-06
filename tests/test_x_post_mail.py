@@ -1707,6 +1707,29 @@ class ComposeMailTests(unittest.TestCase):
         self.assertNotIn("岸田行倫、岸田行倫", cand.post_text)
         self.assertIn("【岸田行倫】達成した節目 高校時代は３戦連続ノーノー", cand.post_text)
 
+    def test_record_news_candidate_strips_html_from_source_excerpt(self) -> None:
+        """2026-07-05: RSSHub summary の HTML 断片を X 投稿案に出さない。"""
+        ts = datetime(2026, 7, 5, 17, 13, tzinfo=JST)
+        cand = build_news_opinion_candidate(
+            source_title="巨人・井上温大が２０回１／３連続無失点 チームトップ",
+            source_url="https://x.com/hochi_giants/status/2072778250556739726",
+            source_name="スポーツ報知巨人班X",
+            source_excerpt="記事内容の【井上温大】/> /><br /> <br />https:…",
+            player_name="井上温大",
+            now=ts,
+        )
+        self.assertIsNotNone(cand)
+        assert cand is not None
+        self.assertEqual(cand.source_material_type, "record")
+        for text in (cand.post_text, cand.draft_text, cand.title):
+            self.assertNotIn("<br", text)
+            self.assertNotIn("/>", text)
+            self.assertNotIn("https:…", text)
+            self.assertNotIn("記事内容", text)
+        self.assertNotIn("https:", cand.post_text)
+        self.assertNotIn("https:", cand.title)
+        self.assertIn("【井上温大】２０回１／３連続無失点", cand.post_text)
+
     def test_record_news_candidate_carries_article_image(self) -> None:
         """2026-07-03 user「【選手名】 内容 画像があるとよい」: 元記事画像を
         候補に添付し、mail の画像つき投稿導線を有効化。"""
@@ -1726,6 +1749,49 @@ class ComposeMailTests(unittest.TestCase):
         self.assertEqual(cand.image_source_url, "https://example.test/images/kishida.jpg")
         self.assertIn("テスト新聞掲載画像", cand.image_alt_text)
         self.assertIn("添付画像: https://example.test/images/kishida.jpg", cand.draft_text)
+
+    def test_record_candidate_uses_plain_rewrite_fn(self) -> None:
+        """2026-07-06 user「(記録/節目) ポストとして見づらい。LLMをつかってもいい」:
+        record は plain_rewrite_fn の読みやすい文へ書き換える。失敗時は従来文。"""
+        ts = datetime(2026, 7, 6, 9, 0, tzinfo=JST)
+        cand = build_news_opinion_candidate(
+            source_title="巨人・岸田行倫がプロ初本塁打達成",
+            source_url="https://example.test/giants-kishida-record",
+            source_name="テスト新聞",
+            player_name="岸田行倫",
+            now=ts,
+            plain_rewrite_fn=lambda _src, _p: "岸田行倫がプロ初本塁打。記事に出ている節目です。",
+        )
+        self.assertIsNotNone(cand)
+        assert cand is not None
+        self.assertEqual(cand.source_material_type, "record")
+        self.assertIn("記事に出ている節目です", cand.post_text)
+
+        cand_fb = build_news_opinion_candidate(
+            source_title="巨人・岸田行倫がプロ初本塁打達成",
+            source_url="https://example.test/giants-kishida-record",
+            source_name="テスト新聞",
+            player_name="岸田行倫",
+            now=ts,
+            plain_rewrite_fn=lambda _src, _p: "",
+        )
+        self.assertIsNotNone(cand_fb)
+        assert cand_fb is not None
+        self.assertIn("岸田行倫", cand_fb.post_text)
+
+    def test_news_opinion_candidate_leads_with_player_when_voice_omits_subject(self) -> None:
+        """2026-07-05: LLM voice が主語を落としても 1 行目冒頭に選手名を出す。"""
+        cand = build_news_opinion_candidate(
+            source_title="巨人・井上温大が初回を切り抜ける",
+            source_url="https://example.test/inoue",
+            source_name="テスト新聞",
+            source_excerpt="井上温大が2三振を奪った。",
+            player_name="井上温大",
+            comment_fn=lambda _text, _player: "初回に2安打を浴びても、最後は四球を出さず切り抜ける修正力がある。",
+        )
+        self.assertIsNotNone(cand)
+        assert cand is not None
+        self.assertTrue(cand.post_text.startswith("井上温大、"))
 
     def test_record_phrase_drops_name_bearing_hype_segment(self) -> None:
         """2026-07-03 実事故: 「【Ｆ．ウィットリー】速いぞウィットリー 来日後
@@ -5492,6 +5558,37 @@ class BuildPlayerCommentCandidateTests(unittest.TestCase):
         self.assertEqual(c.image_source_url, "https://img.example.test/takemaru.jpg")
         self.assertIn("竹丸和幸", c.image_alt_text)
         self.assertIn("添付画像: https://img.example.test/takemaru.jpg", c.draft_text)
+
+    def test_context_fn_prepends_situation_line(self):
+        """2026-07-06 user「なぜこのコメントをしているかも入れてほしい」:
+        context_fn があれば状況説明1行をセリフの前に置く。"""
+        from src import x_post_mail_lane as lane
+        c = lane.build_player_comment_candidate(
+            member_name="竹丸和幸", source_title="竹丸8回好投も黒星",
+            source_url="https://x.test/1", html_text=self._HTML,
+            context_fn=lambda _html, _member, _quote: "8回2失点と好投した登板を振り返って。",
+        )
+        self.assertIsNotNone(c)
+        assert c is not None
+        self.assertTrue(c.post_text.startswith("8回2失点と好投した登板を振り返って。\n竹丸和幸『"))
+        self.assertIn("状況説明1行: LLM生成", c.draft_text)
+
+    def test_context_fn_failure_falls_back_to_quote_only(self):
+        """context_fn が例外/空でも従来の `名前『発言』` で成立する。"""
+        from src import x_post_mail_lane as lane
+
+        def _boom(_html, _member, _quote):
+            raise RuntimeError("llm down")
+
+        c = lane.build_player_comment_candidate(
+            member_name="竹丸和幸", source_title="竹丸8回好投も黒星",
+            source_url="https://x.test/1", html_text=self._HTML,
+            context_fn=_boom,
+        )
+        self.assertIsNotNone(c)
+        assert c is not None
+        self.assertTrue(c.post_text.startswith("竹丸和幸『"))
+        self.assertIn("状況説明1行: なし", c.draft_text)
 
     def test_non_member_returns_none(self):
         from src import x_post_mail_lane as lane

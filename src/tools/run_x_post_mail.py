@@ -882,6 +882,25 @@ def _fan_reply_target_handles(now=None) -> list[str]:
     return handles
 
 
+def _comment_context_llm_enabled() -> bool:
+    """コメント速報の状況説明1行 (LLM)。 2026-07-06 user「これいいんだけど、
+    なぜこのコメントをしているかも入れてほしい」「唐突」。
+    default OFF (helper を直接呼ぶ test / dev で実 LLM を発火させないため)。
+    prod job は ENABLE_X_POST_COMMENT_CONTEXT=1 で ON。"""
+    raw = (os.environ.get("ENABLE_X_POST_COMMENT_CONTEXT") or "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _record_plain_llm_enabled() -> bool:
+    """記録/節目候補の LLM 可読化 (build_plain_data_post 書き換え)。 2026-07-06
+    user「(記録/節目) ポストとして見づらい。相手にわかりやすいように変えて。
+    LLMをつかってもいい」「相手につたわらない」。
+    default OFF (test / dev 直呼びで実 LLM を発火させない)。
+    prod job は ENABLE_X_POST_RECORD_PLAIN_LLM=1 で ON。"""
+    raw = (os.environ.get("ENABLE_X_POST_RECORD_PLAIN_LLM") or "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
 def _reply_llm_enabled() -> bool:
     """返信文の LLM 生成。 2026-06-04 user 方針で default ON (リプもヨシラバー風)。
 
@@ -1551,6 +1570,22 @@ def _fetch_news_opinion_fallback_candidates(
                 link,
                 timeout_seconds=timeout_seconds,
             )
+            # 2026-07-06 user「なぜこのコメントをしているかも入れてほしい」「唐突」:
+            # 記事 lead から状況説明1行を LLM 生成してセリフの前に置く (失敗時は従来形式)。
+            comment_context_fn = None
+            _ctx_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GEMMA_BRANDING_GEMINI_API_KEY") or ""
+            if _ctx_key and _comment_context_llm_enabled():
+                try:
+                    from src import x_post_branding_gen as _ctx_xbg
+
+                    def comment_context_fn(article_text, member, quote, _k=_ctx_key, _g=_ctx_xbg, _t=title):  # noqa: E731
+                        return _g.build_comment_context_line(
+                            article_text, member, quote,
+                            gemini_api_key=_k, source_title=_t,
+                        )
+                except Exception as _ctx_exc:  # noqa: BLE001
+                    LOG.info("comment_context_fn unavailable: %r", _ctx_exc)
+                    comment_context_fn = None
             ccand = lane.build_player_comment_candidate(
                 member_name=player,
                 source_title=title,
@@ -1560,6 +1595,7 @@ def _fetch_news_opinion_fallback_candidates(
                 image_bytes=image_bytes,
                 image_source_url=image_source_url,
                 now=now,
+                context_fn=comment_context_fn,
             )
             if ccand is not None:
                 if dedup_set is not None and ccand.signature in dedup_set:
@@ -1791,6 +1827,22 @@ def _fetch_record_article_priority_candidates(
             except Exception as _rec_img_exc:  # noqa: BLE001
                 LOG.info("record_article_image_fetch_skip url=%s err=%r", link, _rec_img_exc)
                 rec_image_bytes, rec_image_source_url = b"", ""
+            # 2026-07-06 user「(記録/節目) ポストとして見づらい。LLMをつかってもいい」:
+            # headline 断片/定型文でなく、記事記載の数字のみ許可の plain LLM 文へ。
+            record_plain_fn = None
+            _rec_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GEMMA_BRANDING_GEMINI_API_KEY") or ""
+            if _rec_key and _record_plain_llm_enabled():
+                try:
+                    from src import x_post_branding_gen as _rec_xbg
+
+                    def record_plain_fn(src_text, rec_player, _k=_rec_key, _g=_rec_xbg):  # noqa: E731
+                        return _g.build_plain_data_post(
+                            src_text, gemini_api_key=_k,
+                            player=rec_player, metric_label="記録/節目 (記事記載値)",
+                        )
+                except Exception as _rec_llm_exc:  # noqa: BLE001
+                    LOG.info("record_plain_fn unavailable: %r", _rec_llm_exc)
+                    record_plain_fn = None
             cand = lane.build_news_opinion_candidate(
                 source_title=title,
                 source_url=link,
@@ -1801,6 +1853,7 @@ def _fetch_record_article_priority_candidates(
                 comment_fn=None,
                 image_bytes=rec_image_bytes,
                 image_source_url=rec_image_source_url,
+                plain_rewrite_fn=record_plain_fn,
             )
             if cand is None or cand.source_material_type != "record":
                 continue
@@ -3761,26 +3814,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                 try:
                     from src import x_post_branding_gen as _fan_xbg
 
-                    def fan_comment_fn(parent_text, player, _k=_fan_key, _g=_fan_xbg, _now=now_jst, _db=db_path):  # noqa: E731
-                        # 2026-07-06 user「ファンリプは交流がメイン。数字だとダメ」: 補足リプ型を
-                        # やめ empathy 型 (共感主・数字従) へ。 db_fact 必須も廃止 (数字が無くても
-                        # リプ成立)。 同型連続を避けるため db_fact は約3件に1件だけ素材として渡す
-                        # (crc32 で決定的に選ぶ。 渡しても「自然に繋がる時だけ」の従属扱い)。
+                    def fan_comment_fn(parent_text, player, _k=_fan_key, _g=_fan_xbg, _now=now_jst):  # noqa: E731
+                        # 2026-07-06 user「ファンリプは交流がメイン。数字はいらない。
+                        # 交流に知識を見せつけてるだけ」: db_fact は一切渡さない (約1/3 の
+                        # 数字添えも廃止)。 純粋な共感リプのみ。
                         # 元ネタに無い数字の門番 (_extract_unverified_numbers) は従来通り効く。
-                        _fact = ""
-                        try:
-                            import zlib as _zlib
-                            _use_fact = _zlib.crc32((parent_text or "").encode("utf-8")) % 3 == 0
-                        except Exception:  # noqa: BLE001
-                            _use_fact = False
-                        if _use_fact:
-                            try:
-                                _fact = _g.build_db_fact_line(player, _db) if _db else ""
-                            except Exception:  # noqa: BLE001
-                                _fact = ""
                         return _g.build_quote_rt_comment(
                             parent_text, player, gemini_api_key=_k, now=_now, subject="巨人ファンの投稿",
-                            db_fact=_fact, budget_site="reply",
+                            db_fact="", budget_site="reply",
                             require_db_fact=False, reply_style="empathy",
                         )
                 except Exception as _fan_imp_exc:  # noqa: BLE001

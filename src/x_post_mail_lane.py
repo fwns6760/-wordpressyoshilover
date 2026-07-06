@@ -1226,6 +1226,24 @@ def _truncate_text(value: object, max_chars: int) -> str:
     return text[: max(0, max_chars - 1)].rstrip() + "…"
 
 
+def _ensure_player_name_leads_post_text(value: object, player: str) -> str:
+    """Keep the target player visible at the start of the first line."""
+    text = str(value or "").strip()
+    name = str(player or "").strip()
+    if not text or not name:
+        return text
+    first_line = text.splitlines()[0].lstrip()
+    lead_window = first_line[: max(len(name) + 3, 14)]
+    if (
+        name in lead_window
+        or first_line.startswith(f"【{name}】")
+        or first_line.startswith(f"{name}：")
+    ):
+        return text
+    prefixed = f"{name}、{text}"
+    return prefixed if len(prefixed) <= X_CHAR_LIMIT else _finalize_post_text(prefixed)
+
+
 def _cap_sentence(value: object, max_chars: int) -> str:
     """文末 (。！？!?) で自然に切って max_chars 以内に収める。
 
@@ -1287,7 +1305,28 @@ def _metric_topic_family(metric: str) -> str:
 
 # 2026-07-03: X 由来 RSS タイトルに混ざる URL (途中で切れた "https://hochi.n…" 含む) /
 # "▼記事を読む▼" 系マーカー / ハッシュタグを投稿文へ持ち込まない。
-_SOURCE_NOISE_RE = _re.compile(r"https?://\S+|▼[^▼]{0,24}▼|[#＃]\S+")
+# 2026-07-05: RSSHub summary の `<br />` や壊れた `https:…` 断片も
+# X投稿案に出るとそのまま投稿不可になるため、source text の入口で潰す。
+_SOURCE_NOISE_RE = _re.compile(r"https?:(?://)?\S*|www\.\S+|▼[^▼]{0,24}▼|[#＃]\S+")
+_SOURCE_LABEL_NOISE_RE = _re.compile(r"(?:記事内容の|記事内容|続きを読む|全文はこちら)")
+_SOURCE_BR_RE = _re.compile(r"(?is)<br\s*/?>")
+_SOURCE_HTML_TAG_RE = _re.compile(r"(?is)<[^>]*>")
+
+
+def _clean_source_text_for_post_material(value: object) -> str:
+    """Normalize RSS title/summary text before it reaches X copy."""
+    text = _html.unescape(str(value or ""))
+    if not text:
+        return ""
+    text = _SOURCE_BR_RE.sub("。", text)
+    text = _SOURCE_HTML_TAG_RE.sub(" ", text)
+    text = _SOURCE_NOISE_RE.sub(" ", text)
+    text = _SOURCE_LABEL_NOISE_RE.sub(" ", text)
+    text = text.replace("/>", " ").replace("<", " ").replace(">", " ")
+    text = _re.sub(r"\s+([。、！？!?])", r"\1", text)
+    text = _re.sub(r"[。]{2,}", "。", text)
+    text = _re.sub(r"\s+", " ", text)
+    return text.strip(" 　。、")
 
 
 def _player_core_name(player: str) -> str:
@@ -1297,10 +1336,12 @@ def _player_core_name(player: str) -> str:
 
 def _extract_source_record_phrase(title: str, excerpt: str, player: str) -> str:
     """Return a short record phrase copied from source title/excerpt."""
-    parts = [str(title or "").strip()]
+    clean_title = _clean_source_text_for_post_material(title)
+    clean_excerpt = _clean_source_text_for_post_material(excerpt)
+    parts = [clean_title]
     parts.extend(
         p.strip()
-        for p in _re.split(r"[。\n\r]+", str(excerpt or ""))
+        for p in _re.split(r"[。\n\r]+", clean_excerpt)
         if p.strip()
     )
     core = _player_core_name(player)
@@ -1607,6 +1648,7 @@ def build_news_opinion_candidate(
     image_bytes: bytes = b"",
     image_source_url: str = "",
     image_alt_text: str = "",
+    plain_rewrite_fn=None,
 ) -> Optional[Candidate]:
     """Build a fallback X candidate from explicit source text only.
 
@@ -1623,7 +1665,7 @@ def build_news_opinion_candidate(
     画像があるとよい」): 元記事の画像を候補に添付し、mail 側の
     「画像つきで X に投稿」導線を有効にする (record 記事向け)。
     """
-    title = _truncate_text(source_title, 70)
+    title = _truncate_text(_clean_source_text_for_post_material(source_title), 70)
     player = str(player_name or "").strip()
     url = str(source_url or "").strip()
     if not title or not url or not player:
@@ -1632,7 +1674,7 @@ def build_news_opinion_candidate(
     if not (_is_verified_full_giants_member_name(player) or _is_verified_full_giants_player_name(player)):
         return None
     source = _truncate_text(source_name, 28)
-    excerpt = _truncate_text(source_excerpt, 120)
+    excerpt = _truncate_text(_clean_source_text_for_post_material(source_excerpt), 120)
     material_type, material_label = _classify_news_material(title, excerpt)
     source_topic_family = _infer_source_topic_family(title, excerpt)
     # voice化 (A、 2026-06-01): comment_fn (フーガ+缶詰 LLM) があれば記事に反応する voice を生成。
@@ -1660,6 +1702,19 @@ def build_news_opinion_candidate(
             source_excerpt=excerpt,
             source_topic_family=source_topic_family,
         )
+        # 2026-07-06 user「(記録/節目) ポストとして見づらい。相手にわかりやすい
+        # ように変えて。LLMをつかってもいい」「相手につたわらない」: record は
+        # headline 断片 / 定型文のままにせず、 plain_rewrite_fn (build_plain_data_post、
+        # 記事記載の数字のみ許可) で読みやすい文へ書き換える。 失敗時は従来文で続行。
+        if material_type == "record" and plain_rewrite_fn is not None:
+            try:
+                _rewritten = str(plain_rewrite_fn(f"{title}。{excerpt}", player) or "").strip()
+            except Exception as exc:  # noqa: BLE001 - 従来文で続行
+                LOG.info("news_opinion plain_rewrite skip player=%s: %r", player, exc)
+                _rewritten = ""
+            if _rewritten:
+                post_text = _rewritten
+    post_text = _ensure_player_name_leads_post_text(post_text, player)
     # 2026-07-03 user「記事の数字ごと載せて出す」: record は元記事記載の数字を
     # 出典付き事実としてそのまま掲載する (DB照合は別途)。他 material は従来通り。
     if material_type == "record":
@@ -1719,11 +1774,15 @@ def build_player_comment_candidate(
     image_source_url: str = "",
     image_alt_text: str = "",
     now: Optional[datetime] = None,  # noqa: ARG001 - caller symmetry
+    context_fn=None,
 ) -> Optional[Candidate]:
     """パターン①「選手コメント速報」(2026-06-01): 記事本文 html_text から member の本人発言を
-    literal 抽出し、 たんぱく事実型で出す (mainportalhuge 式)。 LLM 不使用 = 捏造/ポエムゼロ。
+    literal 抽出し、 たんぱく事実型で出す (mainportalhuge 式)。 セリフは LLM 不使用 = 捏造ゼロ。
 
-    形式: `名前『発言』` だけ。状況説明は混ぜない。
+    形式: `状況説明1行\n名前『発言』`。
+    2026-07-06 user「これいいんだけど、なぜこのコメントをしているかも入れてほしい」
+    「唐突」: ``context_fn(html_text, member, quote)`` (LLM、記事根拠+数字門番) が
+    あれば状況説明1行をセリフの前に置く。無い/失敗時は従来の `名前『発言』` のみ。
     quote が取れない / member 未 verify → None (caller は別候補へ)。
     """
     member = str(member_name or "").strip()
@@ -1749,12 +1808,23 @@ def build_player_comment_candidate(
     quote = (quote or "").strip()
     if not quote:
         return None
-    post_text = f"{member_display}『{quote}』"
+    context_line = ""
+    if context_fn is not None:
+        try:
+            context_line = str(context_fn(html_text, member_display, quote) or "").strip()
+        except Exception as exc:  # noqa: BLE001 - 文脈なしの従来形式で続行
+            LOG.info("player_comment context skip member=%s: %r", member_display, exc)
+            context_line = ""
+    if context_line:
+        post_text = f"{context_line}\n{member_display}『{quote}』"
+    else:
+        post_text = f"{member_display}『{quote}』"
     signature_hash = _hashlib.sha1(f"player_comment|{url}|{member_display}".encode("utf-8")).hexdigest()[:16]
     src = _truncate_text(source_name, 28)
     proof_lines = [
         "【根拠: 記事本文の本人発言 (literal)】",
         f"発言者: {member_display}",
+        (f"状況説明1行: LLM生成 (記事lead根拠・数字門番済): {context_line}" if context_line else "状況説明1行: なし (セリフのみ)"),
         f"元媒体: {src or 'unknown'}",
         f"元記事: {_truncate_text(source_title, 60)}",
         f"元記事URL: {url}",
@@ -2335,6 +2405,7 @@ def build_video_radar_candidates(
                 # hook に落として、メール候補の本数を保つ。
                 LOG.info("x_buzz fallback: voice comment empty/gated player=%s", player or "(none)")
             post_text = _x_buzz_event_comment(p.get("text", ""), player, phase=phase_label)
+        post_text = _ensure_player_name_leads_post_text(post_text, player)
         # 動画ポスト対策 (user 2026-06-09): X は本文が長いと「動画＋テキスト」を一緒に
         # 投稿できない (短くすると動画が付く)。 引用RT/動画候補のコメントを短く固定する。
         post_text = _cap_sentence(post_text, _video_post_char_cap())
@@ -2551,6 +2622,7 @@ def build_mlb_watch_candidates(
                 player, p["handle"],
             )
             continue
+        post_text = _ensure_player_name_leads_post_text(post_text, player)
         post_text = _cap_sentence(post_text, _video_post_char_cap())
         handle = p["handle"]
         if player == "大谷翔平":

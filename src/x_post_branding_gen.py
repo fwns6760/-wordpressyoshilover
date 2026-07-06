@@ -1794,6 +1794,83 @@ def build_plain_data_post(
     return text
 
 
+def build_comment_context_line(
+    article_text: str,
+    player: str,
+    quote: str,
+    *,
+    gemini_api_key: str,
+    source_title: str = "",
+    model_id: str = _X_POST_DATA_LLM_MODEL,
+    temperature: float = 0.3,
+) -> str:
+    """コメント速報の『』の前に置く状況説明1行 (2026-07-06 user「これいいん
+    だけど、なぜこのコメントをしているかも入れてほしい」「唐突」対応)。
+
+    記事本文の lead 部分から、発言が出た状況・きっかけを 20〜45字の1行で
+    要約する。記事に無い数字は _extract_unverified_numbers で棄却、感想・
+    評価・憶測は prompt で禁止。失敗 / gate 落ち → "" (caller は文脈なしの
+    従来形式 `名前『発言』` で出す)。
+    """
+    log = _logging.getLogger("x_post_branding_gen")
+    body = (article_text or "").strip()
+    who = (player or "").strip()
+    if not body or not who or not gemini_api_key:
+        return ""
+    lead = body[:1200]
+    verified_text = f"{source_title} {lead} {quote} {who}"
+    prompt = "\n".join([
+        "あなたは読売ジャイアンツ専門メディアの編集者です。",
+        "下の記事から、選手・首脳陣コメントの前に置く「状況説明の1行」を作ってください。",
+        "",
+        "ルール:",
+        "- 20〜45字、1文だけ。この後に本人のセリフ『…』がそのまま続く前提。",
+        f"- 「{who}が何について・どんな場面で話したか」を記事の記載だけで書く。",
+        "- 記事に無いこと・記事に無い数字は書かない。憶測・感想・評価は入れない。",
+        "- セリフの引用や『』は入れない。URL・ハッシュタグ・媒体名は入れない。",
+        "- 例: 「配球で首を振らない理由を聞かれて。」「二軍戦後、状態について。」",
+        "",
+        f"発言者: {who}",
+        (f"記事タイトル: {source_title}" if source_title else ""),
+        "記事本文 (先頭部分):",
+        lead,
+        "",
+        "この後に続くセリフ:",
+        (quote or "")[:120],
+        "",
+        "状況説明の1行:",
+    ])
+    try:
+        from google import genai
+
+        client = genai.Client(api_key=gemini_api_key)
+        _llm_budget_guard("comment_context")
+        response = _x_post_generate_content(
+            client, model=model_id or _X_POST_DATA_LLM_MODEL,
+            contents=prompt, config={"temperature": temperature},
+        )
+        text = (getattr(response, "text", None) or "").strip()
+    except Exception as exc:  # noqa: BLE001 - caller falls back to no-context format
+        log.warning("comment_context_skip reason=gemini_error err=%r", exc)
+        return ""
+    text = text.splitlines()[0].strip() if text else ""
+    text = text.strip("「」『』\"'")
+    if not text or len(text) > 60:
+        log.info("comment_context_skip reason=length len=%d", len(text or ""))
+        return ""
+    if _extract_unverified_numbers(text, verified_text):
+        log.info("comment_context_skip reason=unverified_numbers")
+        return ""
+    if _matched_inflammatory_pattern(text) is not None:
+        log.info("comment_context_skip reason=inflammatory")
+        return ""
+    if _matched_branding_forbidden_pattern(text, verified_text) is not None:
+        log.info("comment_context_skip reason=forbidden_pattern")
+        return ""
+    log.info("comment_context_built player=%s len=%d", who, len(text))
+    return text
+
+
 def today_str(now_jst) -> str:
     """Helper for signature hashing (separate function to keep build_team_roundup_candidate readable)."""
     return now_jst.strftime("%Y-%m-%d")

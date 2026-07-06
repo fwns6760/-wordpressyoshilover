@@ -177,6 +177,29 @@ def _invoke(method: str, path: str, body: bytes = b"", headers: dict | None = No
     return status, payload
 
 
+class FormJsEscapeTests(unittest.TestCase):
+    """2026-07-06 実バグ: _HTML_FORM 内の JS `'\\n'` が Python 実改行になり
+    script ブロック全体が SyntaxError で死ぬ (おりポス+リプ案ボタン無応答の原因)。
+    rendered HTML に実改行入り文字列リテラルが無いことを固定する。"""
+
+    def test_js_string_literals_keep_backslash_n(self):
+        import re
+        from src.manual_intake_service import _render_form
+
+        html = _render_form()
+        self.assertIn("md.split('\\n')", html)
+        self.assertIn("paraBuf.join('\\n')", html)
+        # script ブロック内に「'(改行)」で切れる文字列リテラルが無いこと
+        for block in re.findall(r"<script>(.*?)</script>", html, re.DOTALL):
+            for lineno, line in enumerate(block.splitlines(), 1):
+                stripped = line.rstrip()
+                self.assertFalse(
+                    stripped.endswith(".split('") or stripped.endswith(".join('")
+                    or stripped.endswith("+= '"),
+                    f"unterminated JS string literal at script line {lineno}: {stripped!r}",
+                )
+
+
 class XShareEndpointTests(unittest.TestCase):
     def setUp(self):
         self._env = patch.dict("os.environ", {"MANUAL_INTAKE_TOKEN": ""})

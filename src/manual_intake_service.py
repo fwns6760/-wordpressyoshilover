@@ -1015,7 +1015,7 @@ _HTML_FORM = """<!DOCTYPE html>
   // were found (caller falls back to the textarea alone).
   function renderMarkdownTables(md) {
     if (!md) return null;
-    var lines = md.split('\n');
+    var lines = md.split('\\n');
     var container = document.createElement('div');
     container.className = 'insight-rendered';
     container.style.cssText = 'margin-top:8px;';
@@ -1024,7 +1024,7 @@ _HTML_FORM = """<!DOCTYPE html>
     var paraBuf = [];
     function flushPara() {
       if (!paraBuf.length) return;
-      var txt = paraBuf.join('\n').trim();
+      var txt = paraBuf.join('\\n').trim();
       paraBuf = [];
       if (!txt) return;
       // Skip a leading h1 (rendered separately as title).
@@ -1394,7 +1394,7 @@ _HTML_FORM = """<!DOCTYPE html>
         msg += ' (不足: ' + payload.unresolved.join(', ') + ')';
       }
       if (payload && payload.parsed) {
-        msg += '\n\n読み取れた条件: ' + JSON.stringify(payload.parsed);
+        msg += '\\n\\n読み取れた条件: ' + JSON.stringify(payload.parsed);
       }
       xpResult.textContent = msg;
       return;

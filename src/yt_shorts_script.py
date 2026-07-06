@@ -81,6 +81,9 @@ class ShortsScript:
     captions: tuple[ScriptCaption, ...]
     allowed_numbers: tuple[str, ...]
     x_post: str = ""
+    # 2026-07-06 セグメント同期TTS: フレーム(字幕)と1:1対応するナレーション断片。
+    # 空 tuple のフォーマット (legend/ranking/standings) は従来の単一wav経路。
+    narration_segments: tuple[str, ...] = ()
 
 
 def _normalize_number(token: str) -> str:
@@ -407,18 +410,25 @@ def build_script(topic: ShortsTopic) -> ShortsScript:
     speech_hook = _speech_metric_text(topic, topic.hook)
     speech_note = _speech_metric_text(topic, topic.note)
     note_line = f"ポイントは、{speech_note}。" if topic.note else "今の巨人で見逃せない数字です。"
-    narration_parts = [
-        f"今日の注目は、{speech_hook}。",
-        date_line,
+    # 2026-07-06 セグメント同期TTS: 5フレーム(字幕カード)と1:1対応させる。
+    # seg1=hookカード / seg2=数字カード / seg3=noteカード / seg4=ファン所感 / seg5=締め。
+    hook_seg = f"今日の注目は、{speech_hook}。"
+    if date_line:
+        hook_seg = f"{hook_seg} {date_line}"
+    raw_segments = (
+        hook_seg,
         "この数字、見逃せません。",
         note_line,
         _fan_comment(topic),
         BRAND_CLOSING_LINE,
-    ]
-    narration = "\n".join(part for part in narration_parts if part.strip())
+    )
+    narration = "\n".join(part for part in raw_segments if part.strip())
     assert_number_guard(narration, allowed)
     # 数値ガード通過後に選手名の読みを補正(数字は変えない)
-    narration = _apply_name_readings(narration)
+    narration_segments = tuple(
+        _apply_name_readings(part) for part in raw_segments if part.strip()
+    )
+    narration = "\n".join(narration_segments)
 
     title = f"{topic.title}｜{date_label}時点" if date_label else topic.title
     # 事実部分(hook + 記録日)のみ数値ガード対象。固定ブランディング文(導線・@handle・
@@ -458,6 +468,7 @@ def build_script(topic: ShortsTopic) -> ShortsScript:
         captions=captions,
         allowed_numbers=allowed,
         x_post=build_x_post(topic, date_label=date_label),
+        narration_segments=narration_segments,
     )
 
 

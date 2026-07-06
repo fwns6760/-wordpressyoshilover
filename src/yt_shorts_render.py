@@ -19,11 +19,15 @@ import subprocess
 import struct
 import wave
 
+import logging
+
 import requests
 from PIL import Image, ImageDraw
 
 from src.yt_shorts_script import ShortsScript, display_as_of_date, fan_comment, metric_explanation
 from src.yt_shorts_topic import ShortsTopic, metric_display
+
+logger = logging.getLogger("yt_shorts_render")
 
 
 WIDTH = 1080
@@ -1001,6 +1005,85 @@ def _fit_durations_to_audio(
     return tuple(round(d * scale, 3) for d in base)
 
 
+# 2026-07-06 セグメント同期TTS: 字幕(フレーム)単位で音声を合成し、各フレームの
+# 表示時間 = そのセグメントの実音声長 + GAP にする。字幕切り替わりと音声が常に一致し、
+# 比例伸縮方式のズレ・締め切れを構造的に無くす。YT_SHORTS_SEGMENT_SYNC=0 で旧経路。
+SEGMENT_GAP_SECONDS = 0.35
+MIN_SEGMENT_FRAME_SECONDS = 2.0
+
+
+def _segment_sync_enabled() -> bool:
+    raw = (os.environ.get("YT_SHORTS_SEGMENT_SYNC") or "").strip().lower()
+    if not raw:
+        return True
+    return raw not in {"0", "false", "no", "off"}
+
+
+def _concat_wavs_with_padding(
+    seg_paths: list[Path],
+    frame_durations: tuple[float, ...],
+    output_wav: Path,
+) -> Path:
+    """セグメントwavを「フレーム尺に合わせた無音paddingつき」で連結する。
+
+    各セグメント音声はフレーム開始位置ちょうどから鳴る (字幕と同期)。
+    全 wav の format (rate/ch/width) が一致しない場合は ValueError。
+    """
+    with wave.open(str(seg_paths[0]), "rb") as w0:
+        params = w0.getparams()
+    rate, width, channels = params.framerate, params.sampwidth, params.nchannels
+    out_frames = bytearray()
+    for path, frame_dur in zip(seg_paths, frame_durations):
+        with wave.open(str(path), "rb") as w:
+            if (w.getframerate(), w.getsampwidth(), w.getnchannels()) != (rate, width, channels):
+                raise ValueError(f"wav format mismatch: {path}")
+            data = w.readframes(w.getnframes())
+            seg_seconds = w.getnframes() / float(rate)
+        out_frames.extend(data)
+        pad_seconds = max(0.0, frame_dur - seg_seconds)
+        out_frames.extend(b"\x00" * (int(round(pad_seconds * rate)) * width * channels))
+    target = Path(output_wav)
+    with wave.open(str(target), "wb") as out:
+        out.setnchannels(channels)
+        out.setsampwidth(width)
+        out.setframerate(rate)
+        out.writeframes(bytes(out_frames))
+    return target
+
+
+def prepare_audio_segmented(
+    script: ShortsScript,
+    output_dir: Path,
+    *,
+    voicevox_base_url: str,
+    speaker: int = 13,
+) -> tuple[Path, tuple[float, ...]] | None:
+    """フレーム同期音声。(narration.wav, フレーム尺 tuple) / 不成立時 None (旧経路へ)。"""
+    segments = tuple(getattr(script, "narration_segments", ()) or ())
+    if not segments or not voicevox_base_url.strip():
+        return None
+    seg_paths: list[Path] = []
+    seg_seconds: list[float] = []
+    for index, text in enumerate(segments):
+        seg_path = output_dir / f"seg_{index:02d}.wav"
+        synthesize_voicevox(
+            text, seg_path, base_url=voicevox_base_url.strip(), speaker=speaker
+        )
+        seconds = _wav_duration(seg_path)
+        if seconds <= 0:
+            return None
+        seg_paths.append(seg_path)
+        seg_seconds.append(seconds)
+    frame_durations = tuple(
+        max(MIN_SEGMENT_FRAME_SECONDS, round(sec + SEGMENT_GAP_SECONDS, 3))
+        for sec in seg_seconds
+    )
+    audio_path = _concat_wavs_with_padding(
+        seg_paths, frame_durations, output_dir / "narration.wav"
+    )
+    return audio_path, frame_durations
+
+
 def render_short(
     topic: ShortsTopic,
     script: ShortsScript,
@@ -1016,17 +1099,36 @@ def render_short(
     out.mkdir(parents=True, exist_ok=True)
     duration = float(sum(DEFAULT_FRAME_DURATIONS))
     frames = render_frames(topic, script, out, fmt=fmt)
-    audio_path, tts_mode = prepare_audio(
-        script,
-        out / "narration.wav",
-        duration_seconds=duration,
-        voicevox_base_url=voicevox_base_url,
-        speaker=speaker,
-        allow_silent=allow_silent_tts,
-    )
-    # ナレーション実尺に動画尺を合わせる(固定 27 秒だと長い台本が途中で切れるため)。
-    durations = _fit_durations_to_audio(DEFAULT_FRAME_DURATIONS, _wav_duration(audio_path))
-    duration = float(sum(durations))
+    # セグメント同期TTS (2026-07-06): 字幕フレームと音声を1:1同期。成立しない
+    # フォーマット (segments無し / VOICEVOX無し / 本数不一致) は従来経路へ。
+    seg_result = None
+    if (
+        _segment_sync_enabled()
+        and len(tuple(getattr(script, "narration_segments", ()) or ())) == len(frames)
+    ):
+        try:
+            seg_result = prepare_audio_segmented(
+                script, out, voicevox_base_url=voicevox_base_url, speaker=speaker
+            )
+        except Exception as exc:  # noqa: BLE001 - 旧経路 fallback
+            logger.warning("segment_sync_fallback err=%r", exc)
+            seg_result = None
+    if seg_result is not None:
+        audio_path, durations = seg_result
+        tts_mode = "voicevox_seg"
+        duration = float(sum(durations))
+    else:
+        audio_path, tts_mode = prepare_audio(
+            script,
+            out / "narration.wav",
+            duration_seconds=duration,
+            voicevox_base_url=voicevox_base_url,
+            speaker=speaker,
+            allow_silent=allow_silent_tts,
+        )
+        # ナレーション実尺に動画尺を合わせる(固定 27 秒だと長い台本が途中で切れるため)。
+        durations = _fit_durations_to_audio(DEFAULT_FRAME_DURATIONS, _wav_duration(audio_path))
+        duration = float(sum(durations))
     audio_filter = _audio_filter_for_style(tts_mode)
     bgm_path, bgm_style = _prepare_bgm(out, duration_seconds=duration)
     video_path = compose_video(

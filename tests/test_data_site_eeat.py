@@ -135,3 +135,15 @@ class RecentDigestTests(unittest.TestCase):
         finally:
             pub._EEAT_AS_OF_CACHE = ""
         self.assertEqual([g["@type"] for g in data["@graph"]], ["Dataset"])
+
+
+class ForumCtaTests(unittest.TestCase):
+    def test_pillar_has_forum_cta(self):
+        from src.data_site_template_pillar import PillarPlayerInfo, _build_forum_cta_html
+
+        info = PillarPlayerInfo(name="泉口友汰", slug="izuguchi-yuta",
+                                position="内野手", jersey_number="35")
+        html = _build_forum_cta_html(info)
+        self.assertIn("泉口友汰について", html)
+        self.assertIn("/forums/forum/", html)
+        self.assertIn("匿名OK", html)

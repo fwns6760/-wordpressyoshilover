@@ -272,6 +272,29 @@ def _build_season_stats_html(player: PillarPlayerInfo) -> str:
     )
 
 
+# 巨人ファン掲示板 (bbPress 単一フォーラム構成、2026-07-06 live 確認済み URL)
+FORUM_URL = "https://yoshilover.com/forums/forum/%e5%b7%a8%e4%ba%ba%e3%83%95%e3%82%a1%e3%83%b3%e6%8e%b2%e7%a4%ba%e6%9d%bf"
+
+
+def _build_forum_cta_html(player: PillarPlayerInfo) -> str:
+    """データ→会話の複合導線 (2026-07-06 user「掲示板への導線がうまくできてない」)。
+
+    データを見て湧いた感想の受け皿として掲示板 CTA を成績表の直後に置く。
+    OB も対象 (思い出語りの需要がある)。
+    """
+    return (
+        '<div class="ys-card" style="text-align:center;background:#fff8e1;'
+        'border:1px solid #f57f17;">'
+        f'<p style="margin:0 0 10px;font-weight:700;">💬 {_esc(player.name)}について、'
+        "ファン同士で語りませんか？</p>"
+        f'<a href="{FORUM_URL}" '
+        'style="display:inline-block;padding:10px 22px;background:#f57f17;'
+        'color:#fff;border-radius:6px;font-weight:700;text-decoration:none;">'
+        "巨人ファン掲示板へ（匿名OK・登録不要）</a>"
+        "</div>"
+    )
+
+
 def _build_recent_digest_html(player: PillarPlayerInfo) -> str:
     """冒頭ダイジェスト (2026-07-06 差別化UX): 開いた瞬間に「今どうなのか」が
     1行でわかる要約。打者=直近5試合の打撃、投手=直近5登板の投球。
@@ -1411,6 +1434,7 @@ def render_pillar_html(player: PillarPlayerInfo) -> str:
         _build_short_review_html(player),
         _build_player_prose(player),  # SEO: split を index される解説文に
         *stats_sections,
+        _build_forum_cta_html(player),
         _build_prosports_html(player),
         # トピッククラスタ: index データ記事同士の回遊を先に置き (pillar が中心)、
         # noindex ニュースは最後の補足にする。

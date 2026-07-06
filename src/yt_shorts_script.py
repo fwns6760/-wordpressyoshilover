@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 import re
+from pathlib import Path
 
 from src.yt_shorts_topic import ShortsTopic
 
@@ -280,7 +282,8 @@ NAME_READING_OVERRIDES: dict[str, str] = {
     "宇都宮葵星": "うつのみやあおい", # 葵星=きせい ではなく あおい
     "戸郷翔征": "とごうしょうせい",
     "田中将大": "たなかまさひろ",
-    "山﨑伊織": "やまざきいおり",
+    "山﨑伊織": "やまさきいおり",   # NPB公式=やまさき (やまざきは誤読、2026-07-06 修正)
+    "山崎伊織": "やまさきいおり",   # 常用「崎」表記ゆれ
     "坂本勇人": "さかもとはやと",     # 勇人=ゆうと ではなく はやと
     "又木鉄平": "またぎてっぺい",
     "横川凱": "よこかわがい",
@@ -288,15 +291,49 @@ NAME_READING_OVERRIDES: dict[str, str] = {
     "石塚裕惺": "いしづかゆうせい",
     # 泉口の姓のみ表記ゆれ対策(フル名置換の後に効く)
     "泉口": "いずぐち",
+    # --- 監督・コーチ・有名OB (2026-07-06 user指示: ブランド毀損防止の最優先読み) ---
+    "阿部慎之助": "あべしんのすけ",
+    "橋上秀樹": "はしがみひでき",     # 監督代行
+    "岡本和真": "おかもとかずま",     # MLB移籍でNPB roster外
+    "菅野智之": "すがのともゆき",     # MLB移籍でNPB roster外
+    "松井秀喜": "まついひでき",
+    "原辰徳": "はらたつのり",
+    "高橋由伸": "たかはしよしのぶ",
+    "長嶋茂雄": "ながしましげお",
+    "王貞治": "おうさだはる",
+    "川上哲治": "かわかみてつはる",
+    "江川卓": "えがわすぐる",
+    "槙原寛己": "まきはらひろみ",
+    "上原浩治": "うえはらこうじ",
+    "桑田真澄": "くわたますみ",
+    "斎藤雅樹": "さいとうまさき",
 }
+
+# NPB公式の選手個別ページ (pc_v_kana) から bake した全ロースター読み辞書
+# (scripts/build_giants_name_readings.py で生成、支配下/育成入れ替え時に再実行)。
+# 手動 NAME_READING_OVERRIDES が優先 (baked を上書き)。
+_BAKED_READINGS_PATH = (
+    Path(__file__).resolve().parent.parent / "config" / "giants_name_readings.json"
+)
+
+
+def _load_baked_readings() -> dict[str, str]:
+    try:
+        raw = json.loads(_BAKED_READINGS_PATH.read_text(encoding="utf-8"))
+        return {str(k): str(v) for k, v in raw.items() if k and v}
+    except Exception:
+        return {}
+
+
+ALL_NAME_READINGS: dict[str, str] = {**_load_baked_readings(), **NAME_READING_OVERRIDES}
 
 
 def _apply_name_readings(text: str) -> str:
-    """誤読しやすい選手名を かな に置換して TTS の発音を正す。"""
+    """選手名を かな に置換して TTS の発音を正す (baked全ロースター+手動優先)。"""
     if not text:
         return text
-    for kanji in sorted(NAME_READING_OVERRIDES, key=len, reverse=True):
-        text = text.replace(kanji, NAME_READING_OVERRIDES[kanji])
+    for kanji in sorted(ALL_NAME_READINGS, key=len, reverse=True):
+        text = text.replace(kanji, ALL_NAME_READINGS[kanji])
     return text
 
 

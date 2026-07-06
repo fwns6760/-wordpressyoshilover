@@ -1,4 +1,5 @@
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -122,6 +123,17 @@ def _topic() -> ShortsTopic:
         hook="泉口友汰、7試合連続安打。",
         raw_item={"player": "泉口友汰"},
     )
+
+
+def setUpModule():
+    # 本 file は render_short を stub して実 MP4 を作らないため、2026-07-06 の
+    # MP4 実測 QC ゲート (yt_shorts_qc) は無効化する。QC 自体の挙動は
+    # tests/test_yt_shorts_qc.py で個別に検証する。
+    os.environ["YT_SHORTS_QC"] = "0"
+
+
+def tearDownModule():
+    os.environ.pop("YT_SHORTS_QC", None)
 
 
 class YtShortsGenTests(unittest.TestCase):

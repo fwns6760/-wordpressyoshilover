@@ -662,6 +662,64 @@ def _finish_run(
     youtube_tags: tuple[str, ...],
 ) -> ShortsRunResult:
     """upload → (YouTube private) → history → 承認mail → result。data/legend 共通。"""
+    # 2026-07-06 user 指示: 書き出した MP4 実測ベースの品質ゲート。NG は承認 mail に
+    # 出さず (公開経路に乗せない)、理由 log + NG 通知 mail + history に残す。
+    from src.yt_shorts_qc import qc_enabled, run_qc
+
+    if qc_enabled():
+        qc = run_qc(rendered, script)
+        if not qc.ok:
+            LOG.warning(
+                "yt_shorts_qc_failed fmt=%s topic=%s issues=%s",
+                fmt, topic.topic_key, " / ".join(qc.issues),
+            )
+            if live and bucket:
+                _write_history(
+                    bucket,
+                    date_key,
+                    {
+                        "status": "qc_failed",
+                        "topic_key": topic.topic_key,
+                        "player": topic.player,
+                        "title": script.title,
+                        "qc_issues": list(qc.issues),
+                        "qc_video_seconds": qc.video_seconds,
+                        "qc_audio_seconds": qc.audio_seconds,
+                        "tts_mode": rendered.tts_mode,
+                        "format": fmt,
+                    },
+                    fmt,
+                )
+            if send_mail:
+                _failure_mail(
+                    f"【Shorts品質NG】{script.title}",
+                    "\n".join(
+                        [
+                            "本日の Shorts は品質ゲート NG のため承認候補に出しません。",
+                            "",
+                            f"format: {fmt} / topic: {topic.topic_key}",
+                            f"実測: 動画 {qc.video_seconds:.1f}s / 音声 {qc.audio_seconds:.1f}s",
+                            "",
+                            "NG理由:",
+                            *[f"- {i}" for i in qc.issues],
+                            "",
+                            "修正候補:",
+                            *[f"- {f}" for f in qc.fixes],
+                        ]
+                    ),
+                    dry_run=dry_run,
+                )
+            return ShortsRunResult(
+                status="qc_failed",
+                dry_run=dry_run,
+                topic_key=topic.topic_key,
+                title=script.title,
+                output_dir=str(run_dir),
+                video_path=str(rendered.video_path),
+                reason=" / ".join(qc.issues),
+                tts_mode=rendered.tts_mode,
+            )
+
     gcs_uri = ""
     signed_url = ""
     if live:

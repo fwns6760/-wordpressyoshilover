@@ -202,6 +202,19 @@ def build_report() -> tuple[str, str]:
         lines += ["", "■ /data 配下の表示クエリ Top10:"]
         for q, imp, clk, pos in dqueries:
             lines.append(f"    {q}: 表示{imp} / クリック{clk} / 平均順位{pos:.0f}")
+    # 2026-07-06 SEO強化: 「惜しいクエリ」= 表示は出ているのにクリックされない
+    # (CTR<2% かつ 平均順位 4〜20位)。title/description を直せば取れる改善候補。
+    wide = _top_queries(token, f(start1), f(end1), data_only=False, limit=200)
+    near_miss = [
+        (q, imp, clk, pos) for q, imp, clk, pos in wide
+        if imp >= 50 and 4.0 <= pos <= 20.0 and (clk / imp if imp else 0) < 0.02
+    ]
+    near_miss.sort(key=lambda x: -x[1])
+    if near_miss:
+        lines += ["", "■ 惜しいクエリ Top10 (表示多いのにクリック少ない = title改善候補):"]
+        for q, imp, clk, pos in near_miss[:10]:
+            ctr = clk * 100.0 / imp if imp else 0.0
+            lines.append(f"    {q}: 表示{imp} / CTR {ctr:.1f}% / 平均順位{pos:.0f}")
     lines += [
         "",
         "(毎月1日 09:00 JST 自動送信 / gsc-monthly-report job)",

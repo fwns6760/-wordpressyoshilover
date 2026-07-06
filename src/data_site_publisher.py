@@ -469,7 +469,8 @@ def _eeat_footer_html() -> str:
         'font-size:12px;color:#57606a;line-height:1.7;">'
         "📊 データ出典: NPB公式発表の試合結果・記録をもとに当サイトが独自集計｜"
         f"{as_of_part}"
-        f'<a href="{_EEAT_ABOUT_PATH}">データの集計方針・運営者情報</a>'
+        f'<a href="{_EEAT_ABOUT_PATH}">データの集計方針・運営者情報</a>｜'
+        '<a href="/data/glossary">指標の見方 (OPS・防御率とは)</a>'
         "</div>"
     )
 

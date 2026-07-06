@@ -1462,6 +1462,31 @@ def publish_phase1(only_slugs: set[str] | None = None) -> dict[str, object]:
         )
         pillar_results.append(result)
 
+    # 選手索引 /data/players (2026-07-06 user GO): 959 選手ページの五十音入口。
+    # 全 pillar への内部リンク hub = 回遊とクロール効率の土台。
+    try:
+        from src.data_site_template_player_index import (
+            build_index_entries,
+            render_player_index_excerpt,
+            render_player_index_html,
+            render_player_index_title,
+        )
+
+        index_entries = build_index_entries(pillar_infos)
+        index_result = _upsert_page(
+            slug="players",
+            title=render_player_index_title(),
+            content_html=render_player_index_html(index_entries),
+            parent=cluster_page_id,
+            excerpt=render_player_index_excerpt(index_entries),
+        )
+        LOG.info(
+            "player index upsert slug=players page_id=%s action=%s entries=%d",
+            index_result.page_id, index_result.action, len(index_entries),
+        )
+    except Exception as exc:  # noqa: BLE001 - 索引失敗で本体 publish は止めない
+        LOG.warning("player index upsert failed: %r", exc)
+
     # schedule ページ upsert (日程・結果カレンダー、Phase B 452) — parent=cluster → /data/schedule/
     sched_rows = fetch_giants_schedule()
     sched_result = _upsert_page(

@@ -157,6 +157,32 @@ def refresh_rotation(base, auth, cluster_id, cur) -> bool:
                    excerpt=render_rotation_excerpt(data), parent=cluster_id)
 
 
+def refresh_injured(base, auth, cluster_id, cur) -> bool:
+    """怪我人・離脱選手ページ (2026-07-06 user GO)。roster_moves と同じ fresh data から生成。"""
+    from datetime import date as _date
+
+    from src.data_site_template_injured import (
+        compute_injury_board,
+        render_injured_excerpt,
+        render_injured_html,
+        render_injured_title,
+    )
+
+    data = _load(ROSTER_MOVES_DATA)
+    fresh = roster_moves_scraper.scrape_year(cur)
+    if fresh:
+        data["years"] = roster_moves_scraper.upsert_year(data.get("years") or [], fresh)
+    today = _date.today()
+    board = compute_injury_board(data, today)
+    if board.get("year") is None:
+        print("[injured] no data; skip", file=sys.stderr)
+        return False
+    print(f"[injured] current={len(board['current'])} history={len(board['history'])}")
+    return _upsert(base, auth, slug="injured", title=render_injured_title(board),
+                   content=render_injured_html(board, today),
+                   excerpt=render_injured_excerpt(board), parent=cluster_id)
+
+
 def refresh_roster_moves(base, auth, cluster_id, cur) -> bool:
     data = _load(ROSTER_MOVES_DATA)
     fresh = roster_moves_scraper.scrape_year(cur)
@@ -340,8 +366,9 @@ def main() -> int:
     cluster_id = _find_page_id(base, auth, "data", parent=0)
     cur = datetime.now(timezone.utc).year
     ok = []
-    for fn in (refresh_rotation, refresh_roster_moves, refresh_open_games,
-               refresh_interleague, refresh_salary_value, refresh_standings):
+    for fn in (refresh_rotation, refresh_roster_moves, refresh_injured,
+               refresh_open_games, refresh_interleague, refresh_salary_value,
+               refresh_standings):
         try:
             ok.append(fn(base, auth, cluster_id, cur))
         except Exception as exc:  # noqa: BLE001

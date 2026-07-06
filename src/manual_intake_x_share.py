@@ -133,6 +133,7 @@ def fetch_article_material(post_id: int) -> dict:
         "post_id": int(post_id),
         "title": _strip_html(str(title or "")),
         "link": post.get("link") or "",
+        "status": str(post.get("status") or ""),
         "body_text": body_text,
         "image_url": image_url,
     }
@@ -194,6 +195,7 @@ def build_share_drafts(
     reply_text = f"{reply_body}\n{link}".strip()
     return {
         "ok": True,
+        "post_status": material.get("status") or "",
         "share_type": share_type,
         "main_text": main_text,
         "reply_text": reply_text,

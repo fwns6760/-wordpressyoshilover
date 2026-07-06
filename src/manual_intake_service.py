@@ -780,6 +780,10 @@ _HTML_FORM = """<!DOCTYPE html>
     <h2 style=\"font-size:16px;margin:6px 0 8px;\">🔗 記事をXで共有 (おりポス+リプ)</h2>
     <p class=\"insight-meta\" style=\"margin:0 0 10px;\">おりポス=記事の核を出し切る本文+画像 (URLなし)、リプ=記事の続き+URL。ボタン1回で連続投稿。</p>
     <button type=\"button\" id=\"xshare-refresh\" class=\"secondary\" style=\"width:100%;padding:12px;font-size:15px;\">🔄 最近の公開記事を読み込む</button>
+    <div style=\"display:flex;gap:8px;margin-top:8px;\">
+      <input id=\"xshare-manual-input\" type=\"text\" inputmode=\"url\" placeholder=\"記事URL または post_id を直接入力\" style=\"flex:1;padding:10px;font-size:14px;\">
+      <button type=\"button\" id=\"xshare-manual-btn\" class=\"secondary\" style=\"flex:0 0 auto;padding:10px 14px;\">案を作る</button>
+    </div>
     <div id=\"xshare-posts\" style=\"margin-top:10px;\"></div>
     <div id=\"xshare-editor\" hidden style=\"margin-top:14px;\"></div>
   </section>
@@ -1216,6 +1220,13 @@ _HTML_FORM = """<!DOCTYPE html>
     meta.className = 'insight-meta';
     meta.textContent = '型=' + (draft.share_type || '?') + (draft.used_llm ? ' / LLM下書き' : ' / 簡易下書き(LLMなし)') + ' / ' + (draft.title || '');
     xsEditor.appendChild(meta);
+    if (draft.post_status && draft.post_status !== 'publish') {
+      var warn = document.createElement('div');
+      warn.className = 'err';
+      warn.style.cssText = 'padding:10px;border-radius:8px;margin-top:8px;font-size:13px;';
+      warn.textContent = '⚠️ この記事はまだ公開前 (status=' + draft.post_status + ') です。先に公開しないと、リプのURLが404になります。';
+      xsEditor.appendChild(warn);
+    }
     if (draft.image_url) {
       var img = document.createElement('img');
       img.src = draft.image_url;
@@ -1286,10 +1297,7 @@ _HTML_FORM = """<!DOCTYPE html>
     });
     xsEditor.appendChild(postBtn);
   }
-  async function xsPickPost(postId, btn) {
-    btn.disabled = true;
-    var orig = btn.textContent;
-    btn.textContent = '📡 下書き生成中...';
+  async function xsLoadDraft(postId) {
     xsEditor.hidden = true;
     try {
       var resp = await fetch('/x-share-draft?' + new URLSearchParams({post_id: String(postId)}).toString(), {
@@ -1301,14 +1309,43 @@ _HTML_FORM = """<!DOCTYPE html>
       if (json && json.ok) {
         xsRenderEditor(json);
         xsEditor.scrollIntoView({behavior: 'smooth'});
-      } else {
-        alert('下書き生成に失敗: ' + (json.reason || resp.status));
+        return true;
       }
+      alert('下書き生成に失敗: ' + (json.reason || resp.status));
     } catch (e) {
       alert('エラー: ' + String(e));
     }
+    return false;
+  }
+  async function xsPickPost(postId, btn) {
+    btn.disabled = true;
+    var orig = btn.textContent;
+    btn.textContent = '📡 下書き生成中...';
+    await xsLoadDraft(postId);
     btn.disabled = false;
     btn.textContent = orig;
+  }
+  // 手動投入の結果画面から呼ぶ: 記事共有タブへ切替して下書きを開く
+  window.xsOpenForPost = async function(postId, btn) {
+    var tabBtn = document.getElementById('tab-btn-xshare');
+    if (tabBtn) tabBtn.click();
+    if (btn) { btn.disabled = true; btn.textContent = '📡 おりポス+リプ案 生成中...'; }
+    await xsLoadDraft(postId);
+    if (btn) { btn.disabled = false; btn.textContent = '🐦 おりポス+リプ案を作る'; }
+  };
+  var xsManualBtn = document.getElementById('xshare-manual-btn');
+  if (xsManualBtn) {
+    xsManualBtn.addEventListener('click', async function() {
+      var raw = (document.getElementById('xshare-manual-input').value || '').trim();
+      // 記事URL (https://yoshilover.com/102490 等) から末尾の数字ID を拾う
+      var m = raw.match(new RegExp('([0-9]+)/?$'));
+      if (!m) { alert('post_id が読み取れません。記事URLか数字IDを入れてください。'); return; }
+      xsManualBtn.disabled = true;
+      xsManualBtn.textContent = '📡 生成中...';
+      await xsLoadDraft(m[1]);
+      xsManualBtn.disabled = false;
+      xsManualBtn.textContent = '案を作る';
+    });
   }
   if (xsRefresh) {
     xsRefresh.addEventListener('click', async function() {
@@ -1676,6 +1713,18 @@ _HTML_FORM = """<!DOCTYPE html>
       link.style.cssText = 'display:inline-block;margin-top:10px;';
       result.appendChild(document.createElement('br'));
       result.appendChild(link);
+    }
+    // 2026-07-06 user「記事化公開とおりポスリプのボタンにしといて」:
+    // 記事化した記事の post_id からそのまま X 共有下書きへ (既存機能は残す)。
+    if (payload.post_id && payload.mode !== 'dry-run') {
+      const shareBtn = document.createElement('button');
+      shareBtn.type = 'button';
+      shareBtn.textContent = '🐦 おりポス+リプ案を作る';
+      shareBtn.style.cssText = 'display:block;width:100%;margin-top:10px;padding:12px;font-size:15px;background:#1d9bf0;color:#fff;border:none;border-radius:8px;font-weight:600;cursor:pointer;';
+      shareBtn.addEventListener('click', function() {
+        if (window.xsOpenForPost) window.xsOpenForPost(payload.post_id, shareBtn);
+      });
+      result.appendChild(shareBtn);
     }
   }
 

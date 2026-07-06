@@ -162,6 +162,12 @@ class MondayNoGameWindowTests(unittest.TestCase):
             )
         )
 
+    def test_voice_only_allowlist_keeps_mlb_watch_candidates(self) -> None:
+        from src import x_post_mail_lane as lane
+        from src.tools import run_x_post_mail as runner
+
+        self.assertIn(lane._MLB_WATCH_METRIC, runner._voice_only_metric_allowlist())
+
 
 class ReplyTargetHandleTests(unittest.TestCase):
     def test_default_reply_targets_add_tokyo_giants_without_env_change(self) -> None:
@@ -204,8 +210,29 @@ class ReplyTargetHandleTests(unittest.TestCase):
             handles = runner._fan_reply_target_handles()
         self.assertEqual(
             sorted(handles),
-            sorted(["EH87EazmV9D2eSw", "kandume92", "ay222000", "vto6u", "GIANTSLIFE0801"]),
+            sorted([
+                "EH87EazmV9D2eSw", "kandume92", "ay222000", "vto6u", "GIANTSLIFE0801",
+                # 2026-07-06 user 追加 11 handle
+                "piropiro___3", "richagacha52", "giants_spirit_g", "MIKAN__1214",
+                "Giants_6_Hyt6", "shishamo_out", "mi___yg246", "usagi_kyou_",
+                "YG_Sazareishi", "giantsssss6", "SONSINRON_Gkado",
+            ]),
         )
+        self.assertEqual(len(handles), len(set(handles)))
+
+    def test_fan_reply_max_age_hours_3h_default_1h_in_game(self) -> None:
+        """2026-07-06 user「リプは3時間以内。試合中は1時間以内」。"""
+        from src.tools import run_x_post_mail as runner
+
+        with patch.dict("os.environ", {}, clear=True):
+            morning = runner._fan_reply_max_age_hours(datetime(2026, 7, 6, 9, 0, tzinfo=JST))
+            self.assertEqual(morning, 3.0)
+            in_game = runner._fan_reply_max_age_hours(datetime(2026, 7, 6, 19, 30, tzinfo=JST))
+            self.assertEqual(in_game, 1.0)
+        with patch.dict("os.environ", {"X_POST_FAN_REPLY_MAX_AGE_HOURS": "2.5"}, clear=True):
+            self.assertEqual(
+                runner._fan_reply_max_age_hours(datetime(2026, 7, 6, 9, 0, tzinfo=JST)), 2.5
+            )
 
     def test_fan_reply_handles_rotate_by_hour(self) -> None:
         from src.tools import run_x_post_mail as runner
@@ -1380,6 +1407,29 @@ class ComposeMailTests(unittest.TestCase):
             [video, comment], now=ts, recent_player_keys_by_group=by_group
         )
         self.assertEqual(len(kept), 2)  # レス既出はオリジナルを落とさない
+
+    def test_impression_policy_per_group_reply_recent_drops_reply(self) -> None:
+        ts = datetime(2026, 7, 4, 12, 0, tzinfo=JST)
+        from src.x_post_mail_lane import _REPLY_CANDIDATE_METRIC
+        by_group = {
+            "original": set(),
+            "reply": {_normalize_player_name("大城卓三")},
+            "other": set(),
+        }
+        reply = Candidate(
+            "リプ大城",
+            _REPLY_CANDIDATE_METRIC,
+            "リプ",
+            "根拠",
+            3,
+            post_text="大城卓三へのリプ #巨人",
+            focus_player="大城卓三",
+        )
+        kept, dropped = apply_x_impression_policy(
+            [reply], now=ts, recent_player_keys_by_group=by_group
+        )
+        self.assertEqual(len(kept), 0)
+        self.assertIn("dedup_player_recent", {r for _c, r in dropped})
 
     def test_impression_policy_per_group_same_group_recent_drops(self) -> None:
         # オリジナル群で既出なら、同群(動画)のオリジナルは従来通り落ちる。
@@ -3362,6 +3412,43 @@ class XPostMailEntrypointFreshnessTests(unittest.TestCase):
         self.assertIn("プロ初本塁打達成", cands[0].post_text)
         self.assertNotIn("あと", cands[0].post_text)
 
+    def test_fetch_record_article_priority_skips_social_retweets(self) -> None:
+        """RSSHub social_news の RT は記録記事優先枠にしない。"""
+        from src.tools import run_x_post_mail
+
+        entries = [
+            {
+                "title": "RT スポーツ報知東京販売: 7/4付 3登板連続で失点していたセットアッパーの大勢投手",
+                "link": "https://x.com/hochi_giants/status/rt-paper",
+                "summary": "大勢が7回にマウンドへ上がった",
+                "published": "Sat, 04 Jul 2026 01:00:00 GMT",
+            }
+        ]
+        with patch.object(
+            run_x_post_mail,
+            "_load_news_fallback_sources",
+            return_value=[{
+                "name": "スポーツ報知巨人班X",
+                "url": "https://rsshub.test/twitter/user/hochi_giants",
+                "type": "social_news",
+            }],
+        ), patch.object(
+            run_x_post_mail,
+            "_fetch_feed_entries",
+            return_value=entries,
+        ), patch.object(
+            run_x_post_mail,
+            "_fetch_comment_article_material",
+            side_effect=AssertionError("retweet should be skipped before image fetch"),
+        ):
+            cands = run_x_post_mail._fetch_record_article_priority_candidates(
+                [],
+                max_records=1,
+                now=datetime(2026, 7, 4, 12, 0, tzinfo=JST),
+            )
+
+        self.assertEqual(cands, [])
+
     def test_news_priority_merge_prefers_short_mail_over_same_player_repeat(self) -> None:
         """436 follow-up: 枠埋め目的で同じ選手を復活させない。"""
         from src.tools import run_x_post_mail
@@ -3443,6 +3530,43 @@ class XPostMailEntrypointFreshnessTests(unittest.TestCase):
         players = [lane._normalize_player_name(c.focus_player) for c in cands]
         self.assertNotIn("浦田俊輔", players)
         self.assertIn("岸田行倫", players)
+
+    def test_news_opinion_fallback_skips_social_retweets(self) -> None:
+        """RSSHub social_news の RT は news/comment fallback にしない。"""
+        from src.tools import run_x_post_mail
+
+        entries = [
+            {
+                "title": "RT 小早川宗一郎: 大城卓三が早出練習",
+                "link": "https://x.com/hochi_giants/status/rt-koba",
+                "summary": "大城卓三の話題",
+                "published": "Sat, 04 Jul 2026 01:00:00 GMT",
+            }
+        ]
+        with patch.object(
+            run_x_post_mail,
+            "_load_news_fallback_sources",
+            return_value=[{
+                "name": "スポーツ報知巨人班X",
+                "url": "https://rsshub.test/twitter/user/hochi_giants",
+                "type": "social_news",
+            }],
+        ), patch.object(
+            run_x_post_mail,
+            "_fetch_feed_entries",
+            return_value=entries,
+        ), patch.object(
+            run_x_post_mail,
+            "_fetch_comment_article_material",
+            side_effect=AssertionError("retweet should be skipped before article fetch"),
+        ):
+            cands = run_x_post_mail._fetch_news_opinion_fallback_candidates(
+                [],
+                max_candidates=1,
+                now=datetime(2026, 7, 4, 12, 0, tzinfo=JST),
+            )
+
+        self.assertEqual(cands, [])
 
     def test_news_opinion_fallback_weak_surname_match_skipped(self) -> None:
         """2026-07-03 実事故: サッカー記事「鈴木彩艶」が姓 alias「鈴木」で
@@ -4822,29 +4946,72 @@ class BuildMlbWatchCandidatesTests(unittest.TestCase):
             self.assertEqual(c.media_handle, "mlbjapan")
             self.assertIn("コピペ用", c.draft_text)
 
-    def test_extra_star_light_cap_one_per_mail(self):
-        """2026-07-03 user「山本由伸と鈴木誠也も軽めに」(1万フォロワー到達、
-        認証大手×日本人スターへ枠拡張): 軽め枠は 1 便 1 人まで、
-        元巨人/大谷の枠は食わない。frame は 日本人スター 表示。"""
+    def test_extra_mlb_stars_included_as_non_giants_frame(self):
+        """2026-07-05 user再指示: 山本由伸/鈴木誠也/村上宗隆も日本人スター枠で入れる。"""
         from src import x_post_mail_lane as lane
         feed = self._feed(
             self._item("Yoshinobu Yamamoto strikes out 10", "11"),
-            self._item("Seiya Suzuki two-run blast", "12"),  # 軽め枠 2 人目 → cap 1 で落ちる
-            self._item("岡本和真がメジャー初の猛打賞", "13"),
+            self._item("Seiya Suzuki two-run blast", "12"),
+            self._item("Munetaka Murakami walks it off", "13"),
+            self._item("岡本和真がメジャー初の猛打賞", "14"),
         )
         cands = lane.build_mlb_watch_candidates(
-            max_count=3,
+            max_count=4,
             fetch_fn=lambda url: feed if "MLBJapan" in url else "<rss><channel></channel></rss>",
             comment_fn=lambda pt, pl: f"{pl}、これは効く一発。",
         )
         players = [c.focus_player for c in cands]
         self.assertIn("岡本和真", players)
         self.assertEqual(
-            len([p for p in players if p in ("山本由伸", "鈴木誠也")]), 1
+            len([p for p in players if p in ("山本由伸", "鈴木誠也", "村上宗隆")]), 1
         )
-        star = next(c for c in cands if c.focus_player in ("山本由伸", "鈴木誠也"))
+        star = next(c for c in cands if c.focus_player in ("山本由伸", "鈴木誠也", "村上宗隆"))
         self.assertIn("日本人スター", star.title)
         self.assertNotIn("元巨人", star.title)
+
+    def test_mlb_watch_leads_with_player_when_voice_omits_subject(self):
+        """2026-07-05: MLB候補も LLM 主語落ちを選手名先頭で補正する。"""
+        from src import x_post_mail_lane as lane
+        feed = self._feed(self._item("岡本和真が初回に二塁打", "14"))
+        cands = lane.build_mlb_watch_candidates(
+            max_count=1,
+            fetch_fn=lambda url: feed if "MLBJapan" in url else "<rss><channel></channel></rss>",
+            comment_fn=lambda _pt, _pl: "初回から逆方向へ運べる打席内容がいいですね。",
+        )
+        self.assertEqual(len(cands), 1)
+        self.assertTrue(cands[0].post_text.startswith("岡本和真、"))
+
+    def test_mlb_watch_detects_murakami_extra_star(self):
+        from src import x_post_mail_lane as lane
+        feed = self._feed(self._item("Munetaka Murakami game-winning swing", "15"))
+        cands = lane.build_mlb_watch_candidates(
+            max_count=1,
+            fetch_fn=lambda url: feed if "MLBJapan" in url else "<rss><channel></channel></rss>",
+            comment_fn=lambda _pt, pl: f"{pl}、この一打は大きい。",
+        )
+        self.assertEqual(len(cands), 1)
+        self.assertEqual(cands[0].focus_player, "村上宗隆")
+        self.assertIn("日本人スター", cands[0].title)
+
+    def test_mlb_watch_fetches_requested_english_video_sources(self):
+        from src import x_post_mail_lane as lane
+
+        calls = []
+
+        def fetch(url):
+            calls.append(url)
+            return "<rss><channel></channel></rss>"
+
+        lane.build_mlb_watch_candidates(max_count=1, fetch_fn=fetch, comment_fn=lambda _pt, pl: pl)
+        joined = "\n".join(calls)
+        self.assertIn("/twitter/user/SportsNetLA?limit=30", joined)
+        self.assertIn("/twitter/user/BLPJapanese?limit=30", joined)
+        self.assertIn("/twitter/user/FabianArdaya?limit=30", joined)
+        self.assertIn("/twitter/user/MLBONFOX?limit=30", joined)
+        self.assertIn("/twitter/user/MLBNetwork?limit=30", joined)
+        self.assertIn("/twitter/user/DodgersNation?limit=30", joined)
+        self.assertIn("/twitter/user/DodgerBlue1958?limit=30", joined)
+        self.assertIn("/twitter/user/TalkinBaseball_?limit=30", joined)
 
     def test_as_reply_builds_reply_candidates_with_custom_handles(self):
         """2026-07-03 user「メジャー系の日本公式で大谷や岡本や菅野にもリプしたい」:

@@ -858,12 +858,37 @@ def _fan_reply_max_per_run() -> int:
     return _resolve_int_env("X_POST_FAN_REPLY_MAX", 2, min_value=0)
 
 
-_DEFAULT_FAN_REPLY_HANDLES = "EH87EazmV9D2eSw,kandume92,ay222000,vto6u,GIANTSLIFE0801"
+_DEFAULT_FAN_REPLY_HANDLES = (
+    "EH87EazmV9D2eSw,kandume92,ay222000,vto6u,GIANTSLIFE0801,"
+    # 2026-07-06 user 追加 11 handle (「今から仲良くなりたい」個人ファンアカ)。
+    "piropiro___3,richagacha52,giants_spirit_g,MIKAN__1214,Giants_6_Hyt6,"
+    "shishamo_out,mi___yg246,usagi_kyou_,YG_Sazareishi,giantsssss6,SONSINRON_Gkado"
+)
+
+
+def _fan_reply_max_age_hours(now=None) -> float:
+    """ファンリプ対象の親ポスト鮮度。 2026-07-06 user「リプは3時間以内にすること。
+    試合中は1時間以内リプ」: 個人アカは鮮度が命 (古い投稿へのリプは不自然)。
+    env X_POST_FAN_REPLY_MAX_AGE_HOURS で override 可。"""
+    raw = (os.environ.get("X_POST_FAN_REPLY_MAX_AGE_HOURS") or "").strip()
+    if raw:
+        try:
+            return max(0.0, float(raw))
+        except ValueError:
+            pass
+    try:
+        if now is not None and lane.x_impression_timing_label(now) == \
+                lane._X_IMPRESSION_TIMING_LABELS["in_game_strong"]:
+            return 1.0
+    except Exception:  # noqa: BLE001 - フェーズ判定不能時は通常窓
+        pass
+    return 3.0
 
 
 def _fan_reply_target_handles(now=None) -> list[str]:
     """ファンリプの対象 X handle。 default = フーガ + 缶詰 (2026-06-05 user 指定)
-    + ay222000 / vto6u / GIANTSLIFE0801 (2026-07-03 user 追加)。
+    + ay222000 / vto6u / GIANTSLIFE0801 (2026-07-03 user 追加)
+    + 個人ファンアカ 11 handle (2026-07-06 user 追加)。
 
     fan reply は per-fire 上限が小さい (X_POST_FAN_REPLY_MAX=1〜2) ため、 先頭
     handle が毎便勝ち続けないよう ``now`` の時刻で走査開始位置をローテする
@@ -927,6 +952,32 @@ def _voice_only_enabled() -> bool:
     if not raw:
         return True
     return raw not in {"0", "false", "no", "off"}
+
+
+def _voice_only_metric_allowlist() -> set[str]:
+    """Metrics allowed through the final voice-only mail filter."""
+    return {
+        lane._NEWS_OPINION_METRIC, lane._FAN_VOICE_METRIC, lane._GEMINI_BRANDING_METRIC,
+        lane._HOCHI_REPLY_METRIC, lane._REPLY_CANDIDATE_METRIC, lane._VIDEO_RADAR_METRIC,
+        lane._PLAYER_COMMENT_METRIC, lane._COMMENT_DB_METRIC, lane._MLB_WATCH_METRIC,
+        "quote_caption",
+        # @Tigers_140609 風 速報スクレイプ (報知/サンスポ facts の速報型) も
+        # たんぱく事実型として許可 (voice-only filter で落とさない)。
+        lane._NEWS_SCRAPE_METRIC,
+        # 2026-06-11 角度 v2 (user 全部GO): たんぱく事実型 pattern① として許可。
+        # 2026-06-04 の voice-only は「DB ランキング表の生データ枠」を落とす意図で、
+        # 驚き角度 (勝利相関/対戦別/歴代チェイス) は 2-pattern 設計の①に該当する。
+        "勝利相関", "対戦別split", "歴代通算チェイス",
+        # 2026-06-12 角度①③⑤ (新旧比較/あの日の巨人/週間MVP) も同じ
+        # たんぱく事実型 pattern① (驚きゲート/裏取り済み bake-in 由来)。
+        "新旧比較", "あの日の巨人", "週間MVP",
+        # 2026-06-12 試合前見どころ (今日の試合に直結する数字のみ)。
+        "試合前見どころ",
+        # 2026-06-12 年俸コスパ (データ×年俸クロス、 バーゲン型のみ)。
+        "年俸コスパ",
+        # 2026-06-12 chikupn型 (節目達成 / 今季初・以来) + Tigers型 (登録抹消)。
+        "節目達成", "今季初・以来", "登録抹消",
+    }
 
 
 def _video_radar_llm_enabled() -> bool:
@@ -1316,6 +1367,16 @@ def _entry_text(entry: dict) -> tuple[str, str, str]:
     return title, link, summary
 
 
+def _is_social_retweet_entry(source: dict, title: str, summary: str) -> bool:
+    """Return True for RSSHub social_news entries that are retweets, not originals."""
+    if str(source.get("type") or "") != "social_news":
+        return False
+    return any(
+        str(text or "").lstrip().startswith(("RT ", "RT　", "RT@", "RT:", "RT："))
+        for text in (title, summary)
+    )
+
+
 def _entry_published_dt(entry: dict):
     """feed entry の公開日時を tz-aware datetime に。 取れなければ None。
 
@@ -1511,6 +1572,14 @@ def _fetch_news_opinion_fallback_candidates(
                 break
             title, link, summary = _entry_text(entry)
             if not title or not link or link in seen_urls:
+                continue
+            if _is_social_retweet_entry(source, title, summary):
+                LOG.info(
+                    "news_opinion_fallback_social_retweet_skip source=%s url=%s title=%s",
+                    source.get("name"),
+                    link,
+                    title[:80],
+                )
                 continue
             pub_dt = _entry_published_dt(entry)
             if pub_dt is None:
@@ -1789,6 +1858,14 @@ def _fetch_record_article_priority_candidates(
                 break
             title, link, summary = _entry_text(entry)
             if not title or not link or link in seen_urls:
+                continue
+            if _is_social_retweet_entry(source, title, summary):
+                LOG.info(
+                    "record_article_social_retweet_skip source=%s url=%s title=%s",
+                    source.get("name"),
+                    link,
+                    title[:80],
+                )
                 continue
             if not _looks_like_record_article(title, summary):
                 continue
@@ -3839,7 +3916,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     require_event=False,
                     skip_on_empty_comment=True,
                     avoid_player_names=live_duplicate_players,
-                    max_age_hours=_reply_max_age_hours(),
+                    max_age_hours=_fan_reply_max_age_hours(now_jst),
                 )
             except Exception as _fan_exc:  # noqa: BLE001
                 LOG.warning("fan_reply build failed: %r", _fan_exc)
@@ -4164,27 +4241,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     # allowlist で残す。 voice が 0 件に枯れた便だけ、 scheduled mail を空にしないため
     # 元の候補へ fallback (safety、 log で可視化)。
     if _voice_only_enabled():
-        _VOICE_ONLY_METRICS = {
-            lane._NEWS_OPINION_METRIC, lane._FAN_VOICE_METRIC, lane._GEMINI_BRANDING_METRIC,
-            lane._HOCHI_REPLY_METRIC, lane._REPLY_CANDIDATE_METRIC, lane._VIDEO_RADAR_METRIC,
-            lane._PLAYER_COMMENT_METRIC, lane._COMMENT_DB_METRIC, "quote_caption",
-            # @Tigers_140609 風 速報スクレイプ (報知/サンスポ facts の速報型) も
-            # たんぱく事実型として許可 (voice-only filter で落とさない)。
-            lane._NEWS_SCRAPE_METRIC,
-            # 2026-06-11 角度 v2 (user 全部GO): たんぱく事実型 pattern① として許可。
-            # 2026-06-04 の voice-only は「DB ランキング表の生データ枠」を落とす意図で、
-            # 驚き角度 (勝利相関/対戦別/歴代チェイス) は 2-pattern 設計の①に該当する。
-            "勝利相関", "対戦別split", "歴代通算チェイス",
-            # 2026-06-12 角度①③⑤ (新旧比較/あの日の巨人/週間MVP) も同じ
-            # たんぱく事実型 pattern① (驚きゲート/裏取り済み bake-in 由来)。
-            "新旧比較", "あの日の巨人", "週間MVP",
-            # 2026-06-12 試合前見どころ (今日の試合に直結する数字のみ)。
-            "試合前見どころ",
-            # 2026-06-12 年俸コスパ (データ×年俸クロス、 バーゲン型のみ)。
-            "年俸コスパ",
-            # 2026-06-12 chikupn型 (節目達成 / 今季初・以来) + Tigers型 (登録抹消)。
-            "節目達成", "今季初・以来", "登録抹消",
-        }
+        _VOICE_ONLY_METRICS = _voice_only_metric_allowlist()
         _before_voice = len(candidates)
         _voice_candidates = [c for c in candidates if c.metric in _VOICE_ONLY_METRICS]
         _data_dropped = _before_voice - len(_voice_candidates)

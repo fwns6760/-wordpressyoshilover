@@ -149,14 +149,18 @@ def fetch_article_material(post_id: int) -> dict:
 
 
 def _detect_media_name(content_html: str, body_text: str) -> str:
-    """出典媒体名。本文HTML内の出典リンク domain 優先、text 内 literal は補助。"""
+    """出典媒体名。一次媒体 domain → text 内 literal → Yahoo (経由prefix) の順。"""
+    yahoo = ""
     for domain, name in _MEDIA_DOMAIN_MAP:
         if domain in content_html:
+            if name == "Yahoo!ニュース":
+                yahoo = name
+                continue
             return name
     for name in _MEDIA_TEXT_NAMES:
         if name in body_text:
             return name
-    return ""
+    return yahoo
 
 
 def classify_share_type(title: str, body_text: str) -> str:
@@ -263,6 +267,7 @@ def _build_drafts_llm(
         f"- 15〜28字、1文。タイムラインで手を止めさせる「ヨシラバーの見立て」。{hook_style}",
         "- 断定で言い切る。タイトルの言葉をそのまま繰り返さない。要約の先取りもしない。",
         "- 「〜ですね」「〜してほしい」「注目です」等の優等生・実況文体は禁止。",
+        "- フック内でも選手はフルネーム (井上温大 / 坂本勇人)。姓だけは禁止。",
         "",
         "【要約 (SUMMARY)】",
         "- 45〜70字、1〜2文。タイトルが約束している中身 (理由・背景・根拠) への答えを"
@@ -273,6 +278,8 @@ def _build_drafts_llm(
         "- 40〜80字、1〜2文。おりポスの続きとして自然に読める文。",
         "- 記事にしか無い残りの要素 (経緯・追加データ・次の見どころ) を1つ示す。",
         "- 『こちら』『チェック』のような誘導語だけにしない。URL は書かない。",
+        "- 「今後も止まりません」「目が離せません」のような誇張・ポエム・煽り締めは禁止。"
+        "事実と観察で締める。",
         "",
         "【共通・日本語品質】",
         "- 完結した自然な日本語。翻訳調・不自然な体言止めの連発・意味の通らない比喩は禁止。",
@@ -353,8 +360,29 @@ def _hook_echoes_title(hook: str, title: str) -> bool:
     return False
 
 
+def _trim_to_budget_sentences(text: str, budget: int) -> str:
+    """weighted budget に収まるまで末尾の文から削る。"""
+    if x_weighted_len(text) <= budget:
+        return text
+    sentences = [s for s in re.split(r"(?<=。)", text) if s]
+    while sentences:
+        sentences.pop()
+        candidate = "".join(sentences).strip()
+        if candidate and x_weighted_len(candidate) <= budget:
+            return candidate
+    return ""
+
+
 def _assemble_main(title_line: str, hook: str, summary: str) -> str:
-    """フック → タイトル行 → 要約。weighted 超過時は段階的に間引く。"""
+    """フック → タイトル行 → 要約。超過時は要約を文単位で切り詰めてから間引く。"""
+    if hook and summary:
+        head = f"{hook}\n\n{title_line}\n\n"
+        trimmed = _trim_to_budget_sentences(
+            summary, _X_WEIGHTED_LIMIT - x_weighted_len(head)
+        )
+        if trimmed != summary:
+            LOG.info("x_share assemble summary_trimmed to fit weighted limit")
+        summary = trimmed
     candidates = [
         "\n\n".join(p for p in (hook, title_line, summary) if p),
         "\n".join(p for p in (hook, title_line, summary) if p),

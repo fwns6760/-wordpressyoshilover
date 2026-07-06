@@ -136,8 +136,16 @@ class BuildShareDraftsTests(unittest.TestCase):
             xshare._detect_media_name('<a href="https://hochi.news/articles/1">出典</a>', ""),
             "スポーツ報知",
         )
-        self.assertEqual(xshare._detect_media_name("", "スポニチの記事によると"), "スポニチ")
+        self.assertEqual(
+            xshare._detect_media_name("", "出典: スポニチ「巨人が勝利」"), "スポニチ"
+        )
         self.assertEqual(xshare._detect_media_name("", "出典なし本文"), "")
+
+    def test_detect_media_name_prose_mention_not_picked(self):
+        # 本文の別文脈に媒体名があっても出典ブロック外なら拾わない (102501 東スポ誤判定)
+        body = "東スポの記事が話題になった。 出典: news.yahoo.co.jp「タイトル」"
+        html = '<a href="https://news.yahoo.co.jp/articles/x">出典</a>'
+        self.assertEqual(xshare._detect_media_name(html, body), "Yahoo!ニュース")
 
     def test_forbidden_pattern_helper(self):
         self.assertEqual(xshare._forbidden_in_post("スポーツ報知によると"), "media_name")

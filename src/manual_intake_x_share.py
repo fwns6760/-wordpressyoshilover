@@ -149,7 +149,11 @@ def fetch_article_material(post_id: int) -> dict:
 
 
 def _detect_media_name(content_html: str, body_text: str) -> str:
-    """出典媒体名。一次媒体 domain → text 内 literal → Yahoo (経由prefix) の順。"""
+    """出典媒体名。一次媒体 domain → 出典ブロック内 literal → Yahoo の順。
+
+    literal 名の全文スキャンは禁止 (本文の関連記事等で誤媒体を拾う。
+    2026-07-06 post 102501 で「東スポ」誤判定の実測)。「出典」直後 120 字のみ見る。
+    """
     yahoo = ""
     for domain, name in _MEDIA_DOMAIN_MAP:
         if domain in content_html:
@@ -157,8 +161,11 @@ def _detect_media_name(content_html: str, body_text: str) -> str:
                 yahoo = name
                 continue
             return name
+    source_scope = " ".join(
+        m.group(1) for m in re.finditer(r"出典[::]?\s*(.{0,120})", body_text)
+    )
     for name in _MEDIA_TEXT_NAMES:
-        if name in body_text:
+        if name in source_scope:
             return name
     return yahoo
 

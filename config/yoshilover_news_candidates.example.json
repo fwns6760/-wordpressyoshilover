@@ -301,6 +301,78 @@
       "lane": "general",
       "priority": "P0",
       "score_base": 80
+    },
+    {
+      "id": "tier2_bunshun",
+      "query": "巨人 site:bunshun.jp",
+      "name": "文春オンライン 巨人",
+      "lane": "general",
+      "priority": "P0",
+      "score_base": 80
+    },
+    {
+      "id": "tier2_asagei",
+      "query": "巨人 site:asagei.com",
+      "name": "アサ芸プラス 巨人",
+      "lane": "general",
+      "priority": "P0",
+      "score_base": 80
+    },
+    {
+      "id": "tier2_friday",
+      "query": "巨人 site:friday.kodansha.co.jp",
+      "name": "FRIDAY 巨人",
+      "lane": "general",
+      "priority": "P0",
+      "score_base": 80
+    },
+    {
+      "id": "tier2_flash",
+      "query": "巨人 site:smart-flash.jp",
+      "name": "Smart FLASH 巨人",
+      "lane": "general",
+      "priority": "P0",
+      "score_base": 80
+    },
+    {
+      "id": "tier2_postseven",
+      "query": "巨人 site:news-postseven.com",
+      "name": "NEWSポストセブン 巨人",
+      "lane": "general",
+      "priority": "P0",
+      "score_base": 80
+    },
+    {
+      "id": "tier2_shincho",
+      "query": "巨人 site:dailyshincho.jp",
+      "name": "デイリー新潮 巨人",
+      "lane": "general",
+      "priority": "P0",
+      "score_base": 80
+    },
+    {
+      "id": "tier2_gendai",
+      "query": "巨人 site:gendai.media",
+      "name": "現代ビジネス 巨人",
+      "lane": "general",
+      "priority": "P0",
+      "score_base": 80
+    },
+    {
+      "id": "tier2_spa",
+      "query": "巨人 site:nikkan-spa.jp",
+      "name": "日刊SPA! 巨人",
+      "lane": "general",
+      "priority": "P0",
+      "score_base": 80
+    },
+    {
+      "id": "tier2_jprime",
+      "query": "巨人 site:jprime.jp",
+      "name": "週刊女性PRIME 巨人",
+      "lane": "general",
+      "priority": "P0",
+      "score_base": 80
     }
   ],
   "sources": [

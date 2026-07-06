@@ -4953,6 +4953,13 @@ class XBuzzPlayerFactTests(unittest.TestCase):
 class BuildQuoteRtCommentTests(unittest.TestCase):
     """451: Flash Lite 引用RTコメント生成 (post-API path、 log NameError regression)。"""
 
+    def setUp(self):
+        # 先行 test が run_x_post_mail 経由で set_llm_budget の global 上限を
+        # 残すと、 本 class の生成呼び出しが budget 天井で "" になる (順序依存)。
+        # 毎 test 無制限へ reset する。
+        from src import x_post_branding_gen as xbg
+        xbg.set_llm_budget(None)
+
     def _patch_genai(self, text):
         import contextlib, sys, types
         from unittest import mock
@@ -5032,6 +5039,55 @@ class BuildQuoteRtCommentTests(unittest.TestCase):
                 db_fact="", require_db_fact=False,
             )
         self.assertEqual(out, reply)
+
+    def test_reply_empathy_without_db_fact_generates(self):
+        """2026-07-06 user「ファンリプは交流がメイン。数字だとダメ」: empathy 型は
+        db_fact 無しでもスキップせず共感リプが成立する。"""
+        from src import x_post_branding_gen as xbg
+        reply = (
+            "坂本勇人のあの一振り、現地で見られたの羨ましいです。"
+            "あの場面で回ってくるあたり、持ってる選手ですよね。"
+        )
+        with self._patch_genai(reply):
+            out = xbg.build_quote_rt_comment(
+                "坂本勇人 サヨナラ現地で見た！", "坂本勇人",
+                gemini_api_key="k", budget_site="reply",
+                db_fact="", require_db_fact=False, reply_style="empathy",
+            )
+        self.assertEqual(out, reply)
+
+    def test_reply_empathy_prompt_is_empathy_first(self):
+        """empathy 型の prompt は共感リプ枠 (補足リプの型指定を含まない)。"""
+        import sys, types, contextlib
+        from unittest import mock
+        from src import x_post_branding_gen as xbg
+        captured = {}
+        fake_client = mock.MagicMock()
+
+        def _capture(model=None, contents=None, config=None, **kw):
+            captured["prompt"] = contents
+            return types.SimpleNamespace(
+                text=(
+                    "坂本勇人のあの一振り、現地で見られたの羨ましいです。"
+                    "あの場面で回ってくるあたり、持ってる選手ですよね。"
+                ),
+            )
+
+        fake_client.models.generate_content.side_effect = _capture
+        fake_genai = types.SimpleNamespace(Client=lambda api_key=None: fake_client)
+        google_mod = sys.modules.get("google") or types.ModuleType("google")
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(mock.patch.dict(sys.modules, {"google": google_mod, "google.genai": fake_genai}))
+            stack.enter_context(mock.patch.object(google_mod, "genai", fake_genai, create=True))
+            xbg.build_quote_rt_comment(
+                "坂本勇人 サヨナラ現地で見た！", "坂本勇人",
+                gemini_api_key="k", budget_site="reply",
+                db_fact="", require_db_fact=False, reply_style="empathy",
+            )
+        prompt = captured.get("prompt") or ""
+        self.assertIn("共感リプ", prompt)
+        self.assertNotIn("補足リプ用", prompt)
+        self.assertIn("数字・データ解説は入れない", prompt)
 
 
 class VideoRadarImpressionPolicyTests(unittest.TestCase):

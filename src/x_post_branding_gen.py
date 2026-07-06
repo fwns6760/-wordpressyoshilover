@@ -1455,6 +1455,7 @@ def build_quote_rt_comment(
     budget_site: str = "quote_rt",
     extra_voice_note: str = "",
     require_db_fact: bool = True,
+    reply_style: str = "supplement",
 ) -> str:
     """451: X バズ投稿への引用RTコメントを Gemini で生成。
 
@@ -1464,6 +1465,14 @@ def build_quote_rt_comment(
     ``extra_voice_note`` (2026-07-02): 視点の上書き指示を 1 行 prompt に
     追加する。 例: MLB 大谷別枠は「巨人ファン視点ではなく純粋に野球ファン
     として」(user 決定)。 空なら従来 prompt と完全一致。
+
+    ``reply_style`` (2026-07-06 user 決定「交流がメイン。数字だとダメ」):
+    リプ lane (budget_site="reply") の型を切り替える。
+    - "supplement" (default): 従来の補足リプ (verified data 数字を1つ足す)。
+      媒体リプ (報知等) はこちらを維持。
+    - "empathy": ファンアカ向け共感リプ。 共感・寄り添いが主で、 db_fact は
+      あっても従 (軽く添えるだけ、 無くてもリプ成立)。 db_fact 必須 gate を
+      通らない。 逆張り・訂正・講釈の禁止は共通で維持。
 
     voice は spec (doc/reference/x_post_mail_branding_spec.md L70/104/105) の
     **フーガ (長文分析・試合後振り返り) + 缶詰 (試合中LIVE・連呼) 合成** をそのまま使う。
@@ -1493,10 +1502,34 @@ def build_quote_rt_comment(
     # 例外: MLB リプ (NPB DB に数字が無い) は require_db_fact=False で呼び、
     # 元投稿内の具体場面を核にした短い補足に切り替える。
     is_reply = budget_site == "reply"
-    if is_reply and require_db_fact and not (db_fact or "").strip():
+    # 2026-07-06 user「ファンリプは交流がメイン。数字だとダメ」: ファンアカ向けは
+    # empathy 型 (共感主・数字従) に切り替え、 db_fact 必須 gate を外す。
+    is_empathy = is_reply and reply_style == "empathy"
+    if is_reply and not is_empathy and require_db_fact and not (db_fact or "").strip():
         log.info("quote_rt_comment_skip reason=reply_without_db_fact player=%s", who)
         return ""
-    if is_reply and (db_fact or "").strip():
+    if is_empathy and (db_fact or "").strip():
+        len_rule = (
+            "ファンアカへの共感リプ用 (相手の返信欄に出る)。 50〜90字、 1〜2文で短く。 "
+            "主役は共感: 元投稿の具体的な場面・気持ちを1つ拾って、 同じ巨人ファンとして"
+            "自然に寄り添う (『分かる』系の同調だけで終わらず、 相手の見た場面を自分の言葉で受ける)。 "
+            "verified data の数字は、 会話として自然に繋がる時だけ1つ軽く添えてよい (無理に入れない)。 "
+            "データ解説・分析講釈が主役になるのは禁止。 逆張り・訂正・辛口は禁止。 "
+            "『〜すべき』『〜してほしい』『どう見ますか』で締めない。 "
+            "URL / ハッシュタグ / 媒体名は禁止。 絵文字は多くても1個。 "
+            "verified data と元投稿に無い数字・事実は足さない。"
+        )
+    elif is_empathy:
+        len_rule = (
+            "ファンアカへの共感リプ用 (相手の返信欄に出る)。 50〜90字、 1〜2文で短く。 "
+            "元投稿の具体的な場面・気持ちを1つ拾い、 同じ巨人ファンとして自然に寄り添う "
+            "(観戦仲間との会話のトーン。 相手が返信したくなる返し)。 "
+            "数字・データ解説は入れない。 逆張り・訂正・辛口・分析講釈は禁止。 "
+            "『〜すべき』『〜してほしい』『どう見ますか』で締めない。 "
+            "URL / ハッシュタグ / 媒体名は禁止。 絵文字は多くても1個。 "
+            "元投稿に無い数字・事実は足さない。"
+        )
+    elif is_reply and (db_fact or "").strip():
         len_rule = (
             "補足リプ用 (相手の返信欄に出る)。 50〜90字、 1〜2文で短く。 "
             "感想・共感・称賛・分析講釈で埋めず、 元投稿に無い verified data の数字を1つ"
@@ -1555,7 +1588,13 @@ def build_quote_rt_comment(
     # unverified ゲートを通す。
     _fact = (db_fact or "").strip()
     diff_instr = ""
-    if _fact and is_reply:
+    if _fact and is_empathy:
+        diff_instr = (
+            f"【添えてよい verified data】{_fact}\n"
+            "↑共感の流れに自然に繋がる時だけ、 この中から数字を1つ軽く添えてよい。 "
+            "繋がらなければ使わない (共感だけで成立させる)。 これ以外の数字は足さない。"
+        )
+    elif _fact and is_reply:
         diff_instr = (
             f"【補足に使う verified data】{_fact}\n"
             "↑この中から元投稿が触れていない数字を1つだけ選び、 補足の核にする。 "
@@ -1575,6 +1614,11 @@ def build_quote_rt_comment(
         is_final_attempt = attempt == _total_attempts - 1
         if attempt == 0:
             retry_note = ""
+        elif is_empathy:
+            retry_note = (
+                "※前回は講釈っぽい/データ解説が主役で却下された。 元投稿の場面・気持ちへの"
+                "共感を主役に、 50〜90字・1〜2文の観戦仲間トーンで書き直す。\n"
+            )
         elif is_reply:
             retry_note = (
                 "※前回は長い/感想・講釈っぽくて却下された。 verified data の補足を核に、 "
@@ -1590,16 +1634,17 @@ def build_quote_rt_comment(
                 "※前回は優等生締め/ポエム/中身薄で却下された。 データ+フーガ風の読みで具体的に書き、 "
                 "『〜してほしい』 系で終わるな。\n"
             )
-        task_line = (
-            f"【今回のタスク: {subject}への補足リプ】"
-            if is_reply
-            else f"【今回のタスク: {subject}への反応コメント】"
-        )
-        task_instr = (
-            f"上記 voice のまま、 次の{subject}にデータを1つ補足する短いリプを書く。"
-            if is_reply
-            else f"上記 voice のまま、 次の{subject}に反応するヨシラバーのコメントを書く。"
-        )
+        if is_empathy:
+            task_line = f"【今回のタスク: {subject}への共感リプ】"
+            task_instr = (
+                f"上記 voice のまま、 次の{subject}に同じ巨人ファンとして寄り添う短いリプを書く。"
+            )
+        elif is_reply:
+            task_line = f"【今回のタスク: {subject}への補足リプ】"
+            task_instr = f"上記 voice のまま、 次の{subject}にデータを1つ補足する短いリプを書く。"
+        else:
+            task_line = f"【今回のタスク: {subject}への反応コメント】"
+            task_instr = f"上記 voice のまま、 次の{subject}に反応するヨシラバーのコメントを書く。"
         prompt = "\n".join([
             base_voice,
             "",

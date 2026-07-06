@@ -3738,9 +3738,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
 
     # 2026-06-05 user GO: ファンアカ (フーガ @EH87EazmV9D2eSw / 缶詰 @kandume92) の試合反応への
-    # value-add リプ候補。 既存リプ機構 (build_reply_candidates) を流用し、 ファンのカジュアル
-    # 反応文を拾うため require_event=False。 空虚な同調を送らないよう skip_on_empty_comment=True
-    # (LLM voice が門番落ちした投稿はスキップ)。 巨人選手検出 + _is_giants で巨人関連のみ
+    # リプ候補。 2026-07-06 user「交流がメイン。数字だとダメ」で補足リプ型→共感リプ型 (empathy) へ。
+    # 既存リプ機構 (build_reply_candidates) を流用し、 ファンのカジュアル
+    # 反応文を拾うため require_event=False。 LLM 門番落ちした投稿はスキップ (skip_on_empty_comment=True)。
+    # 巨人選手検出 + _is_giants で巨人関連のみ
     # (フーガの広島/楽天ポストは除外)。 自動投稿はしない (mail 候補まで)。 LLM は per-fire budget
     # (X_POST_MAIL_MAX_LLM_PER_RUN) を報知リプ等と共有=天井を上げない。 default OFF (flag gated)。
     if _fan_reply_enabled() and db_path:
@@ -3753,17 +3754,26 @@ def main(argv: Sequence[str] | None = None) -> int:
                     from src import x_post_branding_gen as _fan_xbg
 
                     def fan_comment_fn(parent_text, player, _k=_fan_key, _g=_fan_xbg, _now=now_jst, _db=db_path):  # noqa: E731
-                        # ファン投稿への value-add リプ (同調でなく数字/逆角度を1個足す)。 subject で
-                        # 「ファン投稿への反応」と枠付け。 元ネタに無い数字は門番 (_extract_unverified_numbers) で弾く。
-                        # verified db_fact を渡してデータ裏付けの value-add にする (2026-07-02)。
+                        # 2026-07-06 user「ファンリプは交流がメイン。数字だとダメ」: 補足リプ型を
+                        # やめ empathy 型 (共感主・数字従) へ。 db_fact 必須も廃止 (数字が無くても
+                        # リプ成立)。 同型連続を避けるため db_fact は約3件に1件だけ素材として渡す
+                        # (crc32 で決定的に選ぶ。 渡しても「自然に繋がる時だけ」の従属扱い)。
+                        # 元ネタに無い数字の門番 (_extract_unverified_numbers) は従来通り効く。
                         _fact = ""
                         try:
-                            _fact = _g.build_db_fact_line(player, _db) if _db else ""
+                            import zlib as _zlib
+                            _use_fact = _zlib.crc32((parent_text or "").encode("utf-8")) % 3 == 0
                         except Exception:  # noqa: BLE001
-                            _fact = ""
+                            _use_fact = False
+                        if _use_fact:
+                            try:
+                                _fact = _g.build_db_fact_line(player, _db) if _db else ""
+                            except Exception:  # noqa: BLE001
+                                _fact = ""
                         return _g.build_quote_rt_comment(
                             parent_text, player, gemini_api_key=_k, now=_now, subject="巨人ファンの投稿",
                             db_fact=_fact, budget_site="reply",
+                            require_db_fact=False, reply_style="empathy",
                         )
                 except Exception as _fan_imp_exc:  # noqa: BLE001
                     LOG.warning("fan_reply LLM comment unavailable: %r", _fan_imp_exc)

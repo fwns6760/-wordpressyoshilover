@@ -512,6 +512,7 @@ _HTML_FORM = """<!DOCTYPE html>
     <button type=\"button\" class=\"tab-btn active\" data-tab=\"intake\" id=\"tab-btn-intake\">📝 手動投入</button>
     <button type=\"button\" class=\"tab-btn\" data-tab=\"sources\" id=\"tab-btn-sources\">📰 ソース候補</button>
     <button type=\"button\" class=\"tab-btn\" data-tab=\"insight\" id=\"tab-btn-insight\">🐦 X 投稿 (データ)</button>
+    <button type=\"button\" class=\"tab-btn\" data-tab=\"xshare\" id=\"tab-btn-xshare\">🔗 記事共有</button>
   </nav>
   <section class=\"tab-panel\" data-tab=\"intake\" id=\"tab-panel-intake\">
   <form id=\"intake\">
@@ -774,6 +775,13 @@ _HTML_FORM = """<!DOCTYPE html>
     </form>
     <div id=\"article-result\" hidden></div>
     </details>
+  </section>
+  <section class=\"tab-panel\" data-tab=\"xshare\" id=\"tab-panel-xshare\" hidden>
+    <h2 style=\"font-size:16px;margin:6px 0 8px;\">🔗 記事をXで共有 (おりポス+リプ)</h2>
+    <p class=\"insight-meta\" style=\"margin:0 0 10px;\">おりポス=記事の核を出し切る本文+画像 (URLなし)、リプ=記事の続き+URL。ボタン1回で連続投稿。</p>
+    <button type=\"button\" id=\"xshare-refresh\" class=\"secondary\" style=\"width:100%;padding:12px;font-size:15px;\">🔄 最近の公開記事を読み込む</button>
+    <div id=\"xshare-posts\" style=\"margin-top:10px;\"></div>
+    <div id=\"xshare-editor\" hidden style=\"margin-top:14px;\"></div>
   </section>
 </main>
 <script>
@@ -1180,6 +1188,160 @@ _HTML_FORM = """<!DOCTYPE html>
       if (qsubmit) { qsubmit.disabled = false; qsubmit.textContent = '🗣️ 質問して記事生成'; }
     }
   });
+
+  // 2026-07-06: 記事共有タブ (おりポス+リプ連続投稿)。
+  var xsRefresh = document.getElementById('xshare-refresh');
+  var xsPosts = document.getElementById('xshare-posts');
+  var xsEditor = document.getElementById('xshare-editor');
+  function xsCounter(ta, label) {
+    var div = document.createElement('div');
+    div.className = 'insight-meta';
+    div.style.cssText = 'margin:4px 0 10px;';
+    function upd() {
+      var t = ta.value || '';
+      var w = 0;
+      var rest = t.replace(new RegExp('https?://' + String.fromCharCode(92) + 'S+', 'g'), function() { w += 23; return ''; });
+      for (var i = 0; i < rest.length; i++) { w += (rest.charCodeAt(i) >= 0x1100) ? 2 : 1; }
+      div.textContent = label + ': ' + w + ' / 280 weighted' + (w > 280 ? ' ⚠️ 超過' : '');
+      div.style.color = (w > 280) ? '#b71c1c' : '';
+    }
+    upd();
+    ta.addEventListener('input', upd);
+    return div;
+  }
+  function xsRenderEditor(draft) {
+    xsEditor.hidden = false;
+    xsEditor.innerHTML = '';
+    var meta = document.createElement('div');
+    meta.className = 'insight-meta';
+    meta.textContent = '型=' + (draft.share_type || '?') + (draft.used_llm ? ' / LLM下書き' : ' / 簡易下書き(LLMなし)') + ' / ' + (draft.title || '');
+    xsEditor.appendChild(meta);
+    if (draft.image_url) {
+      var img = document.createElement('img');
+      img.src = draft.image_url;
+      img.style.cssText = 'max-width:100%;border-radius:8px;margin:8px 0;';
+      xsEditor.appendChild(img);
+      var imeta = document.createElement('div');
+      imeta.className = 'insight-meta';
+      imeta.textContent = '↑この画像をおりポスに添付します';
+      xsEditor.appendChild(imeta);
+    } else {
+      var noimg = document.createElement('div');
+      noimg.className = 'insight-meta';
+      noimg.textContent = '⚠️ アイキャッチ画像なし (テキストのみで投稿)';
+      xsEditor.appendChild(noimg);
+    }
+    var l1 = document.createElement('div');
+    l1.style.cssText = 'font-weight:600;margin-top:10px;';
+    l1.textContent = '① おりポス (URLなし・画像付き)';
+    xsEditor.appendChild(l1);
+    var mainTa = document.createElement('textarea');
+    mainTa.rows = 6;
+    mainTa.style.cssText = 'width:100%;margin-top:6px;font-size:14px;padding:10px;white-space:pre-wrap;';
+    mainTa.value = draft.main_text || '';
+    xsEditor.appendChild(mainTa);
+    xsEditor.appendChild(xsCounter(mainTa, 'おりポス'));
+    var l2 = document.createElement('div');
+    l2.style.cssText = 'font-weight:600;';
+    l2.textContent = '② リプ (記事の続き + URL)';
+    xsEditor.appendChild(l2);
+    var replyTa = document.createElement('textarea');
+    replyTa.rows = 4;
+    replyTa.style.cssText = 'width:100%;margin-top:6px;font-size:14px;padding:10px;white-space:pre-wrap;';
+    replyTa.value = draft.reply_text || '';
+    xsEditor.appendChild(replyTa);
+    xsEditor.appendChild(xsCounter(replyTa, 'リプ'));
+    var postBtn = document.createElement('button');
+    postBtn.type = 'button';
+    postBtn.className = 'primary';
+    postBtn.textContent = '🚀 おりポス+リプを連続投稿';
+    postBtn.style.cssText = 'width:100%;padding:14px;font-size:15px;margin-top:6px;';
+    postBtn.addEventListener('click', async function() {
+      if (!confirm('X に2連投稿します (おりポス→リプ)。よろしいですか？')) { return; }
+      postBtn.disabled = true;
+      postBtn.textContent = '🚀 投稿中...';
+      try {
+        var resp = await fetch('/x-share-thread', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({
+            main_text: mainTa.value || '',
+            reply_text: replyTa.value || '',
+            image_url: draft.image_url || '',
+            share_type: draft.share_type || '',
+          }),
+        });
+        var json = await resp.json().catch(function() { return {}; });
+        if (json && json.ok) {
+          postBtn.textContent = '✅ 投稿成功 (おりポス id=' + (json.main_tweet_id || '?') + (json.image_attached ? ' / 画像付き' : ' / ⚠️画像なし') + ')';
+        } else {
+          postBtn.textContent = '❌ 失敗: ' + (json.reason || ('status ' + resp.status));
+          postBtn.disabled = false;
+        }
+      } catch (e) {
+        postBtn.textContent = '❌ エラー: ' + String(e);
+        postBtn.disabled = false;
+      }
+    });
+    xsEditor.appendChild(postBtn);
+  }
+  async function xsPickPost(postId, btn) {
+    btn.disabled = true;
+    var orig = btn.textContent;
+    btn.textContent = '📡 下書き生成中...';
+    xsEditor.hidden = true;
+    try {
+      var resp = await fetch('/x-share-draft?' + new URLSearchParams({post_id: String(postId)}).toString(), {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' },
+        credentials: 'same-origin',
+      });
+      var json = await resp.json().catch(function() { return {}; });
+      if (json && json.ok) {
+        xsRenderEditor(json);
+        xsEditor.scrollIntoView({behavior: 'smooth'});
+      } else {
+        alert('下書き生成に失敗: ' + (json.reason || resp.status));
+      }
+    } catch (e) {
+      alert('エラー: ' + String(e));
+    }
+    btn.disabled = false;
+    btn.textContent = orig;
+  }
+  if (xsRefresh) {
+    xsRefresh.addEventListener('click', async function() {
+      xsRefresh.disabled = true;
+      xsRefresh.textContent = '📡 読み込み中...';
+      xsPosts.innerHTML = '';
+      try {
+        var resp = await fetch('/x-share-recent', {
+          method: 'GET',
+          headers: { 'Accept': 'application/json' },
+          credentials: 'same-origin',
+        });
+        var json = await resp.json().catch(function() { return {}; });
+        if (json && json.ok && json.posts && json.posts.length) {
+          json.posts.forEach(function(p) {
+            var b = document.createElement('button');
+            b.type = 'button';
+            b.className = 'secondary';
+            b.style.cssText = 'width:100%;text-align:left;padding:10px;margin-top:6px;font-size:13px;';
+            b.textContent = (p.date ? p.date.slice(5, 16).replace('T', ' ') + ' ' : '') + (p.title || ('#' + p.id));
+            b.addEventListener('click', function() { xsPickPost(p.id, b); });
+            xsPosts.appendChild(b);
+          });
+        } else {
+          xsPosts.textContent = '公開記事が取得できませんでした: ' + (json.reason || '');
+        }
+      } catch (e) {
+        xsPosts.textContent = 'エラー: ' + String(e);
+      }
+      xsRefresh.disabled = false;
+      xsRefresh.textContent = '🔄 最近の公開記事を読み込む';
+    });
+  }
 
   // 346: X post draft generation tab.
   var xpForm = document.getElementById('x-post-draft-form');
@@ -1983,6 +2145,63 @@ def build_handler(
                         {"ok": False, "reason": f"x_post_draft_error:{exc!r}"},
                     )
                 return
+            if path in ("/x-share-recent", "/x-share-draft"):
+                # 2026-07-06 user GO「Xまで共有でおりポスとリプまでつくって」:
+                # 記事共有タブ用 API。auth は /x-post-draft と同じ cookie / query token。
+                expected_token = _require_token()
+                if expected_token:
+                    cookie_token = ""
+                    raw_cookie = self.headers.get("Cookie") or ""
+                    for part in raw_cookie.split(";"):
+                        kv = part.strip().split("=", 1)
+                        if len(kv) == 2 and kv[0].strip() == "manual_intake_session":
+                            cookie_token = kv[1].strip()
+                            break
+                    query_token = ""
+                    qtok = parse_qs(parsed.query, keep_blank_values=False).get("token") or []
+                    if qtok:
+                        query_token = (qtok[0] or "").strip()
+                    if cookie_token != expected_token and query_token != expected_token:
+                        _json_response(self, 403, {"ok": False, "reason": "forbidden"})
+                        return
+                try:
+                    from src import manual_intake_x_share as _xshare
+                except Exception as exc:  # noqa: BLE001
+                    bound_logger.exception("x_share_import_failed")
+                    _json_response(self, 500, {"ok": False, "reason": f"import_error:{exc!r}"})
+                    return
+                if path == "/x-share-recent":
+                    try:
+                        posts = _xshare.list_recent_published(limit=10)
+                    except Exception as exc:  # noqa: BLE001
+                        bound_logger.exception("x_share_recent_failed")
+                        _json_response(self, 502, {"ok": False, "reason": f"wp_error:{exc!r}"})
+                        return
+                    _json_response(self, 200, {"ok": True, "posts": posts})
+                    return
+                params = parse_qs(parsed.query, keep_blank_values=False)
+                raw_id = (params.get("post_id") or [""])[0].strip()
+                if not raw_id.isdigit():
+                    _json_response(self, 400, {"ok": False, "reason": "post_id_required"})
+                    return
+                try:
+                    material = _xshare.fetch_article_material(int(raw_id))
+                    drafts = _xshare.build_share_drafts(
+                        material,
+                        gemini_api_key=(
+                            os.environ.get("GEMINI_API_KEY")
+                            or os.environ.get("GEMMA_BRANDING_GEMINI_API_KEY")
+                            or ""
+                        ),
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    bound_logger.exception("x_share_draft_failed")
+                    _json_response(self, 502, {"ok": False, "reason": f"draft_error:{exc!r}"})
+                    return
+                drafts["post_id"] = int(raw_id)
+                drafts["title"] = material.get("title") or ""
+                _json_response(self, 200, drafts)
+                return
             if path in ("/", "/index.html"):
                 # NOMOTOKE-INTAKE-COOKIE-001: ``GET /?token=<value>``
                 # validates the token and sets ``manual_intake_session``
@@ -2079,6 +2298,66 @@ def build_handler(
                         "char_count": len(text),
                     },
                 )
+                return
+            if parsed.path == "/x-share-thread":
+                # 2026-07-06: おりポス (画像付き) → 自分へのリプ (記事URL) の連続投稿。
+                expected_token = _require_token()
+                body, body_err = _read_body(self)
+                if body_err == "body_too_large":
+                    _json_response(self, 413, {"ok": False, "reason": "body_too_large"})
+                    return
+                content_type = self.headers.get("Content-Type", "")
+                payload, parse_err = _parse_request_body(body, content_type)
+                if parse_err:
+                    _json_response(self, 400, {"ok": False, "reason": parse_err})
+                    return
+                if expected_token:
+                    supplied = _request_token(self, payload.get("token") or "")
+                    if supplied != expected_token:
+                        _json_response(self, 403, {"ok": False, "reason": "forbidden"})
+                        return
+                main_text = (payload.get("main_text") or "").strip()
+                reply_text = (payload.get("reply_text") or "").strip()
+                image_url = (payload.get("image_url") or "").strip()
+                share_type = (payload.get("share_type") or "").strip() or "unknown"
+                if not main_text or not reply_text:
+                    _json_response(self, 400, {"ok": False, "reason": "empty_text"})
+                    return
+                try:
+                    from src import manual_intake_x_share as _xshare
+                except Exception as exc:  # noqa: BLE001
+                    bound_logger.exception("x_share_import_failed")
+                    _json_response(self, 500, {"ok": False, "reason": f"import_error:{exc!r}"})
+                    return
+                main_w = _xshare.x_weighted_len(main_text)
+                reply_w = _xshare.x_weighted_len(reply_text)
+                if main_w > 280 or reply_w > 280:
+                    _json_response(
+                        self, 400,
+                        {"ok": False, "reason": "text_too_long",
+                         "main_weighted": main_w, "reply_weighted": reply_w},
+                    )
+                    return
+                try:
+                    result = _xshare.post_thread(
+                        main_text, reply_text, image_url=image_url
+                    )
+                except KeyError as exc:
+                    bound_logger.exception("x_share_thread_env_missing")
+                    _json_response(self, 503, {"ok": False, "reason": f"env_missing:{exc!s}"})
+                    return
+                except Exception as exc:  # noqa: BLE001
+                    bound_logger.exception("x_share_thread_failed")
+                    _json_response(self, 502, {"ok": False, "reason": f"x_api_error:{exc!r}"})
+                    return
+                # 型別の実測比較 (x-engagement 週次) 用の構造化ログ
+                bound_logger.info(
+                    "x_share_thread_posted share_type=%s main_id=%s reply_id=%s "
+                    "image=%s main_weighted=%d reply_weighted=%d",
+                    share_type, result.get("main_tweet_id"), result.get("reply_tweet_id"),
+                    result.get("image_attached"), main_w, reply_w,
+                )
+                _json_response(self, 200, result)
                 return
             if parsed.path != "/manual-intake":
                 _json_response(self, 404, {"ok": False, "reason": "not_found"})

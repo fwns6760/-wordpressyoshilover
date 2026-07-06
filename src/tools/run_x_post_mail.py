@@ -329,8 +329,7 @@ def _reply_candidates_enabled() -> bool:
 
 
 def _mlb_watch_enabled() -> bool:
-    """2026-07-02 user 決定 (フォロワー増計画): 元巨人MLB組 (菅野/岡本) +
-    大谷別枠 の引用RT候補をメールに出すか (default OFF)。"""
+    """MLB watch 引用RT候補をメールに出すか (default OFF)。"""
     raw = (os.environ.get("ENABLE_X_POST_MLB_WATCH") or "").strip().lower()
     return raw in {"1", "true", "yes", "on"}
 
@@ -340,15 +339,47 @@ def _mlb_watch_max_per_run() -> int:
     return _resolve_int_env("X_POST_MLB_WATCH_MAX", 3, min_value=0)
 
 
+def _mlb_voice_subject_and_note(player: str, *, reply: bool = False) -> tuple[str, str]:
+    """Return LLM framing for MLB watch/reply without mislabeling extra stars."""
+    # 2026-07-06 user「MLBリプ候補も数字が入るのが変。相手の内容に合わせて書いて」:
+    # reply 時の tone は補足でなく共感 (元投稿の場面・気持ちに寄り添う) にする。
+    if player == "大谷翔平":
+        subject = "大谷翔平のMLB投稿" if reply else "大谷翔平のMLB動画SNS投稿"
+        tone = "元投稿の内容に寄り添う短い共感の返し" if reply else "楽しむ・驚く反応"
+        note = (
+            "大谷は巨人と無関係の別枠。巨人ファン視点や巨人との"
+            f"比較は入れず、純粋に野球ファンとして大谷のプレーを{tone}にする。"
+        )
+        return subject, note
+    if player in lane._MLB_EX_GIANTS:
+        subject = f"元巨人・{player}のMLB投稿" if reply else f"元巨人・{player}のMLB動画SNS投稿"
+        tone = "元投稿の内容に寄り添って短く共感を返す" if reply else "反応する"
+        note = (
+            f"{player}は巨人からMLBへ行った選手。巨人ファンとして"
+            f"送り出した側の親心・誇りの視点で{tone}。"
+        )
+        return subject, note
+    subject = f"{player}のMLB投稿" if reply else f"{player}のMLB動画SNS投稿"
+    tone = "元投稿の内容に寄り添う短い共感の返しにする" if reply else "反応する"
+    note = (
+        f"{player}は日本人スター枠で、元巨人ではない。"
+        "巨人所属だったように見える親心・古巣目線・所属歴の表現は禁止。"
+        f"純粋に野球ファンとして{tone}。"
+    )
+    return subject, note
+
+
 def _mlb_watch_max_age_hours() -> float:
-    """MLB 引用RT/リプ対象ポストの鮮度 (時間)。2026-07-03 実測: MLBJapan/SPOTV の
-    クリップは昼過ぎ (12-16時JST) にしか流れず、朝便は昨日分 (14-17h前) しか無い
-    ため 12h では全落ちする。default 20h で「昨日夜のハイライト」を朝に出せる。"""
+    """MLB 引用RT/リプ対象ポストの鮮度 (時間)。
+    2026-07-06 user「古いMLBネタはすぐ書かないと上位表示しない。3H以内のものにして」:
+    default 20h → 3h。鮮度切れで 0 件なら出さない (埋め草禁止)。
+    (旧 2026-07-03: 朝便に昨日分しか無い問題で 20h にしていたが、古いネタは
+    インプが取れないため鮮度優先へ転換。)"""
     raw = (os.environ.get("X_POST_MLB_WATCH_MAX_AGE_HOURS") or "").strip()
     try:
-        return max(1.0, float(raw)) if raw else 20.0
+        return max(1.0, float(raw)) if raw else 3.0
     except ValueError:
-        return 20.0
+        return 3.0
 
 
 def _in_mlb_watch_window(now_jst) -> bool:
@@ -3487,23 +3518,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                     from src import x_post_branding_gen as _mlb_xbg
 
                     def mlb_comment_fn(parent_text, player, _k=_mlb_key, _g=_mlb_xbg, _now=now_jst):  # noqa: E731
-                        # フレーミング (2026-07-02 user 決定): 元巨人は「巨人から
-                        # 行った側」を見送ったファン視点。大谷は巨人ファン視点では
-                        # なく純粋に野球ファンとしての反応。subject に SNS を含めて
-                        # 短文・具体場面ルール (70-120字) を効かせる (動画引用RT前提)。
-                        if player == "大谷翔平":
-                            subject = "大谷翔平のMLB動画SNS投稿"
-                            note = (
-                                "大谷は巨人と無関係の別枠。巨人ファン視点や巨人との"
-                                "比較は入れず、純粋に野球ファンとして大谷のプレーを"
-                                "楽しむ・驚く反応にする。"
-                            )
-                        else:
-                            subject = f"元巨人・{player}のMLB動画SNS投稿"
-                            note = (
-                                f"{player}は巨人からMLBへ行った選手。巨人ファンとして"
-                                "送り出した側の親心・誇りの視点で反応する。"
-                            )
+                        # フレーミング: 元巨人 / 大谷別枠 / 日本人スター枠を分離。
+                        # 山本由伸・鈴木誠也・村上宗隆は元巨人扱いしない。
+                        subject, note = _mlb_voice_subject_and_note(player, reply=False)
                         return _g.build_quote_rt_comment(
                             parent_text, player, gemini_api_key=_k, now=_now,
                             subject=subject, extra_voice_note=note,
@@ -3536,8 +3553,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     # 2026-07-03 user「メジャー系の日本公式で大谷や岡本や菅野にもリプしたい」:
     # MLB系日本語アカ (@30R9gmaMUy3guDJ / MLBJapan / SPOTVNOW_jp) の 大谷/岡本/菅野
     # 投稿への手動リプ候補。引用RT lane と同じ検出を as_reply=True で流用し、
-    # 既存リプ policy (manual_only / reply intent) に合流。NPB DB に MLB 数字は
-    # 無いため require_db_fact=False で「元投稿内の具体場面」補足リプにする。
+    # 既存リプ policy (manual_only / reply intent) に合流。
+    # 2026-07-06 user「MLBリプ候補も数字が入るのが変。相手の内容に合わせて書いて」:
+    # 補足リプ型をやめ empathy 型 (元投稿の場面・気持ちに寄り添う共感リプ、数字なし) へ。
     if _mlb_reply_enabled() and _in_mlb_watch_window(now_jst):
         mlb_rep_max = _mlb_reply_max_per_run()
         if mlb_rep_max > 0:
@@ -3548,23 +3566,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                     from src import x_post_branding_gen as _mlbr_xbg
 
                     def mlb_rep_comment_fn(parent_text, player, _k=_mlbr_key, _g=_mlbr_xbg, _now=now_jst):  # noqa: E731
-                        # フレーミングは引用RT lane と同じ (大谷=別枠/元巨人=送り出した側)。
-                        if player == "大谷翔平":
-                            subject = "大谷翔平のMLB投稿"
-                            note = (
-                                "大谷は巨人と無関係の別枠。巨人ファン視点や巨人との"
-                                "比較は入れず、純粋に野球ファンとしての短い補足にする。"
-                            )
-                        else:
-                            subject = f"元巨人・{player}のMLB投稿"
-                            note = (
-                                f"{player}は巨人からMLBへ行った選手。巨人ファンとして"
-                                "送り出した側の親心・誇りの視点で短く補足する。"
-                            )
+                        # フレーミングは引用RT lane と同じ分類。
+                        subject, note = _mlb_voice_subject_and_note(player, reply=True)
                         return _g.build_quote_rt_comment(
                             parent_text, player, gemini_api_key=_k, now=_now,
                             subject=subject, extra_voice_note=note,
                             budget_site="reply", require_db_fact=False,
+                            reply_style="empathy",
                         )
                 except Exception as _mlbr_imp_exc:  # noqa: BLE001
                     LOG.warning("mlb_reply LLM comment unavailable: %r", _mlbr_imp_exc)

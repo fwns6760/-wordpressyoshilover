@@ -218,13 +218,27 @@ class ReplyTargetHandleTests(unittest.TestCase):
         self.assertNotEqual(h9[0], h10[0])
 
     def test_mlb_watch_max_age_hours_default_and_env(self) -> None:
-        """2026-07-03: MLB引用RTの鮮度は default 20h (朝便で昨日夜のクリップを出す)。"""
+        """2026-07-06 user「古いMLBネタはすぐ書かないと上位表示しない。3H以内に」:
+        default 3h (鮮度切れ 0 件なら出さない)。env で上書き可。"""
         from src.tools import run_x_post_mail as runner
 
         with patch.dict("os.environ", {}, clear=True):
-            self.assertEqual(runner._mlb_watch_max_age_hours(), 20.0)
+            self.assertEqual(runner._mlb_watch_max_age_hours(), 3.0)
         with patch.dict("os.environ", {"X_POST_MLB_WATCH_MAX_AGE_HOURS": "12"}):
             self.assertEqual(runner._mlb_watch_max_age_hours(), 12.0)
+
+    def test_mlb_voice_note_distinguishes_ex_giants_and_extra_stars(self) -> None:
+        from src.tools import run_x_post_mail as runner
+
+        _subject, ex_note = runner._mlb_voice_subject_and_note("岡本和真")
+        self.assertIn("巨人からMLB", ex_note)
+        self.assertIn("送り出した", ex_note)
+
+        subject, star_note = runner._mlb_voice_subject_and_note("山本由伸")
+        self.assertEqual(subject, "山本由伸のMLB動画SNS投稿")
+        self.assertIn("元巨人ではない", star_note)
+        self.assertNotIn("送り出した", star_note)
+        self.assertNotIn("巨人からMLB", star_note)
 
     def test_mlb_reply_defaults(self) -> None:
         """2026-07-03: MLBリプ lane は env gate (default OFF)、対象は日本語系 default。"""

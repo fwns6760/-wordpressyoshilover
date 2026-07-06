@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Yoshilover 063 Frontend (topic hub / SNS reactions / Phase 1 noindex)
  * Description: 062 contract §2 §3 §5 の front impl。topic hub / SNS block / noindex を基盤に、トップ速報帯・記事下回遊束・右カラム rail・上部密集ナビ・人気記事導線まで含めて SWELL front を高密度化する。既存 SWELL コメント欄は触らない。
- * Version: 0.24.8
+ * Version: 0.24.9
  * Author: yoshilover
  */
 
@@ -7058,6 +7058,19 @@ if ( ! defined( 'YOSHILOVER_063_DATA_HUB_PAGE_ID' ) ) {
 }
 
 add_action( 'init', 'yoshilover_063_data_sitemap_route' );
+
+/**
+ * 2026-07-06 SEO: robots.txt に data 専用 sitemap を明示。/data-sitemap.xml は
+ * 主 sitemap index (SEO SIMPLE PACK) に載らず GSC 手動送信頼みだったため、
+ * クローラーが自力発見できる経路を robots.txt に追加する。
+ */
+function yoshilover_063_robots_txt_add_data_sitemap( $output, $public ) {
+    if ( '1' === (string) $public ) {
+        $output .= "\nSitemap: " . home_url( '/data-sitemap.xml' ) . "\n";
+    }
+    return $output;
+}
+add_filter( 'robots_txt', 'yoshilover_063_robots_txt_add_data_sitemap', 20, 2 );
 
 /**
  * /data-sitemap.xml を intercept して専用 sitemap を返す。

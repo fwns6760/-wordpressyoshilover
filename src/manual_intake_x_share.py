@@ -258,7 +258,8 @@ def _build_drafts_llm(
         _x_post_generate_content,
     )
 
-    lead = body[:2500]
+    # 【関連記事】以降は別話題のタイトル群 = hallucination 源なので LLM に渡さない
+    lead = body.split("【関連記事】")[0][:2500]
     verified_text = f"{title} {lead}"
     hook_style = _HOOK_STYLE.get(share_type, _HOOK_STYLE["news"])
     prompt = "\n".join([

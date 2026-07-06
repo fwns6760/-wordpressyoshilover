@@ -432,6 +432,106 @@ def _find_page_id_by_slug(slug: str, *, parent: int = 0) -> int | None:
         return None
 
 
+# ── E-E-A-T (2026-07-06 user GO): 全 /data ページ共通の信頼ブロック + JSON-LD ──
+# 更新日時に render 時刻を使うと毎晩全ページの sig が変わり差分更新 (97%減) が
+# 無効化されるため、「データ基準日 = 巨人の最終試合日」を使う (試合日のみ更新)。
+_SITE_BASE_URL = "https://yoshilover.com"
+_EEAT_ABOUT_PATH = "/data/about"
+_EEAT_AS_OF_CACHE: str = ""
+
+
+def _eeat_as_of() -> str:
+    global _EEAT_AS_OF_CACHE
+    if not _EEAT_AS_OF_CACHE:
+        try:
+            _EEAT_AS_OF_CACHE = str(fetch_latest_giants_game_date() or "")
+        except Exception as exc:  # noqa: BLE001 - 基準日なしでも publish は止めない
+            LOG.warning("eeat as_of fetch failed: %r", exc)
+            _EEAT_AS_OF_CACHE = ""
+    return _EEAT_AS_OF_CACHE
+
+
+def _format_date_jp(iso_date: str) -> str:
+    m = re.match(r"^(\d{4})-(\d{2})-(\d{2})", str(iso_date or ""))
+    if not m:
+        return str(iso_date or "")
+    return f"{int(m.group(1))}年{int(m.group(2))}月{int(m.group(3))}日"
+
+
+def _eeat_footer_html() -> str:
+    as_of = _eeat_as_of()
+    as_of_part = (
+        f"データ基準日: {_format_date_jp(as_of)} 試合終了時点｜" if as_of else ""
+    )
+    return (
+        '<div class="yoshi-data-trust" style="margin-top:28px;padding:10px 14px;'
+        'background:#f6f8fa;border:1px solid #d0d7de;border-radius:6px;'
+        'font-size:12px;color:#57606a;line-height:1.7;">'
+        "📊 データ出典: NPB公式発表の試合結果・記録をもとに当サイトが独自集計｜"
+        f"{as_of_part}"
+        f'<a href="{_EEAT_ABOUT_PATH}">データの集計方針・運営者情報</a>'
+        "</div>"
+    )
+
+
+def _jsonld_script_html(slug: str, title: str, jsonld_extra: "list[dict] | None" = None) -> str:
+    """BreadcrumbList + Dataset (+ページ固有 extra) の JSON-LD script tag。"""
+    page_url = f"{_SITE_BASE_URL}/data/{slug}" if slug != "data" else f"{_SITE_BASE_URL}/data"
+    as_of = _eeat_as_of()
+    graph: list[dict] = [
+        {
+            "@type": "BreadcrumbList",
+            "itemListElement": [
+                {"@type": "ListItem", "position": 1, "name": "ヨシラバー",
+                 "item": _SITE_BASE_URL},
+                {"@type": "ListItem", "position": 2, "name": "巨人データ",
+                 "item": f"{_SITE_BASE_URL}/data"},
+                {"@type": "ListItem", "position": 3, "name": title, "item": page_url},
+            ],
+        },
+        {
+            "@type": "Dataset",
+            "name": title,
+            "url": page_url,
+            "description": f"{title}。NPB公式発表の試合結果・記録をもとに当サイトが独自集計した読売ジャイアンツのデータ。",
+            "creator": {
+                "@type": "Organization",
+                "name": "ヨシラバー",
+                "url": _SITE_BASE_URL,
+                "sameAs": ["https://x.com/yoshilover6760"],
+            },
+            "isAccessibleForFree": True,
+            **({"dateModified": as_of} if as_of else {}),
+        },
+    ]
+    for extra in jsonld_extra or []:
+        if isinstance(extra, dict) and extra:
+            graph.append(extra)
+    payload = {"@context": "https://schema.org", "@graph": graph}
+    return (
+        '<script type="application/ld+json">'
+        + _json.dumps(payload, ensure_ascii=False)
+        + "</script>"
+    )
+
+
+def _pillar_person_jsonld(info) -> dict:
+    """選手 pillar 用 Person スキーマ。"""
+    role = str(getattr(info, "role", "") or "player")
+    job = {"player": "プロ野球選手", "manager": "プロ野球監督", "coach": "プロ野球コーチ"}.get(role, "プロ野球選手")
+    out: dict = {
+        "@type": "Person",
+        "name": str(getattr(info, "name", "") or ""),
+        "jobTitle": job,
+        "affiliation": {"@type": "SportsTeam", "name": "読売ジャイアンツ", "sport": "野球"},
+        "url": f"{_SITE_BASE_URL}/data/{getattr(info, 'slug', '')}",
+    }
+    image = str(getattr(info, "featured_image_url", "") or "")
+    if image:
+        out["image"] = image
+    return out
+
+
 def _upsert_page(
     *,
     slug: str,
@@ -441,12 +541,18 @@ def _upsert_page(
     featured_media_id: int | None = None,
     excerpt: str = "",
     noindex: bool | None = None,
+    jsonld_extra: "list[dict] | None" = None,
 ) -> UpsertResult:
     """WP page を upsert (slug 一致なら PUT、 無ければ POST).
 
     noindex: True で page meta `yoshi_noindex=1` (063 plugin が robots noindex,follow を
     出力)、 False で解除。 None は meta を触らない (2026-07-02 thin ページ方針)。
     """
+    # E-E-A-T: 信頼ブロック + JSON-LD を全ページ共通で末尾注入 (sig 計算前 =
+    # 差分更新の対象。基準日ベースなので試合日以外は sig 不変)。
+    content_html = content_html + _eeat_footer_html() + _jsonld_script_html(
+        slug, title, jsonld_extra
+    )
     if _dry_run_enabled():
         LOG.info("DRY_RUN upsert skipped slug=%s title=%s bytes=%d", slug, title, len(content_html))
         return UpsertResult(slug=slug, page_id=0, action="skipped", url=f"/data/{slug}")
@@ -1269,6 +1375,7 @@ def publish_phase1(only_slugs: set[str] | None = None) -> dict[str, object]:
                 parent=cluster_page_id,
                 featured_media_id=info.featured_media_id,
                 excerpt=render_pillar_excerpt(info),
+                jsonld_extra=[_pillar_person_jsonld(info)],
             )
             LOG.info("CANARY pillar upsert slug=%s page_id=%s action=%s", result.slug, result.page_id, result.action)
             canary_results.append(result)
@@ -1332,6 +1439,7 @@ def publish_phase1(only_slugs: set[str] | None = None) -> dict[str, object]:
             parent=cluster_page_id,
             featured_media_id=info.featured_media_id,
             excerpt=render_pillar_excerpt(info),
+            jsonld_extra=[_pillar_person_jsonld(info)],
             noindex=is_thin_pillar(info),
         )
         LOG.info(

@@ -222,10 +222,21 @@ def _merge_with_fallback(
                     existing_aliases.append(alias)
             existing["aliases"] = existing_aliases
             existing["active"] = True
-            if not existing.get("jersey_number") and entry.get("jersey_number"):
+            # 2026-07-06 実事故: 笹原操希の 6/25 育成→支配下昇格が静的 json の
+            # 旧 role (ikusei/069) に負けて反映されず、選手検出 alias から漏れた
+            # (結果、記事内「中日金丸」の「丸」で丸佳浩を誤検出)。昇格/降格と
+            # 背番号は NPB live を正とする。json 手キュレーションの role 表記
+            # (player 等) は支配下/育成の区分が NPB と一致する限り温存する。
+            if entry.get("jersey_number"):
                 existing["jersey_number"] = entry["jersey_number"]
-            if not existing.get("role"):
-                existing["role"] = entry.get("role", "")
+            npb_role = str(entry.get("role") or "")
+            old_role = str(existing.get("role") or "")
+            _registered = {"player", "shihaikako", "manager", "coach"}
+            if npb_role and (
+                not old_role
+                or (old_role in _registered) != (npb_role in _registered)
+            ):
+                existing["role"] = npb_role
         else:
             by_key[key] = entry
     return list(by_key.values())

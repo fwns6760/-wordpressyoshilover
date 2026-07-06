@@ -3615,6 +3615,23 @@ class XPostMailEntrypointFreshnessTests(unittest.TestCase):
             f"full-name match should survive: {[c.title for c in cands]}",
         )
 
+    def test_kanamaru_substring_does_not_hit_maru(self) -> None:
+        """2026-07-06 実事故: 笹原操希のプロ初本塁打記事 (「中日金丸から」) で
+        alias「丸」が金丸の内部に一致し丸佳浩を誤検出。漢字短 alias は raw text の
+        前後境界 (漢字隣接なら不一致) で判定する。"""
+        import src.x_post_mail_lane as lane
+
+        article = "【巨人】高卒５年目の笹原操希がプロ初本塁打 通算27打席目で中日金丸から"
+        detected = lane.detect_giants_player_name(article)
+        self.assertIn("笹原", detected)
+        self.assertNotEqual(detected, "丸佳浩")
+        # 単独の丸は通す / 他球団の丸山・金丸は弾く
+        self.assertEqual(lane.detect_giants_player_name("巨人・丸がマルチ安打"), "丸佳浩")
+        self.assertEqual(lane.detect_giants_player_name("巨人戦で中日金丸が好投"), "")
+        self.assertEqual(
+            lane.detect_giants_player_name("巨人戦でヤクルト丸山和郁が決勝打"), ""
+        )
+
     def test_news_opinion_fallback_reads_tag_scrape_sources(self) -> None:
         """巨人だけ総合: RSSなし媒体の tag_scrape も12時メール補完に使う。"""
         from src.tools import run_x_post_mail

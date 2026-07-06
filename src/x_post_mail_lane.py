@@ -295,20 +295,34 @@ def _load_giants_player_aliases(
     manager entries are excluded because lineup focus must be players
     only.
     """
-    if not roster_path.exists():
-        return {}
-    try:
-        roster = _json.loads(roster_path.read_text(encoding="utf-8"))
-    except Exception as exc:  # noqa: BLE001
-        LOG.warning("failed to load Giants roster aliases: %r", exc)
-        return {}
+    # 2026-07-06 実事故 (笹原操希 6/25 支配下昇格が静的 json 未反映 → alias 不在
+    # → 記事内「中日金丸」の「丸」で丸佳浩を誤検出): 既定 path の時は NPB live
+    # fetch つき loader (JSON fallback 内蔵) を正とし、roster の鮮度切れを防ぐ。
+    roster = None
+    if roster_path == _ROSTER_PATH:
+        try:
+            from src.giants_roster_loader import load_active_roster
+
+            roster = load_active_roster() or None
+        except Exception as exc:  # noqa: BLE001 - 静的 json fallback へ
+            LOG.warning("giants roster live load failed (player aliases): %r", exc)
+    if roster is None:
+        if not roster_path.exists():
+            return {}
+        try:
+            roster = _json.loads(roster_path.read_text(encoding="utf-8"))
+        except Exception as exc:  # noqa: BLE001
+            LOG.warning("failed to load Giants roster aliases: %r", exc)
+            return {}
 
     out: dict[str, str] = {}
     prefix_buckets: dict[str, set[str]] = {}
     for row in roster:
         if not row.get("active"):
             continue
-        if row.get("role") != "player":
+        if row.get("role") not in {"player", "shihaikako", "ikusei"}:
+            # shihaikako/ikusei = NPB live 由来 label (2026-07-06 笹原操希 昇格漏れ対策)。
+            # 手キュレーション json は育成も "player" 扱いで検出対象 (2026-06-01 拡張)。
             continue
         canonical = str(row.get("name") or "").strip()
         if not canonical:
@@ -363,19 +377,28 @@ def _load_giants_member_aliases(
     shihaikako (支配下) は除外 (ヨシラバー voice 候補は支配下登録選手 + コーチ陣
     に限定するため)。
     """
-    if not roster_path.exists():
-        return {}
-    try:
-        roster = _json.loads(roster_path.read_text(encoding="utf-8"))
-    except Exception as exc:  # noqa: BLE001
-        LOG.warning("failed to load Giants roster aliases (member): %r", exc)
-        return {}
+    roster = None
+    if roster_path == _ROSTER_PATH:
+        try:
+            from src.giants_roster_loader import load_active_roster
+
+            roster = load_active_roster() or None
+        except Exception as exc:  # noqa: BLE001 - 静的 json fallback へ
+            LOG.warning("giants roster live load failed (member aliases): %r", exc)
+    if roster is None:
+        if not roster_path.exists():
+            return {}
+        try:
+            roster = _json.loads(roster_path.read_text(encoding="utf-8"))
+        except Exception as exc:  # noqa: BLE001
+            LOG.warning("failed to load Giants roster aliases (member): %r", exc)
+            return {}
 
     out: dict[str, str] = {}
     for row in roster:
         if not row.get("active"):
             continue
-        if row.get("role") not in {"player", "manager", "coach"}:
+        if row.get("role") not in {"player", "shihaikako", "ikusei", "manager", "coach"}:
             continue
         canonical = str(row.get("name") or "").strip()
         if not canonical:
@@ -409,6 +432,8 @@ def _load_giants_member_roles(
         if not row.get("active"):
             continue
         role = row.get("role")
+        if role in {"shihaikako", "ikusei"}:
+            role = "player"
         if role not in {"player", "manager", "coach"}:
             continue
         canonical = str(row.get("name") or "").strip()
@@ -1522,9 +1547,10 @@ def build_comment_numeric_candidate(
 
 
 _KATAKANA_CHAR_RE = _re.compile(r"[ァ-ヶー]")
+_KANJI_CHAR_RE = _re.compile(r"[\u4e00-\u9fff々]")
 
 
-def _alias_hits_with_boundary(text: str, key: str) -> bool:
+def _alias_hits_with_boundary(text: str, key: str, *, raw_text: str = "") -> bool:
     """短いカタカナ alias が長いカタカナ語の内部に埋まる誤爆を防ぐ一致判定。
 
     2026-07-03 実事故: alias「バル」(バルドナード略称) がサッカー記事の
@@ -1532,7 +1558,17 @@ def _alias_hits_with_boundary(text: str, key: str) -> bool:
     全カタカナ 3 文字以下の alias は、一致位置の前後がカタカナでない時だけ
     有効とする。それ以外の alias は従来の部分一致のまま。
     """
-    if not (len(key) <= 3 and all(_KATAKANA_CHAR_RE.match(ch) for ch in key)):
+    if len(key) <= 3 and all(_KATAKANA_CHAR_RE.match(ch) for ch in key):
+        char_re = _KATAKANA_CHAR_RE
+    elif len(key) <= 2 and all(_KANJI_CHAR_RE.match(ch) for ch in key):
+        # 2026-07-06 実事故: alias「丸」が「中日金丸」の内部に一致し、笹原操希の
+        # 記事から丸佳浩の候補が生成された。短い漢字姓 alias は前後が漢字でない
+        # 一致だけ有効 (「巨人・丸」「丸が」 は通り、「金丸」「丸山」 は弾く)。
+        # 判定は raw text 優先 (正規化は「・」等の区切りを落とし境界が消えるため)。
+        char_re = _KANJI_CHAR_RE
+        if raw_text:
+            text = raw_text
+    else:
         return key in text
     start = 0
     while True:
@@ -1541,8 +1577,8 @@ def _alias_hits_with_boundary(text: str, key: str) -> bool:
             return False
         before = text[i - 1] if i > 0 else ""
         after = text[i + len(key)] if i + len(key) < len(text) else ""
-        if not (before and _KATAKANA_CHAR_RE.match(before)) and not (
-            after and _KATAKANA_CHAR_RE.match(after)
+        if not (before and char_re.match(before)) and not (
+            after and char_re.match(after)
         ):
             return True
         start = i + 1
@@ -1619,7 +1655,7 @@ def detect_giants_player_name(
             continue
         if len(key) < 2 and "巨人" not in str(text) and "ジャイアンツ" not in str(text):
             continue
-        if key and _alias_hits_with_boundary(normalized_text, key):
+        if key and _alias_hits_with_boundary(normalized_text, key, raw_text=str(text or "")):
             # 2026-07-03: 同姓の他球団選手 (フルネームが text に居る) への
             # 誤マッチを検出の中央で遮断。全 lane (news / x_buzz / リプ /
             # 記録記事) に効く。

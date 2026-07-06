@@ -89,3 +89,39 @@ class GiantsRosterLoaderTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MergePromotionTests(unittest.TestCase):
+    def test_npb_promotion_overrides_stale_json_role_and_jersey(self):
+        """2026-07-06 実事故: 笹原操希 6/25 育成→支配下が静的jsonの旧role(ikusei/069)に
+        負けて反映されなかった。昇格/降格と背番号は NPB live を正とする。"""
+        from src.giants_roster_loader import _merge_with_fallback
+
+        json_entries = [{
+            "name": "笹原 操希", "aliases": ["笹原 操希", "笹原操希"],
+            "role": "ikusei", "position": "", "jersey_number": "069", "active": True,
+        }]
+        npb_entries = [{
+            "name": "笹原 操希", "aliases": ["笹原 操希", "笹原操希"],
+            "role": "shihaikako", "position": "", "jersey_number": "95", "active": True,
+        }]
+        merged = _merge_with_fallback(npb_entries, json_entries)
+        row = [r for r in merged if "笹原" in r["name"]][0]
+        self.assertEqual(row["role"], "shihaikako")
+        self.assertEqual(row["jersey_number"], "95")
+
+    def test_curated_player_label_kept_when_classification_matches(self):
+        from src.giants_roster_loader import _merge_with_fallback
+
+        json_entries = [{
+            "name": "丸 佳浩", "aliases": ["丸 佳浩", "丸佳浩"],
+            "role": "player", "position": "外野手", "jersey_number": "8", "active": True,
+        }]
+        npb_entries = [{
+            "name": "丸 佳浩", "aliases": ["丸 佳浩", "丸佳浩"],
+            "role": "shihaikako", "position": "", "jersey_number": "8", "active": True,
+        }]
+        merged = _merge_with_fallback(npb_entries, json_entries)
+        row = [r for r in merged if "丸" in r["name"]][0]
+        # 支配下⇔支配下で区分一致 → 手キュレーションの "player" label 温存
+        self.assertEqual(row["role"], "player")

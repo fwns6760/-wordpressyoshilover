@@ -16,7 +16,8 @@
     "role": [
       "article_source",
       "media_quote_pool",
-      "game_live_primary"
+      "game_live_primary",
+      "wp_article_skip"
     ]
   },
   {
@@ -25,7 +26,8 @@
     "type": "social_news",
     "role": [
       "article_source",
-      "media_quote_pool"
+      "media_quote_pool",
+      "wp_article_skip"
     ]
   },
   {
@@ -34,7 +36,8 @@
     "type": "social_news",
     "role": [
       "article_source",
-      "media_quote_pool"
+      "media_quote_pool",
+      "wp_article_skip"
     ]
   },
   {
@@ -43,7 +46,8 @@
     "type": "social_news",
     "role": [
       "article_source",
-      "media_quote_pool"
+      "media_quote_pool",
+      "wp_article_skip"
     ]
   },
   {
@@ -52,7 +56,8 @@
     "type": "social_news",
     "role": [
       "article_source",
-      "media_quote_pool"
+      "media_quote_pool",
+      "wp_article_skip"
     ]
   },
   {
@@ -61,7 +66,8 @@
     "type": "social_news",
     "role": [
       "article_source",
-      "media_quote_pool"
+      "media_quote_pool",
+      "wp_article_priority"
     ]
   },
   {
@@ -106,7 +112,8 @@
     "type": "social_news",
     "role": [
       "article_source",
-      "media_quote_pool"
+      "media_quote_pool",
+      "wp_article_skip"
     ]
   },
   {
@@ -115,7 +122,8 @@
     "type": "social_news",
     "role": [
       "article_source",
-      "media_quote_pool"
+      "media_quote_pool",
+      "wp_article_skip"
     ]
   },
   {
@@ -124,7 +132,8 @@
     "type": "social_news",
     "role": [
       "article_source",
-      "media_quote_pool"
+      "media_quote_pool",
+      "wp_article_skip"
     ]
   },
   {
@@ -150,13 +159,19 @@
     "type": "news",
     "role": [
       "article_source",
-      "game_live_primary"
+      "game_live_primary",
+      "wp_article_skip"
     ]
   },
   {
     "name": "ベースボールキング",
     "url": "https://baseballking.jp/feed",
     "type": "news"
+  },
+  {
+    "name": "スポーティングニュース NPB",
+    "type": "news",
+    "url": "https://www.sportingnews.com/jp/rss/npb"
   },
   {
     "name": "Full-Count 巨人",
@@ -196,7 +211,8 @@
     "type": "news",
     "role": [
       "article_source",
-      "media_quote_pool"
+      "media_quote_pool",
+      "wp_article_priority"
     ]
   },
   {
@@ -208,7 +224,8 @@
     "article_limit": 30,
     "role": [
       "article_source",
-      "game_live_primary"
+      "game_live_primary",
+      "wp_article_skip"
     ]
   },
   {
@@ -217,7 +234,12 @@
     "type": "tag_scrape",
     "scraper": "daily_giants_tag",
     "max_age_days": 7,
-    "article_limit": 30
+    "article_limit": 30,
+    "role": [
+      "article_source",
+      "media_quote_pool",
+      "wp_article_skip"
+    ]
   },
   {
     "name": "東スポWEB 巨人 label",
@@ -228,7 +250,8 @@
     "article_limit": 30,
     "role": [
       "article_source",
-      "media_quote_pool"
+      "media_quote_pool",
+      "wp_article_priority"
     ]
   },
   {
@@ -240,7 +263,8 @@
     "article_limit": 30,
     "role": [
       "article_source",
-      "media_quote_pool"
+      "media_quote_pool",
+      "wp_article_skip"
     ]
   },
   {
@@ -252,7 +276,8 @@
     "article_limit": 30,
     "role": [
       "article_source",
-      "media_quote_pool"
+      "media_quote_pool",
+      "wp_article_skip"
     ]
   },
   {
@@ -288,7 +313,8 @@
     "article_limit": 30,
     "role": [
       "article_source",
-      "media_quote_pool"
+      "media_quote_pool",
+      "wp_article_priority"
     ]
   },
   {
@@ -300,7 +326,8 @@
     "article_limit": 30,
     "role": [
       "article_source",
-      "media_quote_pool"
+      "media_quote_pool",
+      "wp_article_priority"
     ]
   },
   {
@@ -312,7 +339,8 @@
     "article_limit": 30,
     "role": [
       "article_source",
-      "media_quote_pool"
+      "media_quote_pool",
+      "wp_article_priority"
     ]
   },
   {
@@ -324,7 +352,8 @@
     "article_limit": 30,
     "role": [
       "article_source",
-      "media_quote_pool"
+      "media_quote_pool",
+      "wp_article_priority"
     ]
   },
   {
@@ -336,7 +365,8 @@
     "article_limit": 30,
     "role": [
       "article_source",
-      "media_quote_pool"
+      "media_quote_pool",
+      "wp_article_priority"
     ]
   },
   {
@@ -348,7 +378,8 @@
     "article_limit": 30,
     "role": [
       "article_source",
-      "media_quote_pool"
+      "media_quote_pool",
+      "wp_article_priority"
     ]
   },
   {
@@ -360,7 +391,8 @@
     "article_limit": 30,
     "role": [
       "article_source",
-      "media_quote_pool"
+      "media_quote_pool",
+      "wp_article_priority"
     ]
   },
   {
@@ -372,7 +404,8 @@
     "article_limit": 30,
     "role": [
       "article_source",
-      "media_quote_pool"
+      "media_quote_pool",
+      "wp_article_priority"
     ]
   },
   {
@@ -396,7 +429,8 @@
     "article_limit": 30,
     "role": [
       "article_source",
-      "media_quote_pool"
+      "media_quote_pool",
+      "wp_article_priority"
     ]
   },
   {
@@ -408,7 +442,8 @@
     "article_limit": 30,
     "role": [
       "article_source",
-      "media_quote_pool"
+      "media_quote_pool",
+      "wp_article_skip"
     ]
   },
   {

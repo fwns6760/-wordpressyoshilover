@@ -5960,9 +5960,13 @@ def compose_mail(
                 )
         share_x_urls.append(share_x_url or None)
     # 2026-07-06: API 直投稿 URL (画像有無に関係なく全候補分)。
-    # FETCHER_PUBLIC_BASE_URL があれば有効。reply / 引用RT も API param で引き継ぐ。
+    # X API は 2026-02 から従量課金 (Pay-Per-Use) のため、user「金は使いたくない」
+    # 方針で既定 OFF。ENABLE_X_DIRECT_POST_BUTTON=1 の明示 opt-in 時のみボタンを出す。
     direct_post_urls: list[str | None] = []
+    xdp_flag = (os.environ.get("ENABLE_X_DIRECT_POST_BUTTON") or "").strip().lower()
     xdp_base = (os.environ.get("FETCHER_PUBLIC_BASE_URL") or "").strip().rstrip("/")
+    if xdp_flag not in {"1", "true", "yes", "on"}:
+        xdp_base = ""
     if xdp_base:
         from src.x_direct_post_handler import build_direct_post_button_url
 

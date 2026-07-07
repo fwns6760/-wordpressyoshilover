@@ -3,12 +3,16 @@
 2026-07-02 user 決定 (Scheduler 費用効率化「坂本原小林吉川名言を一緒にするとか」):
 旧 4 job / 4 scheduler を、JST 時刻で振り分ける本 dispatcher に統合する。
 
-- 8時: 原 (毎日)
-- 12 / 17 / 20時: 小林 (毎日)
-- 15時: 吉川 (月水金のみ。他曜日の 15時発火は no-op で正常終了)
-- 18時: 坂本 (毎日)
+2026-07-07 user「あまり名言集のびない…あと時間かね」: インプ実測 (17-22時=47fav
+vs 朝=8.7fav、坂本761fav回は18:12投稿) に合わせ、配信をゴールデン帯へ再配置。
 
-scheduler は 1 本: `0 8,12,15,17,18,20 * * *` (Asia/Tokyo)。
+- 12時: 小林 (毎日、昼帯は 23.6fav で維持)
+- 17時: 吉川 (月水金) / 小林 (他曜日)
+- 18時: 坂本 (毎日)
+- 19時: 原 (毎日、旧 8時から移動)
+- 20時: 小林 (毎日)
+
+scheduler は 1 本: `0 12,17,18,19,20 * * *` (Asia/Tokyo)。
 手動実行は `--lane=hara` などで時刻に関係なく指定できる。
 
 小林 lane だけ送信アカウントが別 (y.sebata@shiny-lab.org + 専用 app password、
@@ -55,16 +59,19 @@ _LANE_ENV: dict[str, dict[str, Optional[str]]] = {
 
 
 def pick_lane(now: datetime) -> Optional[str]:
-    """JST 時刻から lane を決める。該当なし (吉川の非対象曜日含む) は None。"""
+    """JST 時刻から lane を決める。該当なし hour は None。
+
+    2026-07-07: ゴールデン帯 (17-20時) 再配置。17時は 月水金=吉川、
+    他曜日=小林 (吉川の配信頻度は旧 月水金 のまま維持)。"""
     h = now.hour
-    if h == 8:
-        return "hara"
-    if h in (12, 17, 20):
+    if h == 12 or h == 20:
         return "kobayashi"
-    if h == 15:
-        return "yoshikawa" if now.weekday() in _YOSHIKAWA_WEEKDAYS else None
+    if h == 17:
+        return "yoshikawa" if now.weekday() in _YOSHIKAWA_WEEKDAYS else "kobayashi"
     if h == 18:
         return "sakamoto"
+    if h == 19:
+        return "hara"
     return None
 
 

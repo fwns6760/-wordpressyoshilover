@@ -16,25 +16,26 @@ class PickLaneTests(unittest.TestCase):
         # 2026-07-06 = 月曜
         return datetime(2026, 7, day, hour, 0, tzinfo=JST)
 
-    def test_hara_at_8(self):
-        self.assertEqual(disp.pick_lane(self._dt(6, 8)), "hara")
+    def test_hara_at_19(self):
+        # 2026-07-07 ゴールデン帯再配置: 原は 8時 → 19時
+        self.assertEqual(disp.pick_lane(self._dt(6, 19)), "hara")
 
-    def test_kobayashi_at_12_17_20(self):
-        for h in (12, 17, 20):
+    def test_kobayashi_at_12_20(self):
+        for h in (12, 20):
             self.assertEqual(disp.pick_lane(self._dt(6, h)), "kobayashi")
 
     def test_sakamoto_at_18(self):
         self.assertEqual(disp.pick_lane(self._dt(6, 18)), "sakamoto")
 
-    def test_yoshikawa_mon_wed_fri_only(self):
-        # 月(6)水(8)金(10) は吉川、火(7)木(9)土(11)日(12) は None
+    def test_yoshikawa_mon_wed_fri_at_17_else_kobayashi(self):
+        # 月(6)水(8)金(10) の17時は吉川、火(7)木(9)土(11)日(12) は小林
         for day in (6, 8, 10):
-            self.assertEqual(disp.pick_lane(self._dt(day, 15)), "yoshikawa")
+            self.assertEqual(disp.pick_lane(self._dt(day, 17)), "yoshikawa")
         for day in (7, 9, 11, 12):
-            self.assertIsNone(disp.pick_lane(self._dt(day, 15)))
+            self.assertEqual(disp.pick_lane(self._dt(day, 17)), "kobayashi")
 
     def test_off_hours_none(self):
-        for h in (0, 7, 9, 13, 19, 21, 23):
+        for h in (0, 7, 8, 9, 13, 15, 21, 23):
             self.assertIsNone(disp.pick_lane(self._dt(6, h)))
 
 

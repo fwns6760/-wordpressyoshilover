@@ -5493,6 +5493,41 @@ class BuildQuoteRtCommentTests(unittest.TestCase):
         self.assertEqual(out, short_reply)
         self.assertEqual(fake_client.models.generate_content.call_count, 2)
 
+    def test_reply_empathy_live_hours_uses_shorter_spec(self):
+        """2026-07-07 user GO「リプ短くて悪影響ないならもうやっていいよ」: 試合中帯
+        (18-21時JST) の empathy リプは 10〜35字の実況テンポ指定、昼帯は 20〜55字。"""
+        import sys, types, contextlib
+        from datetime import datetime, timezone, timedelta
+        from unittest import mock
+        from src import x_post_branding_gen as xbg
+        jst = timezone(timedelta(hours=9))
+        for hour, expected, not_expected in [
+            (19, "10〜35字", "20〜55字"),
+            (13, "20〜55字", "10〜35字"),
+        ]:
+            captured = {}
+            fake_client = mock.MagicMock()
+
+            def _capture(model=None, contents=None, config=None, **kw):
+                captured["prompt"] = contents
+                return types.SimpleNamespace(text="本当にあの一振り痺れましたよね。現地観戦羨ましいです。")
+
+            fake_client.models.generate_content.side_effect = _capture
+            fake_genai = types.SimpleNamespace(Client=lambda api_key=None: fake_client)
+            google_mod = sys.modules.get("google") or types.ModuleType("google")
+            with contextlib.ExitStack() as stack:
+                stack.enter_context(mock.patch.dict(sys.modules, {"google": google_mod, "google.genai": fake_genai}))
+                stack.enter_context(mock.patch.object(google_mod, "genai", fake_genai, create=True))
+                xbg.build_quote_rt_comment(
+                    "坂本勇人 サヨナラ現地で見た！", "坂本勇人",
+                    gemini_api_key="k", budget_site="reply",
+                    db_fact="", require_db_fact=False, reply_style="empathy",
+                    now=datetime(2026, 7, 7, hour, 30, tzinfo=jst),
+                )
+            prompt = captured.get("prompt") or ""
+            self.assertIn(expected, prompt, f"hour={hour}")
+            self.assertNotIn(not_expected, prompt, f"hour={hour}")
+
 
 class VideoRadarImpressionPolicyTests(unittest.TestCase):
     """451: 動画候補は同選手のデータ候補が居ても落とさず確実に届ける。"""

@@ -2676,17 +2676,27 @@ def build_mlb_watch_candidates(
     used_player_handles: set[str] = set()
     player_counts: dict[str, int] = {}
     ohtani_used = 0
+    ohtani_video_used = 0
     extra_star_used = 0
     for p in posts:
         if len(out) >= max_count:
             break
         player = p["player"]
-        player_handle_key = f"{player}|{str(p['handle']).strip().lower()}"
+        # 媒体種別 (動画/情報) 込みの key: 同一アカでも「動画1 + 情報1」は許し、
+        # 同種の連投 (同じアカの動画2本 等) だけ止める (2026-07-07 情報系拾い)。
+        player_handle_key = (
+            f"{player}|{str(p['handle']).strip().lower()}"
+            f"|{'v' if p['has_video'] else 'i'}"
+        )
         if player_handle_key in used_player_handles:
-            # 同一 (選手×媒体) は 1 便 1 本 (媒体違いは per_player_max まで可)。
             continue
         if player == "大谷翔平":
             if ohtani_used >= ohtani_max:
+                continue
+            # 2026-07-07 user「大谷HRの動画SNSはだしたいが一個でいい。他の動画では
+            # なく情報系を拾って」: 同じHRの動画が媒体違いで並ぶのを止める。
+            # 動画は 1 便 1 本、2 本目以降の大谷枠は情報系 (スタッツ画像等) のみ。
+            if p["has_video"] and ohtani_video_used >= 1:
                 continue
         elif player_counts.get(player, 0) >= max(1, per_player_max):
             continue
@@ -2792,6 +2802,8 @@ def build_mlb_watch_candidates(
         player_counts[player] = player_counts.get(player, 0) + 1
         if player == "大谷翔平":
             ohtani_used += 1
+            if p["has_video"]:
+                ohtani_video_used += 1
         if player in _MLB_EXTRA_STARS:
             extra_star_used += 1
     LOG.info("mlb_watch: built %d candidates (as_reply=%s)", len(out), as_reply)

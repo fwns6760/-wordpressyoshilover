@@ -5055,6 +5055,26 @@ class BuildMlbWatchCandidatesTests(unittest.TestCase):
         self.assertEqual(len(cands), 1)
         self.assertTrue(cands[0].post_text.startswith("岡本和真、"))
 
+    def test_ohtani_video_capped_at_one_rest_info_type(self):
+        """2026-07-07 user「大谷HR動画は一個でいい。他の動画ではなく情報系を拾って」:
+        大谷は動画1本まで、2本目の大谷枠は画像(スタッツ)系のみ。"""
+        from src import x_post_mail_lane as lane
+        feed = self._feed(
+            self._item("大谷翔平が第31号ホームラン", "91", video=True),
+            self._item("Shohei Ohtani HR another angle", "92", video=True),
+            self._item("大谷翔平 今季成績スタッツカード", "93", video=False, image=True),
+        )
+        cands = lane.build_mlb_watch_candidates(
+            max_count=4,
+            ohtani_max=2,
+            fetch_fn=lambda url: feed if "MLBJapan" in url else "<rss><channel></channel></rss>",
+            comment_fn=lambda _pt, pl: f"{pl}、これは効く一発。",
+        )
+        # 動画1本 + 情報系(🖼画像)1本。動画2本目は別投稿でも入らない。
+        self.assertEqual(len(cands), 2)
+        media_marks = sorted(("🎬" if "🎬" in c.title else "🖼") for c in cands)
+        self.assertEqual(media_marks, ["🎬", "🖼"])
+
     def test_ex_giants_freshness_window_extends_past_default(self):
         """2026-07-07 user「巨人アカがメインだから岡本菅野は外せない」:
         元巨人 (岡本/菅野) のみ鮮度 12h、大谷は 3h のまま。"""

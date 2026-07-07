@@ -230,9 +230,19 @@ def _draw_photo_card(
             int(40 + alpha * 20),
         )
         draw.line((x + 8, line_y, x + width - 8, line_y), fill=color, width=4)
-    initials = "".join(part[:1] for part in name.replace("　", " ").split()) or name[:2]
-    draw.text((x + width // 2, y + height // 2 - 18), initials[:3], font=_font(98, bold=True), fill="#ffb36b", anchor="mm")
-    draw.text((x + width // 2, y + height - 86), name, font=_font(40, bold=True), fill="#ffffff", anchor="mm")
+    # 頭文字モノグラムは廃止 (2026-07-07): スペースなしのカタカナ名 (ウィットリー等)
+    # では 1 文字だけの意味不明な表示になるため、フルネームを主役として中央に描く。
+    display_name = str(name or "").strip() or "巨人"
+    size = 96
+    while size > 48 and _text_width(draw, display_name, _font(size, bold=True)) > width - 72:
+        size -= 6
+    name_font = _font(size, bold=True)
+    lines = _wrap_text(draw, display_name, name_font, width - 72, max_lines=2)
+    line_height = size + 12
+    ty = y + height // 2 - (line_height * len(lines)) // 2
+    for line in lines:
+        draw.text((x + width // 2, ty), line, font=name_font, fill="#ffb36b", anchor="ma")
+        ty += line_height
 
 
 def _draw_player_visual(
@@ -351,12 +361,19 @@ def _draw_frame(topic: ShortsTopic, script: ShortsScript, index: int, path: Path
         _draw_player_visual(img, draw, topic, x=x, y=y, width=w, height=h)
         draw.rounded_rectangle((104, 1140, WIDTH - 104, 1516), radius=54, fill="#ff7a1a")
         draw.text((WIDTH // 2, 1220), metric_display(topic.label), font=_font(50, bold=True), fill="#ffffff", anchor="ma")
-        draw.text((WIDTH // 2, 1392), topic.value, font=_font(132, bold=True), fill="#ffffff", anchor="mm")
+        value_size = 132
+        while value_size > 60 and _text_width(draw, topic.value, _font(value_size, bold=True)) > WIDTH - 280:
+            value_size -= 8
+        draw.text((WIDTH // 2, 1392), topic.value, font=_font(value_size, bold=True), fill="#ffffff", anchor="mm")
         explanation = metric_explanation(topic.label)
         if explanation:
             _soft_shadow(img, (134, 1560, WIDTH - 134, 1668), radius=40, dy=12, blur=16, alpha=60)
             draw.rounded_rectangle((134, 1560, WIDTH - 134, 1668), radius=40, fill="#ffffff", outline="#ffb36b", width=3)
-            draw.text((WIDTH // 2, 1614), f"{topic.label} = {explanation}", font=_font(36, bold=True), fill="#9a3f00", anchor="mm")
+            pill_text = f"{topic.label} = {explanation}"
+            pill_size = 36
+            while pill_size > 24 and _text_width(draw, pill_text, _font(pill_size, bold=True)) > WIDTH - 330:
+                pill_size -= 2
+            draw.text((WIDTH // 2, 1614), pill_text, font=_font(pill_size, bold=True), fill="#9a3f00", anchor="mm")
     elif index == 2:
         x, y, w, h = STANDARD_PLAYER_VISUAL_BOX
         _draw_player_visual(img, draw, topic, x=x, y=y, width=w, height=h)
@@ -662,7 +679,10 @@ def _draw_prehook_image(topic: ShortsTopic, value_text: str):
     draw.text(((WIDTH - w) // 2, y), value_text, font=font, fill="#e65100",
               stroke_width=6, stroke_fill="#ffffff")
     if player:
-        pfont = _font(72, bold=True)
+        psize = 72
+        while psize > 40 and _text_width(draw, player, _font(psize, bold=True)) > WIDTH - 160:
+            psize -= 4
+        pfont = _font(psize, bold=True)
         pw = _text_width(draw, player, pfont)
         draw.text(((WIDTH - pw) // 2, y + size + 80), player, font=pfont,
                   fill="#1a1a1a", stroke_width=3, stroke_fill="#ffffff")

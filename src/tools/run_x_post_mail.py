@@ -1818,6 +1818,7 @@ def _fetch_record_article_priority_candidates(
     max_records: int,
     now: datetime,
     recent_player_counts: dict[str, int] | None = None,  # noqa: ARG001 - record記事は履歴より鮮度優先
+    dedup_set: set[str] | None = None,
 ) -> list[lane.Candidate]:
     """Fetch source-backed record/milestone articles without DB-mining.
 
@@ -1894,6 +1895,22 @@ def _fetch_record_article_priority_candidates(
                     link,
                 )
                 continue
+            # 2026-07-07 user「重複ポストが多いのは何故?」: このレーンだけ 168h
+            # signature dedup が未配線で、鮮度窓内の記録記事が毎便再候補化して
+            # いた (同日 6 回送信の実測)。画像取得/LLM の前に ledger 照合で skip。
+            if dedup_set is not None:
+                record_signature = lane.news_opinion_signature(link, member)
+                if record_signature in dedup_set:
+                    seen_urls.add(link)
+                    LOG.info(
+                        "record_article_dedup_skip source=%s player=%s "
+                        "signature=%s url=%s",
+                        source.get("name"),
+                        member,
+                        record_signature,
+                        link,
+                    )
+                    continue
             # 2026-07-03 user「【選手名】 内容 画像があるとよい」: 記録記事の
             # 元画像を取得して添付 (取れなければテキストのみで従来通り)。
             try:
@@ -3552,6 +3569,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 max_records=record_priority_count,
                 now=now_jst,
                 recent_player_counts=recent_player_counts,
+                dedup_set=dedup_set,
             )
             if record_priority_candidates:
                 before = len(candidates)

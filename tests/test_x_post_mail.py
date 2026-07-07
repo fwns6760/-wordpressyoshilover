@@ -3449,6 +3449,46 @@ class XPostMailEntrypointFreshnessTests(unittest.TestCase):
 
         self.assertEqual(cands, [])
 
+    def test_fetch_record_article_priority_skips_deduped_signature(self) -> None:
+        """168h ledger 既出の記録記事は毎便再候補化しない (2026-07-07 重複対策)。"""
+        from src import x_post_mail_lane
+        from src.tools import run_x_post_mail
+
+        entries = [
+            {
+                "title": "巨人・岸田行倫がプロ初本塁打達成",
+                "link": "https://example.test/kishida-record",
+                "summary": "岸田行倫が節目の一発を放った。",
+                "published": "Mon, 18 May 2026 03:00:00 GMT",
+            }
+        ]
+        dedup_set = {
+            x_post_mail_lane.news_opinion_signature(
+                "https://example.test/kishida-record", "岸田 行倫"
+            )
+        }
+        with patch.object(
+            run_x_post_mail,
+            "_load_news_fallback_sources",
+            return_value=[{"name": "テスト新聞", "url": "https://example.test/feed"}],
+        ), patch.object(
+            run_x_post_mail,
+            "_fetch_feed_entries",
+            return_value=entries,
+        ), patch.object(
+            run_x_post_mail,
+            "_fetch_comment_article_material",
+            side_effect=AssertionError("deduped record should skip before image fetch"),
+        ):
+            cands = run_x_post_mail._fetch_record_article_priority_candidates(
+                [],
+                max_records=1,
+                now=datetime(2026, 5, 18, 13, 7, tzinfo=JST),
+                dedup_set=dedup_set,
+            )
+
+        self.assertEqual(cands, [])
+
     def test_news_priority_merge_prefers_short_mail_over_same_player_repeat(self) -> None:
         """436 follow-up: 枠埋め目的で同じ選手を復活させない。"""
         from src.tools import run_x_post_mail

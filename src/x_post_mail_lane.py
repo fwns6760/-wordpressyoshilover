@@ -1671,6 +1671,18 @@ def detect_giants_player_name(
     return ""
 
 
+def news_opinion_signature(source_url: str, player_name: str) -> str:
+    """news_opinion 候補の 24h/168h dedup signature (url×選手で一意)。
+
+    build_news_opinion_candidate と record 優先レーンの事前 skip 判定で
+    同一式を共有する (2026-07-07 記録/節目候補の毎便重複対策)。
+    """
+    url = str(source_url or "").strip()
+    player = str(player_name or "").strip()
+    signature_hash = _hashlib.sha1(f"{url}\n{player}".encode("utf-8")).hexdigest()[:16]
+    return f"news_opinion|{signature_hash}|False|None"
+
+
 def build_news_opinion_candidate(
     *,
     source_title: str,
@@ -1775,14 +1787,13 @@ def build_news_opinion_candidate(
         proof_lines.append(f"元記事抜粋: {excerpt}")
     if image_source_url:
         proof_lines.append(f"添付画像: {image_source_url}")
-    signature_hash = _hashlib.sha1(f"{url}\n{player}".encode("utf-8")).hexdigest()[:16]
     return Candidate(
         title=f"{title_prefix}｜{material_label}案｜{player}｜{title}",
         metric=_NEWS_OPINION_METRIC,
         period_label=material_label,
         draft_text="\n".join(proof_lines),
         char_count=len(post_text),
-        signature=f"news_opinion|{signature_hash}|False|None",
+        signature=news_opinion_signature(url, player),
         post_text=post_text,
         focus_player=player,
         source_material_type=material_type,

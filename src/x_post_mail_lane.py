@@ -2628,7 +2628,9 @@ def build_mlb_watch_candidates(
     watch_handles = [h for h in (handles or _MLB_WATCH_HANDLES) if h]
     posts: list[dict] = []
     seen_urls: set[str] = set()
-    feed_urls = {h: f"{_vr._RSSHUB_BASE}/twitter/user/{h}?limit=30" for h in watch_handles}
+    # 2026-07-07 user「岡本もホームラン打ってるがとんでこない」: 公式アカは投稿数が
+    # 多く、岡本HR等が直近30件からスクロール落ちして拾えなかった。50件に拡大。
+    feed_urls = {h: f"{_vr._RSSHUB_BASE}/twitter/user/{h}?limit=50" for h in watch_handles}
     fetched = _vr.prefetch_feeds(list(feed_urls.values()), fetch)
     for h in watch_handles:
         xml = fetched.get(feed_urls[h])

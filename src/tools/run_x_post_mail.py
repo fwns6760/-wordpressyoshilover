@@ -3712,6 +3712,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                     dedup_set=dedup_set,
                     comment_fn=mlb_comment_fn,
                     max_age_hours=_mlb_watch_max_age_hours(),
+                    # 2026-07-07 user「巨人アカがメインだから岡本菅野は外せない」:
+                    # 元巨人のみ鮮度 12h (米デーゲーム=日本深夜分を朝一便で拾う)。
+                    ex_giants_max_age_hours=float(_resolve_int_env(
+                        "X_POST_MLB_WATCH_EX_GIANTS_MAX_AGE_HOURS", 12, min_value=0
+                    )),
                 )
             except Exception as _mlb_exc:  # noqa: BLE001
                 LOG.warning("mlb_watch build failed: %r", _mlb_exc)

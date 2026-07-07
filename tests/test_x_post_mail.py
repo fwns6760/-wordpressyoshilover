@@ -5055,6 +5055,39 @@ class BuildMlbWatchCandidatesTests(unittest.TestCase):
         self.assertEqual(len(cands), 1)
         self.assertTrue(cands[0].post_text.startswith("岡本和真、"))
 
+    def test_ex_giants_freshness_window_extends_past_default(self):
+        """2026-07-07 user「巨人アカがメインだから岡本菅野は外せない」:
+        元巨人 (岡本/菅野) のみ鮮度 12h、大谷は 3h のまま。"""
+        from src import x_post_mail_lane as lane
+
+        def item_with_pub(title: str, status_id: str, pub: str) -> str:
+            return (
+                f"<item><title>{title}</title>"
+                f"<description>{title} &lt;img src=&quot;"
+                f"https://pbs.twimg.com/amplify_video_thumb/{status_id}/img/x.jpg&quot;&gt;"
+                f"</description>"
+                f"<link>https://x.com/MLBJapan/status/{status_id}</link>"
+                f"<pubDate>{pub}</pubDate></item>"
+            )
+
+        now = datetime(2026, 7, 7, 9, 0, tzinfo=JST)  # = 00:00 UTC
+        five_h_ago = "Sun, 06 Jul 2026 19:00:00 GMT"  # 5時間前 (米デーゲーム帯)
+        feed = self._feed(
+            item_with_pub("Kazuma Okamoto crushes a homer", "81", five_h_ago),
+            item_with_pub("大谷翔平が第30号ホームラン", "82", five_h_ago),
+        )
+        cands = lane.build_mlb_watch_candidates(
+            now=now,
+            max_count=4,
+            max_age_hours=3.0,
+            ex_giants_max_age_hours=12.0,
+            fetch_fn=lambda url: feed if "MLBJapan" in url else "<rss><channel></channel></rss>",
+            comment_fn=lambda _pt, pl: f"{pl}、これは効く一発。",
+        )
+        players = [c.focus_player for c in cands]
+        self.assertIn("岡本和真", players)   # 元巨人は 12h 窓で残る
+        self.assertNotIn("大谷翔平", players)  # 大谷は 3h 窓のまま落ちる
+
     def test_mlb_watch_detects_murakami_extra_star(self):
         from src import x_post_mail_lane as lane
         feed = self._feed(self._item("Munetaka Murakami game-winning swing", "15"))
@@ -5078,14 +5111,14 @@ class BuildMlbWatchCandidatesTests(unittest.TestCase):
 
         lane.build_mlb_watch_candidates(max_count=1, fetch_fn=fetch, comment_fn=lambda _pt, pl: pl)
         joined = "\n".join(calls)
-        self.assertIn("/twitter/user/SportsNetLA?limit=30", joined)
-        self.assertIn("/twitter/user/BLPJapanese?limit=30", joined)
-        self.assertIn("/twitter/user/FabianArdaya?limit=30", joined)
-        self.assertIn("/twitter/user/MLBONFOX?limit=30", joined)
-        self.assertIn("/twitter/user/MLBNetwork?limit=30", joined)
-        self.assertIn("/twitter/user/DodgersNation?limit=30", joined)
-        self.assertIn("/twitter/user/DodgerBlue1958?limit=30", joined)
-        self.assertIn("/twitter/user/TalkinBaseball_?limit=30", joined)
+        self.assertIn("/twitter/user/SportsNetLA?limit=50", joined)
+        self.assertIn("/twitter/user/BLPJapanese?limit=50", joined)
+        self.assertIn("/twitter/user/FabianArdaya?limit=50", joined)
+        self.assertIn("/twitter/user/MLBONFOX?limit=50", joined)
+        self.assertIn("/twitter/user/MLBNetwork?limit=50", joined)
+        self.assertIn("/twitter/user/DodgersNation?limit=50", joined)
+        self.assertIn("/twitter/user/DodgerBlue1958?limit=50", joined)
+        self.assertIn("/twitter/user/TalkinBaseball_?limit=50", joined)
 
     def test_as_reply_builds_reply_candidates_with_custom_handles(self):
         """2026-07-03 user「メジャー系の日本公式で大谷や岡本や菅野にもリプしたい」:
@@ -5408,7 +5441,7 @@ class BuildQuoteRtCommentTests(unittest.TestCase):
         prompt = captured.get("prompt") or ""
         self.assertIn("共感リプ", prompt)
         self.assertNotIn("補足リプ用", prompt)
-        self.assertIn("数字・データ解説は入れない", prompt)
+        self.assertIn("数字・データ解説・豆知識・過去記録・選手情報の付け足しは一切しない", prompt)
 
 
 class VideoRadarImpressionPolicyTests(unittest.TestCase):

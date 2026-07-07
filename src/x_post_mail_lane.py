@@ -2600,6 +2600,7 @@ def build_mlb_watch_candidates(
     as_reply: bool = False,
     extra_star_max: int = 1,
     per_player_max: int = 1,
+    ex_giants_max_age_hours: float = 0.0,
 ) -> list[Candidate]:
     """元巨人MLB組 + 大谷の引用RT候補。動画付き優先。
 
@@ -2648,7 +2649,13 @@ def build_mlb_watch_candidates(
             published_at = item.get("published_at")
             if published_at is not None:
                 age_h = (now_utc - published_at).total_seconds() / 3600.0
-                if age_h > max_age_hours:
+                # 2026-07-07 user「巨人アカがメインだから岡本菅野は外せない」:
+                # 元巨人だけ鮮度窓を広げる (米デーゲーム=日本深夜のHRを朝一便で
+                # 拾う)。大谷/日本人スター枠は従来の max_age_hours のまま。
+                age_limit_h = max_age_hours
+                if player in _MLB_EX_GIANTS and ex_giants_max_age_hours > 0:
+                    age_limit_h = max(max_age_hours, ex_giants_max_age_hours)
+                if age_h > age_limit_h:
                     continue
             # 2026-07-02 user 決定「ポストに動画がついてないと意味ない」
             # →「画像でもよいが、動画多め」: メディア付き (動画 or 画像) のみ

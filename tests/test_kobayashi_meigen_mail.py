@@ -296,5 +296,31 @@ class LoadArchiveTests(unittest.TestCase):
         self.assertEqual(len(records), 1)
 
 
+class PlaceholderCreatedAtTests(unittest.TestCase):
+    """2026-07-07 user「名言集、ポストの引用日間違えてる」: 原/吉川 archive の
+    ダミー timestamp (2021-01-01T00:00:XX) を日付として表示しない。"""
+
+    def test_placeholder_date_hidden_in_source_credit(self) -> None:
+        credit = lane._format_source_credit(
+            "2021-01-01T00:00:07+00:00", "日テレNEWS NNN"
+        )
+        self.assertEqual(credit, "（日テレNEWS NNN）")
+
+    def test_real_date_still_shown_in_source_credit(self) -> None:
+        credit = lane._format_source_credit(
+            "2026-06-18T03:00:00+00:00", "スポーツ報知"
+        )
+        self.assertEqual(credit, "（2026/06/18 スポーツ報知）")
+
+    def test_placeholder_date_formats_empty(self) -> None:
+        self.assertEqual(
+            lane._format_jst_date("2021-01-01T00:00:44+00:00"), ""
+        )
+        # ダミー時刻帯 (00:00:XX) ではない素の 2021-01-01 実時刻は従来通り表示
+        self.assertNotEqual(
+            lane._format_jst_date("2021-01-01T10:30:00+00:00"), ""
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

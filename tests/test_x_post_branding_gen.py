@@ -95,6 +95,47 @@ class PrimeHoursTests(unittest.TestCase):
             "gemini-3.5-flash",
         )
 
+    def test_generate_content_reverse_fallback_when_lite_quota_dead(self) -> None:
+        # 2026-07-07: fallback(lite) の日次枠枯渇 (429 RESOURCE_EXHAUSTED) 時は
+        # primary(3.5) を 1 回試す (リプ voice 全滅 → レス mail 空の再発防止)。
+        client = MagicMock()
+        quota_err = RuntimeError("429 RESOURCE_EXHAUSTED daily quota")
+        ok = MagicMock()
+        client.models.generate_content.side_effect = [quota_err, ok]
+        with patch.object(xbg, "_x_post_in_prime_hours", return_value=False):
+            result = xbg._x_post_generate_content(
+                client, model="gemini-3.5-flash", contents="p", config={}
+            )
+        self.assertIs(result, ok)
+        models = [
+            c.kwargs["model"] for c in client.models.generate_content.call_args_list
+        ]
+        self.assertEqual(
+            models,
+            [xbg._X_POST_GEMINI_FALLBACK_MODEL, xbg._X_POST_GEMINI_PRIMARY_MODEL],
+        )
+
+    def test_generate_content_raises_when_both_models_quota_dead(self) -> None:
+        client = MagicMock()
+        client.models.generate_content.side_effect = RuntimeError(
+            "429 RESOURCE_EXHAUSTED daily quota"
+        )
+        with patch.object(xbg, "_x_post_in_prime_hours", return_value=False):
+            with self.assertRaises(RuntimeError):
+                xbg._x_post_generate_content(
+                    client, model="gemini-3.5-flash", contents="p", config={}
+                )
+
+    def test_generate_content_non_quota_error_no_fallback(self) -> None:
+        client = MagicMock()
+        client.models.generate_content.side_effect = ValueError("bad prompt")
+        with patch.object(xbg, "_x_post_in_prime_hours", return_value=False):
+            with self.assertRaises(ValueError):
+                xbg._x_post_generate_content(
+                    client, model="gemini-3.5-flash", contents="p", config={}
+                )
+        self.assertEqual(client.models.generate_content.call_count, 1)
+
 
 class TavilySearchTests(unittest.TestCase):
     def test_empty_query_returns_empty(self) -> None:

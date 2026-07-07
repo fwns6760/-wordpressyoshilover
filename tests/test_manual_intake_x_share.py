@@ -319,8 +319,9 @@ class XShareEndpointTests(unittest.TestCase):
         self.assertEqual(payload["reason"], "empty_text")
 
     def test_thread_weighted_too_long_rejected(self):
+        # 2026-07-07: おりポス (main) は Premium 長文上限 (default 900 weighted)。
         body = json.dumps({
-            "main_text": "あ" * 200,  # weighted 400 > 280
+            "main_text": "あ" * 460,  # weighted 920 > 900
             "reply_text": "r",
         }).encode("utf-8")
         status, payload = _invoke(
@@ -329,6 +330,38 @@ class XShareEndpointTests(unittest.TestCase):
         )
         self.assertEqual(status, 400)
         self.assertEqual(payload["reason"], "text_too_long")
+
+    def test_thread_reply_over_280_rejected(self):
+        # リプは従来どおり 280 weighted 上限。
+        body = json.dumps({
+            "main_text": "おりポス",
+            "reply_text": "あ" * 200,  # weighted 400 > 280
+        }).encode("utf-8")
+        status, payload = _invoke(
+            "POST", "/x-share-thread", body=body,
+            headers={"Content-Type": "application/json", "Content-Length": str(len(body))},
+        )
+        self.assertEqual(status, 400)
+        self.assertEqual(payload["reason"], "text_too_long")
+
+    def test_thread_main_premium_length_accepted(self):
+        # 280 超〜900 weighted のおりポスは投稿を通す (旧 280 ゲートのデグレ防止)。
+        with patch.object(
+            xshare, "post_thread",
+            return_value={"ok": True, "main_tweet_id": "1", "reply_tweet_id": "2",
+                          "image_attached": False, "image_error": ""},
+        ) as pt:
+            body = json.dumps({
+                "main_text": "あ" * 200,  # weighted 400 (280 < x <= 900)
+                "reply_text": "リプ https://x/9",
+            }).encode("utf-8")
+            status, payload = _invoke(
+                "POST", "/x-share-thread", body=body,
+                headers={"Content-Type": "application/json", "Content-Length": str(len(body))},
+            )
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        pt.assert_called_once()
 
     def test_thread_happy_path(self):
         with patch.object(

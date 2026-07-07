@@ -256,13 +256,18 @@ def _x_post_model_unavailable(exc: Exception) -> bool:
 def _x_post_generate_content(client, *, model, contents, config):
     """X-post 用 generate_content。primary が無料枠上限/一時不可で落ちたら
     fallback モデル(既定 gemini-3.1-flash-lite)へ自動切替。それ以外の例外は再送。
-    試合時間帯外は primary を使わず fallback を直接使う(3.5 の 20回/日 枠温存)。"""
+    試合時間帯外は primary を使わず fallback を直接使う(3.5 の 20回/日 枠温存)。
+    2026-07-07: fallback(lite) 自体が日次枠枯渇 (500/day、13-16時JSTに発生) した時は
+    逆方向に primary(3.5) を 1 回試す。lite が死んでいる時間帯は 16時JSTの枠リセット前
+    なので、prime hours (17時-) の 3.5 枠温存とは競合しない。両方枯渇なら raise。"""
     if model != _X_POST_GEMINI_FALLBACK_MODEL and not _x_post_in_prime_hours():
         model = _X_POST_GEMINI_FALLBACK_MODEL
     try:
         return client.models.generate_content(model=model, contents=contents, config=config)
     except Exception as exc:  # noqa: BLE001 - fallback handling
-        if model != _X_POST_GEMINI_FALLBACK_MODEL and _x_post_model_unavailable(exc):
+        if not _x_post_model_unavailable(exc):
+            raise
+        if model != _X_POST_GEMINI_FALLBACK_MODEL:
             _logging.getLogger("x_post_branding_gen").warning(
                 "x_post_llm_fallback primary=%s -> fallback=%s reason=%r",
                 model,
@@ -271,6 +276,16 @@ def _x_post_generate_content(client, *, model, contents, config):
             )
             return client.models.generate_content(
                 model=_X_POST_GEMINI_FALLBACK_MODEL, contents=contents, config=config
+            )
+        if _X_POST_GEMINI_PRIMARY_MODEL != _X_POST_GEMINI_FALLBACK_MODEL:
+            _logging.getLogger("x_post_branding_gen").warning(
+                "x_post_llm_reverse_fallback fallback=%s -> primary=%s reason=%r",
+                model,
+                _X_POST_GEMINI_PRIMARY_MODEL,
+                exc,
+            )
+            return client.models.generate_content(
+                model=_X_POST_GEMINI_PRIMARY_MODEL, contents=contents, config=config
             )
         raise
 

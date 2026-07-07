@@ -2384,7 +2384,9 @@ def build_handler(
                     return
                 main_w = _xshare.x_weighted_len(main_text)
                 reply_w = _xshare.x_weighted_len(reply_text)
-                if main_w > 280 or reply_w > 280:
+                # おりポス (main) は Premium 長文上限 (default 900 weighted、
+                # 生成側 _main_weighted_limit と同一)。リプは従来 280。
+                if main_w > _xshare._main_weighted_limit() or reply_w > 280:
                     _json_response(
                         self, 400,
                         {"ok": False, "reason": "text_too_long",

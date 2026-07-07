@@ -154,13 +154,23 @@ def prefetch_feeds(
     results: dict[str, object] = {}
     if not uniq:
         return results
-    with _ThreadPoolExecutor(max_workers=min(max_workers, len(uniq))) as ex:
-        futs = {ex.submit(fetch, u): u for u in uniq}
-        for f in futs:
-            try:
-                results[futs[f]] = f.result()
-            except Exception as exc:  # noqa: BLE001
-                results[futs[f]] = exc
+
+    def _fetch_wave(targets: list[str]) -> None:
+        with _ThreadPoolExecutor(max_workers=min(max_workers, len(targets))) as ex:
+            futs = {ex.submit(fetch, u): u for u in targets}
+            for f in futs:
+                try:
+                    results[futs[f]] = f.result()
+                except Exception as exc:  # noqa: BLE001
+                    results[futs[f]] = exc
+
+    _fetch_wave(uniq)
+    # 2026-07-07: RSSHub は min-instances=0 のため、便頭の一斉 fetch が cold start
+    # に刺さり handle 単位で timeout する (実測 62 件/19h → MLB/ファンリプ候補が
+    # 便ごと全滅)。 初回 wave で instance が温まった後、失敗分だけ 1 回再試行する。
+    failed = [u for u in uniq if isinstance(results.get(u), Exception)]
+    if failed:
+        _fetch_wave(failed)
     return results
 
 
@@ -169,6 +179,11 @@ def _strip_html(s: str) -> str:
     s = _re.sub(r"<[^>]+>", " ", s)
     s = _re.sub(r"&[#0-9A-Za-z]+;", " ", s)
     return _re.sub(r"\s+", " ", s).strip()
+
+
+def _is_retweet_text(text: str) -> bool:
+    """RSSHub twitter/user text that starts with RT is not an original post."""
+    return str(text or "").lstrip().startswith(("RT ", "RT　", "RT@", "RT:", "RT："))
 
 
 # X 投稿に動画が付いているかの判定マーカー。 RSSHub の twitter feed は description 内に
@@ -255,8 +270,11 @@ def fetch_buzzing_players(
         if not isinstance(xml, str):
             continue
         for item in _extract_rss_items(xml):
+            text = str(item.get("text") or "")
+            if _is_retweet_text(text):
+                continue
             try:
-                p = detect_player_fn(item["text"]) or ""
+                p = detect_player_fn(text) or ""
             except Exception:  # noqa: BLE001
                 p = ""
             if p:
@@ -305,6 +323,8 @@ def gather_buzz_posts(
             text = item.get("text", "")
             url = item.get("url", "")
             if not text or not url or url in seen_urls:
+                continue
+            if _is_retweet_text(text):
                 continue
             has_video = bool(item.get("has_video"))
             if require_video and not has_video:

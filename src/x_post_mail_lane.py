@@ -2689,7 +2689,10 @@ def build_mlb_watch_candidates(
                 player, p["handle"],
             )
             continue
-        post_text = _ensure_player_name_leads_post_text(post_text, player)
+        # 2026-07-07 user「リプは相手の意見にもっとよりそって」: 返信 (empathy) は
+        # 同意 first のため選手名 lead を強制しない。引用RTは従来通り名前 lead。
+        if not as_reply:
+            post_text = _ensure_player_name_leads_post_text(post_text, player)
         post_text = _cap_sentence(post_text, _video_post_char_cap())
         handle = p["handle"]
         if player == "大谷翔平":

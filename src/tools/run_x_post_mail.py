@@ -3166,10 +3166,24 @@ def main(argv: Sequence[str] | None = None) -> int:
                     recently_shown_by_group = lane._players_within_cooldown_by_group(
                         dedup_records, now_jst, recent_show_cooldown_hours
                     )
+                    # 2026-07-07 user「リプランがあまり出ない」: リプは相手の返信欄に
+                    # 出るもので、同じ選手の話題でも相手が違えば重複感が無い。 12h の
+                    # 全群共通窓だと MLB リプ (ほぼ大谷) やファンリプ (直近の hero に
+                    # 集中) が 1 日 1〜2 本に絞られるため、 reply 群だけ短い窓にする。
+                    reply_cooldown_hours = _resolve_int_env(
+                        "X_POST_MAIL_REPLY_RECENT_COOLDOWN_HOURS", 3, min_value=0
+                    )
+                    if reply_cooldown_hours != recent_show_cooldown_hours:
+                        recently_shown_by_group["reply"] = (
+                            lane._players_within_cooldown_by_group(
+                                dedup_records, now_jst, reply_cooldown_hours
+                            )["reply"]
+                        )
                     LOG.info(
-                        "Recent-shown player cooldown (%dh) per-group: "
+                        "Recent-shown player cooldown (%dh, reply=%dh) per-group: "
                         "original=%d reply=%d other=%d",
                         recent_show_cooldown_hours,
+                        reply_cooldown_hours,
                         len(recently_shown_by_group["original"]),
                         len(recently_shown_by_group["reply"]),
                         len(recently_shown_by_group["other"]),

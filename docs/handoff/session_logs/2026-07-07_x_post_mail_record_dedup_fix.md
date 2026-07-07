@@ -99,5 +99,17 @@
 
 ## 残タスク
 
-- x-engagement image ビルド完了後の job update（x-engagement-auto-noon / collect-night）
+- ~~x-engagement image ビルド完了後の job update~~ → 完了 (timeout-69156d10)
 - 明日 8-12 時 JST の MLB 便で引用RT🎬 の増加確認
+
+---
+
+# 追加便3: MLB動画量産解禁 + ファンリプ +6 (user 2026-07-07 PM)
+
+- user「大谷岡本など動画SNSはだしちゃっていいよ。沢山」→ build_mlb_watch_candidates の上限 param 化
+  (commit 29f1d021): 大谷 3/便・選手ごと 2/便 (媒体違いのみ)・日本人スター群 3/便・全体
+  X_POST_MLB_WATCH_MAX=8 (env 4→8)。lane default は従来値、rollback は env のみ。
+- user 指定ファンリプ +6 handle (commit 8bcaee34 + test 0f06fc86): VIVAfukky2002 / 522happy522 /
+  gsoku_giants / G94292907 / karamus_giants / jm7cybh50364 (実 feed 検証済、16→22 handle)
+- **prod 最終 image: `x-post-mail-lane:fanmlb-0f06fc86`** (本日の全修正入り) + X_POST_MLB_WATCH_MAX=8
+- 翌日確認: 朝 MLB 便の引用RT🎬 本数 / ファンリプ充足 / 重複ゼロ継続 / 台帳 record 消失ゼロ

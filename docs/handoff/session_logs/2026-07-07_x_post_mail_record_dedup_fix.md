@@ -135,3 +135,18 @@
 - fix (commit c93fb4e5): ダミー検出時は媒体名のみ表示 (媒体×日付の事実誤認を排除)。
   小林/坂本=本人tweet由来で影響なし。image `meigen-mail-lane:dateless-c93fb4e5` deploy済
 - 次回配信 15:00 JST から修正形式
+
+---
+
+# 追加便6: 手動intake おりポス長文化+引用主体 (user 2026-07-07 PM4)
+
+- user「引用が出るように文字数ふやして」「オリポスながめ。プレミアプランだし」「雑誌の引用がメイン」「引用をオリポスに長めに入れる」
+- manual_intake_x_share v3 (commits e5f14b24 + 56f4ef99):
+  main weighted 280→900 (X_SHARE_MAIN_WEIGHTED_LIMIT)、本文200〜400字、
+  発言『』2〜3個を一文丸ごとliteral引用が主役、地の文=つなぎ最小限、
+  記者の地の文コピー禁止 (著作権)、全員フルネーム+巨人/ジャイアンツ (検索KW)
+- **scope訂正**: 「オリポス増やして/長めに」をmail便と誤解して入れた ea0031fb
+  (候補14件化・全レーン450字化) は revert 済み (188374bd)。mail便は昼の承認状態のまま
+- prod: manual-intake-service `quote-56f4ef99` (health 200)
+- 名言集ゴールデン帯: scheduler `0 12,17,18,19,20` + `golden-356c7b79` 反映済み (追加便4.5扱い)
+- パーク中: 速報レーン提案 (5分poll+速報語→即メール、月200円弱) — user返答待ち

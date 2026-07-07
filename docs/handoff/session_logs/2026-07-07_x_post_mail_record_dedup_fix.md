@@ -113,3 +113,14 @@
   gsoku_giants / G94292907 / karamus_giants / jm7cybh50364 (実 feed 検証済、16→22 handle)
 - **prod 最終 image: `x-post-mail-lane:fanmlb-0f06fc86`** (本日の全修正入り) + X_POST_MLB_WATCH_MAX=8
 - 翌日確認: 朝 MLB 便の引用RT🎬 本数 / ファンリプ充足 / 重複ゼロ継続 / 台帳 record 消失ゼロ
+
+---
+
+# 追加便4: MLB取りこぼし対策 + 大谷構成 + コスト削減 (user 2026-07-07 PM2)
+
+- feed 50件化 (commit 69e16806): 公式アカ投稿ラッシュで岡本HRクリップがスクロール落ちしていた
+- 元巨人のみ鮮度12h (commit dc5161dc, env X_POST_MLB_WATCH_EX_GIANTS_MAX_AGE_HOURS=12): 米デーゲーム=日本深夜分を朝一便で拾う。user「巨人アカがメインだから岡本菅野は外せない」
+- 大谷=動画1本+情報系 (commit 8754e386, env OHTANI_MAX 3→2): user「大谷HR動画は一個でいい。他の動画ではなく情報系を拾って」。(選手×媒体×種別) key で同種連投のみブロック
+- コスト削減: 平日13-17の15分便廃止 (game-1→平日17-21、土日用 game-wknd 13-21 新設、実測68便/日中送信12便=82%空振り対策)、Artifact Registry cleanup policy (yoshilover 48GB + cloud-run-source-deploy、直近15世代keep/30日超削除)、≈月1,000円削減見込み
+- **prod 最終 image: `ohtani1v-8754e386`**
+- インプ実測 (7/6週次): quote_comment 59.1fav >> voice 24.6 > article_share 8.7 > data_fact 3.7。時間帯は 17-22時 47.4fav vs 朝 8.7fav (朝52本は配分逆)。名言集シリーズが週間1位761fav

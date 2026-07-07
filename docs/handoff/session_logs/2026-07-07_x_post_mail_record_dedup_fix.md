@@ -63,3 +63,41 @@
 - `Recent-shown player cooldown (12h, reply=3h)` ログ行の出現
 - `mlb_watch fetch skip ... TimeoutError` の減少
 - fan/mlb リプ候補数の回復、リプ文が同意 first になっているか（user 確認）
+
+## 11:00/11:05 JST 便での検証結果（prod 確認済み）
+
+- `record_article_dedup_skip` が橋上秀樹 f30ee224 / ダルベック df7d36c2 を正しく block → 重複根治確認
+- `reply=3h` cooldown 稼働確認
+- TimeoutError 全滅は解消（残: 30R9gmaMUy3guDJ の一過性 503 → 直後 200、retry wave で回収可能）
+
+---
+
+# 追加便2: MLB おりポス増産 + 全体監査 (user 2026-07-07 PM)
+
+## user 依頼
+
+- 「MLBのおりポスが少ないのは？とくに動画でみせたい」→ velvityrose / MasayaKotani / mochiko_dayo17 追加指示
+- 「ほかにもおかしいところないか見直して」
+
+## MLB おりポス修正（commit 835c8336, image mlb-835c8336 deploy 済）
+
+1. MLB watch handle +3（上記。実 feed 検証済・動画マーカー多数・非野球投稿は選手名ゲートで落ちる）
+2. `mlb_watch_post` を (選手×媒体) media-aware recent 判定へ（12h player cooldown で大谷引用RT が 1 本/12h に絞られていた）
+
+## 監査発見 + 修正（commit 69156d10, image ledger-69156d10 deploy 済）
+
+1. **dedup 台帳の GCS 書き込み競合（重複再発の残存経路）**: read+concat+re-upload が便の同時発火で衝突し record 消失（実測 load 509→505 後退）。便ごと一意 blob (`{date}_{HHMMSS}_{hash8}.jsonl`) 書き込み + 日付 prefix 一覧読みへ変更（旧 day-file も読める、migration 不要）
+2. RSSHub timeout 20s→30s: `x_post_engagement`（x-engagement image 再ビルド）/ `sns_realtime_topic`（**fetcher service 経由のため次回 fetcher deploy に同乗、コードは commit 済み**）
+3. stale test 根治: `test_sns_realtime_topic` の岡本和真（MLB 移籍で mention 対象外）→ 戸郷翔征差し替え（commit e10d1dac、baseline fail 解消）
+
+## 監査で確認して問題なかったもの
+
+- fan_reply / 報知リプ / quote_caption 各 lane の dedup gate 配線（全部あり）
+- fan_reply の metric 群分類（reply 群 ✓）
+- `_record_dedup_signatures` の記録漏れ（送信時に全 lane 分記録 ✓）
+- fan_voice_pool writer に同じ read+concat 競合があるが低リスク（scrape cache、消えても再取得）→ 未対応のまま
+
+## 残タスク
+
+- x-engagement image ビルド完了後の job update（x-engagement-auto-noon / collect-night）
+- 明日 8-12 時 JST の MLB 便で引用RT🎬 の増加確認

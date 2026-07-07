@@ -124,3 +124,14 @@
 - コスト削減: 平日13-17の15分便廃止 (game-1→平日17-21、土日用 game-wknd 13-21 新設、実測68便/日中送信12便=82%空振り対策)、Artifact Registry cleanup policy (yoshilover 48GB + cloud-run-source-deploy、直近15世代keep/30日超削除)、≈月1,000円削減見込み
 - **prod 最終 image: `ohtani1v-8754e386`**
 - インプ実測 (7/6週次): quote_comment 59.1fav >> voice 24.6 > article_share 8.7 > data_fact 3.7。時間帯は 17-22時 47.4fav vs 朝 8.7fav (朝52本は配分逆)。名言集シリーズが週間1位761fav
+
+---
+
+# 追加便5: 名言集の引用日バグ根治 (user 2026-07-07 PM3)
+
+- user「名言集、ポストの引用日間違えてる」: 原/吉川 archive のダミー created_at
+  (2021-01-01T00:00:XX、並び順用連番、原44/吉川14件 GCS実測) が X 出典
+  「（2021/01/01 媒体）」として表示されていた
+- fix (commit c93fb4e5): ダミー検出時は媒体名のみ表示 (媒体×日付の事実誤認を排除)。
+  小林/坂本=本人tweet由来で影響なし。image `meigen-mail-lane:dateless-c93fb4e5` deploy済
+- 次回配信 15:00 JST から修正形式

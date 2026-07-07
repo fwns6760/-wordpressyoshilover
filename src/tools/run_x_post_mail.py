@@ -2723,9 +2723,8 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--max-candidates",
         type=int,
-        # 2026-07-07 user「オリポスもっと増やしていいんでは。プレミアだし」: 10→14。
-        default=14,
-        help="Maximum candidates to include (default 14).",
+        default=10,
+        help="Maximum candidates to include (default 10).",
     )
     parser.add_argument(
         "--to",

@@ -200,7 +200,13 @@ _POSITION_DISPLAY_JP: dict[str, str] = {
 
 # X 280-char limit (we copy 346's constant intentionally — duplicating
 # rather than importing keeps coupling minimal).
-X_CHAR_LIMIT = 280
+# 2026-07-07 user「オリポスもっと増やしていいんでは。プレミアだし」「結構長めに
+# 書いて」: アカウントは X Premium (長文ポスト可) のため、env X_POST_CHAR_LIMIT
+# で上限を引き上げ可能に (prod=450 予定)。未設定 default は従来 280。
+try:
+    X_CHAR_LIMIT = max(280, int(os.environ.get("X_POST_CHAR_LIMIT") or 280))
+except ValueError:
+    X_CHAR_LIMIT = 280
 
 # X intent URL base. Use the modern canonical endpoint `x.com/intent/post`.
 # The legacy `twitter.com/intent/tweet` redirects to x.com but the redirect

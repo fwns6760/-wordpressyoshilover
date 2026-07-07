@@ -2598,13 +2598,20 @@ def build_mlb_watch_candidates(
     max_age_hours: float = 12.0,
     handles: Optional[list[str]] = None,
     as_reply: bool = False,
+    extra_star_max: int = 1,
+    per_player_max: int = 1,
 ) -> list[Candidate]:
-    """元巨人MLB組 + 大谷の引用RT候補。動画付き優先、選手ごと 1 本/便。
+    """元巨人MLB組 + 大谷の引用RT候補。動画付き優先。
 
     - 大谷は別枠 ``ohtani_max`` (既定 1) で上限。元巨人は残り枠。
+    - ``extra_star_max`` (既定 1): 日本人スター枠 (山本由伸/鈴木誠也 等) の
+      群としての 1 便上限。``per_player_max`` (既定 1): 大谷以外の選手ごとの
+      1 便上限。既定は従来挙動、prod は env で緩める (2026-07-07 user
+      「大谷岡本など動画SNSはだしちゃっていいよ。沢山」)。同一 (選手×媒体)
+      は 1 便 1 本のまま。
     - voice (comment_fn) が空の候補は skip (テンプレで埋めない、
       2026-07-02 余計なポスト方針と同じ)。comment_fn 未設定時も skip。
-    - 重複防止: URL signature (24h dedup_set) + 選手ごと 1 本/便。
+    - 重複防止: URL signature (24h dedup_set) + 上記の選手別/枠別上限。
     - ``as_reply=True`` (2026-07-03 user「メジャー系の日本公式で大谷や岡本や
       菅野にもリプしたい」): 引用RTではなく返信候補として組む。tweet_id を
       ``reply_to_id`` に載せ、metric は既存リプ policy (_REPLY_CANDIDATE_METRIC)
@@ -2657,19 +2664,25 @@ def build_mlb_watch_candidates(
     # 動画多め: 動画付きを先に。feed 順 (新しい順) は安定 sort で維持。
     posts.sort(key=lambda p: (not p["has_video"],))
     out: list[Candidate] = []
-    used_players: set[str] = set()
+    used_player_handles: set[str] = set()
+    player_counts: dict[str, int] = {}
     ohtani_used = 0
     extra_star_used = 0
     for p in posts:
         if len(out) >= max_count:
             break
         player = p["player"]
-        if player in used_players:
+        player_handle_key = f"{player}|{str(p['handle']).strip().lower()}"
+        if player_handle_key in used_player_handles:
+            # 同一 (選手×媒体) は 1 便 1 本 (媒体違いは per_player_max まで可)。
             continue
-        if player == "大谷翔平" and ohtani_used >= ohtani_max:
+        if player == "大谷翔平":
+            if ohtani_used >= ohtani_max:
+                continue
+        elif player_counts.get(player, 0) >= max(1, per_player_max):
             continue
-        if player in _MLB_EXTRA_STARS and extra_star_used >= 1:
-            # 軽め枠 (山本由伸/鈴木誠也) は 1 便 1 人まで
+        if player in _MLB_EXTRA_STARS and extra_star_used >= max(1, extra_star_max):
+            # 軽め枠 (山本由伸/鈴木誠也 等) の群上限
             continue
         url = p["url"]
         tweet_id = ""
@@ -2766,7 +2779,8 @@ def build_mlb_watch_candidates(
                 source_material_type="mlb_watch_post",
                 media_handle=handle.strip().lower(),
             ))
-        used_players.add(player)
+        used_player_handles.add(player_handle_key)
+        player_counts[player] = player_counts.get(player, 0) + 1
         if player == "大谷翔平":
             ohtani_used += 1
         if player in _MLB_EXTRA_STARS:

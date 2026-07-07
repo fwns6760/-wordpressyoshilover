@@ -3692,9 +3692,21 @@ def main(argv: Sequence[str] | None = None) -> int:
                     LOG.warning("mlb_watch LLM comment unavailable: %r", _mlb_imp_exc)
                     mlb_comment_fn = None
             try:
+                # 2026-07-07 user「大谷岡本など動画SNSはだしちゃっていいよ。沢山」:
+                # 大谷/選手別/日本人スター枠の 1 便上限を env で緩める
+                # (lane default は従来値、rollback は env 変更のみ)。
                 mlb_candidates = lane.build_mlb_watch_candidates(
                     now=now_jst,
                     max_count=mlb_max,
+                    ohtani_max=_resolve_int_env(
+                        "X_POST_MLB_WATCH_OHTANI_MAX", 3, min_value=0
+                    ),
+                    extra_star_max=_resolve_int_env(
+                        "X_POST_MLB_WATCH_EXTRA_STAR_MAX", 3, min_value=1
+                    ),
+                    per_player_max=_resolve_int_env(
+                        "X_POST_MLB_WATCH_PER_PLAYER_MAX", 2, min_value=1
+                    ),
                     dedup_set=dedup_set,
                     comment_fn=mlb_comment_fn,
                     max_age_hours=_mlb_watch_max_age_hours(),

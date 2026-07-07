@@ -132,6 +132,78 @@ def list_recent_published(limit: int = 10) -> list[dict]:
     return out
 
 
+# 2026-07-07 user GO「今日の試合スレ (mail→アプリ→ボタン1回で3連投稿)」:
+# 最新公開記事のうちタイトルが試合結果型のものを自動で拾う (userの記事選択を不要化)。
+_POSTGAME_TITLE_RE = re.compile(
+    r"(勝利|快勝|完封|完投|サヨナラ|逆転勝|辛勝|惜敗|敗戦|完敗|零封|連勝|連敗"
+    r"|引き分け|ドロー|(?<![0-9])[0-9]{1,2}\s*[-−ー－]\s*[0-9]{1,2}(?![0-9]))"
+)
+
+
+def find_latest_postgame() -> dict:
+    """最新の公開済み試合結果 (postgame) 記事 1 件。見つからなければ {}。"""
+    for p in list_recent_published(limit=10):
+        if _POSTGAME_TITLE_RE.search(p.get("title") or ""):
+            return p
+    return {}
+
+
+def build_thread_drafts(material: dict, *, gemini_api_key: str = "") -> dict:
+    """試合後スレ 3 部品: ①おりポス(既存機構) ②ヒーローdata リプ ③URLリプ。
+
+    ②は insight.db の verified 数字のみ (取れなければ空 = 2連にフォールバック)。
+    """
+    drafts = build_share_drafts(material, gemini_api_key=gemini_api_key)
+    drafts["data_text"] = _build_hero_data_text(material)
+    return drafts
+
+
+def _build_hero_data_text(material: dict) -> str:
+    """タイトル/冒頭から主役選手を検出し、 insight.db verified 数字で 1 リプ分。
+
+    検出失敗 / DB 不達 / fact なしは空文字 (スレは 2 連で成立させる)。
+    数字は build_db_fact_line (read-only SELECT) 由来のみ = 捏造リスクゼロ。
+    """
+    title = str(material.get("title") or "")
+    head = str(material.get("body_text") or "")[:300]
+    try:
+        from src.x_post_mail_lane import detect_giants_player_name
+
+        player = detect_giants_player_name(f"{title} {head}")
+    except Exception as exc:  # noqa: BLE001
+        LOG.info("x_share thread player detect skip: %r", exc)
+        player = ""
+    if not player:
+        return ""
+    try:
+        from src import manual_intake_insight_query as miq
+
+        db = miq.ensure_local_db()
+        db_path = str(db.get("path") or "") if db.get("ok") else ""
+    except Exception as exc:  # noqa: BLE001
+        LOG.info("x_share thread insight db skip: %r", exc)
+        db_path = ""
+    if not db_path:
+        return ""
+    try:
+        from src.x_post_branding_gen import build_db_fact_line
+
+        fact = build_db_fact_line(player, db_path)
+    except Exception as exc:  # noqa: BLE001
+        LOG.info("x_share thread db fact skip: %r", exc)
+        fact = ""
+    fact = (fact or "").strip()
+    if not fact:
+        return ""
+    text = f"今日の{player}、数字で見るとこう👇\n{fact}"
+    # リプは 280 weighted 上限。超過時は fact 行を後ろから削る。
+    while x_weighted_len(text) > 280 and "\n" in text:
+        text = text.rsplit("\n", 1)[0]
+    if x_weighted_len(text) > 280:
+        return ""
+    return text
+
+
 def fetch_article_material(post_id: int) -> dict:
     """記事本文 (plain text) + link + アイキャッチ画像URL。"""
     from src.wp_client import WPClient
@@ -457,10 +529,13 @@ def post_thread(
     reply_text: str,
     *,
     image_url: str = "",
+    data_text: str = "",
 ) -> dict:
-    """おりポス (画像付き) → 自分へのリプ (URL付き) の連続投稿。
+    """おりポス (画像付き) → [dataリプ] → 自分へのリプ (URL付き) の連続投稿。
 
     画像 upload 失敗は致命にしない (画像なしで本文投稿を続行し、結果に明記)。
+    ``data_text`` (2026-07-07 試合後スレ): 非空なら main と URL リプの間に
+    1 本挟み、 main→data→reply の直列ツリーにする。
     """
     from src import x_api_client as _xc
 
@@ -483,17 +558,27 @@ def post_thread(
     main_id = _tweet_id(main_resp)
     if not main_id:
         raise RuntimeError(f"main tweet id missing: {main_resp!r}")
+    parent_id = main_id
+    data_id = ""
+    if (data_text or "").strip():
+        data_resp = client.create_tweet(
+            text=data_text, in_reply_to_tweet_id=parent_id
+        )
+        data_id = _tweet_id(data_resp)
+        if data_id:
+            parent_id = data_id
     reply_resp = client.create_tweet(
-        text=reply_text, in_reply_to_tweet_id=main_id
+        text=reply_text, in_reply_to_tweet_id=parent_id
     )
     reply_id = _tweet_id(reply_resp)
     LOG.info(
-        "x_share thread posted main_id=%s reply_id=%s image=%s",
-        main_id, reply_id, image_attached,
+        "x_share thread posted main_id=%s data_id=%s reply_id=%s image=%s",
+        main_id, data_id or "-", reply_id, image_attached,
     )
     return {
         "ok": True,
         "main_tweet_id": main_id,
+        "data_tweet_id": data_id,
         "reply_tweet_id": reply_id,
         "image_attached": image_attached,
         "image_error": image_error,

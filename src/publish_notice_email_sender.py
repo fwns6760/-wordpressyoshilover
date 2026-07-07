@@ -2881,6 +2881,23 @@ def build_body_html_per_post(
             '📱 画像つきで X に投稿 (おすすめ)</a>'
             '</td></tr>'
         )
+    # 2026-07-07 user GO「今日の試合スレ (mail→アプリ→ボタン1回で3連投稿)」:
+    # postgame 記事の mail に手動アプリのスレ画面 deep link を出す。
+    # MANUAL_INTAKE_APP_URL 未設定なら従来 mail と完全同一 (fail-open)。
+    thread_button_html = ""
+    _thread_app_url = os.environ.get("MANUAL_INTAKE_APP_URL", "").strip()
+    if _thread_app_url and "postgame" in str(getattr(request, "subtype", "") or "").lower():
+        safe_thread_url = html.escape(_thread_app_url.rstrip("/") + "/?thread=postgame")
+        thread_button_html = (
+            '<tr><td align="center" style="padding:0 22px 14px;">'
+            f'<a href="{safe_thread_url}" target="_blank" rel="noopener" '
+            'style="display:inline-block;width:100%;max-width:300px;'
+            'padding:13px 20px;background:#7b1fa2;color:#ffffff;'
+            'text-decoration:none;border-radius:6px;font-size:15px;'
+            'font-weight:700;text-align:center;">'
+            '🧵 試合後スレを組む (3連投稿)</a>'
+            '</td></tr>'
+        )
     admin_edit_url_raw = str(getattr(request, "admin_edit_url", "") or "").strip()
     admin_edit_button_html = ""
     if admin_edit_url_raw:
@@ -2931,6 +2948,7 @@ def build_body_html_per_post(
         '</td></tr>'
         f'{share_x_button_html}'
         f'{publish_button_html}'
+        f'{thread_button_html}'
         f'{admin_edit_button_html}'
         '<tr><td style="padding:14px 22px 20px;border-top:1px solid #eee;'
         'background:#fafafa;border-radius:0 0 8px 8px;">'

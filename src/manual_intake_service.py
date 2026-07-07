@@ -779,6 +779,7 @@ _HTML_FORM = """<!DOCTYPE html>
   <section class=\"tab-panel\" data-tab=\"xshare\" id=\"tab-panel-xshare\" hidden>
     <h2 style=\"font-size:16px;margin:6px 0 8px;\">🔗 記事をXで共有 (おりポス+リプ)</h2>
     <p class=\"insight-meta\" style=\"margin:0 0 10px;\">おりポス=記事の核を出し切る本文+画像 (URLなし)、リプ=記事の続き+URL。ボタン1回で連続投稿。</p>
+    <button type=\"button\" id=\"xshare-thread-btn\" class=\"primary\" style=\"width:100%;padding:12px;font-size:15px;margin-bottom:8px;\">🧵 今日の試合スレ案を作る (結果→データ→記事)</button>
     <button type=\"button\" id=\"xshare-refresh\" class=\"secondary\" style=\"width:100%;padding:12px;font-size:15px;\">🔄 最近の公開記事を読み込む</button>
     <div style=\"display:flex;gap:8px;margin-top:8px;\">
       <input id=\"xshare-manual-input\" type=\"text\" inputmode=\"url\" placeholder=\"記事URL または post_id を直接入力\" style=\"flex:1;padding:10px;font-size:14px;\">
@@ -1255,9 +1256,23 @@ _HTML_FORM = """<!DOCTYPE html>
     mainTa.value = draft.main_text || '';
     xsEditor.appendChild(mainTa);
     xsEditor.appendChild(xsCounter(mainTa, 'おりポス', 900));
+    // 2026-07-07 試合後スレ: data_text があれば ②データリプ を挟んで3連にする
+    var dataTa = null;
+    if (draft.is_thread) {
+      var ld = document.createElement('div');
+      ld.style.cssText = 'font-weight:600;';
+      ld.textContent = '② データリプ (insight.db verified数字)' + (draft.data_text ? '' : ' — 取得できず (空なら2連で投稿)');
+      xsEditor.appendChild(ld);
+      dataTa = document.createElement('textarea');
+      dataTa.rows = 4;
+      dataTa.style.cssText = 'width:100%;margin-top:6px;font-size:14px;padding:10px;white-space:pre-wrap;';
+      dataTa.value = draft.data_text || '';
+      xsEditor.appendChild(dataTa);
+      xsEditor.appendChild(xsCounter(dataTa, 'データリプ'));
+    }
     var l2 = document.createElement('div');
     l2.style.cssText = 'font-weight:600;';
-    l2.textContent = '② リプ (記事の続き + URL)';
+    l2.textContent = (draft.is_thread ? '③' : '②') + ' リプ (記事の続き + URL)';
     xsEditor.appendChild(l2);
     var replyTa = document.createElement('textarea');
     replyTa.rows = 4;
@@ -1268,10 +1283,11 @@ _HTML_FORM = """<!DOCTYPE html>
     var postBtn = document.createElement('button');
     postBtn.type = 'button';
     postBtn.className = 'primary';
-    postBtn.textContent = '🚀 おりポス+リプを連続投稿';
+    postBtn.textContent = draft.is_thread ? '🚀 スレを連続投稿 (最大3連)' : '🚀 おりポス+リプを連続投稿';
     postBtn.style.cssText = 'width:100%;padding:14px;font-size:15px;margin-top:6px;';
     postBtn.addEventListener('click', async function() {
-      if (!confirm('X に2連投稿します (おりポス→リプ)。よろしいですか？')) { return; }
+      var nParts = 2 + ((dataTa && dataTa.value.trim()) ? 1 : 0);
+      if (!confirm('X に' + nParts + '連投稿します。よろしいですか？')) { return; }
       postBtn.disabled = true;
       postBtn.textContent = '🚀 投稿中...';
       try {
@@ -1282,8 +1298,9 @@ _HTML_FORM = """<!DOCTYPE html>
           body: JSON.stringify({
             main_text: mainTa.value || '',
             reply_text: replyTa.value || '',
+            data_text: (dataTa && dataTa.value) || '',
             image_url: draft.image_url || '',
-            share_type: draft.share_type || '',
+            share_type: draft.share_type || (draft.is_thread ? 'postgame_thread' : ''),
           }),
         });
         var json = await resp.json().catch(function() { return {}; });
@@ -1327,6 +1344,43 @@ _HTML_FORM = """<!DOCTYPE html>
     await xsLoadDraft(postId);
     btn.disabled = false;
     btn.textContent = orig;
+  }
+  // 2026-07-07 試合後スレ: 最新の試合結果記事から3部品を自動生成
+  async function xsLoadThreadDraft() {
+    xsEditor.hidden = true;
+    try {
+      var resp = await fetch('/x-thread-draft', {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' },
+        credentials: 'same-origin',
+      });
+      var json = await resp.json().catch(function() { return {}; });
+      if (json && json.ok) {
+        xsRenderEditor(json);
+        xsEditor.scrollIntoView({behavior: 'smooth'});
+        return true;
+      }
+      alert(resp.status === 404 ? '試合結果の記事がまだありません (試合後に自動生成されてから使えます)。' : 'スレ案生成に失敗: ' + (json.reason || resp.status));
+    } catch (e) {
+      alert('エラー: ' + String(e));
+    }
+    return false;
+  }
+  var xsThreadBtn = document.getElementById('xshare-thread-btn');
+  if (xsThreadBtn) {
+    xsThreadBtn.addEventListener('click', async function() {
+      xsThreadBtn.disabled = true;
+      xsThreadBtn.textContent = '📡 スレ案 生成中...';
+      await xsLoadThreadDraft();
+      xsThreadBtn.disabled = false;
+      xsThreadBtn.textContent = '🧵 今日の試合スレ案を作る (結果→データ→記事)';
+    });
+  }
+  // mail の「🧵 スレを組む」リンク (?thread=postgame) から開いた時は自動でスレ案を出す
+  if (new URLSearchParams(location.search).get('thread')) {
+    var xsTabBtn = document.getElementById('tab-btn-xshare');
+    if (xsTabBtn) xsTabBtn.click();
+    xsLoadThreadDraft();
   }
   // 手動投入の結果画面から呼ぶ: 記事共有タブへ切替して下書きを開く
   window.xsOpenForPost = async function(postId, btn) {
@@ -2197,7 +2251,7 @@ def build_handler(
                         {"ok": False, "reason": f"x_post_draft_error:{exc!r}"},
                     )
                 return
-            if path in ("/x-share-recent", "/x-share-draft"):
+            if path in ("/x-share-recent", "/x-share-draft", "/x-thread-draft"):
                 # 2026-07-06 user GO「Xまで共有でおりポスとリプまでつくって」:
                 # 記事共有タブ用 API。auth は /x-post-draft と同じ cookie / query token。
                 expected_token = _require_token()
@@ -2230,6 +2284,35 @@ def build_handler(
                         _json_response(self, 502, {"ok": False, "reason": f"wp_error:{exc!r}"})
                         return
                     _json_response(self, 200, {"ok": True, "posts": posts})
+                    return
+                if path == "/x-thread-draft":
+                    # 2026-07-07 user GO「今日の試合」: 最新の試合結果記事を自動で
+                    # 拾い、 おりポス+dataリプ+URLリプ の 3 部品を返す (記事選択不要)。
+                    try:
+                        latest = _xshare.find_latest_postgame()
+                        if not latest:
+                            _json_response(
+                                self, 404,
+                                {"ok": False, "reason": "no_postgame_article"},
+                            )
+                            return
+                        material = _xshare.fetch_article_material(int(latest["id"]))
+                        drafts = _xshare.build_thread_drafts(
+                            material,
+                            gemini_api_key=(
+                                os.environ.get("GEMINI_API_KEY")
+                                or os.environ.get("GEMMA_BRANDING_GEMINI_API_KEY")
+                                or ""
+                            ),
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        bound_logger.exception("x_thread_draft_failed")
+                        _json_response(self, 502, {"ok": False, "reason": f"draft_error:{exc!r}"})
+                        return
+                    drafts["post_id"] = int(latest["id"])
+                    drafts["title"] = material.get("title") or ""
+                    drafts["is_thread"] = True
+                    _json_response(self, 200, drafts)
                     return
                 params = parse_qs(parsed.query, keep_blank_values=False)
                 raw_id = (params.get("post_id") or [""])[0].strip()
@@ -2371,6 +2454,7 @@ def build_handler(
                         return
                 main_text = (payload.get("main_text") or "").strip()
                 reply_text = (payload.get("reply_text") or "").strip()
+                data_text = (payload.get("data_text") or "").strip()
                 image_url = (payload.get("image_url") or "").strip()
                 share_type = (payload.get("share_type") or "").strip() or "unknown"
                 if not main_text or not reply_text:
@@ -2384,18 +2468,25 @@ def build_handler(
                     return
                 main_w = _xshare.x_weighted_len(main_text)
                 reply_w = _xshare.x_weighted_len(reply_text)
+                data_w = _xshare.x_weighted_len(data_text) if data_text else 0
                 # おりポス (main) は Premium 長文上限 (default 900 weighted、
-                # 生成側 _main_weighted_limit と同一)。リプは従来 280。
-                if main_w > _xshare._main_weighted_limit() or reply_w > 280:
+                # 生成側 _main_weighted_limit と同一)。リプ/dataリプは従来 280。
+                if (
+                    main_w > _xshare._main_weighted_limit()
+                    or reply_w > 280
+                    or data_w > 280
+                ):
                     _json_response(
                         self, 400,
                         {"ok": False, "reason": "text_too_long",
-                         "main_weighted": main_w, "reply_weighted": reply_w},
+                         "main_weighted": main_w, "reply_weighted": reply_w,
+                         "data_weighted": data_w},
                     )
                     return
                 try:
                     result = _xshare.post_thread(
-                        main_text, reply_text, image_url=image_url
+                        main_text, reply_text, image_url=image_url,
+                        data_text=data_text,
                     )
                 except KeyError as exc:
                     bound_logger.exception("x_share_thread_env_missing")

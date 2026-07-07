@@ -2915,6 +2915,28 @@ class HtmlBodyPerPostTests(unittest.TestCase):
         result = sender.build_body_html_per_post(self._request(title=""))
         self.assertIsNone(result)
 
+    def test_postgame_thread_button_rendered_when_app_url_set(self):
+        # 2026-07-07 user GO「今日の試合スレ (mail→アプリ)」: postgame + env で
+        # 手動アプリのスレ deep link ボタンが出る。
+        with patch.dict(os.environ, {"MANUAL_INTAKE_APP_URL": "https://app.example"}):
+            html_body = sender.build_body_html_per_post(self._request(subtype="postgame"))
+        self.assertIsNotNone(html_body)
+        self.assertIn('href="https://app.example/?thread=postgame"', html_body)
+        self.assertIn("試合後スレを組む", html_body)
+
+    def test_postgame_thread_button_absent_without_env(self):
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("MANUAL_INTAKE_APP_URL", None)
+            html_body = sender.build_body_html_per_post(self._request(subtype="postgame"))
+        self.assertIsNotNone(html_body)
+        self.assertNotIn("試合後スレを組む", html_body)
+
+    def test_thread_button_absent_for_non_postgame(self):
+        with patch.dict(os.environ, {"MANUAL_INTAKE_APP_URL": "https://app.example"}):
+            html_body = sender.build_body_html_per_post(self._request(subtype="lineup"))
+        self.assertIsNotNone(html_body)
+        self.assertNotIn("試合後スレを組む", html_body)
+
     def test_returns_none_when_url_missing(self):
         result = sender.build_body_html_per_post(self._request(canonical_url=""))
         self.assertIsNone(result)

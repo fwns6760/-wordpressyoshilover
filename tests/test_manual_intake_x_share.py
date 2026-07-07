@@ -207,6 +207,71 @@ class PostThreadTests(unittest.TestCase):
         self.assertNotIn("media_ids", first.kwargs)
 
 
+class PostgameThreadTests(unittest.TestCase):
+    """2026-07-07 user GO「今日の試合スレ (mail→アプリ→ボタン1回で3連投稿)」。"""
+
+    def test_find_latest_postgame_picks_result_title(self):
+        posts = [
+            {"id": 1, "title": "岡本和真がコメント", "link": "https://x/1", "date": "", "featured_media": 0},
+            {"id": 2, "title": "巨人、中日に5-2で快勝　戸郷が7回2失点", "link": "https://x/2", "date": "", "featured_media": 0},
+        ]
+        with patch.object(xshare, "list_recent_published", return_value=posts):
+            got = xshare.find_latest_postgame()
+        self.assertEqual(got["id"], 2)
+
+    def test_find_latest_postgame_empty_when_no_result(self):
+        posts = [{"id": 1, "title": "岡本和真がコメント", "link": "https://x/1", "date": "", "featured_media": 0}]
+        with patch.object(xshare, "list_recent_published", return_value=posts):
+            self.assertEqual(xshare.find_latest_postgame(), {})
+
+    def test_build_thread_drafts_includes_data_text(self):
+        material = {
+            "post_id": 2, "title": "巨人、中日に5-2で快勝　戸郷翔征が7回2失点",
+            "link": "https://x/2", "body_text": "本文。", "image_url": "", "status": "publish",
+        }
+        with patch.object(xshare, "build_share_drafts", return_value={"ok": True, "main_text": "m", "reply_text": "r"}), \
+             patch.object(xshare, "_build_hero_data_text", return_value="今日の戸郷翔征、数字で見るとこう👇\n投球: 7回 2失点"):
+            drafts = xshare.build_thread_drafts(material)
+        self.assertIn("戸郷翔征", drafts["data_text"])
+        self.assertEqual(drafts["main_text"], "m")
+
+    def test_hero_data_text_empty_when_player_not_detected(self):
+        with patch("src.x_post_mail_lane.detect_giants_player_name", return_value=""):
+            out = xshare._build_hero_data_text({"title": "何か", "body_text": ""})
+        self.assertEqual(out, "")
+
+    def test_post_thread_with_data_text_chains_three(self):
+        client = MagicMock()
+        client.create_tweet.side_effect = [
+            types.SimpleNamespace(data={"id": "10"}),
+            types.SimpleNamespace(data={"id": "11"}),
+            types.SimpleNamespace(data={"id": "12"}),
+        ]
+        with patch("src.x_api_client.get_client", return_value=client):
+            result = xshare.post_thread("本文", "リプ", data_text="データ")
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["main_tweet_id"], "10")
+        self.assertEqual(result["data_tweet_id"], "11")
+        self.assertEqual(result["reply_tweet_id"], "12")
+        calls = client.create_tweet.call_args_list
+        self.assertEqual(calls[1].kwargs["in_reply_to_tweet_id"], "10")
+        self.assertEqual(calls[2].kwargs["in_reply_to_tweet_id"], "11")
+
+    def test_post_thread_without_data_text_keeps_two(self):
+        client = MagicMock()
+        client.create_tweet.side_effect = [
+            types.SimpleNamespace(data={"id": "10"}),
+            types.SimpleNamespace(data={"id": "11"}),
+        ]
+        with patch("src.x_api_client.get_client", return_value=client):
+            result = xshare.post_thread("本文", "リプ")
+        self.assertEqual(client.create_tweet.call_count, 2)
+        self.assertEqual(result["data_tweet_id"], "")
+        self.assertEqual(
+            client.create_tweet.call_args_list[1].kwargs["in_reply_to_tweet_id"], "10"
+        )
+
+
 def _invoke(method: str, path: str, body: bytes = b"", headers: dict | None = None):
     from src import manual_intake_service as svc
 
@@ -362,6 +427,59 @@ class XShareEndpointTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertTrue(payload["ok"])
         pt.assert_called_once()
+
+    def test_thread_draft_endpoint_happy_path(self):
+        latest = {"id": 2, "title": "巨人、中日に5-2で快勝", "link": "https://x/2", "date": "", "featured_media": 0}
+        material = {
+            "post_id": 2, "title": "巨人、中日に5-2で快勝", "link": "https://x/2",
+            "body_text": "本文。", "image_url": "", "status": "publish",
+        }
+        with patch.object(xshare, "find_latest_postgame", return_value=latest), \
+             patch.object(xshare, "fetch_article_material", return_value=material), \
+             patch.object(xshare, "build_thread_drafts", return_value={"ok": True, "main_text": "m", "reply_text": "r", "data_text": "d"}):
+            status, payload = _invoke("GET", "/x-thread-draft")
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertTrue(payload["is_thread"])
+        self.assertEqual(payload["data_text"], "d")
+        self.assertEqual(payload["post_id"], 2)
+
+    def test_thread_draft_endpoint_404_when_no_postgame(self):
+        with patch.object(xshare, "find_latest_postgame", return_value={}):
+            status, payload = _invoke("GET", "/x-thread-draft")
+        self.assertEqual(status, 404)
+        self.assertEqual(payload["reason"], "no_postgame_article")
+
+    def test_thread_data_text_over_280_rejected(self):
+        body = json.dumps({
+            "main_text": "おりポス",
+            "reply_text": "リプ",
+            "data_text": "あ" * 200,  # weighted 400 > 280
+        }).encode("utf-8")
+        status, payload = _invoke(
+            "POST", "/x-share-thread", body=body,
+            headers={"Content-Type": "application/json", "Content-Length": str(len(body))},
+        )
+        self.assertEqual(status, 400)
+        self.assertEqual(payload["reason"], "text_too_long")
+
+    def test_thread_post_passes_data_text(self):
+        with patch.object(
+            xshare, "post_thread",
+            return_value={"ok": True, "main_tweet_id": "1", "data_tweet_id": "2",
+                          "reply_tweet_id": "3", "image_attached": False, "image_error": ""},
+        ) as pt:
+            body = json.dumps({
+                "main_text": "おりポス", "reply_text": "リプ https://x/9",
+                "data_text": "今日の数字",
+            }).encode("utf-8")
+            status, payload = _invoke(
+                "POST", "/x-share-thread", body=body,
+                headers={"Content-Type": "application/json", "Content-Length": str(len(body))},
+            )
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["data_tweet_id"], "2")
+        self.assertEqual(pt.call_args.kwargs["data_text"], "今日の数字")
 
     def test_thread_happy_path(self):
         with patch.object(

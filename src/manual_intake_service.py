@@ -1197,7 +1197,10 @@ _HTML_FORM = """<!DOCTYPE html>
   var xsRefresh = document.getElementById('xshare-refresh');
   var xsPosts = document.getElementById('xshare-posts');
   var xsEditor = document.getElementById('xshare-editor');
-  function xsCounter(ta, label) {
+  function xsCounter(ta, label, limit) {
+    // 2026-07-07 user「プレミアプランだからでかくして。俺も追加するし」:
+    // おりポスは Premium 長文 (900 weighted)、リプは従来 280。
+    limit = limit || 280;
     var div = document.createElement('div');
     div.className = 'insight-meta';
     div.style.cssText = 'margin:4px 0 10px;';
@@ -1206,8 +1209,8 @@ _HTML_FORM = """<!DOCTYPE html>
       var w = 0;
       var rest = t.replace(new RegExp('https?://' + String.fromCharCode(92) + 'S+', 'g'), function() { w += 23; return ''; });
       for (var i = 0; i < rest.length; i++) { w += (rest.charCodeAt(i) >= 0x1100) ? 2 : 1; }
-      div.textContent = label + ': ' + w + ' / 280 weighted' + (w > 280 ? ' ⚠️ 超過' : '');
-      div.style.color = (w > 280) ? '#b71c1c' : '';
+      div.textContent = label + ': ' + w + ' / ' + limit + ' weighted' + (w > limit ? ' ⚠️ 超過' : '');
+      div.style.color = (w > limit) ? '#b71c1c' : '';
     }
     upd();
     ta.addEventListener('input', upd);
@@ -1251,7 +1254,7 @@ _HTML_FORM = """<!DOCTYPE html>
     mainTa.style.cssText = 'width:100%;margin-top:6px;font-size:14px;padding:10px;white-space:pre-wrap;';
     mainTa.value = draft.main_text || '';
     xsEditor.appendChild(mainTa);
-    xsEditor.appendChild(xsCounter(mainTa, 'おりポス'));
+    xsEditor.appendChild(xsCounter(mainTa, 'おりポス', 900));
     var l2 = document.createElement('div');
     l2.style.cssText = 'font-weight:600;';
     l2.textContent = '② リプ (記事の続き + URL)';
@@ -1421,8 +1424,8 @@ _HTML_FORM = """<!DOCTYPE html>
     counter.style.cssText = 'margin-top:4px;';
     function updateCount() {
       var n = (ta.value || '').length;
-      counter.textContent = n + ' / 280 字' + (n > 280 ? ' ⚠️ 超過' : '');
-      counter.style.color = (n > 280) ? '#b71c1c' : '';
+      counter.textContent = n + ' / 900 字' + (n > 900 ? ' ⚠️ 超過' : '');
+      counter.style.color = (n > 900) ? '#b71c1c' : '';
     }
     updateCount();
     ta.addEventListener('input', updateCount);
@@ -1448,8 +1451,8 @@ _HTML_FORM = """<!DOCTYPE html>
     postBtn.addEventListener('click', async function() {
       var text = ta.value || '';
       if (!text.trim()) { return; }
-      if (text.length > 280) {
-        alert('280 字を超過しています。短くしてから投稿してください。');
+      if (text.length > 900) {
+        alert('900 字を超過しています。短くしてから投稿してください。');
         return;
       }
       postBtn.disabled = true;
@@ -2303,7 +2306,8 @@ def build_handler(
                 if not text:
                     _json_response(self, 400, {"ok": False, "reason": "empty_text"})
                     return
-                if len(text) > 280:
+                # 2026-07-07 user「プレミアプランだからでかくして」: Premium 長文可。
+                if len(text) > 900:
                     _json_response(
                         self,
                         400,

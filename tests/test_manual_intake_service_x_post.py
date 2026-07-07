@@ -142,7 +142,8 @@ class XPostDirectEndpointTests(unittest.TestCase):
         self.assertEqual(_json(raw).get("reason"), "empty_text")
 
     def test_too_long_text_returns_400(self) -> None:
-        body = json.dumps({"text": "a" * 281}).encode("utf-8")
+        # 2026-07-07 Premium 長文化: ゲートは 900 字
+        body = json.dumps({"text": "a" * 901}).encode("utf-8")
         status, _h, raw = _invoke(
             "POST",
             "/x-post-direct",

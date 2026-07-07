@@ -340,19 +340,20 @@ def test_build_pages_adds_editor_summary_and_human_excerpt():
     fake_posts = [
         {"url": "https://x.com/u/1", "text": "坂本勇人 ヒット", "handle": "h", "published": (2026, 5, 28, 0, 0, 0, 0, 0, 0)},
         {"url": "https://x.com/u/2", "text": "坂本勇人 また打った", "handle": "h", "published": (2026, 5, 28, 0, 0, 0, 0, 0, 0)},
-        {"url": "https://x.com/u/3", "text": "岡本和真 本塁打", "handle": "h", "published": (2026, 5, 28, 0, 0, 0, 0, 0, 0)},
-        {"url": "https://x.com/u/4", "text": "岡本和真 打点", "handle": "h", "published": (2026, 5, 28, 0, 0, 0, 0, 0, 0)},
+        # 2026-07-07: 岡本和真はMLB移籍でmention count対象外になったため現役の戸郷翔征へ差し替え
+        {"url": "https://x.com/u/3", "text": "戸郷翔征 本塁打", "handle": "h", "published": (2026, 5, 28, 0, 0, 0, 0, 0, 0)},
+        {"url": "https://x.com/u/4", "text": "戸郷翔征 打点", "handle": "h", "published": (2026, 5, 28, 0, 0, 0, 0, 0, 0)},
     ]
-    prev = {"1gun": {"坂本勇人": 0, "岡本和真": 1}, "farm": {}}
+    prev = {"1gun": {"坂本勇人": 0, "戸郷翔征": 1}, "farm": {}}
     with patch("sns_realtime_topic.collect_all_posts", return_value=fake_posts):
         pages, _ = build_pages(now, prev_counts_by_page=prev)
     one = {p["page_key"]: p for p in pages}["1gun"]
     assert "ヨシラバー注目ポイント" in one["html"]
-    assert "今日の一軍SNSは坂本勇人、岡本和真を中心に動いています。" in one["html"]
+    assert "今日の一軍SNSは坂本勇人、戸郷翔征を中心に動いています。" in one["html"]
     assert "X埋め込みは出典確認用" in one["html"]
     assert "ヨシラバーが整理" in one["excerpt"]
     assert "投稿/24h" not in one["excerpt"]
-    assert "注目: 坂本勇人、岡本和真。" in one["excerpt"]
+    assert "注目: 坂本勇人、戸郷翔征。" in one["excerpt"]
 
 
 def test_merge_entry_text_removes_rsshub_duplicate_title_summary():

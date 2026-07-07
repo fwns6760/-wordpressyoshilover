@@ -216,6 +216,9 @@ class ReplyTargetHandleTests(unittest.TestCase):
                 "piropiro___3", "richagacha52", "giants_spirit_g", "MIKAN__1214",
                 "Giants_6_Hyt6", "shishamo_out", "mi___yg246", "usagi_kyou_",
                 "YG_Sazareishi", "giantsssss6", "SONSINRON_Gkado",
+                # 2026-07-07 user 追加 6 handle
+                "VIVAfukky2002", "522happy522", "gsoku_giants", "G94292907",
+                "karamus_giants", "jm7cybh50364",
             ]),
         )
         self.assertEqual(len(handles), len(set(handles)))

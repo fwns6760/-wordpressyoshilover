@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import io
 import logging
+import os
 import re
 from html import unescape
 from typing import Optional
@@ -38,6 +39,21 @@ _URL_RE = re.compile(r"https?://\S+")
 # X の t.co 換算 (URL は一律 23 weighted units)
 _X_URL_WEIGHT = 23
 _X_WEIGHTED_LIMIT = 280
+
+
+def _main_weighted_limit() -> int:
+    """おりポス (main) の weighted 上限。
+
+    2026-07-07 user「オリポスながめ。プレミアプランだし」「キーワードをたくさん
+    入れないと」: アカウントは X Premium なので main は長文ポスト前提
+    (default 900 weighted ≈ 全角450字)。リプは従来 280 のまま。
+    env X_SHARE_MAIN_WEIGHTED_LIMIT で調整可 (280 に戻せば旧挙動)。
+    """
+    raw = (os.environ.get("X_SHARE_MAIN_WEIGHTED_LIMIT") or "").strip()
+    try:
+        return max(280, int(raw)) if raw else 900
+    except ValueError:
+        return 900
 
 # 型ごとのフック指示 (おりポス1行目 = ヨシラバーの見立て)。
 _HOOK_STYLE = {
@@ -277,10 +293,16 @@ def _build_drafts_llm(
         "- 「〜ですね」「〜してほしい」「注目です」等の優等生・実況文体は禁止。",
         "- フック内でも選手はフルネーム (井上温大 / 坂本勇人)。姓だけは禁止。",
         "",
-        "【要約 (SUMMARY)】",
-        "- 45〜70字、1〜2文。タイトルが約束している中身 (理由・背景・根拠) への答えを"
-        "記事本文から拾い、読んだだけで完結させる。",
-        "- 記事に無い数字・事実は書かない。煽り・ポエム禁止。",
+        "【本文 (SUMMARY)】",
+        "- 150〜300字、3〜6文。プレミアム長文ポスト前提で、記事の中身をしっかり"
+        "書き切る (読んだだけで記事の要点が全部わかる読み物にする)。",
+        "- 記事中の数字・成績・スコア・回・球数は省略せずそのまま載せる"
+        " (記事に無い数字・事実は書かない)。",
+        "- 選手・監督・コーチの発言が記事にあれば 1〜2個を『』でそのまま引用する"
+        " (語尾の改変・要約引用は禁止。発言が無い記事では引用を作らない)。",
+        "- 登場する選手・監督・コーチは全員フルネーム敬称なしで名指しする"
+        " (検索で見つかるためのキーワード。「巨人」または「ジャイアンツ」も本文に自然に1回入れる)。",
+        "- 煽り・ポエム・「〜に注目」等の実況文体は禁止。事実と流れで書く。",
         "",
         "【リプ (REPLY、おりポスへの返信。末尾に記事URLが自動で付く)】",
         "- 40〜80字、1〜2文。おりポスの続きとして自然に読める文。",
@@ -382,11 +404,15 @@ def _trim_to_budget_sentences(text: str, budget: int) -> str:
 
 
 def _assemble_main(title_line: str, hook: str, summary: str) -> str:
-    """フック → タイトル行 → 要約。超過時は要約を文単位で切り詰めてから間引く。"""
+    """フック → タイトル行 → 本文。超過時は本文を文単位で切り詰めてから間引く。
+
+    上限は _main_weighted_limit() (Premium 長文、default 900 weighted)。
+    """
+    limit = _main_weighted_limit()
     if hook and summary:
         head = f"{hook}\n\n{title_line}\n\n"
         trimmed = _trim_to_budget_sentences(
-            summary, _X_WEIGHTED_LIMIT - x_weighted_len(head)
+            summary, limit - x_weighted_len(head)
         )
         if trimmed != summary:
             LOG.info("x_share assemble summary_trimmed to fit weighted limit")
@@ -398,22 +424,27 @@ def _assemble_main(title_line: str, hook: str, summary: str) -> str:
         title_line,
     ]
     for text in candidates:
-        if text and x_weighted_len(text) <= _X_WEIGHTED_LIMIT:
+        if text and x_weighted_len(text) <= limit:
             return text
     # title_line 単体でも超過する異常系: 文字境界で切り詰め
     text = title_line
-    while text and x_weighted_len(text + "…") > _X_WEIGHTED_LIMIT:
+    while text and x_weighted_len(text + "…") > limit:
         text = text[:-1]
     return f"{text}…" if text else title_line
 
 
 def _build_drafts_fallback(title_line: str, body: str) -> tuple[str, str]:
-    """LLM なし fallback: タイトル（媒体名）+ 記事冒頭1文 (数字捏造リスクゼロ)。"""
-    lead_sentences = [s.strip() for s in re.split(r"[。\n]", body) if s.strip()][:2]
+    """LLM なし fallback: タイトル（媒体名）+ 記事冒頭数文 (数字捏造リスクゼロ)。
+
+    2026-07-07 長文化: Premium 上限内で記事冒頭 3 文まで載せる (キーワード・
+    情報量を確保。文はすべて記事 literal なので検証不要)。
+    """
+    lead_sentences = [s.strip() for s in re.split(r"[。\n]", body) if s.strip()][:3]
     main_text = title_line
     if lead_sentences:
-        main_text = f"{title_line}\n{lead_sentences[0]}。"
-    if x_weighted_len(main_text) > _X_WEIGHTED_LIMIT:
+        lead_block = "。".join(lead_sentences) + "。"
+        main_text = f"{title_line}\n{lead_block}"
+    if x_weighted_len(main_text) > _main_weighted_limit():
         main_text = _assemble_main(title_line, "", "")
     reply_body = "試合の流れと背景も含めて記事にまとめています。"
     return main_text, reply_body

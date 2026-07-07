@@ -83,11 +83,22 @@ class AssembleMainTests(unittest.TestCase):
         self.assertEqual(text, "フック。\n\nタイトル（スポーツ報知）\n\n要約文。")
 
     def test_degrades_when_over_limit(self):
-        long_summary = "あ" * 135  # weighted 270 で3ブロック合計は必ず超過
-        text = xshare._assemble_main("タイトル（報知）", "フックの一言。", long_summary)
+        # env で旧 280 上限に戻した時の退避動作 (Premium default は 900)
+        import os
+        from unittest import mock
+        long_summary = "あ" * 135  # weighted 270 で3ブロック合計は 280 を必ず超過
+        with mock.patch.dict(os.environ, {"X_SHARE_MAIN_WEIGHTED_LIMIT": "280"}):
+            text = xshare._assemble_main("タイトル（報知）", "フックの一言。", long_summary)
         self.assertNotIn(long_summary, text)
         self.assertIn("タイトル（報知）", text)
         self.assertLessEqual(xshare.x_weighted_len(text), 280)
+
+    def test_premium_default_keeps_long_body(self):
+        """2026-07-07 user「オリポスながめ。プレミアプランだし」: 長文本文は削らない。"""
+        long_summary = "あ" * 135  # weighted 270、Premium default 900 なら丸ごと残る
+        text = xshare._assemble_main("タイトル（報知）", "フックの一言。", long_summary)
+        self.assertIn(long_summary, text)
+        self.assertLessEqual(xshare.x_weighted_len(text), 900)
 
 
 class BuildShareDraftsTests(unittest.TestCase):

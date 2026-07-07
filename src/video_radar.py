@@ -10,6 +10,7 @@ read-only 巡回し、「懐かしい・ファンが面白い・いま話題」�
 """
 from __future__ import annotations
 
+import os as _os
 import re as _re
 import threading as _threading
 from concurrent.futures import ThreadPoolExecutor as _ThreadPoolExecutor
@@ -114,7 +115,15 @@ def classify_post(
     return score, tag
 
 
-def _default_fetch(url: str, *, timeout: int = 12) -> str:
+def _default_fetch(url: str, *, timeout: int = 0) -> str:
+    # 2026-07-07 実測: RSSHub twitter route の未キャッシュ応答は約 22s (X 上流)。
+    # 旧 default 12s では未キャッシュ handle がほぼ必ず timeout し、リプ/動画
+    # 候補の親ポスト取得が全滅していた。30s に拡大 (env で調整可)。
+    if timeout <= 0:
+        try:
+            timeout = int(_os.environ.get("RSSHUB_FETCH_TIMEOUT_SECONDS") or 30)
+        except ValueError:
+            timeout = 30
     req = _Request(url, headers={"User-Agent": "yoshilover-x-buzz-radar/1.0"})
     with _urlopen(req, timeout=timeout) as resp:  # noqa: S310 (自前 RSSHub のみ)
         return resp.read().decode("utf-8", errors="replace")

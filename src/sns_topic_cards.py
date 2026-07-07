@@ -59,10 +59,14 @@ def extract_rss_keywords(
         now_utc = (now or _dt.now(_tz.utc)).astimezone(_tz.utc)
     out: list[dict] = []
     seen: set[tuple] = set()
+    # 2026-07-07: handle 直列 fetch だと 16 handle × 未キャッシュ 22s で 6 分弱
+    # かかり (旧 12s timeout では全滅)、リプ親ポストが取れなかった。並列 prefetch
+    # (video_radar と同じ、失敗分 1 回再試行込み) へ。handle 間の優先順は維持。
+    feed_urls = {h: f"{_vr._RSSHUB_BASE}/twitter/user/{h}?limit={limit}" for h in handles}
+    fetched = _vr.prefetch_feeds(list(feed_urls.values()), fetch)
     for h in handles:
-        try:
-            xml = fetch(f"{_vr._RSSHUB_BASE}/twitter/user/{h}?limit={limit}")
-        except Exception:  # noqa: BLE001
+        xml = fetched.get(feed_urls[h])
+        if not isinstance(xml, str):
             continue
         handle_out: list[dict] = []
         for item in _vr._extract_rss_items(xml):

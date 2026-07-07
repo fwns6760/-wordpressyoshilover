@@ -140,10 +140,26 @@ _POSTGAME_TITLE_RE = re.compile(
 )
 
 
+def _looks_postgame(title: str) -> bool:
+    """試合結果タイトル判定。実戦済みの title_validator 判定を主、 regex を従で併用
+    (全角数字は NFKC 正規化してから regex を当てる)。"""
+    import unicodedata as _ud
+
+    normalized = _ud.normalize("NFKC", title or "")
+    try:
+        from src.title_validator import _has_postgame_signal
+
+        if _has_postgame_signal(title or ""):
+            return True
+    except Exception:  # noqa: BLE001 - regex fallback
+        pass
+    return bool(_POSTGAME_TITLE_RE.search(normalized))
+
+
 def find_latest_postgame() -> dict:
     """最新の公開済み試合結果 (postgame) 記事 1 件。見つからなければ {}。"""
     for p in list_recent_published(limit=10):
-        if _POSTGAME_TITLE_RE.search(p.get("title") or ""):
+        if _looks_postgame(p.get("title") or ""):
             return p
     return {}
 

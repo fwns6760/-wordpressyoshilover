@@ -49,7 +49,7 @@ _REPORTS_PREFIX = "x_engagement/reports"
 
 _FEED_LIMIT = 30
 _METRICS_FETCH_INTERVAL_SECONDS = 0.5
-_HTTP_TIMEOUT_SECONDS = 20
+_HTTP_TIMEOUT_SECONDS = 30  # 2026-07-07: RSSHub 未キャッシュ応答は実測~22s (20s だと初回必ず timeout)
 # 一時的な 5xx / timeout (RSSHub cold start 等) は数回リトライする。
 # 4xx (401/403/404 = 認証失効・ルート不正) はリトライしても無駄なので即諦める。
 _HTTP_MAX_ATTEMPTS = 3

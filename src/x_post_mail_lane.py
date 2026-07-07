@@ -4142,6 +4142,17 @@ def _dedup_blob_path(date_str: str) -> str:
     return f"x_post_mail/dedup/{date_str}.jsonl"
 
 
+def _dedup_blob_prefix(date_str: str) -> str:
+    """その日の dedup record blob 群の共通 prefix。
+
+    2026-07-07: 便の同時発火 (毎時:00/:05 + 試合中15分毎) で read+concat+
+    re-upload が競合し record が消えていた (実測: load 件数が 509→505 に後退)。
+    書き込みを「便ごとの一意 blob」に変え、読みは prefix 一覧で新旧両形式
+    (``{date}.jsonl`` 旧 / ``{date}_HHMMSS_xxx.jsonl`` 新) を拾う。
+    """
+    return f"x_post_mail/dedup/{date_str}"
+
+
 def _load_recent_dedup_records(
     bucket_name: str,
     now: datetime,
@@ -4172,35 +4183,41 @@ def _load_recent_dedup_records(
     ]
     out: list[dict] = []
     for date_str in date_strs:
-        blob = bucket.blob(_dedup_blob_path(date_str))
+        # 2026-07-07: 旧 day-file (``{date}.jsonl``) と新 per-run blob
+        # (``{date}_HHMMSS_xxx.jsonl``) の両方を prefix 一覧で読む。
         try:
-            if not blob.exists():
-                continue
-            content = blob.download_as_text()
+            blobs = list(bucket.list_blobs(prefix=_dedup_blob_prefix(date_str)))
         except Exception as exc:  # noqa: BLE001
-            LOG.warning("_load_recent_dedup_records: read %s failed: %r",
+            LOG.warning("_load_recent_dedup_records: list %s failed: %r",
                         date_str, exc)
             continue
-        for line in content.splitlines():
-            line = line.strip()
-            if not line:
-                continue
+        for blob in blobs:
             try:
-                rec = _json.loads(line)
-            except Exception:  # noqa: BLE001
+                content = blob.download_as_text()
+            except Exception as exc:  # noqa: BLE001
+                LOG.warning("_load_recent_dedup_records: read %s failed: %r",
+                            getattr(blob, "name", date_str), exc)
                 continue
-            ts_str = rec.get("ts") or ""
-            if not ts_str:
-                continue
-            try:
-                ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
-            except (ValueError, TypeError):
-                continue
-            if ts.tzinfo is None:
-                # Treat naive timestamps as JST per project convention.
-                ts = ts.replace(tzinfo=JST)
-            if ts >= cutoff:
-                out.append(rec)
+            for line in content.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rec = _json.loads(line)
+                except Exception:  # noqa: BLE001
+                    continue
+                ts_str = rec.get("ts") or ""
+                if not ts_str:
+                    continue
+                try:
+                    ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+                except (ValueError, TypeError):
+                    continue
+                if ts.tzinfo is None:
+                    # Treat naive timestamps as JST per project convention.
+                    ts = ts.replace(tzinfo=JST)
+                if ts >= cutoff:
+                    out.append(rec)
     return out
 
 
@@ -4551,15 +4568,14 @@ def _record_dedup_signatures(
     period_labels: Optional[list[str]] = None,
     media_handles: Optional[list[str]] = None,
 ) -> bool:
-    """355: append signatures to today's JSONL on GCS. Returns ``True``
-    on success, ``False`` on any error. Failures are logged and never
-    abort the calling flow.
+    """355: record signatures as a per-run JSONL blob on GCS. Returns
+    ``True`` on success, ``False`` on any error. Failures are logged and
+    never abort the calling flow.
 
-    GCS objects are immutable so we read + concat + re-upload. The
-    Schedulers' staggered fire times (07/12/15/17:30/22:30 JST) keep
-    write contention low; on manual co-fire there is a small race
-    window but it would only drop one batch of signatures, not break
-    the mail send.
+    2026-07-07: 旧実装は day-file への read+concat+re-upload で、便の同時
+    発火 (毎時:00/:05 + 試合中15分毎) に record が消えていた (実測 509→505)。
+    便ごとの一意 blob 書き込みへ変更し、read-modify-write 競合を無くす。
+    読み側は :func:`_dedup_blob_prefix` の一覧で新旧両形式を拾う。
     """
     if not signatures or not bucket_name:
         return False
@@ -4570,7 +4586,6 @@ def _record_dedup_signatures(
         LOG.warning("_record_dedup_signatures: client init failed: %r", exc)
         return False
     date_str = now.strftime("%Y-%m-%d")
-    blob = bucket.blob(_dedup_blob_path(date_str))
     if now.tzinfo is None:
         ts_iso = now.replace(tzinfo=JST).isoformat()
     else:
@@ -4597,14 +4612,14 @@ def _record_dedup_signatures(
         new_records.append(rec)
     new_lines = [_json.dumps(rec, ensure_ascii=False) for rec in new_records]
     new_block = "\n".join(new_lines) + "\n"
-    try:
-        existing = blob.download_as_text() if blob.exists() else ""
-    except Exception as exc:  # noqa: BLE001
-        LOG.warning("_record_dedup_signatures: read existing failed: %r", exc)
-        existing = ""
+    # 便ごとの一意 blob 名: 時刻 + 内容 hash (同秒の別便でも内容が違えば別名)。
+    run_suffix = _hashlib.sha1(new_block.encode("utf-8")).hexdigest()[:8]
+    blob = bucket.blob(
+        f"{_dedup_blob_prefix(date_str)}_{now.strftime('%H%M%S')}_{run_suffix}.jsonl"
+    )
     try:
         blob.upload_from_string(
-            existing + new_block,
+            new_block,
             content_type="application/x-jsonlines",
         )
         return True

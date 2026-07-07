@@ -3918,6 +3918,13 @@ class TicketThreeFiftyFiveDedupTests(unittest.TestCase):
             def blob(self, path: str) -> FakeBlob:
                 return FakeBlob(path)
 
+            def list_blobs(self, prefix: str = ""):
+                for path in sorted(store):
+                    if path.startswith(prefix):
+                        blob = FakeBlob(path)
+                        blob.name = path
+                        yield blob
+
         class FakeClient:
             def bucket(self, name: str) -> FakeBucket:  # noqa: ARG002
                 return FakeBucket()
@@ -4076,9 +4083,10 @@ class TicketThreeFiftyFiveDedupTests(unittest.TestCase):
                 now,
             )
         self.assertTrue(ok)
-        path = "x_post_mail/dedup/2026-05-16.jsonl"
-        self.assertIn(path, store)
-        lines = [ln for ln in store[path].split("\n") if ln.strip()]
+        # 2026-07-07: 便ごとの一意 blob (``{date}_HHMMSS_xxx.jsonl``) に書く。
+        paths = [p for p in store if p.startswith("x_post_mail/dedup/2026-05-16_")]
+        self.assertEqual(len(paths), 1)
+        lines = [ln for ln in store[paths[0]].split("\n") if ln.strip()]
         self.assertEqual(len(lines), 2)
         import json
         rec0 = json.loads(lines[0])
@@ -4103,14 +4111,16 @@ class TicketThreeFiftyFiveDedupTests(unittest.TestCase):
                 period_labels=["今月"],
             )
         self.assertTrue(ok)
-        rec = json.loads(store["x_post_mail/dedup/2026-05-18.jsonl"].strip())
+        paths = [p for p in store if p.startswith("x_post_mail/dedup/2026-05-18_")]
+        self.assertEqual(len(paths), 1)
+        rec = json.loads(store[paths[0]].strip())
         self.assertEqual(rec["signature"], "OPS|今月|False|None")
         self.assertEqual(rec["focus_player"], "浦田俊輔")
         self.assertEqual(rec["metric"], "OPS")
         self.assertEqual(rec["period_label"], "今月")
 
     def test_record_dedup_signatures_appends_to_existing(self) -> None:
-        """既存 record に append (= 上書きしない)。"""
+        """既存 record を壊さず追記相当になる (2026-07-07: 別 blob 書き+一覧読み)。"""
         from unittest.mock import patch
         import src.x_post_mail_lane as lane
 
@@ -4126,9 +4136,13 @@ class TicketThreeFiftyFiveDedupTests(unittest.TestCase):
                 ["NEW|y|False|None"],
                 now,
             )
-        body = store[path]
-        self.assertIn("EXISTING|x|False|None", body)
-        self.assertIn("NEW|y|False|None", body)
+            # 旧 day-file は上書きされない (per-run blob に書く)。
+            self.assertEqual(store[path].count("EXISTING|x|False|None"), 1)
+            self.assertNotIn("NEW|y|False|None", store[path])
+            # 読み側は新旧両方を拾う (= 実質 append と同じ見え方)。
+            sigs = lane._load_recent_dedup_signatures("test-bucket", now)
+        self.assertIn("EXISTING|x|False|None", sigs)
+        self.assertIn("NEW|y|False|None", sigs)
 
     def test_record_fan_voice_pool_writes_jsonl(self) -> None:
         """397: fan_voice_pool entries が GCS JSONL に書ける。"""

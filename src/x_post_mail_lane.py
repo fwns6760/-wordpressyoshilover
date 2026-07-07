@@ -2546,6 +2546,13 @@ _MLB_WATCH_HANDLES = [
     # 2026-07-06 user「入れて」: 吉田正尚 (Red Sox)。佐々木朗希=Dodgers、
     # 今永昇太=Cubs は既存 handle でカバー済み。
     "RedSox",
+    # 2026-07-07 user「とかも追加して」「とくに動画でみせたい」: 日本語圏の
+    # MLB 動画クリップアカ。実 feed 検証済 (velvityrose=大谷 POV/名場面動画、
+    # MasayaKotani=大谷/朗希の現地撮影動画中心、mochiko_dayo17=大谷/山本由伸の
+    # 現地観戦動画。いずれも動画マーカー多数、非野球投稿は選手名ゲートで落ちる)。
+    "velvityrose",
+    "MasayaKotani",
+    "mochiko_dayo17",
 ]
 # 表示名 → 検出 alias (部分一致)。MLB 文脈の feed なので姓のみで安全。
 # US チーム公式は first name だけで呼ぶ投稿があるため英 first name も入れる
@@ -3756,9 +3763,10 @@ def apply_x_impression_policy(
             _REPLY_CANDIDATE_METRIC,
         }
         # 2026-07-02 user 決定: 動画SNS (引用RT) は同一選手でも媒体が違えば残す。
+        # 2026-07-07: MLB引用RT (mlb_watch_post) も動画中心 lane なので同扱い。
         media_key = ""
         if (
-            candidate.metric == _VIDEO_RADAR_METRIC
+            candidate.metric in {_VIDEO_RADAR_METRIC, _MLB_WATCH_METRIC}
             and player_key
             and (candidate.media_handle or "").strip()
         ):
@@ -4318,8 +4326,12 @@ def _video_player_media_within_cooldown(
     if cooldown_hours <= 0:
         return out
     cutoff = now - timedelta(hours=cooldown_hours)
+    # 2026-07-07 user「MLBのおりポスが少ない」「とくに動画でみせたい」: MLB引用RT
+    # (mlb_watch_post) も動画引用RT lane なので同じ (選手×媒体) 判定に含める
+    # (大谷動画が 12h player cooldown で 1 本/12h に絞られていた)。
+    _media_aware_metrics = {_VIDEO_RADAR_METRIC, _MLB_WATCH_METRIC}
     for rec in records:
-        if str(rec.get("metric") or "") != _VIDEO_RADAR_METRIC:
+        if str(rec.get("metric") or "") not in _media_aware_metrics:
             continue
         player_key = _normalize_player_name(rec.get("focus_player"))
         handle = str(rec.get("media_handle") or "").strip().lower()

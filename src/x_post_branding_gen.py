@@ -865,12 +865,14 @@ def _ending_style_hint(seed: str) -> str:
     return _ENDING_STYLES[int(h, 16) % len(_ENDING_STYLES)]
 
 
-def _voice_quality_ok(text: str, *, live: bool = False) -> bool:
+def _voice_quality_ok(text: str, *, live: bool = False, short_ok: bool = False) -> bool:
     """門番: ヨシラバーボイスとして出してよいか (True=OK)。
 
     優等生締め / ポエム は常に弾く。 考察モードでは加えて、 スカスカ (短すぎ) と
     感嘆符の乱用も弾く。 ライブモード (live=True、 試合中の缶詰) は短文 + 連呼絶叫が
     正なので length / 感嘆 check を skip する。
+    ``short_ok`` (2026-07-07 user「ファンリプ長くない?」): empathy リプは 20〜55字の
+    短文が正なので、 50字未満スカスカ check だけ skip する (感嘆乱用 check は維持)。
     """
     t = (text or "").strip()
     if not t:
@@ -884,7 +886,7 @@ def _voice_quality_ok(text: str, *, live: bool = False) -> bool:
     if _VOICE_ABSTRACT_MARKERS.search(t):
         return False
     if not live:
-        if len(t) < 50:  # スカスカ・フィラー (矢野「これは見ておきたい一件」型)
+        if len(t) < 50 and not short_ok:  # スカスカ・フィラー (矢野「これは見ておきたい一件」型)
             return False
         if t.count("！") + t.count("!") >= 3:  # 感嘆だけのポエム
             return False
@@ -1551,13 +1553,15 @@ def build_quote_rt_comment(
     if is_empathy and (db_fact or "").strip():
         # 2026-07-07 user「野球系はリプしても反応薄い。知識を見せるより (寄り添う)」:
         # db_fact があっても既定は使わない側へ倒す (気持ち優先、数字は例外)。
+        # 2026-07-07 user「ファンリプ長くない?相手にもっと寄り添って?気持ちよくさせて」:
+        # 50〜90字→20〜55字・原則1文へ短縮 + 相手自身を持ち上げる一言を必須化。
         len_rule = (
-            "共感リプ用 (相手の返信欄に出る)。 50〜90字、 1〜2文で短く。 "
-            "主役は共感: 最初の一文は相手の意見・見立てへの同意から入る "
+            "共感リプ用 (相手の返信欄に出る)。 20〜55字、 原則1文 (長くても2文)。 短いほど良い。 "
+            "主役は共感: 相手の意見・見立てへの同意から入る "
             "(相手の言いたいことを自分の言葉で言い直して肯定する。 自分の話題・"
             "自分の視点から始めない。 相手の意見と違う自分の意見は書かない)。 "
-            "そのうえで元投稿の具体的な場面・気持ちを1つ拾って、 同じファン仲間として"
-            "自然に寄り添う (『分かる』系の同調だけで終わらず、 相手の見た場面を自分の言葉で受ける)。 "
+            "そのうえで相手自身が気持ちよくなる一言を添える (見立ての鋭さ・写真・現地観戦・"
+            "応援の熱、 どれか元投稿に実際にあるものを1つ具体的に褒める)。 "
             "知識を見せない: 基本は数字なしで成立させ、 相手の話の流れが数字を求めている時だけ "
             "verified data から1つ添えてよい (迷ったら入れない。 知識ではなく気持ちで返す)。 "
             "データ解説・分析講釈・豆知識の付け足しは禁止。 逆張り・訂正・辛口は禁止。 "
@@ -1569,16 +1573,18 @@ def build_quote_rt_comment(
         # 2026-07-06 user「まだ仲良い人いないんで。今から仲良くなってきたい感じで
         # 相手の立場に立ち、相手が気持ちよくなるリプ」「ですます調にして」。
         # 2026-07-07 user「リプは相手の意見にもっとよりそって」: 同意 first を明示。
+        # 2026-07-07 user「ファンリプ長くない?相手にもっと寄り添って?気持ちよくさせて」:
+        # 50〜90字→20〜55字・原則1文へ短縮 + 相手自身を持ち上げる一言を必須化。
         len_rule = (
-            "共感リプ用 (相手の返信欄に出る)。 50〜90字、 1〜2文で短く。 "
+            "共感リプ用 (相手の返信欄に出る)。 20〜55字、 原則1文 (長くても2文)。 短いほど良い。 "
             "必ずですます調 (丁寧語)。 まだ面識のない相手に初めて話しかける距離感で、 "
             "タメ口・呼び捨て・馴れ馴れしい省略は禁止。 "
-            "最初の一文は相手の意見・見立てへの同意から入る (『たしかに』『本当に〜ですよね』"
+            "相手の意見・見立てへの同意から入る (『たしかに』『本当に〜ですよね』"
             "のように、 相手の言いたいことを自分の言葉で言い直して肯定する。 "
             "自分の話題・自分の視点から始めない。 相手の意見と違う自分の意見は書かない)。 "
-            "そのうえで元投稿の具体的な場面・気持ちを1つ拾い、 相手の立場に立って、 相手の観戦・"
-            "見立て・写真そのものを具体的に受け止める (相手が読んで気持ちよくなり、 "
-            "返信したくなる返し。 これから仲良くなりたい人へのリプ)。 "
+            "そのうえで相手自身が気持ちよくなる一言を添える (見立ての鋭さ・写真の良さ・"
+            "現地観戦・応援の熱、 どれか元投稿に実際にあるものを1つ具体的に褒める。 "
+            "相手が読んでうれしくなり、 返信したくなる返し。 これから仲良くなりたい人へのリプ)。 "
             "知識を見せない: 数字・データ解説・豆知識・過去記録・選手情報の付け足しは一切しない "
             "(相手より詳しく見せた瞬間に距離ができる。 知識ではなく気持ちで返す)。 "
             "逆張り・訂正・辛口・分析講釈は禁止。 "
@@ -1681,9 +1687,9 @@ def build_quote_rt_comment(
             retry_note = ""
         elif is_empathy:
             retry_note = (
-                "※前回は講釈っぽい/知識を見せる内容/タメ口/自分の視点始まりで却下された。 "
-                "相手の意見への同意から入り、 豆知識や解説を足さず、 元投稿の場面・気持ちへの"
-                "共感だけで、 ですます調・50〜90字・1〜2文で丁寧に書き直す。\n"
+                "※前回は長い/講釈っぽい/知識を見せる内容/タメ口/自分の視点始まりで却下された。 "
+                "相手の意見への同意から入り、 豆知識や解説を足さず、 相手が気持ちよくなる"
+                "共感と褒めだけで、 ですます調・20〜55字・原則1文で短く書き直す。\n"
             )
         elif is_reply:
             retry_note = (
@@ -1747,8 +1753,11 @@ def build_quote_rt_comment(
         last_preview = text[:60]
         safety_ok = bool(text) and _gemini_branding_safety_check(text, verified_text)
         unverified = _extract_unverified_numbers(text, verified_text) if text else []
-        voice_ok = bool(text) and _voice_quality_ok(text, live=is_live)
-        if safety_ok and not unverified and voice_ok:
+        voice_ok = bool(text) and _voice_quality_ok(text, live=is_live, short_ok=is_empathy)
+        # 2026-07-07 user「ファンリプ長くない?」: empathy リプは prompt 指定 (20〜55字) を
+        # 大きく超えたら gate で弾いてリトライ (最終便は relaxed fallback 側で許容)。
+        empathy_len_ok = (not is_empathy) or len(text) <= 70
+        if safety_ok and not unverified and voice_ok and empathy_len_ok:
             log.info("quote_rt_comment_built player=%s text_len=%d attempt=%d", who, len(text), attempt + 1)
             return text
         if not safety_ok:
@@ -1759,6 +1768,9 @@ def build_quote_rt_comment(
         elif not voice_ok:
             log.info("quote_rt_gate_fail check=voice attempt=%d tail=%r preview=%r",
                      attempt + 1, text[-30:], text[:60])
+        elif not empathy_len_ok:
+            log.info("quote_rt_gate_fail check=empathy_too_long attempt=%d text_len=%d preview=%r",
+                     attempt + 1, len(text), text[:60])
         # 470: 最終便は template に逃げず LLM を優先。 ただし致命的NG は最終便でも block:
         # 捏造数字 (unverified) / 炎上 pattern (戦犯・断定・監督批判 等) / URL・ハッシュタグ等の
         # forbidden pattern / 文字数超過。 残る voice (定型締め) と topic-hygiene (首脳陣 等) のみ許容。

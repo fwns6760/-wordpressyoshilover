@@ -5463,6 +5463,36 @@ class BuildQuoteRtCommentTests(unittest.TestCase):
         self.assertNotIn("補足リプ用", prompt)
         self.assertIn("数字・データ解説・豆知識・過去記録・選手情報の付け足しは一切しない", prompt)
 
+    def test_reply_empathy_too_long_retries_then_accepts_short(self):
+        """2026-07-07 user「ファンリプ長くない?」: empathy リプは 70 字超を gate で
+        弾いてリトライし、短い方を採用する。"""
+        import sys, types, contextlib
+        from unittest import mock
+        from src import x_post_branding_gen as xbg
+        long_reply = (
+            "坂本勇人のあの一振り、本当に痺れましたよね。現地で見られたのが羨ましいです。"
+            "ああいう場面で必ず結果を出すのがさすがですし、今日の試合展開を考えても"
+            "あの一打の価値はとても大きかったと思います。"
+        )
+        short_reply = "本当にあの一振り痺れましたよね。現地観戦羨ましいです。"
+        outputs = iter([long_reply, short_reply])
+        fake_client = mock.MagicMock()
+        fake_client.models.generate_content.side_effect = lambda **kw: types.SimpleNamespace(
+            text=next(outputs)
+        )
+        fake_genai = types.SimpleNamespace(Client=lambda api_key=None: fake_client)
+        google_mod = sys.modules.get("google") or types.ModuleType("google")
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(mock.patch.dict(sys.modules, {"google": google_mod, "google.genai": fake_genai}))
+            stack.enter_context(mock.patch.object(google_mod, "genai", fake_genai, create=True))
+            out = xbg.build_quote_rt_comment(
+                "坂本勇人 サヨナラ現地で見た！", "坂本勇人",
+                gemini_api_key="k", budget_site="reply",
+                db_fact="", require_db_fact=False, reply_style="empathy",
+            )
+        self.assertEqual(out, short_reply)
+        self.assertEqual(fake_client.models.generate_content.call_count, 2)
+
 
 class VideoRadarImpressionPolicyTests(unittest.TestCase):
     """451: 動画候補は同選手のデータ候補が居ても落とさず確実に届ける。"""

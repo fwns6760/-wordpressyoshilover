@@ -862,7 +862,9 @@ _DEFAULT_FAN_REPLY_HANDLES = (
     "EH87EazmV9D2eSw,kandume92,ay222000,vto6u,GIANTSLIFE0801,"
     # 2026-07-06 user 追加 11 handle (「今から仲良くなりたい」個人ファンアカ)。
     "piropiro___3,richagacha52,giants_spirit_g,MIKAN__1214,Giants_6_Hyt6,"
-    "shishamo_out,mi___yg246,usagi_kyou_,YG_Sazareishi,giantsssss6,SONSINRON_Gkado"
+    "shishamo_out,mi___yg246,usagi_kyou_,YG_Sazareishi,giantsssss6,SONSINRON_Gkado,"
+    # 2026-07-07 user 追加 6 handle (実 feed 検証済、頻度 0.5〜12 post/日)。
+    "VIVAfukky2002,522happy522,gsoku_giants,G94292907,karamus_giants,jm7cybh50364"
 )
 
 

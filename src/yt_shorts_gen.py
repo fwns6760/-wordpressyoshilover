@@ -351,8 +351,25 @@ def _upload_artifacts(
             expiration=timedelta(days=7),
             method="GET",
         )
-    except Exception as exc:  # noqa: BLE001
-        LOG.warning("yt_shorts_signed_url_failed err=%r", exc)
+    except Exception:
+        # Cloud Run のデフォルト認証 (compute credentials) は秘密鍵を持たず直接署名
+        # できないため、IAM signBlob 委譲 (service_account_email + access_token) で
+        # 署名する。runtime SA には roles/iam.serviceAccountTokenCreator (self) が必要。
+        try:
+            import google.auth
+            from google.auth.transport import requests as ga_requests
+
+            credentials, _ = google.auth.default()
+            credentials.refresh(ga_requests.Request())
+            signed_url = video_blob.generate_signed_url(
+                version="v4",
+                expiration=timedelta(days=7),
+                method="GET",
+                service_account_email=credentials.service_account_email,
+                access_token=credentials.token,
+            )
+        except Exception as exc:  # noqa: BLE001
+            LOG.warning("yt_shorts_signed_url_failed err=%r", exc)
     return f"gs://{bucket_name}/{video_blob.name}", signed_url
 
 

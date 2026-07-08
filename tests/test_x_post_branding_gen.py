@@ -39,6 +39,10 @@ import src.x_post_branding_gen as xbg  # noqa: E402
 class PrimeHoursTests(unittest.TestCase):
     """3.5-flash 温存窓 (X_POST_GEMINI_PRIME_HOURS_JST) の判定と model 差替え。"""
 
+    def setUp(self) -> None:
+        # 2026-07-08 day-quota breaker はモジュール state を持つので test 間で必ず reset
+        xbg._MODEL_QUOTA_DEAD_UNTIL.clear()
+
     def _jst(self, hour: int, minute: int = 30):
         from datetime import datetime, timezone, timedelta
 
@@ -125,6 +129,53 @@ class PrimeHoursTests(unittest.TestCase):
                 xbg._x_post_generate_content(
                     client, model="gemini-3.5-flash", contents="p", config={}
                 )
+
+    def test_daily_quota_dead_skips_api_call_until_reset(self) -> None:
+        # 2026-07-08: 日次枠 429 を一度検知したら、同 run 内では両モデル dead の間
+        # API を一切呼ばず即 raise (枠切れ後の 429 連打 storm 停止)。
+        client = MagicMock()
+        daily_err = RuntimeError(
+            "429 RESOURCE_EXHAUSTED quotaId GenerateRequestsPerDayPerProjectPerModel-FreeTier"
+        )
+        client.models.generate_content.side_effect = daily_err
+        with patch.object(xbg, "_x_post_in_prime_hours", return_value=False):
+            with self.assertRaises(RuntimeError):
+                xbg._x_post_generate_content(
+                    client, model="gemini-3.5-flash", contents="p", config={}
+                )
+            first_calls = client.models.generate_content.call_count
+            self.assertEqual(first_calls, 2)  # lite -> reverse 3.5 で両方 dead 化
+            with self.assertRaises(RuntimeError):
+                xbg._x_post_generate_content(
+                    client, model="gemini-3.5-flash", contents="p", config={}
+                )
+        # 2 回目以降は API を呼ばない (call_count 据え置き)
+        self.assertEqual(client.models.generate_content.call_count, first_calls)
+
+    def test_per_minute_429_does_not_trip_breaker(self) -> None:
+        # RPM (per-minute) の 429 は breaker 対象外 — 次の呼び出しは普通に API を試す。
+        client = MagicMock()
+        minute_err = RuntimeError(
+            "429 RESOURCE_EXHAUSTED quotaId GenerateRequestsPerMinutePerProjectPerModel"
+        )
+        ok = MagicMock()
+        client.models.generate_content.side_effect = [minute_err, ok]
+        with patch.object(xbg, "_x_post_in_prime_hours", return_value=False):
+            result = xbg._x_post_generate_content(
+                client, model="gemini-3.5-flash", contents="p", config={}
+            )
+        self.assertIs(result, ok)
+        self.assertFalse(xbg._MODEL_QUOTA_DEAD_UNTIL)
+
+    def test_dead_model_reset_after_16jst(self) -> None:
+        from datetime import timezone as _tz, timedelta as _td, datetime as _dt
+
+        jst = _tz(_td(hours=9))
+        before = _dt(2026, 7, 8, 12, 0, tzinfo=jst)
+        daily_err = RuntimeError("429 quota PerDayPerProjectPerModel-FreeTier")
+        xbg._mark_model_quota_dead("m", daily_err, now=before)
+        self.assertTrue(xbg._model_quota_dead("m", now=_dt(2026, 7, 8, 15, 59, tzinfo=jst)))
+        self.assertFalse(xbg._model_quota_dead("m", now=_dt(2026, 7, 8, 16, 0, tzinfo=jst)))
 
     def test_generate_content_non_quota_error_no_fallback(self) -> None:
         client = MagicMock()

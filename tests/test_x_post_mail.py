@@ -5465,7 +5465,9 @@ class BuildQuoteRtCommentTests(unittest.TestCase):
 
     def test_reply_empathy_too_long_retries_then_accepts_short(self):
         """2026-07-07 user「ファンリプ長くない?」: empathy リプは 70 字超を gate で
-        弾いてリトライし、短い方を採用する。"""
+        弾いてリトライし、短い方を採用する。2026-07-08 無料枠対策で既定は
+        attempts=1 (作り直しなし) になったため、リトライ機構自体の検証として
+        attempts=3 を明示する。"""
         import sys, types, contextlib
         from unittest import mock
         from src import x_post_branding_gen as xbg
@@ -5485,6 +5487,7 @@ class BuildQuoteRtCommentTests(unittest.TestCase):
         with contextlib.ExitStack() as stack:
             stack.enter_context(mock.patch.dict(sys.modules, {"google": google_mod, "google.genai": fake_genai}))
             stack.enter_context(mock.patch.object(google_mod, "genai", fake_genai, create=True))
+            stack.enter_context(mock.patch.object(xbg, "_X_POST_GEN_ATTEMPTS", 3))
             out = xbg.build_quote_rt_comment(
                 "坂本勇人 サヨナラ現地で見た！", "坂本勇人",
                 gemini_api_key="k", budget_site="reply",

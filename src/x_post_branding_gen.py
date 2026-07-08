@@ -189,6 +189,13 @@ _X_POST_GEMINI_FALLBACK_MODEL = _os.environ.get(
     "X_POST_GEMINI_FALLBACK_MODEL", "gemini-3.1-flash-lite"
 )
 _X_POST_DATA_LLM_MODEL = _os.environ.get("X_POST_DATA_LLM_MODEL", "gemini-3.1-flash-lite")
+# 2026-07-08 (user 決定: 無料枠枯渇対策): 品質 gate 落ち時の作り直し回数。従来 3 固定
+# → 既定 1 (作り直しなし、落ちたら relaxed fallback か skip → 次便が別候補で再挑戦)。
+# 品質が下がりすぎたら env X_POST_GEN_ATTEMPTS=2/3 で rebuild 無しで戻す。
+try:
+    _X_POST_GEN_ATTEMPTS = max(1, int(_os.environ.get("X_POST_GEN_ATTEMPTS", "1")))
+except ValueError:
+    _X_POST_GEN_ATTEMPTS = 1
 # 2026-06-11 (user 決定): 3.5-flash の無料枠は 20回/日(project 単位、リセット JST 16時頃)。
 # 試合時間帯(既定 JST 17:00〜22:29)だけ primary(3.5)を使い、それ以外は最初から
 # fallback(lite)を使って枠を試合中の投稿に温存する。空文字で常時 primary。跨日窓(例 22-2)対応。
@@ -253,40 +260,122 @@ def _x_post_model_unavailable(exc: Exception) -> bool:
     )
 
 
+# 2026-07-08 day-quota circuit breaker: 日次無料枠 (…PerDay…-FreeTier) の 429 を
+# 確定検知したモデルは、次の 16:00 JST リセットまでプロセス内で「死亡」マークし
+# 以降の呼び出し・fallback 先から外す (枠切れ後の数百回 429 連打の停止)。
+# job は fire ごとに新プロセスなので cross-run 持ち越しは無し (per-minute 429 は対象外)。
+_MODEL_QUOTA_DEAD_UNTIL: dict = {}
+
+
+def _x_post_daily_quota_error(exc: Exception) -> bool:
+    """日次枠 (RPD) の 429 か。per-minute (RPM) は含めない (breaker 対象外)。"""
+    s = f"{type(exc).__name__}: {exc}".lower()
+    return "perday" in s or ("daily" in s and "quota" in s)
+
+
+def _next_quota_reset_jst(now=None):
+    """次の Gemini 無料枠リセット時刻 (16:00 JST = 太平洋時間0時) を返す。"""
+    from datetime import datetime, timezone, timedelta
+
+    jst = timezone(timedelta(hours=9))
+    current = (now or datetime.now(jst)).astimezone(jst)
+    reset = current.replace(hour=16, minute=0, second=0, microsecond=0)
+    if current >= reset:
+        reset += timedelta(days=1)
+    return reset
+
+
+def _model_quota_dead(model: str, now=None) -> bool:
+    until = _MODEL_QUOTA_DEAD_UNTIL.get(model)
+    if until is None:
+        return False
+    from datetime import datetime, timezone, timedelta
+
+    jst = timezone(timedelta(hours=9))
+    current = (now or datetime.now(jst)).astimezone(jst)
+    if current >= until:
+        _MODEL_QUOTA_DEAD_UNTIL.pop(model, None)
+        return False
+    return True
+
+
+def _mark_model_quota_dead(model: str, exc: Exception, now=None) -> None:
+    if not _x_post_daily_quota_error(exc):
+        return
+    if model in _MODEL_QUOTA_DEAD_UNTIL:
+        return
+    until = _next_quota_reset_jst(now)
+    _MODEL_QUOTA_DEAD_UNTIL[model] = until
+    _logging.getLogger("x_post_branding_gen").warning(
+        "x_post_llm_daily_quota_dead model=%s until=%s (以降この run では呼ばない)",
+        model,
+        until.isoformat(),
+    )
+
+
 def _x_post_generate_content(client, *, model, contents, config):
     """X-post 用 generate_content。primary が無料枠上限/一時不可で落ちたら
     fallback モデル(既定 gemini-3.1-flash-lite)へ自動切替。それ以外の例外は再送。
     試合時間帯外は primary を使わず fallback を直接使う(3.5 の 20回/日 枠温存)。
     2026-07-07: fallback(lite) 自体が日次枠枯渇 (500/day、13-16時JSTに発生) した時は
     逆方向に primary(3.5) を 1 回試す。lite が死んでいる時間帯は 16時JSTの枠リセット前
-    なので、prime hours (17時-) の 3.5 枠温存とは競合しない。両方枯渇なら raise。"""
+    なので、prime hours (17時-) の 3.5 枠温存とは競合しない。両方枯渇なら raise。
+    2026-07-08: 日次枠 429 を検知したモデルは 16:00 JST まで dead マークし、
+    dead モデルは呼ばずに即スキップ (429 連打の circuit breaker)。両方 dead なら
+    API を呼ばず raise (caller の既存 try/except が graceful skip)。"""
     if model != _X_POST_GEMINI_FALLBACK_MODEL and not _x_post_in_prime_hours():
         model = _X_POST_GEMINI_FALLBACK_MODEL
+    if _model_quota_dead(model):
+        alt = (
+            _X_POST_GEMINI_PRIMARY_MODEL
+            if model == _X_POST_GEMINI_FALLBACK_MODEL
+            else _X_POST_GEMINI_FALLBACK_MODEL
+        )
+        if alt == model or _model_quota_dead(alt):
+            raise RuntimeError(
+                f"llm_daily_quota_dead model={model} alt={alt} resets=16:00JST"
+            )
+        model = alt
     try:
         return client.models.generate_content(model=model, contents=contents, config=config)
     except Exception as exc:  # noqa: BLE001 - fallback handling
         if not _x_post_model_unavailable(exc):
             raise
+        _mark_model_quota_dead(model, exc)
         if model != _X_POST_GEMINI_FALLBACK_MODEL:
+            if _model_quota_dead(_X_POST_GEMINI_FALLBACK_MODEL):
+                raise
             _logging.getLogger("x_post_branding_gen").warning(
                 "x_post_llm_fallback primary=%s -> fallback=%s reason=%r",
                 model,
                 _X_POST_GEMINI_FALLBACK_MODEL,
                 exc,
             )
-            return client.models.generate_content(
-                model=_X_POST_GEMINI_FALLBACK_MODEL, contents=contents, config=config
-            )
+            try:
+                return client.models.generate_content(
+                    model=_X_POST_GEMINI_FALLBACK_MODEL, contents=contents, config=config
+                )
+            except Exception as exc2:  # noqa: BLE001 - mark dead then re-raise
+                if _x_post_model_unavailable(exc2):
+                    _mark_model_quota_dead(_X_POST_GEMINI_FALLBACK_MODEL, exc2)
+                raise
         if _X_POST_GEMINI_PRIMARY_MODEL != _X_POST_GEMINI_FALLBACK_MODEL:
+            if _model_quota_dead(_X_POST_GEMINI_PRIMARY_MODEL):
+                raise
             _logging.getLogger("x_post_branding_gen").warning(
                 "x_post_llm_reverse_fallback fallback=%s -> primary=%s reason=%r",
                 model,
                 _X_POST_GEMINI_PRIMARY_MODEL,
                 exc,
             )
-            return client.models.generate_content(
-                model=_X_POST_GEMINI_PRIMARY_MODEL, contents=contents, config=config
-            )
+            try:
+                return client.models.generate_content(
+                    model=_X_POST_GEMINI_PRIMARY_MODEL, contents=contents, config=config
+                )
+            except Exception as exc2:  # noqa: BLE001 - mark dead then re-raise
+                if _x_post_model_unavailable(exc2):
+                    _mark_model_quota_dead(_X_POST_GEMINI_PRIMARY_MODEL, exc2)
+                raise
         raise
 
 
@@ -1653,7 +1742,8 @@ def build_quote_rt_comment(
     except Exception as exc:  # noqa: BLE001 - silent skip, caller falls back to template
         log.warning("quote_rt_comment_skip reason=genai_import err=%r", exc)
         return ""
-    # 門番 + リトライ: flash-lite が優等生締め/ポエム/スカスカを漏らすので最大3回試し、
+    # 門番 + リトライ: flash-lite が優等生締め/ポエム/スカスカを漏らすので最大
+    # _X_POST_GEN_ATTEMPTS 回 (2026-07-08 無料枠対策で既定 1) 試し、
     # safety + unverified + voice_quality を全通過した最初の文を返す。
     # 470 (user 2026-06-29): 全通過が無くても、 最終便 (3回目) で致命的NG (捏造数字 / 炎上
     # pattern / URL・ハッシュタグ等 forbidden pattern / 文字数超過) が無ければ LLM 文を優先
@@ -1687,7 +1777,7 @@ def build_quote_rt_comment(
             "視点・気づきを足す。 これ以外の数字は足さない。"
         )
     verified_text = f"{src} {who} {_fact}"
-    _total_attempts = 3
+    _total_attempts = _X_POST_GEN_ATTEMPTS
     for attempt in range(_total_attempts):
         is_final_attempt = attempt == _total_attempts - 1
         if attempt == 0:

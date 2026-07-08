@@ -50,7 +50,10 @@ DEFAULT_DYNAMIC_AUDIO_FILTER = (
     "highpass=f=85,"
     "acompressor=threshold=-18dB:ratio=3:attack=8:release=90:makeup=5,"
     "equalizer=f=2800:t=q:w=1.1:g=2.5,"
-    "loudnorm=I=-16:TP=-1.5:LRA=9"
+    # loudnorm 一発掛けは内部 192kHz 化で後段 amix の実尺が縮み、ナレーション末尾
+    # が数秒切れる (2026-07-08 金田回で「あなたにとって」以降が欠落、トーン波形で再現確認)。
+    # 直後の aresample で元レートへ戻すと全尺残る。
+    "loudnorm=I=-16:TP=-1.5:LRA=9,aresample=24000"
 )
 
 VOICE_STYLE_ENV = "YT_SHORTS_VOICE_STYLE"

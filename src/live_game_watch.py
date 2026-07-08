@@ -63,11 +63,21 @@ def _strip(cell: str) -> str:
     return _TAG_RE.sub("", cell).replace("&nbsp;", "").strip()
 
 
+_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+    )
+}
+
+
 def _find_giants_game_url(now: datetime) -> str:
-    md = now.strftime("%m%d")
-    url = _SCORES_INDEX.format(year=now.year, md=md)
-    r = requests.get(url, timeout=10)
+    # /scores/YYYY/MMDD/ の index は WAF で 403 になる (2026-07-08 Cloud Run 実測)。
+    # game_day_gate と同じ月間日程ページ (取得実績あり) から当日の score link を拾う。
+    url = f"https://npb.jp/games/{now.year}/schedule_{now.month:02d}_detail.html"
+    r = requests.get(url, timeout=10, headers=_HEADERS)
     r.raise_for_status()
+    md = now.strftime("%m%d")
     for m in re.finditer(rf"/scores/{now.year}/{md}/([a-z]+)-([a-z]+)-\d+/", r.text):
         if _GIANTS_CODE in (m.group(1), m.group(2)):
             return "https://npb.jp" + m.group(0)
@@ -140,9 +150,12 @@ def fetch_today_live_game(now: Optional[datetime] = None) -> Optional[LiveGameSt
         game_url = _find_giants_game_url(current)
         if not game_url:
             return None
-        r = requests.get(game_url, timeout=10)
+        r = requests.get(game_url, timeout=10, headers=_HEADERS)
         r.raise_for_status()
-        return parse_live_page(r.text, game_url=game_url, date_key=date_key)
+        # npb.jp は Content-Type ヘッダに charset が無く requests の既定 decode が
+        # 化けるため、UTF-8 (実ページの meta charset) を明示する。
+        html = r.content.decode("utf-8", errors="replace")
+        return parse_live_page(html, game_url=game_url, date_key=date_key)
     except Exception as exc:  # noqa: BLE001 - lane は fail-open (候補なし)
         LOG.info("live_game_watch fetch failed: %r", exc)
         return None

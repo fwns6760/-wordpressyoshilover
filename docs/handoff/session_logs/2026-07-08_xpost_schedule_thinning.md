@@ -1,0 +1,32 @@
+# 2026-07-08 x-post-mail-lane スケジュール間引き + LLM 予算整合
+
+背景: user 指摘「クラウドランがむだになる。スケジュールがおかしい。忙しすぎる」。
+実測: 平日 56 fire/日 × LLM budget 48 → Gemini 無料枠(flash-lite 500/日)が昼前に枯渇、
+429 が 808 回/24h。枯渇後の fire は LLM 生成不能のまま Cloud Run 実行だけ消費。
+
+## 変更(Scheduler, Asia/Tokyo)
+
+| job | 旧 | 新 | fire/日 |
+|---|---|---|---|
+| x-post-mail-flush | 5 7-17,23 | 5 7,9,12,15,23 | 12→5 |
+| x-post-mail-flush-mlb-morning | */30 8-12 | 0 8,10,12 | 10→3 |
+| x-post-mail-flush-lineup | 20,40 11-17 | 0 12,14,16 | 14→3 |
+| x-post-mail-flush-game-1 | */15 17-21 (平日) | */30 17-21 (平日) | 20→10 |
+| x-post-mail-flush-game-wknd | */15 13-21 (土日) | */30 13-21 (土日) | 36→18 |
+
+平日合計 56→21 fire/日 (-62%)、週末 ~72→29。
+
+## 変更(Cloud Run job env)
+
+- `X_POST_MAIL_MAX_LLM_PER_RUN` 48→16
+- `X_POST_MAIL_REPLY_LLM_RESERVE` 36→12(予約比 75% 維持)
+
+日次 LLM 上限見積: 平日 21×16=336、週末 29×16=464 < flash-lite 無料枠 500/日。
+
+## 残タスク(未実施)
+
+- 429 daily-quota circuit breaker(run 内で日次枯渇検知→残り LLM 呼び出し即スキップ)
+- RSSHub timeout(巨人公式X / 報知巨人班X fetch が毎便 TimeoutError)
+- dedup 枯渇時の全ソース再スキャン(1 便内二重スキャン)
+
+02:06 UTC | scheduler 5 job update + jobs update env | 直接実行(2026-05-12 全権) | next=翌日 429 件数を観測

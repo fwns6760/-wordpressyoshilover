@@ -2814,6 +2814,70 @@ def build_mlb_watch_candidates(
     return out
 
 
+def build_live_game_candidates(
+    *,
+    now: Optional[datetime] = None,
+    dedup_set: Optional[set[str]] = None,
+    comment_fn=None,
+    max_count: int = 2,
+) -> list[Candidate]:
+    """巨人戦ライブ実況候補 v0 (2026-07-08 user GO)。
+
+    NPB 公式スコアの前便比イベント (得点/被弾/逆転/試合終了) がある時だけ、
+    ライブ voice (缶詰モード) の実況候補を作る。イベントが無い便は 0 件。
+    - 事実は live_game_watch の fact 行 (NPB 公式表記) のみ。voice が
+      作れない時はテンプレに逃げず skip (実況の定型文は逆効果)。
+    - 姓のみの選手名 (NPB 表記) をフルネーム化しない指示は comment_fn 側
+      (extra_voice_note) で与える。
+    """
+    from src import live_game_watch as lgw
+
+    cur = lgw.fetch_today_live_game(now)
+    if cur is None:
+        return []
+    prev = lgw.load_prev_state(cur.date_key)
+    events = lgw.detect_events(prev, cur)
+    lgw.save_state(cur)
+    if not events:
+        return []
+    kind_ja = {
+        "game_end": "試合終了",
+        "lead_change": "逆転",
+        "giants_score": "巨人得点",
+        "opp_score": "失点",
+    }
+    out: list[Candidate] = []
+    for ev in events[: max(0, max_count)]:
+        signature = "livegame|" + _hashlib.sha1(
+            f"{cur.date_key}|{ev['kind']}|{cur.giants_score}-{cur.opp_score}".encode("utf-8")
+        ).hexdigest()[:16]
+        if dedup_set is not None and signature in dedup_set:
+            continue
+        post_text = ""
+        if comment_fn is not None:
+            try:
+                post_text = (comment_fn(ev["fact"]) or "").strip()
+            except Exception as exc:  # noqa: BLE001
+                LOG.info("live_game comment_fn failed: %r", exc)
+                post_text = ""
+        if not post_text:
+            LOG.info("live_game skip: voice empty kind=%s", ev["kind"])
+            continue
+        label = kind_ja.get(ev["kind"], ev["kind"])
+        out.append(Candidate(
+            title=f"⚾実況候補: {label}｜巨人{cur.giants_score}-{cur.opp_score}｜{cur.inning_label or '試合終了'}",
+            metric="LIVE_GAME",
+            period_label="実況",
+            draft_text=f"{ev['fact']}\n(出典: NPB公式 {cur.game_url})",
+            char_count=len(post_text),
+            signature=signature,
+            post_text=post_text,
+            source_material_type="live_game",
+        ))
+    LOG.info("live_game: built %d candidates (events=%d)", len(out), len(events))
+    return out
+
+
 def _rebuild_ranks_within_central(rows: list[dict]) -> list[dict]:
     """After filtering to セ-only, rewrite ``rank`` so the column shows
     1..N within the 6-team scope (not the 12-team residual).

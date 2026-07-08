@@ -3732,6 +3732,57 @@ def main(argv: Sequence[str] | None = None) -> int:
                     before, len(mlb_new), len(candidates),
                 )
 
+    # 2026-07-08 user GO「フーガみたいな観戦中のポストが無い」: 巨人戦ライブ実況 v0。
+    # NPB 公式スコアの前便比イベント (得点/被弾/逆転/試合終了) がある時だけ、
+    # ライブ voice の実況候補を最大 2 本足す。イベント無し便は 0 本 (洪水防止)。
+    # LLM は専用小枠 (aux "live_game"=2)、事実は NPB 公式表記のみ。
+    if (
+        os.environ.get("ENABLE_X_POST_LIVE_GAME", "1").strip() not in {"0", "false", "no"}
+        and 17 <= now_jst.hour <= 22
+    ):
+        live_comment_fn = None
+        _lg_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GEMMA_BRANDING_GEMINI_API_KEY") or ""
+        if _lg_key:
+            try:
+                from src import x_post_branding_gen as _lg_xbg
+
+                def live_comment_fn(fact_line, _k=_lg_key, _g=_lg_xbg, _now=now_jst):  # noqa: E731
+                    return _g.build_quote_rt_comment(
+                        fact_line, "", "試合中",
+                        gemini_api_key=_k, now=_now,
+                        subject="巨人戦のスコア速報",
+                        db_fact="", require_db_fact=False,
+                        budget_site="live_game",
+                        extra_voice_note=(
+                            "これは観戦中の実況ポスト。速報行にある事実だけで、缶詰モードの"
+                            "即時反応を書く。速報行に姓しか無い選手名をフルネーム化・推測補完"
+                            "しない (そのままの表記で書くか、名前を出さずに書く)。"
+                        ),
+                    )
+            except Exception as _lg_imp_exc:  # noqa: BLE001
+                LOG.warning("live_game LLM comment unavailable: %r", _lg_imp_exc)
+                live_comment_fn = None
+        try:
+            live_candidates = lane.build_live_game_candidates(
+                now=now_jst,
+                dedup_set=dedup_set,
+                comment_fn=live_comment_fn,
+                max_count=_resolve_int_env("X_POST_LIVE_GAME_MAX", 2, min_value=0),
+            )
+        except Exception as _lg_exc:  # noqa: BLE001
+            LOG.warning("live_game build failed: %r", _lg_exc)
+            live_candidates = []
+        _existing_sigs_live = {getattr(c, "signature", "") for c in candidates}
+        live_new = [c for c in live_candidates if c.signature not in _existing_sigs_live]
+        if live_new:
+            before = len(candidates)
+            candidates = candidates + live_new
+            extra_policy_slots += len(live_new)
+            LOG.info(
+                "live_game appended: base=%d live=%d total=%d",
+                before, len(live_new), len(candidates),
+            )
+
     # 2026-07-03 user「メジャー系の日本公式で大谷や岡本や菅野にもリプしたい」:
     # MLB系日本語アカ (@30R9gmaMUy3guDJ / MLBJapan / SPOTVNOW_jp) の 大谷/岡本/菅野
     # 投稿への手動リプ候補。引用RT lane と同じ検出を as_reply=True で流用し、

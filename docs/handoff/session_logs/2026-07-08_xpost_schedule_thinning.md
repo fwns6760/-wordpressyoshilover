@@ -55,3 +55,8 @@
 07:43 UTC | commit a02d7079 | legend narration に BRAND_CLOSING_LINE 欠落 → QC「締めヨシラバー無し」で毎回 qc_failed (7/8 王貞治回で発覚)。LEGEND_CLOSING 直前に挿入 + 再発防止 test | yt-shorts tests 134 passed
 07:47 UTC | yt-shorts-gen job image brandclose-a02d7079 (恒久) + 今日分の再生成 execute (8ghqf) | 直接実行
 08:06 UTC | commit b60ef4cd | loudnorm一発掛けがナレーション末尾を約3秒切る (repro: 30秒トーン→27.25秒)。aresample=24000追加で全尺化 | yt-shorts-gen image audiofix-b60ef4cd + 再々生成 (j8pwz)
+
+## PM4: 名言レーン画像404 (share_x_cand lifecycle事故) 復旧
+
+08:25 UTC | 原因=bucket lifecycle (share_x_cand/ 7日削除) が吉川/原の名言アーカイブ画像(恒久物)も削除、mail画像ボタン404でポスト失敗 | user報告で発覚
+08:25 UTC | 対処① lifecycle prefix を share_x_cand/20 (日付名の使い捨てdirのみ) に限定 ② アーカイブの元URLから再取得し復元 (yoshikawa 43枚 / hara 50枚、失敗0) | 小林・坂本はtext-onlyで無傷

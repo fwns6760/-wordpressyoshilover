@@ -2682,6 +2682,18 @@ def _merge_news_priority_candidates(
         if _candidate_identity(candidate) in consumed_news:
             continue
         add(candidate, enforce_player=True)
+    # 2026-07-08 user「ファンリプがないのは?」: リプ候補 (reply_candidate) と
+    # ライブ実況 (LIVE_GAME) も末尾 append のため枠上限で押し出されていた
+    # (2026-07-03 の MLB watch と同じ構造)。リプは成果直結の最優先 lane なので
+    # news の直後に専用枠で入れる。リプは他人のポストへの返信で自ポストと面が
+    # 違うため、player 重複 gate では落とさない (キャベッジ起用ニュースと
+    # フーガのキャベッジ投稿へのリプは共存してよい)。
+    for candidate in data_candidates:
+        if candidate.metric not in (lane._REPLY_CANDIDATE_METRIC, "LIVE_GAME"):
+            continue
+        if _candidate_identity(candidate) in consumed_data:
+            continue
+        add(candidate, enforce_player=False)
     # 2026-07-03 user 指摘「大谷のポストが出ない」: MLB watch (大谷/元巨人、
     # フォロワー増計画の専用枠) は data list の末尾に append されるため、 news
     # 優先 merge の枠上限で毎回押し出されていた。 news の直後・汎用 DB data の

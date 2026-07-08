@@ -3533,6 +3533,60 @@ class XPostMailEntrypointFreshnessTests(unittest.TestCase):
         )
         self.assertEqual([c.focus_player for c in merged], ["岸田行倫", "岡本和真"])
 
+    def test_reply_and_live_game_reserved_slots_survive_merge(self) -> None:
+        """2026-07-08 user「ファンリプがないのは?」: リプ候補とLIVE_GAMEは
+        末尾押し出し・player重複gateで落とさない (news直後の専用枠)。"""
+        from src.tools import run_x_post_mail
+        from src.x_post_mail_lane import Candidate, _REPLY_CANDIDATE_METRIC
+
+        news_cand = Candidate(
+            title="ニュース: キャベッジ起用",
+            metric="NEWS_OPINION",
+            period_label="ニュース",
+            draft_text="n",
+            post_text="n",
+            char_count=1,
+            signature="news-1",
+            focus_player="キャベッジ",
+        )
+        fan_reply = Candidate(
+            title="💬 ファンリプ候補: @EH87EazmV9D2eSw キャベッジ",
+            metric=_REPLY_CANDIDATE_METRIC,
+            period_label="リプ",
+            draft_text="r",
+            post_text="r",
+            char_count=1,
+            signature="reply-1",
+            focus_player="キャベッジ",  # news と同一 player でも落ちない
+        )
+        live_game = Candidate(
+            title="⚾実況候補: 巨人得点",
+            metric="LIVE_GAME",
+            period_label="実況",
+            draft_text="l",
+            post_text="l",
+            char_count=1,
+            signature="live-1",
+        )
+        filler = [
+            Candidate(
+                title=f"DB{i}", metric="OPS", period_label="p", draft_text="d",
+                post_text="d", char_count=1, signature=f"db-{i}",
+                focus_player=f"選手{i}",
+            )
+            for i in range(6)
+        ]
+        merged = run_x_post_mail._merge_news_priority_candidates(
+            [news_cand],
+            filler + [fan_reply, live_game],  # 末尾 append を再現
+            max_candidates=4,
+        )
+        sigs = [c.signature for c in merged]
+        self.assertIn("reply-1", sigs)
+        self.assertIn("live-1", sigs)
+        # news の直後 = filler より先に入る
+        self.assertLess(sigs.index("reply-1"), sigs.index("db-0") if "db-0" in sigs else 99)
+
     def test_news_opinion_fallback_skips_recent_history_player(self) -> None:
         """380 follow-up: news fallback も直近24h既出 player を補充しない。"""
         from src.tools import run_x_post_mail

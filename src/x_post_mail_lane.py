@@ -1275,8 +1275,12 @@ def _cap_sentence(value: object, max_chars: int) -> str:
     動画ポスト対策 (user 2026-06-09): X は本文が長いと「動画＋テキスト」を一緒に
     投稿できない (短くすると動画が付く)。引用RT/動画候補のコメントを余裕を持って短く
     固定するために使う。文末が取れなければ … で切る。
+
+    改行は保持する (2026-07-08 user「フーガは改行があるので読みやすい」)。従来は
+    全空白を潰していたため、prompt の短文改行指示が投稿時に平文化されていた。
     """
-    text = " ".join(str(value or "").split())
+    lines = [" ".join(line.split()) for line in str(value or "").splitlines()]
+    text = "\n".join(line for line in lines if line)
     if max_chars <= 0 or len(text) <= max_chars:
         return text
     window = text[:max_chars]

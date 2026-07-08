@@ -68,6 +68,8 @@ class YtShortsLegendTests(unittest.TestCase):
         script = build_legend_script(topic)
         self.assertTrue(script.narration.startswith(LEGEND_OPENING))
         self.assertIn(LEGEND_CLOSING, script.narration)
+        # 2026-07-08 QC 落ち再発防止: 締めヨシラバー表記 (yt_shorts_qc の必須 gate)
+        self.assertIn("ヨシラバー", script.narration)
         self.assertIn("王貞治", script.title)
         # 数字はすべて出典由来 (allowed) — guard を通る
         ok, leaked = verify_number_guard(script.narration, script.allowed_numbers)

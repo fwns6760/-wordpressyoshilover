@@ -17,6 +17,7 @@ from typing import Any
 
 from src.yt_shorts_script import (
     BASE_HASHTAGS,
+    BRAND_CLOSING_LINE,
     DATA_URL,
     SITE_URL,
     X_HANDLE,
@@ -259,6 +260,9 @@ def build_legend_script(topic: LegendTopic) -> ShortsScript:
         topic.giants_context,
         f"巨人時代の主な記録は、{record_speech}。",
         f"数字で見ても、やっぱり{topic.opinion}",
+        # QC の締めヨシラバー必須 gate (yt_shorts_qc) 対応。エンゲージ質問
+        # (LEGEND_CLOSING) を最後に残すため、ブランド締めはその直前に置く。
+        BRAND_CLOSING_LINE,
         LEGEND_CLOSING,
     ]
     narration = "\n".join(part for part in narration_parts if part.strip())

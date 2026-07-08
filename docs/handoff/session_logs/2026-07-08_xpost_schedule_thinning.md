@@ -63,3 +63,4 @@
 08:31 UTC | user GO (Cloud Run費用増ほぼ無しを確認の上) | リプ強化: env MAX_LLM_PER_RUN 10→14 / REPLY_LLM_RESERVE 8→12 (リプ以外は2のまま) + scheduler x-post-mail-flush-game-1 */30→*/15 17-21 平日 | 観測=今夜の枠消費と明朝の生存
 08:39 UTC | user 方針「朝=MLB、夕方から=巨人」 | 実測根拠: 朝5-11時=52本/中央値4いいね(最弱)、当たりは全部17-22時。MLB朝便 30 9,11 → 30 8-13 (毎時6本)。朝MLB実績はn=3で未証明=実験扱い、来週のengagement reportで検証
 09:20 UTC | commit be084d4a+74407454 | ①voice考察に論点型指示(リプ獲得) ②_cap_sentence改行保持(prompt改行指示が平文化されていた実測バグ) | x-post-mail-lane image kaigyo-74407454 (2修正まとめbuild)。manual-intake側は次回まとめ
+10:05 UTC | commit e84e9743 | 巨人戦ライブ実況候補 v0 (NPB公式スコア前便比イベント検出、缶詰voice最大2本/便、aux枠2、ENABLE_X_POST_LIVE_GAME gate) | image livegame-e84e9743 (論点型+改行保持も同梱)。今夜の残りイニングから観測

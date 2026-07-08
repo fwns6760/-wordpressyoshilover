@@ -61,3 +61,4 @@
 08:25 UTC | 原因=bucket lifecycle (share_x_cand/ 7日削除) が吉川/原の名言アーカイブ画像(恒久物)も削除、mail画像ボタン404でポスト失敗 | user報告で発覚
 08:25 UTC | 対処① lifecycle prefix を share_x_cand/20 (日付名の使い捨てdirのみ) に限定 ② アーカイブの元URLから再取得し復元 (yoshikawa 43枚 / hara 50枚、失敗0) | 小林・坂本はtext-onlyで無傷
 08:31 UTC | user GO (Cloud Run費用増ほぼ無しを確認の上) | リプ強化: env MAX_LLM_PER_RUN 10→14 / REPLY_LLM_RESERVE 8→12 (リプ以外は2のまま) + scheduler x-post-mail-flush-game-1 */30→*/15 17-21 平日 | 観測=今夜の枠消費と明朝の生存
+08:39 UTC | user 方針「朝=MLB、夕方から=巨人」 | 実測根拠: 朝5-11時=52本/中央値4いいね(最弱)、当たりは全部17-22時。MLB朝便 30 9,11 → 30 8-13 (毎時6本)。朝MLB実績はn=3で未証明=実験扱い、来週のengagement reportで検証

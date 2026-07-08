@@ -2390,6 +2390,10 @@ def build_video_radar_candidates(
     phase_label, phase_hint = _video_comment_phase_hint(now)
     out: list[Candidate] = []
     used_players: set[str] = set()
+    # 2026-07-08 user「同じような文章が」: 定型 fallback (_x_buzz_event_comment) は
+    # event 種別ごとに 1 パターンのため、同便内で同文 (選手名差のみ) が並び得る。
+    # 選手名を除いた本文 key で 2 本目以降を捨てる (LLM 生成の偶然一致も同様)。
+    used_post_texts: set[str] = set()
     avoid_names = {
         _normalize_player_name(name)
         for name in (avoid_player_names or set())
@@ -2460,6 +2464,11 @@ def build_video_radar_candidates(
         # 動画ポスト対策 (user 2026-06-09): X は本文が長いと「動画＋テキスト」を一緒に
         # 投稿できない (短くすると動画が付く)。 引用RT/動画候補のコメントを短く固定する。
         post_text = _cap_sentence(post_text, _video_post_char_cap())
+        _text_key = (post_text.replace(player, "") if player else post_text).strip()
+        if _text_key in used_post_texts:
+            LOG.info("x_buzz skip: duplicate post text player=%s", player or "(none)")
+            continue
+        used_post_texts.add(_text_key)
         # 2026-06-03: ブランディング投稿に「おしゃれ系」ヨシラバー画像を1枚添付 (style B、
         # 選手写真+ブランドパネル、 データなし、 ¥0=PILローカル合成)。 user 確定。
         # env X_POST_BRAND_IMAGE_ENABLED=0 で無効化可。 失敗時は画像なしで続行 (graceful)。

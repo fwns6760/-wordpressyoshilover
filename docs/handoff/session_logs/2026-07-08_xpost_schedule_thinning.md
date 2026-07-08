@@ -54,3 +54,4 @@
 
 07:43 UTC | commit a02d7079 | legend narration に BRAND_CLOSING_LINE 欠落 → QC「締めヨシラバー無し」で毎回 qc_failed (7/8 王貞治回で発覚)。LEGEND_CLOSING 直前に挿入 + 再発防止 test | yt-shorts tests 134 passed
 07:47 UTC | yt-shorts-gen job image brandclose-a02d7079 (恒久) + 今日分の再生成 execute (8ghqf) | 直接実行
+08:06 UTC | commit b60ef4cd | loudnorm一発掛けがナレーション末尾を約3秒切る (repro: 30秒トーン→27.25秒)。aresample=24000追加で全尺化 | yt-shorts-gen image audiofix-b60ef4cd + 再々生成 (j8pwz)

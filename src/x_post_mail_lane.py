@@ -2454,11 +2454,18 @@ def build_video_radar_candidates(
                 LOG.info("x_buzz comment_fn failed: %r", exc)
                 post_text = ""
         if not post_text:
+            # 2026-07-08 user「これが怪しい」: 選手名が取れない候補が定型 fallback に
+            # 落ちると主語が「巨人、」の中身ゼロ文になる (フルネーム必須 voice 違反)。
+            # LLM 生成ならプレー内容に反応できるが、定型文×選手名なしは投稿価値が
+            # 無いのでメール候補から外す。
+            if not player:
+                LOG.info("x_buzz skip: template fallback without player url=%s", url)
+                continue
             if comment_fn is not None:
                 # LLM voice が門番で弾かれた時も動画候補自体は捨てない。抽象テンプレへ逃げず、
                 # 元投稿の場面語 (打球音 / 一歩目 / 送球 / 表情 / ベンチ反応) に寄せた deterministic
                 # hook に落として、メール候補の本数を保つ。
-                LOG.info("x_buzz fallback: voice comment empty/gated player=%s", player or "(none)")
+                LOG.info("x_buzz fallback: voice comment empty/gated player=%s", player)
             post_text = _x_buzz_event_comment(p.get("text", ""), player, phase=phase_label)
         post_text = _ensure_player_name_leads_post_text(post_text, player)
         # 動画ポスト対策 (user 2026-06-09): X は本文が長いと「動画＋テキスト」を一緒に

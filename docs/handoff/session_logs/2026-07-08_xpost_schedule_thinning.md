@@ -65,3 +65,4 @@
 09:20 UTC | commit be084d4a+74407454 | ①voice考察に論点型指示(リプ獲得) ②_cap_sentence改行保持(prompt改行指示が平文化されていた実測バグ) | x-post-mail-lane image kaigyo-74407454 (2修正まとめbuild)。manual-intake側は次回まとめ
 10:05 UTC | commit e84e9743 | 巨人戦ライブ実況候補 v0 (NPB公式スコア前便比イベント検出、缶詰voice最大2本/便、aux枠2、ENABLE_X_POST_LIVE_GAME gate) | image livegame-e84e9743 (論点型+改行保持も同梱)。今夜の残りイニングから観測
 10:35 UTC | commit 0b136e48 | ①fan_reply/LIVE_GAMEがnews優先mergeで毎回押し出される構造バグ修正(専用枠+player gate免除) ②user「実況リプも試合中は増やしていい」= FAN_REPLY_MAX 4→6 / REPLY_CANDIDATES_MAX 12→14 | image replyslot-0b136e48
+09:55 UTC | commit 06bb0753 | live-game初回実行で2バグ発覚→修正: ①scores index 403 (WAF) → 月間日程ページ経由+UA ②charset無しheaderでrequests decode化けて【試合中】不検出 → UTF-8明示。実試合でe2e確認 | image livegamefix-06bb0753 (※本日この上の2 entryのUTC表記に誤りあり、正しくは09:0x-09:4x UTC帯)

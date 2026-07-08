@@ -42,3 +42,10 @@
 - 観測: 今夜試合帯→明日朝の lite PerDay 429 初出時刻(昨日=翌8:00 JST)と x_post_llm_daily_quota_dead ログ
 - rollback: env X_POST_GEN_ATTEMPTS=3 + 上限env戻し + 旧image tag(revfallback-bf3cc064)
 - user 判断保留: それでも枯れる場合の有料キー化。SNSMONEY枠の転用は規約グレー+7/7分離の逆流になるため非推奨で合意
+
+## PM2: 緊急fallback連鎖 2.5世代 追加 (user GO、順序=品質優先はuser指定)
+
+04:52 UTC | commit 8d42bd12 | fallback chain化: 3.5→3.1-lite→2.5-flash→2.5-flash-lite (全段day-quota breaker、モデル別無料枠の合法活用) | tests 394 passed / 全体45 fail=baseline同一
+04:53 UTC | x-post-mail-lane job image emergency25-8d42bd12 + manual-intake-service rev 00117-vck | 直接実行
+- 2.5-flash / 2.5-flash-lite が prod key で有効なことは models.list で事前確認済み
+- 無効化/順序変更: env X_POST_GEMINI_EMERGENCY_MODELS

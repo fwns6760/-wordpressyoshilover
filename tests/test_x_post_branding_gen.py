@@ -144,13 +144,42 @@ class PrimeHoursTests(unittest.TestCase):
                     client, model="gemini-3.5-flash", contents="p", config={}
                 )
             first_calls = client.models.generate_content.call_count
-            self.assertEqual(first_calls, 2)  # lite -> reverse 3.5 で両方 dead 化
+            # lite -> 3.5 -> 2.5-flash -> 2.5-flash-lite の 4 段全部 dead 化
+            self.assertEqual(first_calls, 4)
             with self.assertRaises(RuntimeError):
                 xbg._x_post_generate_content(
                     client, model="gemini-3.5-flash", contents="p", config={}
                 )
         # 2 回目以降は API を呼ばない (call_count 据え置き)
         self.assertEqual(client.models.generate_content.call_count, first_calls)
+
+    def test_emergency_chain_order_quality_first(self) -> None:
+        # 2026-07-08 user 指定: 3.5 / lite 両方 dead 時は 2.5-flash (品質優先) →
+        # 2.5-flash-lite の順で緊急枠へ逃げる。
+        client = MagicMock()
+        daily_err = RuntimeError(
+            "429 RESOURCE_EXHAUSTED GenerateRequestsPerDayPerProjectPerModel-FreeTier"
+        )
+        ok = MagicMock()
+        client.models.generate_content.side_effect = [daily_err, daily_err, ok]
+        with patch.object(xbg, "_x_post_in_prime_hours", return_value=False):
+            result = xbg._x_post_generate_content(
+                client, model="gemini-3.5-flash", contents="p", config={}
+            )
+        self.assertIs(result, ok)
+        models = [
+            c.kwargs["model"] for c in client.models.generate_content.call_args_list
+        ]
+        self.assertEqual(
+            models,
+            [
+                xbg._X_POST_GEMINI_FALLBACK_MODEL,
+                xbg._X_POST_GEMINI_PRIMARY_MODEL,
+                "gemini-2.5-flash",
+            ],
+        )
+        # 4段目 (2.5-flash-lite) は温存されたまま
+        self.assertNotIn("gemini-2.5-flash-lite", xbg._MODEL_QUOTA_DEAD_UNTIL)
 
     def test_per_minute_429_does_not_trip_breaker(self) -> None:
         # RPM (per-minute) の 429 は breaker 対象外 — 次の呼び出しは普通に API を試す。

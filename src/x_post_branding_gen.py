@@ -189,6 +189,17 @@ _X_POST_GEMINI_FALLBACK_MODEL = _os.environ.get(
     "X_POST_GEMINI_FALLBACK_MODEL", "gemini-3.1-flash-lite"
 )
 _X_POST_DATA_LLM_MODEL = _os.environ.get("X_POST_DATA_LLM_MODEL", "gemini-3.1-flash-lite")
+# 2026-07-08 (user GO): 3.5 / 3.1-lite 両方 dead 時の緊急 fallback 連鎖。無料枠は
+# モデルごと別勘定 (…PerProjectPerModel-FreeTier) なので、同一キーの旧世代 flash が
+# それぞれ独自の日次枠を持つ。順序は user 指定で品質優先 (2.5-flash → 2.5-flash-lite)。
+# 品質は一世代前だが後段 gate + mail 人間承認で許容。空文字で無効化。
+_X_POST_GEMINI_EMERGENCY_MODELS = tuple(
+    m.strip()
+    for m in _os.environ.get(
+        "X_POST_GEMINI_EMERGENCY_MODELS", "gemini-2.5-flash,gemini-2.5-flash-lite"
+    ).split(",")
+    if m.strip()
+)
 # 2026-07-08 (user 決定: 無料枠枯渇対策): 品質 gate 落ち時の作り直し回数。従来 3 固定
 # → 既定 1 (作り直しなし、落ちたら relaxed fallback か skip → 次便が別候補で再挑戦)。
 # 品質が下がりすぎたら env X_POST_GEN_ATTEMPTS=2/3 で rebuild 無しで戻す。
@@ -314,69 +325,48 @@ def _mark_model_quota_dead(model: str, exc: Exception, now=None) -> None:
 
 
 def _x_post_generate_content(client, *, model, contents, config):
-    """X-post 用 generate_content。primary が無料枠上限/一時不可で落ちたら
-    fallback モデル(既定 gemini-3.1-flash-lite)へ自動切替。それ以外の例外は再送。
+    """X-post 用 generate_content。無料枠上限/一時不可 (429/quota/503) は fallback
+    連鎖で自動切替、それ以外の例外は即 raise。
     試合時間帯外は primary を使わず fallback を直接使う(3.5 の 20回/日 枠温存)。
-    2026-07-07: fallback(lite) 自体が日次枠枯渇 (500/day、13-16時JSTに発生) した時は
-    逆方向に primary(3.5) を 1 回試す。lite が死んでいる時間帯は 16時JSTの枠リセット前
-    なので、prime hours (17時-) の 3.5 枠温存とは競合しない。両方枯渇なら raise。
-    2026-07-08: 日次枠 429 を検知したモデルは 16:00 JST まで dead マークし、
-    dead モデルは呼ばずに即スキップ (429 連打の circuit breaker)。両方 dead なら
-    API を呼ばず raise (caller の既存 try/except が graceful skip)。"""
+    2026-07-08 (user GO): 連鎖は 要求model → もう片方 → 緊急枠
+    (_X_POST_GEMINI_EMERGENCY_MODELS、既定 2.5-flash → 2.5-flash-lite)。
+    無料枠はモデル別勘定なので旧世代 flash が独自の日次枠を持つ。
+    日次枠 429 を検知したモデルは 16:00 JST まで dead マークして呼ばない
+    (circuit breaker)。全滅なら API を呼ばず raise (caller が graceful skip)。"""
     if model != _X_POST_GEMINI_FALLBACK_MODEL and not _x_post_in_prime_hours():
         model = _X_POST_GEMINI_FALLBACK_MODEL
-    if _model_quota_dead(model):
-        alt = (
-            _X_POST_GEMINI_PRIMARY_MODEL
-            if model == _X_POST_GEMINI_FALLBACK_MODEL
-            else _X_POST_GEMINI_FALLBACK_MODEL
-        )
-        if alt == model or _model_quota_dead(alt):
-            raise RuntimeError(
-                f"llm_daily_quota_dead model={model} alt={alt} resets=16:00JST"
-            )
-        model = alt
-    try:
-        return client.models.generate_content(model=model, contents=contents, config=config)
-    except Exception as exc:  # noqa: BLE001 - fallback handling
-        if not _x_post_model_unavailable(exc):
-            raise
-        _mark_model_quota_dead(model, exc)
-        if model != _X_POST_GEMINI_FALLBACK_MODEL:
-            if _model_quota_dead(_X_POST_GEMINI_FALLBACK_MODEL):
-                raise
-            _logging.getLogger("x_post_branding_gen").warning(
-                "x_post_llm_fallback primary=%s -> fallback=%s reason=%r",
+    chain = [model]
+    for m in (
+        _X_POST_GEMINI_FALLBACK_MODEL,
+        _X_POST_GEMINI_PRIMARY_MODEL,
+        *_X_POST_GEMINI_EMERGENCY_MODELS,
+    ):
+        if m and m not in chain:
+            chain.append(m)
+    log = _logging.getLogger("x_post_branding_gen")
+    last_exc = None
+    for m in chain:
+        if _model_quota_dead(m):
+            continue
+        if m != model:
+            log.warning(
+                "x_post_llm_fallback requested=%s -> using=%s reason=%r",
                 model,
-                _X_POST_GEMINI_FALLBACK_MODEL,
-                exc,
+                m,
+                last_exc,
             )
-            try:
-                return client.models.generate_content(
-                    model=_X_POST_GEMINI_FALLBACK_MODEL, contents=contents, config=config
-                )
-            except Exception as exc2:  # noqa: BLE001 - mark dead then re-raise
-                if _x_post_model_unavailable(exc2):
-                    _mark_model_quota_dead(_X_POST_GEMINI_FALLBACK_MODEL, exc2)
+        try:
+            return client.models.generate_content(model=m, contents=contents, config=config)
+        except Exception as exc:  # noqa: BLE001 - fallback handling
+            if not _x_post_model_unavailable(exc):
                 raise
-        if _X_POST_GEMINI_PRIMARY_MODEL != _X_POST_GEMINI_FALLBACK_MODEL:
-            if _model_quota_dead(_X_POST_GEMINI_PRIMARY_MODEL):
-                raise
-            _logging.getLogger("x_post_branding_gen").warning(
-                "x_post_llm_reverse_fallback fallback=%s -> primary=%s reason=%r",
-                model,
-                _X_POST_GEMINI_PRIMARY_MODEL,
-                exc,
-            )
-            try:
-                return client.models.generate_content(
-                    model=_X_POST_GEMINI_PRIMARY_MODEL, contents=contents, config=config
-                )
-            except Exception as exc2:  # noqa: BLE001 - mark dead then re-raise
-                if _x_post_model_unavailable(exc2):
-                    _mark_model_quota_dead(_X_POST_GEMINI_PRIMARY_MODEL, exc2)
-                raise
-        raise
+            _mark_model_quota_dead(m, exc)
+            last_exc = exc
+    if last_exc is not None:
+        raise last_exc
+    raise RuntimeError(
+        f"llm_daily_quota_dead chain={chain} resets=16:00JST"
+    )
 
 
 # spec 382 hard rule の追加 gate (既存 ``_FORBIDDEN_POST_TERMS`` の上に積む)

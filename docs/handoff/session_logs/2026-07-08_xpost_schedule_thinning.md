@@ -32,3 +32,13 @@
 - dedup 枯渇時の全ソース再スキャン(1 便内二重スキャン)
 
 02:06 UTC | scheduler 5 job update + jobs update env | 直接実行(2026-05-12 全権) | next=翌日 429 件数を観測
+
+## PM: LLM無料枠対策3点 実装+deploy (user GO)
+
+03:14 UTC | commit d57fea10 | day-quota breaker(日次429→16時JSTまでmodel dead、RPM対象外) + 作り直し3→env X_POST_GEN_ATTEMPTS(既定1) | tests 393 passed / 全体45 fail=baseline同一
+03:17 UTC | x-post-mail-lane job image quotabreaker-d57fea10 + env X_POST_MAIL_MAX_LLM_PER_RUN 16→10 / REPLY_LLM_RESERVE 12→8 | 直接実行
+03:19 UTC | manual-intake-service rev 00116-8wr (同tag) traffic 100% | 直接実行
+- 期待効果: 消費 概算半分以下(便あたり上限24→18 + gate落ち再生成廃止) + 枠切れ後の429 storm停止
+- 観測: 今夜試合帯→明日朝の lite PerDay 429 初出時刻(昨日=翌8:00 JST)と x_post_llm_daily_quota_dead ログ
+- rollback: env X_POST_GEN_ATTEMPTS=3 + 上限env戻し + 旧image tag(revfallback-bf3cc064)
+- user 判断保留: それでも枯れる場合の有料キー化。SNSMONEY枠の転用は規約グレー+7/7分離の逆流になるため非推奨で合意

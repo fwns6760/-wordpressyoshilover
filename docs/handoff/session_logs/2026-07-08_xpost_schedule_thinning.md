@@ -49,3 +49,8 @@
 04:53 UTC | x-post-mail-lane job image emergency25-8d42bd12 + manual-intake-service rev 00117-vck | 直接実行
 - 2.5-flash / 2.5-flash-lite が prod key で有効なことは models.list で事前確認済み
 - 無効化/順序変更: env X_POST_GEMINI_EMERGENCY_MODELS
+
+## PM3: yt-shorts legend形式 QC全落ちバグ修正 (恒久対応)
+
+07:43 UTC | commit a02d7079 | legend narration に BRAND_CLOSING_LINE 欠落 → QC「締めヨシラバー無し」で毎回 qc_failed (7/8 王貞治回で発覚)。LEGEND_CLOSING 直前に挿入 + 再発防止 test | yt-shorts tests 134 passed
+07:47 UTC | yt-shorts-gen job image brandclose-a02d7079 (恒久) + 今日分の再生成 execute (8ghqf) | 直接実行

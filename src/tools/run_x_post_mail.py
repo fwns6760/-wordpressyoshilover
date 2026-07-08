@@ -2672,7 +2672,12 @@ def _merge_news_priority_candidates(
             return False
         merged.append(candidate)
         seen_identities.add(identity)
-        if player_key:
+        # 2026-07-09 fix: enforce_player=False の候補 (リプ/LIVE) は選手枠を
+        # 消費しない。リプは他人ポストへの返信で自ポストと面が違う、が既定
+        # 方針なのに used_players へ登録すると、直後の MLB 動画引用RT が同一
+        # 選手として弾かれる (岡本和真グランドスラム動画が MLBリプに枠を
+        # 食われて mail に載らなかった実事故)。
+        if player_key and enforce_player:
             used_players.add(player_key)
         return True
 

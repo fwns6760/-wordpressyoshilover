@@ -2661,7 +2661,12 @@ def _merge_news_priority_candidates(
         data_candidates,
     )
 
-    def add(candidate: lane.Candidate, *, enforce_player: bool) -> bool:
+    def add(
+        candidate: lane.Candidate,
+        *,
+        enforce_player: bool,
+        record_player: bool | None = None,
+    ) -> bool:
         if len(merged) >= max_candidates:
             return False
         identity = _candidate_identity(candidate)
@@ -2677,7 +2682,9 @@ def _merge_news_priority_candidates(
         # 方針なのに used_players へ登録すると、直後の MLB 動画引用RT が同一
         # 選手として弾かれる (岡本和真グランドスラム動画が MLBリプに枠を
         # 食われて mail に載らなかった実事故)。
-        if player_key and enforce_player:
+        # record_player=True は「ゲートは通すが選手は記録する」(MLB 動画用:
+        # 媒体違い複数は許可しつつ、後段の汎用 DB data との選手重複は防ぐ)。
+        if player_key and (enforce_player if record_player is None else record_player):
             used_players.add(player_key)
         return True
 
@@ -2708,7 +2715,10 @@ def _merge_news_priority_candidates(
             continue
         if _candidate_identity(candidate) in consumed_data:
             continue
-        add(candidate, enforce_player=True)
+        # 2026-07-07 user「大谷岡本など動画SNSはだしちゃっていいよ。沢山」:
+        # MLB 動画は同一選手でも媒体違いなら複数載せる (選手ゲート免除)。
+        # 選手は記録し、後段の汎用 DB data との重複だけ防ぐ。
+        add(candidate, enforce_player=False, record_player=True)
     for candidate in data_candidates:
         if _candidate_identity(candidate) in consumed_data:
             continue
@@ -3619,6 +3629,72 @@ def main(argv: Sequence[str] | None = None) -> int:
                     len(candidates),
                 )
 
+    # 2026-07-02 user 決定 (フォロワー増計画): 元巨人MLB組 (菅野/岡本) + 大谷別枠。
+    # MLB の試合が動く朝〜昼帯 (7-15時) のみ、MLBJapan / SPOTVNOW_jp の動画付き
+    # 投稿への引用RT候補をヨシラバーボイスで append。voice 失敗はテンプレで
+    # 埋めず skip。枠は既存候補を潰さないよう extra_policy_slots に積む。
+    # 2026-07-09: video_radar より先に実行する。quote_rt の LLM 予算 (共有 9 枠)
+    # を巨人バズ系が先に消費すると、鮮度勝負の MLB 動画が voice 生成できず
+    # 捨てられる実事故があったため (朝便で大谷×3/朗希×1 が budget 切れ skip)。
+    if _mlb_watch_enabled() and _in_mlb_watch_window(now_jst):
+        mlb_max = _mlb_watch_max_per_run()
+        if mlb_max > 0:
+            mlb_comment_fn = None
+            _mlb_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GEMMA_BRANDING_GEMINI_API_KEY") or ""
+            if _mlb_key:
+                try:
+                    from src import x_post_branding_gen as _mlb_xbg
+
+                    def mlb_comment_fn(parent_text, player, _k=_mlb_key, _g=_mlb_xbg, _now=now_jst):  # noqa: E731
+                        # フレーミング: 元巨人 / 大谷別枠 / 日本人スター枠を分離。
+                        # 山本由伸・鈴木誠也・村上宗隆は元巨人扱いしない。
+                        subject, note = _mlb_voice_subject_and_note(player, reply=False)
+                        return _g.build_quote_rt_comment(
+                            parent_text, player, gemini_api_key=_k, now=_now,
+                            subject=subject, extra_voice_note=note,
+                        )
+                except Exception as _mlb_imp_exc:  # noqa: BLE001
+                    LOG.warning("mlb_watch LLM comment unavailable: %r", _mlb_imp_exc)
+                    mlb_comment_fn = None
+            try:
+                # 2026-07-07 user「大谷岡本など動画SNSはだしちゃっていいよ。沢山」:
+                # 大谷/選手別/日本人スター枠の 1 便上限を env で緩める
+                # (lane default は従来値、rollback は env 変更のみ)。
+                mlb_candidates = lane.build_mlb_watch_candidates(
+                    now=now_jst,
+                    max_count=mlb_max,
+                    ohtani_max=_resolve_int_env(
+                        "X_POST_MLB_WATCH_OHTANI_MAX", 3, min_value=0
+                    ),
+                    extra_star_max=_resolve_int_env(
+                        "X_POST_MLB_WATCH_EXTRA_STAR_MAX", 3, min_value=1
+                    ),
+                    per_player_max=_resolve_int_env(
+                        "X_POST_MLB_WATCH_PER_PLAYER_MAX", 2, min_value=1
+                    ),
+                    dedup_set=dedup_set,
+                    comment_fn=mlb_comment_fn,
+                    max_age_hours=_mlb_watch_max_age_hours(),
+                    # 2026-07-07 user「巨人アカがメインだから岡本菅野は外せない」:
+                    # 元巨人のみ鮮度 12h (米デーゲーム=日本深夜分を朝一便で拾う)。
+                    ex_giants_max_age_hours=float(_resolve_int_env(
+                        "X_POST_MLB_WATCH_EX_GIANTS_MAX_AGE_HOURS", 12, min_value=0
+                    )),
+                )
+            except Exception as _mlb_exc:  # noqa: BLE001
+                LOG.warning("mlb_watch build failed: %r", _mlb_exc)
+                mlb_candidates = []
+            _existing_sigs_mlb = {getattr(c, "signature", "") for c in candidates}
+            mlb_new = [c for c in mlb_candidates if c.signature not in _existing_sigs_mlb]
+            if mlb_new:
+                before = len(candidates)
+                candidates = candidates + mlb_new
+                extra_policy_slots += len(mlb_new)
+                LOG.info(
+                    "mlb_watch appended: base=%d mlb=%d total=%d",
+                    before, len(mlb_new), len(candidates),
+                )
+
     # 451: flag ON 時、 公式/OB/メディア YouTube の「懐かし・ファン反応」動画候補を append。
     # 転載しない (URL 紹介のみ)、 公開 X 自動投稿はしない (候補=メールまで)。 flag OFF で既存不変。
     if _video_radar_enabled():
@@ -3684,69 +3760,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                 LOG.info(
                     "video_radar appended: base=%d video=%d total=%d",
                     before, len(vr_new), len(candidates),
-                )
-
-    # 2026-07-02 user 決定 (フォロワー増計画): 元巨人MLB組 (菅野/岡本) + 大谷別枠。
-    # MLB の試合が動く朝〜昼帯 (7-15時) のみ、MLBJapan / SPOTVNOW_jp の動画付き
-    # 投稿への引用RT候補をヨシラバーボイスで append。voice 失敗はテンプレで
-    # 埋めず skip。枠は既存候補を潰さないよう extra_policy_slots に積む。
-    if _mlb_watch_enabled() and _in_mlb_watch_window(now_jst):
-        mlb_max = _mlb_watch_max_per_run()
-        if mlb_max > 0:
-            mlb_comment_fn = None
-            _mlb_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GEMMA_BRANDING_GEMINI_API_KEY") or ""
-            if _mlb_key:
-                try:
-                    from src import x_post_branding_gen as _mlb_xbg
-
-                    def mlb_comment_fn(parent_text, player, _k=_mlb_key, _g=_mlb_xbg, _now=now_jst):  # noqa: E731
-                        # フレーミング: 元巨人 / 大谷別枠 / 日本人スター枠を分離。
-                        # 山本由伸・鈴木誠也・村上宗隆は元巨人扱いしない。
-                        subject, note = _mlb_voice_subject_and_note(player, reply=False)
-                        return _g.build_quote_rt_comment(
-                            parent_text, player, gemini_api_key=_k, now=_now,
-                            subject=subject, extra_voice_note=note,
-                        )
-                except Exception as _mlb_imp_exc:  # noqa: BLE001
-                    LOG.warning("mlb_watch LLM comment unavailable: %r", _mlb_imp_exc)
-                    mlb_comment_fn = None
-            try:
-                # 2026-07-07 user「大谷岡本など動画SNSはだしちゃっていいよ。沢山」:
-                # 大谷/選手別/日本人スター枠の 1 便上限を env で緩める
-                # (lane default は従来値、rollback は env 変更のみ)。
-                mlb_candidates = lane.build_mlb_watch_candidates(
-                    now=now_jst,
-                    max_count=mlb_max,
-                    ohtani_max=_resolve_int_env(
-                        "X_POST_MLB_WATCH_OHTANI_MAX", 3, min_value=0
-                    ),
-                    extra_star_max=_resolve_int_env(
-                        "X_POST_MLB_WATCH_EXTRA_STAR_MAX", 3, min_value=1
-                    ),
-                    per_player_max=_resolve_int_env(
-                        "X_POST_MLB_WATCH_PER_PLAYER_MAX", 2, min_value=1
-                    ),
-                    dedup_set=dedup_set,
-                    comment_fn=mlb_comment_fn,
-                    max_age_hours=_mlb_watch_max_age_hours(),
-                    # 2026-07-07 user「巨人アカがメインだから岡本菅野は外せない」:
-                    # 元巨人のみ鮮度 12h (米デーゲーム=日本深夜分を朝一便で拾う)。
-                    ex_giants_max_age_hours=float(_resolve_int_env(
-                        "X_POST_MLB_WATCH_EX_GIANTS_MAX_AGE_HOURS", 12, min_value=0
-                    )),
-                )
-            except Exception as _mlb_exc:  # noqa: BLE001
-                LOG.warning("mlb_watch build failed: %r", _mlb_exc)
-                mlb_candidates = []
-            _existing_sigs_mlb = {getattr(c, "signature", "") for c in candidates}
-            mlb_new = [c for c in mlb_candidates if c.signature not in _existing_sigs_mlb]
-            if mlb_new:
-                before = len(candidates)
-                candidates = candidates + mlb_new
-                extra_policy_slots += len(mlb_new)
-                LOG.info(
-                    "mlb_watch appended: base=%d mlb=%d total=%d",
-                    before, len(mlb_new), len(candidates),
                 )
 
     # 2026-07-08 user GO「フーガみたいな観戦中のポストが無い」: 巨人戦ライブ実況 v0。

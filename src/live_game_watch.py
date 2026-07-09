@@ -268,9 +268,13 @@ def parse_plays(html: str) -> list[dict[str, Any]]:
         for row in re.finditer(r"<tr[^>]*>(.*?)</tr>", block, re.S):
             row_html = row.group(1)
             plain = _TAG_RE.sub(" ", row_html)
-            pm = _PBP_PITCHER_RE.search(plain)
-            if pm:
-                pitcher_by_half[half] = pm.group(1).strip()
+            if _PBP_PITCHER_RE.search(plain):
+                # 「（投手交代）西舘 → 田和」は登板する側 (→ の後 = 最後のリンク)。
+                # 「（先発投手）西舘」は1人なので最後=その投手。前者を拾うと交代後の
+                # 打者が前の投手に誤帰属し、最終投手も漏れる。
+                pit_links = re.findall(r'/bis/players/\d+\.html">([^<]+)</a>', row_html)
+                if pit_links:
+                    pitcher_by_half[half] = pit_links[-1].strip()
                 continue
             cells = [
                 _TAG_RE.sub("", c).replace("&nbsp;", "").strip()
@@ -350,7 +354,6 @@ def detect_play_events(
         outcome = p["outcome"]
         batter, pitcher, gb = p["batter"], p.get("pitcher", ""), p["giants_batting"]
         inn = f"{p['inning']}回{p['half']}"
-        rc_after = _runner_count(p["runners"])  # 打席開始時の走者 (この打者が出る前)
         prio, fact = 0, ""
         if any(w in outcome for w in _XBH_WORDS):
             if gb:  # 巨人の長打/タイムリー

@@ -168,3 +168,24 @@ class RecapFactTests(unittest.TestCase):
     def test_recap_loss_label(self):
         plays = gate_pbp().parse_plays(_PBP_HTML)
         self.assertIn("敗戦", gate_pbp().build_recap_fact(plays, 1, 5, "阪神"))
+
+
+class PitcherChangeTests(unittest.TestCase):
+    def test_pitcher_change_uses_incoming_not_outgoing(self):
+        html = (
+            '<h5 name="c1" id="c1">1回表（阪神の攻撃）</h5><table>'
+            '<tr><td colspan="5">（先発投手） <a href="/bis/players/1.html">西舘</a></td></tr>'
+            '<tr><td>0アウト</td><td>&nbsp;</td><td><a href="/bis/players/2.html">中野</a></td>'
+            '<td>0-0より</td><td>セカンドゴロ</td></tr>'
+            '</table><table>'
+            '<tr><td colspan="5">（投手交代） <a href="/bis/players/1.html">西舘</a> → '
+            '<a href="/bis/players/3.html">田和</a></td></tr>'
+            '<tr><td>1アウト</td><td>&nbsp;</td><td><a href="/bis/players/4.html">大山</a></td>'
+            '<td>1-1より</td><td>見逃し三振</td></tr>'
+            '</table>'
+        )
+        plays = gate_pbp().parse_plays(html)
+        # 交代後の大山は 田和(登板側) に帰属。西舘(交代前) ではない
+        oyama = [p for p in plays if p["batter"] == "大山"][0]
+        self.assertEqual(oyama["pitcher"], "田和")
+        self.assertNotEqual(oyama["pitcher"], "西舘")

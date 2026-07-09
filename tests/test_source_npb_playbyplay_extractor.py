@@ -204,3 +204,27 @@ class RunnerStateHelpersTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PitcherChangeIncomingTests(unittest.TestCase):
+    """投手交代「A → B」で登板側 B を current_pitcher にする (交代前 A ではない)。"""
+
+    def test_incoming_pitcher_after_change(self):
+        from src.source_npb_playbyplay_extractor import parse_npb_playbyplay_full_detail
+        html = (
+            '<h5 name="com1-1" id="com1-1">1回表（巨人の攻撃）</h5><table>'
+            '<tr><td colspan="5">（先発投手） <a href="/bis/players/1.html">櫻井</a></td></tr>'
+            '<tr><td>0アウト</td><td>&nbsp;</td><td><a href="/bis/players/2.html">吉川</a></td>'
+            '<td>0-0より</td><td>セカンドゴロ</td></tr>'
+            '</table><table>'
+            '<tr><td colspan="5">（投手交代） <a href="/bis/players/1.html">櫻井</a> → '
+            '<a href="/bis/players/3.html">メヒア</a></td></tr>'
+            '<tr><td>1アウト</td><td>&nbsp;</td><td><a href="/bis/players/4.html">岡本</a></td>'
+            '<td>1-1より</td><td>見逃し三振</td></tr>'
+            '</table>'
+        )
+        evs = parse_npb_playbyplay_full_detail(html)
+        by_batter = {e["batter"]: e["current_pitcher"] for e in evs}
+        self.assertEqual(by_batter["吉川"], "櫻井")   # 先発
+        self.assertEqual(by_batter["岡本"], "メヒア")  # 交代後=登板側
+        self.assertNotEqual(by_batter["岡本"], "櫻井")

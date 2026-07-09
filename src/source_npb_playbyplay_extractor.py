@@ -246,10 +246,18 @@ def parse_npb_playbyplay_full_detail(html: str) -> Optional[List[Dict[str, Any]]
                 # 投手 marker 行 (colspan=5 単一 cell) 検出
                 pm = _PITCHER_CELL_RE.search(row_html)
                 if pm:
-                    cell_text = _clean(pm.group("cell"))
-                    name_m = _PITCHER_NAME_RE.search(cell_text)
-                    if name_m:
-                        current_pitcher = name_m.group("name").strip()
+                    # 「（投手交代）森田 → 船迫」は登板する側 (→ の後 = 最後の選手
+                    # リンク) が現投手。 marker 直後の名前を取ると交代前の投手を拾い、
+                    # 交代後の PA が前の投手に誤帰属する。 先発投手行はリンク1つ=そのまま。
+                    pit_links = re.findall(
+                        r'/bis/players/\d+\.html">([^<]+)</a>', pm.group("cell")
+                    )
+                    if pit_links:
+                        current_pitcher = pit_links[-1].strip()
+                    else:
+                        name_m = _PITCHER_NAME_RE.search(_clean(pm.group("cell")))
+                        if name_m:
+                            current_pitcher = name_m.group("name").strip()
                     continue
                 cells = [_clean(c.group("cell")) for c in _TD_RE.finditer(row_html)]
                 if len(cells) != 5:

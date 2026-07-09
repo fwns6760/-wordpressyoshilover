@@ -7,7 +7,7 @@ scheduler は広めに張り (lineup: 20,40 11-17時 / game: */15 13-21時)、
 便の冒頭で NPB 公式月間日程から今日の巨人戦の有無と開始時刻を見て判定する。
 
 - 試合なし (月曜・移動日等) → skip (数秒で終了、LLM 消費ゼロ)
-- 開始時刻が取れた → lineup=[start-2h, start) / game=[start-15m, start+4h)
+- 開始時刻が取れた → lineup=[start-4h, start) / game=[start-15m, start+4h)
   のみ通す (デーゲームなら昼帯、ナイターなら夜帯に自動で寄る)
 - 試合はあるが時刻不明 (終了済で score 表示に変わった等) や取得失敗
   → 従来のナイター決め打ち窓 (lineup 17-18時 / game 17:45-22時) に fail-open
@@ -114,7 +114,7 @@ def evaluate(
         ok = lo <= _minutes(now) < hi
         return ok, f"時刻不明 → 従来窓 {'内' if ok else '外'}", None
     if window == "lineup":
-        ok = start - timedelta(hours=2) <= now < start
+        ok = start - timedelta(hours=4) <= now < start
         return ok, f"start={start:%H:%M} lineup窓{'内' if ok else '外'}", start
     ok = start - timedelta(minutes=15) <= now < start + timedelta(hours=4)
     return ok, f"start={start:%H:%M} game窓{'内' if ok else '外'}", start

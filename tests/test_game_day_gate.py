@@ -72,6 +72,14 @@ class ShouldProceedTests(unittest.TestCase):
         self.assertTrue(gate.should_proceed("game", _dt(4, 21, 45), fetch_fn=fetch)[0])
         self.assertFalse(gate.should_proceed("game", _dt(4, 22, 15), fetch_fn=fetch)[0])
 
+    def test_night_game_lineup_window_opens_4h_before(self):
+        # 18:00 開始 → lineup 窓 [14:00, 18:00)。14 時便も通す (user 2026-07-09)。
+        fetch = lambda now: _FIX_NIGHT  # noqa: E731
+        self.assertTrue(gate.should_proceed("lineup", _dt(4, 14, 0), fetch_fn=fetch)[0])
+        self.assertTrue(gate.should_proceed("lineup", _dt(4, 16, 0), fetch_fn=fetch)[0])
+        self.assertFalse(gate.should_proceed("lineup", _dt(4, 13, 59), fetch_fn=fetch)[0])
+        self.assertFalse(gate.should_proceed("lineup", _dt(4, 18, 0), fetch_fn=fetch)[0])
+
     def test_finished_game_fails_open_to_legacy_window(self):
         fetch = lambda now: _FIX_FINISHED  # noqa: E731
         self.assertTrue(gate.should_proceed("game", _dt(6, 21, 0), fetch_fn=fetch)[0])

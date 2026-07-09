@@ -1,3 +1,5 @@
 07:24 JST | fix+deploy | x-post-mail merge reply-slot bug | 340ffdcf / build 792ef786 / image replyslot-340ffdcf | next=08:30 MLB便で岡本動画引用RT入り確認
 10:06 JST | deploy | MLB動画LLM予算優先+選手ゲート免除 | 3d10cc7d / image mlbfirst-3d10cc7d | next=10:30便でMLB動画3-5本入り確認
 13:00 JST | fix+deploy | 12:33便で朗希×3がunverified_number門番2試行全滅→非リプ予算9枯渇→巨人x_buzzテンプレ落ち+data_plain skip。数字ルールをdb_fact無し時もプロンプト明示+動画系リトライ文に数字NG追加。env MAX_LLM_PER_RUN 14→20(非リプ15) | 2e36ad75 / build bbc9792a / image unverified-num-prompt-202607091254 | next=次便でquote_rt_gate_fail check=unverified_number減とx_buzz fallback消滅を確認
+13:35 JST | verify | 13:30便(新image初便)で効果確認: unverified_number gate_fail 6→0 / 共有budget枯渇 10→0 / x_buzz template fallback 3→0 / quote_rt_comment_built 6→13 / data_plain skip 1→0。budget set max=20 reply_reserve=5 をログで確認 | exec x-post-mail-lane-b65mm | next=通常運用。再発時は門番落ち素材の試行1回化を検討
+13:07 JST | ops | MLB 13:00便追加(user依頼): scheduler x-post-mail-flush-mlb-13h (0 13 * * * Asia/Tokyo, jobs:run x-post-mail-lane) 新設ENABLED。初回発火は7/10 13:00 | - | 既知障害メモ: rival-account-analysis/broadcast-auto/lineup-auto/postgame-autoは参照imageが registry に無く実行失敗する(7/1からの既存事象、要user判断)

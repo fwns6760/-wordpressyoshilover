@@ -3776,14 +3776,19 @@ def main(argv: Sequence[str] | None = None) -> int:
             try:
                 from src import x_post_branding_gen as _lg_xbg
 
-                def live_comment_fn(fact_line, _k=_lg_key, _g=_lg_xbg, _now=now_jst):  # noqa: E731
+                def live_comment_fn(fact_line, long=False, _k=_lg_key, _g=_lg_xbg, _now=now_jst):  # noqa: E731
+                    # long=True (試合後 recap): フーガ風の長文・改行入りに切替 (2026-07-09 user)。
                     return _g.build_quote_rt_comment(
-                        fact_line, "", "試合中",
+                        fact_line, "", "試合後" if long else "試合中",
                         gemini_api_key=_k, now=_now,
-                        subject="巨人戦のスコア速報",
+                        subject="巨人戦の試合結果" if long else "巨人戦のスコア速報",
                         db_fact="", require_db_fact=False,
                         budget_site="live_game",
+                        force_long=long,
                         extra_voice_note=(
+                            "これは試合後の振り返りポスト。速報行にある事実 (選手名・結果) だけで、"
+                            "フーガ風に長めに読み解く。速報行に無い選手名・数字は作らない。"
+                            if long else
                             "これは観戦中の実況ポスト。速報行にある事実だけで、缶詰モードの"
                             "即時反応を書く。速報行に姓しか無い選手名をフルネーム化・推測補完"
                             "しない (そのままの表記で書くか、名前を出さずに書く)。"

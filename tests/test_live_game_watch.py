@@ -153,3 +153,18 @@ class DetectPlayEventsTests(unittest.TestCase):
 def gate_pbp():
     from src import live_game_watch as lgw
     return lgw
+
+
+class RecapFactTests(unittest.TestCase):
+    def test_recap_bundles_giants_names_only(self):
+        plays = gate_pbp().parse_plays(_PBP_HTML)
+        fact = gate_pbp().build_recap_fact(plays, 4, 3, "阪神")
+        self.assertIn("勝利", fact)
+        self.assertIn("キャベッジ", fact)   # 巨人の安打者
+        self.assertIn("西舘", fact)         # 巨人投手 (表で登板)
+        self.assertNotIn("才木", fact)      # 才木=相手投手、巨人側に混ぜない
+        self.assertNotIn("森下", fact)      # 森下=相手打者、巨人安打に混ぜない
+
+    def test_recap_loss_label(self):
+        plays = gate_pbp().parse_plays(_PBP_HTML)
+        self.assertIn("敗戦", gate_pbp().build_recap_fact(plays, 1, 5, "阪神"))

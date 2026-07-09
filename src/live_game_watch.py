@@ -257,7 +257,9 @@ def parse_plays(html: str) -> list[dict[str, Any]]:
     投手は （先発投手）/（投手交代）行から引き継ぐ (giants_batting=False の回の
     pitcher = 巨人投手)。取得/parse 失敗は空 list。"""
     plays: list[dict[str, Any]] = []
-    pitcher = ""
+    # 投手は表/裏で別人 (表=巨人守備 / 裏=相手守備 etc)。 投手交代行が無い回は前回の
+    # 同じ半分の投手を引き継ぐ。 half をまたいで漏らさないよう half 別に保持する。
+    pitcher_by_half: dict[str, str] = {}
     for m in _PBP_INNING_RE.finditer(html or ""):
         inning = int(m.group(1))
         half = m.group(2)
@@ -268,17 +270,23 @@ def parse_plays(html: str) -> list[dict[str, Any]]:
             plain = _TAG_RE.sub(" ", row_html)
             pm = _PBP_PITCHER_RE.search(plain)
             if pm:
-                pitcher = pm.group(1).strip()
+                pitcher_by_half[half] = pm.group(1).strip()
                 continue
             cells = [
                 _TAG_RE.sub("", c).replace("&nbsp;", "").strip()
                 for c in re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", row_html, re.S)
             ]
-            if len(cells) >= 5 and "アウト" in cells[0] and cells[2]:
+            # 打者は選手リンクから直接取る (代打/代走行はセル位置がズレて「代打」等を
+            # 拾ってしまうため。 リンク名なら常に実名)。
+            bat_m = re.search(r'/bis/players/\d+\.html">([^<]+)</a>', row_html)
+            batter = bat_m.group(1).strip() if bat_m else ""
+            runners = next((c for c in cells if "塁" in c), "")
+            if len(cells) >= 5 and "アウト" in cells[0] and batter:
                 plays.append({
                     "inning": inning, "half": half, "giants_batting": giants_batting,
-                    "pitcher": pitcher, "outs": cells[0], "runners": cells[1],
-                    "batter": cells[2], "count": cells[3], "outcome": cells[4],
+                    "pitcher": pitcher_by_half.get(half, ""), "outs": cells[0],
+                    "runners": runners, "batter": batter,
+                    "count": cells[-2], "outcome": cells[-1],
                 })
     return plays
 
@@ -366,3 +374,36 @@ def detect_play_events(
             scored.append((prio, {"kind": "play", "fact": fact}))
     scored.sort(key=lambda t: -t[0])
     return [e for _, e in scored[: max(0, max_count)]]
+
+
+def build_recap_fact(
+    plays: list[dict[str, Any]], giants_score: int, opp_score: int, opp_name: str
+) -> str:
+    """試合後 recap 用の事実行。一球速報から巨人の活躍選手を実名で大量に束ねる
+    (本塁打 / 安打 / 登板投手)。数字・名前は速報にあるものだけ (捏造ガード用)。"""
+    win = giants_score > opp_score
+    result = "勝利" if win else ("敗戦" if giants_score < opp_score else "引き分け")
+    hits: list[str] = []
+    hrs: list[str] = []
+    pitchers: list[str] = []
+    seen: set[str] = set()
+    for p in plays:
+        oc = p.get("outcome", "")
+        b = p.get("batter", "")
+        if p.get("giants_batting") and b and any(w in oc for w in _HIT_WORDS):
+            if b not in seen:
+                seen.add(b)
+                hits.append(b)
+            if ("ホームラン" in oc or "本塁打" in oc) and b not in hrs:
+                hrs.append(b)
+        pit = p.get("pitcher", "")
+        if (not p.get("giants_batting")) and pit and pit not in pitchers:
+            pitchers.append(pit)
+    parts = [f"試合終了。巨人{giants_score}-{opp_score}{opp_name}で巨人の{result}"]
+    if hrs:
+        parts.append("本塁打は" + "・".join(hrs))
+    if hits:
+        parts.append("安打は" + "・".join(hits[:8]))
+    if pitchers:
+        parts.append("登板は巨人・" + "・".join(pitchers[:4]))
+    return "。".join(parts)

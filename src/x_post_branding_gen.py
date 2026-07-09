@@ -1581,6 +1581,7 @@ def build_quote_rt_comment(
     extra_voice_note: str = "",
     require_db_fact: bool = True,
     reply_style: str = "supplement",
+    force_long: bool = False,
 ) -> str:
     """451: X バズ投稿への引用RTコメントを Gemini で生成。
 
@@ -1616,9 +1617,10 @@ def build_quote_rt_comment(
     now_jst = now.astimezone(_jst) if now is not None else _dt.now(_jst)
     hour = int(now_jst.hour)
     today = now_jst.strftime("%Y-%m-%d")
-    persona = "kandume" if 18 <= hour <= 21 else "fuuga"  # 試合中帯は缶詰寄り
+    # force_long (2026-07-09 試合後 recap): 缶詰ライブでなくフーガ風の長文分析に固定
+    persona = "fuuga" if force_long else ("kandume" if 18 <= hour <= 21 else "fuuga")
     base_voice = _build_system_prompt(hour, today, persona=persona)
-    is_live = 18 <= hour <= 21  # 試合中帯 = 缶詰ライブ (短文・即時反応OK)
+    is_live = (18 <= hour <= 21) and not force_long  # 試合中帯 = 缶詰ライブ (短文・即時反応OK)
     is_video_sns = ("動画" in subject) or ("SNS" in subject.upper())
     # 2026-07-03 user「リプの型が長い。感想リプではなく補足リプ。相手が喜んで
     # リツイートしてくれるもの」: リプ lane (budget_site="reply") は長文分析を
@@ -1715,6 +1717,16 @@ def build_quote_rt_comment(
             "『好投』『ナイスゲーム』『楽しみ』『見ておきたい』『この流れ』だけで終わる抽象文は禁止。 "
             "元投稿の内容と繋がらない一般論だけの文も禁止。 "
             "URL / ハッシュタグ / 媒体名 / 動画の転載は禁止。 元ネタに無い数字・事実は足さない。"
+        )
+    elif force_long:
+        # 2026-07-09 user「試合後は もっと長文で フーガ風、 改行入れて」: 試合後 recap。
+        len_rule = (
+            "試合後の振り返り (フーガ風の長め分析)。 250〜400字、 5〜7文。 "
+            "★必ず改行を複数入れ、 2〜4行の塊に分けて読みやすくする (詰まった長文は読み飛ばされる)。 "
+            "巨人の活躍選手を できるだけ多く名前で挙げる (本塁打・決勝打・好投・マルチ安打など、 速報行にある選手)。 "
+            "それぞれ何が効いたかをフーガ風に理由立てて読み解き、 最後は巨人愛で前を向いて締める。 "
+            "選手名は検索されるのでフルネームでなく速報行の表記のまま複数入れる。 "
+            "ポエム・優等生締めは禁止。 元ネタ (速報行) に無い数字・選手名は一切足さない。"
         )
     elif is_live:
         len_rule = (

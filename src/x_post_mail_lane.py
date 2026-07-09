@@ -2882,9 +2882,15 @@ def build_live_game_candidates(
                 return nm
         return ""
 
+    win = cur.giants_score > cur.opp_score
     out: list[Candidate] = []
     for ev in events[: max(0, max_count)]:
-        fact = ev["fact"]
+        is_recap = ev.get("kind") == "game_end"
+        # 試合後 recap は巨人の活躍選手を実名で大量に束ねた fact に差し替える
+        fact = (
+            lgw.build_recap_fact(plays, cur.giants_score, cur.opp_score, cur.opp_name)
+            if (is_recap and plays) else ev["fact"]
+        )
         signature = "livegame|" + _hashlib.sha1(
             f"{date_key}|{fact}".encode("utf-8")
         ).hexdigest()[:16]
@@ -2893,6 +2899,8 @@ def build_live_game_candidates(
         post_text = ""
         if comment_fn is not None:
             try:
+                post_text = (comment_fn(fact, long=is_recap) or "").strip()
+            except TypeError:  # comment_fn が long kwarg 非対応 (後方互換)
                 post_text = (comment_fn(fact) or "").strip()
             except Exception as exc:  # noqa: BLE001
                 LOG.info("live_game comment_fn failed: %r", exc)
@@ -2904,8 +2912,12 @@ def build_live_game_candidates(
         if bad:
             LOG.info("live_game skip: fabricated name=%s not in fact", bad)
             continue
+        if is_recap:
+            # 勝=うさほー🐰👊グータッチ / 負=まけほー🐰 で開幕 (2026-07-09 user、絵文字はガード後に付与)
+            opener = "うさほー🐰👊 グータッチ！\n\n" if win else "まけほー🐰\n\n"
+            post_text = opener + post_text
         out.append(Candidate(
-            title=f"⚾実況候補｜{score_ctx}｜{cur.inning_label or '試合終了'}",
+            title=f"⚾{'試合後recap' if is_recap else '実況候補'}｜{score_ctx}｜{cur.inning_label or '試合終了'}",
             metric="LIVE_GAME",
             period_label="実況",
             draft_text=f"{fact}\n(出典: NPB公式一球速報 {cur.game_url})",

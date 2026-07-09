@@ -235,3 +235,134 @@ def detect_events(prev: Optional[dict[str, Any]], cur: LiveGameState) -> list[di
             "fact": f"{where}{cur.opp_name}に{do}点。{score_line}{homer_note}",
         })
     return events[:2]
+
+
+# ── 一球速報 (playbyplay) ベースのプレー検出 (2026-07-09 user) ──────────────
+# 得点イベントだけだと投手戦で沈黙する & 観戦ポストが出てこない。
+# NPB 一球速報の 1 打席ごとの literal 結果 (見逃し三振 / レフト前ヒット / 併殺 等) を
+# 前便比で拾い、安打・好機・三振・長打・併殺でも候補を出す (トリガーを下げる)。
+# 事実行には その瞬間の実名 (打者 + 投手 + 走者を作った打者) を束ねる (検索インプ源)。
+
+_PBP_PITCHER_RE = re.compile(r"（(?:先発投手|投手交代)）\s*([^\s<（）]+)")
+_PBP_INNING_RE = re.compile(r"<h5[^>]*>(\d+)回(表|裏)（([^）]*)）</h5>(.*?)(?=<h5|\Z)", re.S)
+
+
+def _giants_side(attacking: str) -> bool:
+    return ("巨人" in attacking) or ("読売" in attacking)
+
+
+def parse_plays(html: str) -> list[dict[str, Any]]:
+    """一球速報 HTML を打席順の play list に。各 play は
+    {inning, half, giants_batting, pitcher, outs, runners, batter, count, outcome}。
+    投手は （先発投手）/（投手交代）行から引き継ぐ (giants_batting=False の回の
+    pitcher = 巨人投手)。取得/parse 失敗は空 list。"""
+    plays: list[dict[str, Any]] = []
+    pitcher = ""
+    for m in _PBP_INNING_RE.finditer(html or ""):
+        inning = int(m.group(1))
+        half = m.group(2)
+        giants_batting = _giants_side(m.group(3))
+        block = m.group(4)
+        for row in re.finditer(r"<tr[^>]*>(.*?)</tr>", block, re.S):
+            row_html = row.group(1)
+            plain = _TAG_RE.sub(" ", row_html)
+            pm = _PBP_PITCHER_RE.search(plain)
+            if pm:
+                pitcher = pm.group(1).strip()
+                continue
+            cells = [
+                _TAG_RE.sub("", c).replace("&nbsp;", "").strip()
+                for c in re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", row_html, re.S)
+            ]
+            if len(cells) >= 5 and "アウト" in cells[0] and cells[2]:
+                plays.append({
+                    "inning": inning, "half": half, "giants_batting": giants_batting,
+                    "pitcher": pitcher, "outs": cells[0], "runners": cells[1],
+                    "batter": cells[2], "count": cells[3], "outcome": cells[4],
+                })
+    return plays
+
+
+def fetch_today_plays(now: Optional[datetime] = None) -> list[dict[str, Any]]:
+    current = (now or datetime.now(JST)).astimezone(JST)
+    try:
+        game_url = _find_giants_game_url(current)
+        if not game_url:
+            return []
+        r = requests.get(game_url + "playbyplay.html", timeout=10, headers=_HEADERS)
+        r.raise_for_status()
+        return parse_plays(r.content.decode("utf-8", errors="replace"))
+    except Exception as exc:  # noqa: BLE001 - fail-open (候補なし)
+        LOG.info("live_game_watch pbp fetch failed: %r", exc)
+        return []
+
+
+def load_play_cursor(date_key: str) -> Optional[int]:
+    try:
+        return int(json.loads(_state_blob(date_key + "_pbp").download_as_text()).get("count"))
+    except Exception:  # noqa: BLE001 - 初回 / 読めない時は None
+        return None
+
+
+def save_play_cursor(date_key: str, count: int) -> None:
+    try:
+        _state_blob(date_key + "_pbp").upload_from_string(
+            json.dumps({"count": count}), content_type="application/json"
+        )
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("live_game_watch pbp cursor save failed: %r", exc)
+
+
+_HIT_WORDS = ("ヒット", "ホームラン", "ツーベース", "スリーベース", "タイムリー", "本塁打", "安打")
+_XBH_WORDS = ("ホームラン", "ツーベース", "スリーベース", "本塁打", "タイムリー")
+
+
+def _runner_count(runners: str) -> int:
+    r = (runners or "").strip()
+    if not r or r in ("なし",):
+        return 0
+    return r.count("塁")
+
+
+def detect_play_events(
+    prev_count: Optional[int], plays: list[dict[str, Any]], *,
+    score_ctx: str = "", max_count: int = 2,
+) -> list[dict[str, str]]:
+    """前便 cursor 以降の新規 play から観戦候補を作る。トリガーは低め
+    (長打 / 得点圏の好機 / 巨人投手の三振 / 併殺 / 出塁)。事実行は実名を束ねる。
+    prev_count=None (便の初回) は emit せず baseline だけ置く。"""
+    if prev_count is None or not plays:
+        return []
+    new = plays[prev_count:] if 0 <= prev_count <= len(plays) else []
+    if not new:
+        return []
+    scored: list[tuple[int, dict[str, str]]] = []
+    ctx = f"。{score_ctx}" if score_ctx else ""
+    for i, p in enumerate(new):
+        outcome = p["outcome"]
+        batter, pitcher, gb = p["batter"], p.get("pitcher", ""), p["giants_batting"]
+        inn = f"{p['inning']}回{p['half']}"
+        rc_after = _runner_count(p["runners"])  # 打席開始時の走者 (この打者が出る前)
+        prio, fact = 0, ""
+        if any(w in outcome for w in _XBH_WORDS):
+            if gb:  # 巨人の長打/タイムリー
+                vs = f"、対する{pitcher}" if pitcher else ""
+                prio, fact = 3, f"{inn}、巨人・{batter}が{outcome}{vs}{ctx}"
+            else:   # 被弾/失点
+                by = f"巨人・{pitcher}が" if pitcher else ""
+                prio, fact = 3, f"{inn}、{by}{batter}に{outcome}を許す{ctx}"
+        elif "併殺" in outcome:
+            prio, fact = 2, (
+                f"{inn}、巨人・{pitcher}が{batter}を併殺に打ち取る{ctx}" if not gb and pitcher
+                else f"{inn}、{batter}が併殺{ctx}")
+        elif gb and any(w in outcome for w in _HIT_WORDS):
+            # 好機: この打者の出塁で走者が溜まっている時は次打者含め束ねる
+            nxt = new[i + 1]["batter"] if i + 1 < len(new) and new[i + 1]["giants_batting"] else ""
+            nxt_s = f"、続く打席は{nxt}" if nxt else ""
+            prio, fact = 2, f"{inn}、巨人・{batter}が{outcome}で出塁{nxt_s}{ctx}"
+        elif (not gb) and "三振" in outcome and pitcher:
+            prio, fact = 1, f"{inn}、巨人・{pitcher}が{batter}を{outcome}に仕留める{ctx}"
+        if prio and fact:
+            scored.append((prio, {"kind": "play", "fact": fact}))
+    scored.sort(key=lambda t: -t[0])
+    return [e for _, e in scored[: max(0, max_count)]]

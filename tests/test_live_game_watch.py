@@ -96,3 +96,60 @@ class DetectEventTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+_PBP_HTML = (
+    '<h5 name="c1" id="c1">1回表（阪神の攻撃）</h5><table>'
+    '<tr><td colspan="5">（先発投手） <a href="/bis/players/1.html">西舘</a></td></tr>'
+    '<tr><td>0アウト</td><td>&nbsp;</td><td><a href="/bis/players/2.html">森下</a></td>'
+    '<td>0-0より</td><td>レフトソロホームラン（打点1）</td></tr>'
+    '</table>'
+    '<h5 name="c2" id="c2">1回裏（巨人の攻撃）</h5><table>'
+    '<tr><td colspan="5">（先発投手） <a href="/bis/players/3.html">才木</a></td></tr>'
+    '<tr><td>1アウト</td><td>1・2塁</td><td><a href="/bis/players/4.html">キャベッジ</a></td>'
+    '<td>2-1より</td><td>ライト前ヒット</td></tr>'
+    '<tr><td>2アウト</td><td>&nbsp;</td><td><a href="/bis/players/5.html">泉口</a></td>'
+    '<td>1-2より</td><td>見逃し三振</td></tr>'
+    '</table>'
+)
+
+
+class ParsePlaysTests(unittest.TestCase):
+    def test_parse_plays_fields_and_pitcher(self):
+        plays = gate_pbp().parse_plays(_PBP_HTML)
+        self.assertEqual(len(plays), 3)
+        hr = plays[0]
+        self.assertEqual(hr["batter"], "森下")
+        self.assertEqual(hr["pitcher"], "西舘")       # 表 → 巨人投手
+        self.assertFalse(hr["giants_batting"])
+        self.assertIn("ホームラン", hr["outcome"])
+        hit = plays[1]
+        self.assertEqual(hit["batter"], "キャベッジ")
+        self.assertEqual(hit["pitcher"], "才木")       # 裏 → 相手投手
+        self.assertTrue(hit["giants_batting"])
+        self.assertEqual(hit["runners"], "1・2塁")
+
+
+class DetectPlayEventsTests(unittest.TestCase):
+    def setUp(self):
+        self.plays = gate_pbp().parse_plays(_PBP_HTML)
+
+    def test_first_flush_no_emit(self):
+        # prev_count=None (便の初回) は baseline のみ = 0 件 (洪水防止)
+        self.assertEqual(gate_pbp().detect_play_events(None, self.plays), [])
+
+    def test_lower_trigger_hit_and_hr_bundle_names(self):
+        evs = gate_pbp().detect_play_events(0, self.plays, score_ctx="巨人0-1阪神", max_count=3)
+        facts = " / ".join(e["fact"] for e in evs)
+        # 得点でない出塁(ヒット)でも出る = トリガー低
+        self.assertIn("キャベッジ", facts)
+        # 長打は投手名も束ねる = 複数選手
+        self.assertTrue(any("森下" in e["fact"] and "西舘" in e["fact"] for e in evs))
+
+    def test_no_new_plays_returns_empty(self):
+        self.assertEqual(gate_pbp().detect_play_events(len(self.plays), self.plays), [])
+
+
+def gate_pbp():
+    from src import live_game_watch as lgw
+    return lgw

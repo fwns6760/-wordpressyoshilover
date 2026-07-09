@@ -2837,60 +2837,84 @@ def build_live_game_candidates(
     comment_fn=None,
     max_count: int = 2,
 ) -> list[Candidate]:
-    """巨人戦ライブ実況候補 v0 (2026-07-08 user GO)。
+    """巨人戦ライブ実況候補 (2026-07-08 user GO / 2026-07-09 一球速報化)。
 
-    NPB 公式スコアの前便比イベント (得点/被弾/逆転/試合終了) がある時だけ、
-    ライブ voice (缶詰モード) の実況候補を作る。イベントが無い便は 0 件。
-    - 事実は live_game_watch の fact 行 (NPB 公式表記) のみ。voice が
-      作れない時はテンプレに逃げず skip (実況の定型文は逆効果)。
-    - 姓のみの選手名 (NPB 表記) をフルネーム化しない指示は comment_fn 側
-      (extra_voice_note) で与える。
+    NPB 一球速報 (playbyplay) の前便比の新規プレーから候補を作る。得点だけでなく
+    長打 / 得点圏の好機 / 巨人投手の三振 / 併殺 / 出塁でも出す (投手戦でも沈黙しない)。
+    - 事実行は NPB 公式表記の実名を束ねる (打者 + 投手 + 走者を作った打者 = 検索インプ源)。
+    - voice が作れない時はテンプレに逃げず skip。
+    - 名前ガード: 事実行に無い選手名が post に出たら捏造として reject。
+    - 試合終了だけは playbyplay に出ないのでスコア state から補う。
     """
     from src import live_game_watch as lgw
 
     cur = lgw.fetch_today_live_game(now)
     if cur is None:
         return []
-    prev = lgw.load_prev_state(cur.date_key)
-    events = lgw.detect_events(prev, cur)
+    date_key = cur.date_key
+    score_ctx = f"巨人{cur.giants_score}-{cur.opp_score}{cur.opp_name}"
+
+    # ① 一球速報ベースの新規プレー (トリガー低・複数選手束ね)
+    plays = lgw.fetch_today_plays(now)
+    events: list[dict] = []
+    roster: set[str] = set()
+    if plays:
+        roster = {p["batter"] for p in plays if p.get("batter")}
+        roster |= {p["pitcher"] for p in plays if p.get("pitcher")}
+        prev_cursor = lgw.load_play_cursor(date_key)
+        events = lgw.detect_play_events(
+            prev_cursor, plays, score_ctx=score_ctx, max_count=max_count
+        )
+        lgw.save_play_cursor(date_key, len(plays))
+
+    # ② 試合終了はスコア state から (playbyplay には出ない)
+    prev_state = lgw.load_prev_state(date_key)
+    score_events = lgw.detect_events(prev_state, cur)
     lgw.save_state(cur)
+    events += [e for e in score_events if e.get("kind") == "game_end"]
+
     if not events:
         return []
-    kind_ja = {
-        "game_end": "試合終了",
-        "lead_change": "逆転",
-        "giants_score": "巨人得点",
-        "opp_score": "失点",
-    }
+
+    def _fabricated_name(post: str, fact: str) -> str:
+        for nm in roster:
+            if nm and nm in post and nm not in fact:
+                return nm
+        return ""
+
     out: list[Candidate] = []
     for ev in events[: max(0, max_count)]:
+        fact = ev["fact"]
         signature = "livegame|" + _hashlib.sha1(
-            f"{cur.date_key}|{ev['kind']}|{cur.giants_score}-{cur.opp_score}".encode("utf-8")
+            f"{date_key}|{fact}".encode("utf-8")
         ).hexdigest()[:16]
         if dedup_set is not None and signature in dedup_set:
             continue
         post_text = ""
         if comment_fn is not None:
             try:
-                post_text = (comment_fn(ev["fact"]) or "").strip()
+                post_text = (comment_fn(fact) or "").strip()
             except Exception as exc:  # noqa: BLE001
                 LOG.info("live_game comment_fn failed: %r", exc)
                 post_text = ""
         if not post_text:
             LOG.info("live_game skip: voice empty kind=%s", ev["kind"])
             continue
-        label = kind_ja.get(ev["kind"], ev["kind"])
+        bad = _fabricated_name(post_text, fact)
+        if bad:
+            LOG.info("live_game skip: fabricated name=%s not in fact", bad)
+            continue
         out.append(Candidate(
-            title=f"⚾実況候補: {label}｜巨人{cur.giants_score}-{cur.opp_score}｜{cur.inning_label or '試合終了'}",
+            title=f"⚾実況候補｜{score_ctx}｜{cur.inning_label or '試合終了'}",
             metric="LIVE_GAME",
             period_label="実況",
-            draft_text=f"{ev['fact']}\n(出典: NPB公式 {cur.game_url})",
+            draft_text=f"{fact}\n(出典: NPB公式一球速報 {cur.game_url})",
             char_count=len(post_text),
             signature=signature,
             post_text=post_text,
             source_material_type="live_game",
         ))
-    LOG.info("live_game: built %d candidates (events=%d)", len(out), len(events))
+    LOG.info("live_game: built %d candidates (events=%d, plays=%d)", len(out), len(events), len(plays))
     return out
 
 

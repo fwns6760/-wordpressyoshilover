@@ -32,3 +32,12 @@
 - 今日の便で: トレンド一覧/🔥タグ/反応ポスト/定点観測がメールに出るか、織り込みが自然か
 - 今夜の試合: 観戦候補4件/フルネーム/悔しさvoice
 - 1-2週間: x-engagement で 🔥付き vs 通常、長文 vs 短文のインプ比較 → 効かない要素は切る
+
+## PM 追加分 (最終 image = starterac-585373ec)
+
+- 13:40 JST | trend/digest | 80845d34 3カテゴリ化(巨人/プロ野球/MLB)+ですます調+定点カード廃止
+- 14:00 JST | mail | 0d4aa01c ranking図解カード env OFF (X_POST_RANKING_CARD_ENABLED=0、選手写真系は継続)
+- 14:10 JST | digest | 86862711 話題選手TOP10化
+- 14:40 JST | Claude発案 user GO「AとC」 | 585373ec A=予告先発予習(Yahoo試合ページparse、朝/昼/試合前3回、ですます) + C=スタメン発表9人フルネーム列挙(deterministic、変更で再発火)。B(クイズ)は「インプが自然に上がらない」で却下
+- env 追加: ENABLE_X_POST_STARTER_MATCHUP=1 / X_POST_RANKING_CARD_ENABLED=0
+- 検証観点追加: 16時台便=A試合前枠、17時台=Cスタメン、毎時=定点TOP10+トレンド3カテゴリ

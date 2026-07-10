@@ -214,3 +214,54 @@ class TrendReactionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class YahooTopicsMergeTests(unittest.TestCase):
+    """2026-07-10 user「メジャーとプロ野球のトレンドがとんでない」対応。"""
+
+    _TOPICS = [
+        "DeNA デュプランティエが退団へ",
+        "大谷翔平 3試合連発の36号",
+        "巨人 岡本和真が復帰",
+        "一発退場の処分 FIFA判断分かれる",  # 野球外 → 除外
+        "高校野球 金足農まさかの初戦敗退",
+    ]
+
+    def test_topics_fill_empty_categories(self):
+        relevant = []
+        stn.merge_yahoo_topics_into_relevant(
+            relevant, set(), topics=list(self._TOPICS)
+        )
+        cats = {t["keyword"]: t["category"] for t in relevant}
+        self.assertEqual(cats["DeNA デュプランティエが退団へ"], "npb")
+        self.assertEqual(cats["大谷翔平 3試合連発の36号"], "mlb")
+        self.assertEqual(cats["巨人 岡本和真が復帰"], "giants")
+        self.assertNotIn("一発退場の処分 FIFA判断分かれる", cats)
+        # トピックスは反応候補の素材にもなる (news_title 付き)
+        self.assertTrue(all(t["news_title"] for t in relevant))
+
+    def test_note_includes_topics_when_google_has_no_baseball(self):
+        with patch.object(
+            stn, "fetch_jp_trends",
+            return_value=[{"keyword": "皇室典範", "traffic": "", "news_title": "",
+                          "news_url": "", "news_source": ""}],
+        ), patch.object(stn, "_giants_name_tokens", return_value=set()), \
+             patch.object(stn, "fetch_yahoo_sports_topics",
+                          return_value=list(self._TOPICS)):
+            note = stn.build_trend_note_and_boost([])
+        self.assertIn("⚾ 急上昇/プロ野球", note)
+        self.assertIn("DeNA デュプランティエが退団へ", note)
+        self.assertIn("🌍 急上昇/メジャー", note)
+        self.assertIn("大谷翔平 3試合連発の36号", note)
+
+    def test_per_category_cap(self):
+        relevant = [
+            {"keyword": f"巨人ネタ{i}", "traffic": "", "category": "giants"}
+            for i in range(5)
+        ]
+        stn.merge_yahoo_topics_into_relevant(
+            relevant, set(), topics=["巨人 追加ネタ"]
+        )
+        self.assertEqual(
+            len([t for t in relevant if t["category"] == "giants"]), 5
+        )

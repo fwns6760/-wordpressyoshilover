@@ -18,13 +18,17 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any
+from typing import Any, Optional
 
 import requests
 
 LOG = logging.getLogger("search_trend_note")
 
 _TREND_RSS_URL = "https://trends.google.co.jp/trending/rss?geo=JP"
+# Yahoo 公式スポーツ・トピックス RSS (2026-07-10 user「メジャーとプロ野球の
+# トレンドがとんでない」: Google 急上昇は野球ゼロの時間帯が多い。Yahoo の
+# 編集トピックスは毎時更新で野球ネタが常時あるため合流させる)
+_YAHOO_SPORTS_TOPICS_RSS = "https://news.yahoo.co.jp/rss/topics/sports.xml"
 _TIMEOUT_SECONDS = 5
 
 # カテゴリ別 marker (2026-07-10 user「巨人だけでなくプロ野球とメジャーも」)。
@@ -107,6 +111,60 @@ def parse_trend_rss(xml_text: str) -> list[dict[str, str]]:
     return out
 
 
+def fetch_yahoo_sports_topics(timeout: float = _TIMEOUT_SECONDS) -> list[str]:
+    """Yahoo スポーツ・トピックスの見出し list (最大20)。失敗は []。"""
+    try:
+        resp = requests.get(
+            _YAHOO_SPORTS_TOPICS_RSS,
+            timeout=timeout,
+            headers={"User-Agent": "Mozilla/5.0 (yoshilover trend note)"},
+        )
+        resp.raise_for_status()
+        titles = _TITLE_RE.findall(resp.text)
+        # 先頭はチャンネル名 (Yahoo!ニュース・トピックス - スポーツ)
+        return [t.strip() for t in titles if "Yahoo!ニュース" not in t][:20]
+    except Exception as exc:  # noqa: BLE001
+        LOG.info("yahoo topics fetch skip: %r", exc)
+        return []
+
+
+def merge_yahoo_topics_into_relevant(
+    relevant: list[dict[str, str]],
+    roster: set[str],
+    *,
+    topics: Optional[list[str]] = None,
+    max_per_category: int = 5,
+) -> None:
+    """Yahoo トピックス見出しをカテゴリ判定して relevant に追記 (in-place)。
+
+    Google 急上昇に野球ゼロの便でも 巨人/プロ野球/メジャー 行が埋まる。
+    見出しはそのまま トレンド反応候補の素材 (news_title) にもなる。
+    """
+    if topics is None:
+        topics = fetch_yahoo_sports_topics()
+    counts: dict[str, int] = {}
+    for t in relevant:
+        cat = t.get("category") or ""
+        counts[cat] = counts.get(cat, 0) + 1
+    seen = {t.get("keyword") for t in relevant}
+    for title in topics:
+        cat = categorize_trend_keyword(title, roster)
+        if not cat or title in seen:
+            continue
+        if counts.get(cat, 0) >= max_per_category:
+            continue
+        relevant.append({
+            "keyword": title,
+            "traffic": "",
+            "category": cat,
+            "news_title": title,
+            "news_url": "",
+            "news_source": "Yahoo!トピックス",
+        })
+        counts[cat] = counts.get(cat, 0) + 1
+        seen.add(title)
+
+
 def _giants_name_tokens() -> set[str]:
     """roster のフルネーム + 姓 (2 字以上)。取得失敗は空 set。"""
     try:
@@ -154,6 +212,11 @@ def build_trend_note_and_boost(
             relevant.append({**t, "category": cat})
         if len(relevant) >= 10:
             break
+    # Yahoo トピックス見出しを合流 (Google に野球ゼロの便でも各行を埋める)
+    try:
+        merge_yahoo_topics_into_relevant(relevant, roster)
+    except Exception as exc:  # noqa: BLE001
+        LOG.info("yahoo topics merge skip: %r", exc)
     if not relevant:
         LOG.info("search_trend: no baseball-related trend (total=%d)", len(trends))
         # 野球関連が無くても総合トップ10は参考表示する

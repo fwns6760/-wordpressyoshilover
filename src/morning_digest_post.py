@@ -158,18 +158,22 @@ def _fetch_buzz_counts() -> dict[str, int]:
 
 
 def _fetch_baseball_trends() -> dict[str, list[str]]:
-    """カテゴリ別 (giants/npb/mlb) の急上昇ワード。失敗は空 dict。"""
+    """カテゴリ別 (giants/npb/mlb) の急上昇ワード + Yahoo トピックス。失敗は空。"""
     out: dict[str, list[str]] = {"giants": [], "npb": [], "mlb": []}
     try:
         from src import search_trend_note as stn
 
-        trends = stn.fetch_jp_trends()
         roster = stn._giants_name_tokens()
-        for t in trends:
+        relevant: list[dict] = []
+        for t in stn.fetch_jp_trends():
             kw = t.get("keyword") or ""
             cat = stn.categorize_trend_keyword(kw, roster)
             if cat:
-                out[cat].append(kw)
+                relevant.append({"keyword": kw, "category": cat})
+        # Yahoo トピックス合流 (Google に野球ゼロでも各カテゴリを埋める)
+        stn.merge_yahoo_topics_into_relevant(relevant, roster)
+        for t in relevant:
+            out[t["category"]].append(t["keyword"])
         return out
     except Exception as exc:  # noqa: BLE001
         LOG.info("morning_digest trends skip: %r", exc)

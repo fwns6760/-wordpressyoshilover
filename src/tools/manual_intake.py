@@ -1199,6 +1199,7 @@ def _try_render_via_nomotoke(
         title=title,
         source_name=source_name,
         summary=summary,
+        allow_llm_refine=True,
     )
 
     # NOMOTOKE-INTAKE-WP-CROSSLINK-001: 関連記事 / 直近の試合 / 対戦成績
@@ -1699,12 +1700,15 @@ def _maybe_insert_source_body_excerpt(
     title: str,
     source_name: str,
     summary: str = "",
+    allow_llm_refine: bool = False,
 ) -> str:
     """Insert a source-literal excerpt when the fetched article body is usable.
 
     This is presentation-only: failures return the original body, and the
-    extractor is pure parsing over already-fetched HTML. It never calls an LLM
-    and never invents prose.
+    extractor is pure parsing over already-fetched HTML. It never invents
+    prose: the optional LLM step (2026-07-10) only *selects* passages and is
+    gated by a literal-substring check against the source text — non-literal
+    output is discarded and the head excerpt is used instead.
 
     2026-05-14: 直近 10 記事で 0/10 挿入されていなかった事象を受け、
     各 inner gate に observability log を追加。挿入失敗の root cause を
@@ -1779,6 +1783,48 @@ def _maybe_insert_source_body_excerpt(
             len(raw_html),
         )
         return rendered_html
+    # 2026-07-10 user「もっと洗練された引用文を」: 冒頭機械切り出しの代わりに
+    # LLM に読みどころ一節を選ばせる。原文一致 gate 通過分のみ採用、失敗は
+    # 従来の冒頭抜粋のまま (挙動デグレなし)。手動 intake 経路限定
+    # (allow_llm_refine=True)。rss_fetcher の auto 経路は件数が多く
+    # Gemini 無料枠を圧迫するため従来動作のまま。
+    if allow_llm_refine and not used_meta_fallback:
+        refined = ""
+        try:
+            _api_key = (
+                os.environ.get("GEMINI_API_KEY")
+                or os.environ.get("GEMMA_BRANDING_GEMINI_API_KEY")
+                or ""
+            )
+            if _api_key:
+                long_text = extract_article_body_excerpt(
+                    raw_html,
+                    source_url,
+                    title=title,
+                    max_chars=3200,
+                )
+                from src.source_excerpt_refiner import refine_excerpt
+
+                refined = refine_excerpt(
+                    long_text,
+                    title=title,
+                    max_chars=SOURCE_BODY_EXCERPT_MAX_CHARS,
+                    gemini_api_key=_api_key,
+                )
+        except Exception as _exc:  # noqa: BLE001 - 洗練失敗は従来抜粋で続行
+            _log.info(
+                "source_body_excerpt_refine_skip err=%r url=%s", _exc, source_url
+            )
+        if refined and _source_excerpt_matches_context(
+            refined, title=title, summary=summary, source_url=source_url
+        ):
+            _log.info(
+                "source_body_excerpt_refined head_len=%d refined_len=%d url=%s",
+                len(excerpt),
+                len(refined),
+                source_url,
+            )
+            excerpt = refined
     if not used_meta_fallback and not _source_excerpt_matches_context(
         excerpt,
         title=title,
@@ -4021,6 +4067,7 @@ def apply_rss_pipeline_enrichment(
         title=title,
         source_name=source_name,
         summary=summary,
+        allow_llm_refine=True,
     )
 
     extra_blocks: list[str] = []

@@ -29,6 +29,7 @@ from __future__ import annotations
 
 from contextlib import ExitStack
 import json
+import os
 import re
 import sys
 import tempfile
@@ -196,8 +197,18 @@ class _IntakeBaseTest(unittest.TestCase):
             mi, "_safe_load_history", return_value={}
         )
         self._history_patch.start()
+        # wp_client の load_dotenv でローカル .env の GEMINI_API_KEY が
+        # os.environ に載ると、本文抜粋の読みどころ選択 (source_excerpt_refiner)
+        # が unit test 中に実 API を呼んでしまう。key を遮断して LLM 経路を
+        # 確実に不活性化する (refine は key なし時に無条件 skip)。
+        self._env_patch = patch.dict(
+            os.environ,
+            {"GEMINI_API_KEY": "", "GEMMA_BRANDING_GEMINI_API_KEY": ""},
+        )
+        self._env_patch.start()
 
     def tearDown(self):
+        self._env_patch.stop()
         self._routing_patch.stop()
         self._history_patch.stop()
         self._tmpdir.cleanup()

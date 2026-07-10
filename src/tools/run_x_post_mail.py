@@ -4580,11 +4580,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             _trend_note = ""
     if _trend_note:
         context_note = f"{context_note}\n{_trend_note}".strip()
-    # 2026-07-10 user (金融アカの定点ポスト翻訳): 毎朝 1 本の巨人データ定点観測
-    # 候補 (話題選手TOP5 + 急上昇ワード + 解説/締め、カードは 437 に自動で乗る)。
-    # 既定 OFF (test hermetic)、prod job は env ON。朝 7-10 時台の便のみ。
+    # 2026-07-10 user (金融アカの定点ポスト翻訳、「毎時で出したい」): 毎時 1 本の
+    # 巨人データ定点観測候補 (話題選手TOP5 + 急上昇ワード + 解説/締め、カードは
+    # 437 に自動で乗る)。既定 OFF (test hermetic)、prod job は env ON。
+    # 毎時 1 本の制御は signature (日+時) の dedup 側で行う。
     _md_flag = (os.environ.get("ENABLE_X_POST_MORNING_DIGEST") or "").strip().lower()
-    if _md_flag in {"1", "true", "yes", "on"} and 7 <= now_jst.hour <= 10:
+    if _md_flag in {"1", "true", "yes", "on"}:
         try:
             from src.morning_digest_post import build_morning_digest_candidate
 

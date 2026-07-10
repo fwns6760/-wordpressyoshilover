@@ -37,9 +37,10 @@ def build_morning_digest_candidate(
     """毎朝 1 本の定点ポスト候補。素材不足 (話題選手 3 人未満) / dedup 済みは None。
 
     ``buzz_counts`` / ``trend_keywords`` は test 注入用。None なら実 fetch。
+    2026-07-10 user「毎時で出したい」: signature を 日+時 にして毎時 1 本。
     """
     signature = "morndigest|" + hashlib.sha1(
-        now.strftime("%Y%m%d").encode("utf-8")
+        now.strftime("%Y%m%d-%H").encode("utf-8")
     ).hexdigest()[:16]
     if dedup_set is not None and signature in dedup_set:
         return None
@@ -57,7 +58,12 @@ def build_morning_digest_candidate(
         trend_keywords = _fetch_baseball_trends()
 
     date_label = f"{now.month}/{now.day}({_WEEKDAYS_JA[now.weekday()]})"
-    header = f"おはようございます。{date_label} 巨人データ定点観測🐰"
+    greeting = (
+        "おはようございます。" if 5 <= now.hour <= 10
+        else "こんばんは。" if now.hour >= 18
+        else ""
+    )
+    header = f"{greeting}{date_label} {now.hour}時の巨人データ定点観測🐰"
     section = "【いま話題の巨人選手 TOP5】(スポーツ媒体Xでの言及数)"
     plain_lines = [f"{i}位 {name}" for i, (name, _c) in enumerate(ranked, 1)]
     card_lines = [
@@ -102,7 +108,7 @@ def build_morning_digest_candidate(
         "morning_digest built names=%d trends=%d", len(ranked), len(trend_keywords or [])
     )
     return Candidate(
-        title=f"📊朝の定点観測｜話題選手TOP5｜{ranked[0][0]}",
+        title=f"📊{now.hour}時の定点観測｜話題選手TOP5｜{ranked[0][0]}",
         metric="MORNING_DIGEST",
         period_label="毎朝定点",
         draft_text=draft,

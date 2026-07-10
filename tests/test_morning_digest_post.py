@@ -30,6 +30,8 @@ class BuildTests(unittest.TestCase):
         self.assertIn("4位 キャベッジ", c.post_text)
         self.assertIn("オールスター", c.post_text)
         self.assertIn("7/10(金)", c.post_text)
+        self.assertIn("8時の巨人データ定点観測", c.post_text)
+        self.assertTrue(c.post_text.startswith("おはようございます。"))
         # 言及件数の生数字は post 本文には出さない (card/draft のみ)
         self.assertNotIn("言及12件", c.post_text)
         self.assertEqual(c.focus_player, "岡本和真")
@@ -48,9 +50,13 @@ class BuildTests(unittest.TestCase):
     def test_fewer_than_three_names_skips(self):
         self.assertIsNone(self._build(buzz_counts={"岡本和真": 5, "泉口友汰": 2}))
 
-    def test_dedup_once_per_day(self):
-        sig = "morndigest|" + hashlib.sha1(b"20260710").hexdigest()[:16]
+    def test_dedup_once_per_hour(self):
+        sig = "morndigest|" + hashlib.sha1(b"20260710-08").hexdigest()[:16]
         self.assertIsNone(self._build(dedup_set={sig}))
+
+    def test_next_hour_fires_again(self):
+        sig = "morndigest|" + hashlib.sha1(b"20260710-07").hexdigest()[:16]
+        self.assertIsNotNone(self._build(dedup_set={sig}))
 
     def test_no_llm_key_uses_deterministic_close(self):
         c = self._build(gemini_api_key="")

@@ -5804,6 +5804,11 @@ def _generate_candidate_image_png(
     direct_image = getattr(candidate, "image_bytes", None)
     if direct_image:
         return direct_image
+    # 2026-07-10 user「図が意味わからない。いらないかも」: ranking 図解カードを
+    # env で止められるようにする (選手写真系 = 上の direct_image は残る)。
+    if (os.environ.get("X_POST_RANKING_CARD_ENABLED", "1").strip().lower()
+            in {"0", "false", "no", "off"}):
+        return None
     try:
         from src.x_post_image_gen_v2 import generate_png
     except Exception as exc:

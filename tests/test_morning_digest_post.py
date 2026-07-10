@@ -75,3 +75,36 @@ class BuildTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RankingCardKillSwitchTests(unittest.TestCase):
+    """2026-07-10 user「図いらないかも」: ranking 図解カードの env OFF。"""
+
+    def test_env_off_skips_ranking_card(self):
+        import os
+        from unittest.mock import patch as _patch
+
+        from src import x_post_mail_lane as lane
+
+        cand = lane.Candidate(
+            title="t", metric="AVG", period_label="p",
+            draft_text="1位 岡本和真（巨人）.345 🟧巨人🟧",
+            char_count=1,
+        )
+        with _patch.dict(os.environ, {"X_POST_RANKING_CARD_ENABLED": "0"}):
+            self.assertIsNone(lane._generate_candidate_image_png(cand))
+
+    def test_direct_player_photo_bytes_still_pass(self):
+        import os
+        from unittest.mock import patch as _patch
+
+        from src import x_post_mail_lane as lane
+
+        cand = lane.Candidate(
+            title="t", metric="x_buzz_post", period_label="p",
+            draft_text="", char_count=1, image_bytes=b"png-bytes",
+        )
+        with _patch.dict(os.environ, {"X_POST_RANKING_CARD_ENABLED": "0"}):
+            self.assertEqual(
+                lane._generate_candidate_image_png(cand), b"png-bytes"
+            )

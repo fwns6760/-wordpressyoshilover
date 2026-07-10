@@ -19,6 +19,9 @@ import re
 LOG = logging.getLogger("source_excerpt_refiner")
 
 _MIN_PASSAGE_CHARS = 40
+# 2026-07-10 user「引用の文字が足りない」: 選択合計がこの字数未満なら "" を
+# 返し、caller は従来の冒頭抜粋 (1200字) を使う (短い抜粋への劣化を防ぐ)。
+_MIN_TOTAL_CHARS = 400
 
 
 def _squash(text: str) -> str:
@@ -27,9 +30,9 @@ def _squash(text: str) -> str:
 
 
 def parse_passages(raw: str) -> list[str]:
-    """PASSAGE1/PASSAGE2 ラベル出力を一節 list に。ラベル無しは空 list。"""
+    """PASSAGE1〜4 ラベル出力を一節 list に。ラベル無しは空 list。"""
     passages: list[str] = []
-    for label in ("PASSAGE1", "PASSAGE2"):
+    for label in ("PASSAGE1", "PASSAGE2", "PASSAGE3", "PASSAGE4"):
         m = re.search(rf"{label}:\s*(.+?)(?=\nPASSAGE\d:|\Z)", raw or "", re.DOTALL)
         if m:
             text = m.group(1).strip()
@@ -56,7 +59,10 @@ def verify_and_join(
     while verified and len(joined) > max_chars:
         verified.pop()
         joined = "\n".join(verified)
-    if len(joined) < _MIN_PASSAGE_CHARS:
+    if len(joined) < _MIN_TOTAL_CHARS:
+        # 短すぎる選択は不採用 → caller が従来の冒頭抜粋 (長い) を使う
+        if joined:
+            LOG.info("excerpt_refine_reject reason=too_short_total len=%d", len(joined))
         return ""
     return joined
 
@@ -89,14 +95,17 @@ def refine_excerpt(
         "【ルール (最重要)】",
         "- 原文から一字一句そのまま連続で抜き出す。書き換え・要約・文の結合・"
         "省略記号の追加は禁止。",
-        "- 一節は 1〜2 個。1 個あたり 2〜5 文程度のまとまり。",
+        "- 一節は 2〜4 個、1 個あたり 3〜8 文のまとまり。合計 600〜1000 字を"
+        "目安にたっぷり選ぶ (短すぎる抜粋は不採用になる)。",
         "- 発言 (「」内) を含む一節を最優先。次に具体的な数字・場面描写。",
         "- 前置き・媒体の定型文・記事末の宣伝・関連記事一覧は選ばない。",
         f"- 記事の主題 ({title}) と直接関係する一節だけ選ぶ。",
         "",
         "出力形式 (ラベル必須、これ以外は書かない):",
         "PASSAGE1: <一節>",
-        "PASSAGE2: <一節 (無ければ省略)>",
+        "PASSAGE2: <一節>",
+        "PASSAGE3: <一節 (無ければ省略)>",
+        "PASSAGE4: <一節 (無ければ省略)>",
         "",
         "記事本文:",
         long_text,

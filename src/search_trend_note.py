@@ -39,6 +39,9 @@ _BASEBALL_MARKERS = (
 _ITEM_RE = re.compile(r"<item>(.*?)</item>", re.DOTALL)
 _TITLE_RE = re.compile(r"<title>([^<]+)</title>")
 _TRAFFIC_RE = re.compile(r"<ht:approx_traffic>([^<]+)</ht:approx_traffic>")
+_NEWS_TITLE_RE = re.compile(r"<ht:news_item_title>([^<]+)</ht:news_item_title>")
+_NEWS_URL_RE = re.compile(r"<ht:news_item_url>([^<]+)</ht:news_item_url>")
+_NEWS_SOURCE_RE = re.compile(r"<ht:news_item_source>([^<]+)</ht:news_item_source>")
 
 
 def fetch_jp_trends(timeout: float = _TIMEOUT_SECONDS) -> list[dict[str, str]]:
@@ -67,9 +70,15 @@ def parse_trend_rss(xml_text: str) -> list[dict[str, str]]:
         if not keyword:
             continue
         tr = _TRAFFIC_RE.search(item)
+        nt = _NEWS_TITLE_RE.search(item)
+        nu = _NEWS_URL_RE.search(item)
+        ns = _NEWS_SOURCE_RE.search(item)
         out.append({
             "keyword": keyword,
             "traffic": (tr.group(1).strip() if tr else ""),
+            "news_title": (nt.group(1).strip() if nt else ""),
+            "news_url": (nu.group(1).strip() if nu else ""),
+            "news_source": (ns.group(1).strip() if ns else ""),
         })
     return out
 
@@ -95,8 +104,19 @@ def _giants_name_tokens() -> set[str]:
     return tokens
 
 
-def build_trend_note_and_boost(candidates: list[Any]) -> str:
-    """関連トレンドの note 行を返し、一致候補の title に 🔥 を付ける (in-place)。"""
+def build_trend_note_and_boost(
+    candidates: list[Any],
+    *,
+    gemini_api_key: str = "",
+    dedup_set: set[str] | None = None,
+    now_date: str = "",
+) -> str:
+    """関連トレンドの note 行を返し、一致候補の title に 🔥 を付ける (in-place)。
+
+    ``gemini_api_key`` があれば追加で:
+    - 語を含まない候補への自然な織り込み (weave_trends_into_candidates)
+    - トレンド語主役の反応ポスト候補を 1 本 append (build_trend_reaction_candidate)
+    """
     trends = fetch_jp_trends()
     if not trends:
         return ""
@@ -127,13 +147,32 @@ def build_trend_note_and_boost(candidates: list[Any]) -> str:
                 boosted += 1
             except Exception:  # noqa: BLE001 - frozen 等は note のみで続行
                 pass
+    woven = 0
+    if gemini_api_key:
+        try:
+            woven = weave_trends_into_candidates(
+                candidates, relevant, gemini_api_key=gemini_api_key
+            )
+        except Exception as exc:  # noqa: BLE001 - 織り込み失敗は note のみで続行
+            LOG.info("trend_weave skip: %r", exc)
+        try:
+            reaction = build_trend_reaction_candidate(
+                relevant,
+                gemini_api_key=gemini_api_key,
+                dedup_set=dedup_set,
+                now_date=now_date,
+            )
+            if reaction is not None:
+                candidates.append(reaction)
+        except Exception as exc:  # noqa: BLE001 - 反応候補失敗は note のみで続行
+            LOG.info("trend_react skip: %r", exc)
     note = "🔥 Google急上昇 (野球/巨人関連): " + " / ".join(
         f"{t['keyword']}({t['traffic']})" if t["traffic"] else t["keyword"]
         for t in relevant
     )
     LOG.info(
-        "search_trend: relevant=%d boosted=%d total=%d",
-        len(relevant), boosted, len(trends),
+        "search_trend: relevant=%d boosted=%d woven=%d total=%d",
+        len(relevant), boosted, woven, len(trends),
     )
     return note
 
@@ -144,3 +183,216 @@ def _keyword_hits(keyword: str, haystack: str) -> bool:
         return True
     tokens = [tok for tok in re.split(r"[\s　]+", keyword) if len(tok) >= 2]
     return bool(tokens) and all(tok in haystack for tok in tokens)
+
+
+# ---------------------------------------------------------------------------
+# トレンド語のポスト織り込み (2026-07-10 user「ポストに入れて自然にできないの？」)
+# ---------------------------------------------------------------------------
+
+# 2026-07-10 user「プレミアムプランだから長めで行ける」「毎時トレンド語を
+# ポストに入れるでもいい」: 織り込みは3候補まで、追加は全角60字相当まで許容。
+_WEAVE_MAX_PER_MAIL = 3
+_WEAVE_MAX_EXTRA_WEIGHTED = 120
+
+
+def weave_trends_into_candidates(
+    candidates: list[Any],
+    relevant: list[dict[str, str]],
+    *,
+    gemini_api_key: str,
+) -> int:
+    """トレンド語を候補の post_text へ自然に織り込む (in-place、最大2候補)。
+
+    安全設計:
+    - LLM の仕事は「この語が内容に本当に関係し、自然に入るなら1回だけ織り込む。
+      無理なら NOCHANGE」。事実・数字・選手名の追加は prompt + gate の両方で禁止
+    - gate: 語が入っていない / 新しい数字 / 新しい roster 名 / 長さ超過 → 元文のまま
+    - 既に語を含む候補・post_text の無い候補は対象外
+    """
+    if not relevant or not gemini_api_key:
+        return 0
+    kws = [t["keyword"] for t in relevant]
+    woven = 0
+    for cand in candidates:
+        if woven >= _WEAVE_MAX_PER_MAIL:
+            break
+        original = str(getattr(cand, "post_text", "") or "")
+        if not original:
+            continue
+        hay = f"{getattr(cand, 'title', '')} {original}"
+        missing = [k for k in kws if not _keyword_hits(k, hay)]
+        if not missing:
+            continue
+        new_text, used_kw = _weave_llm(original, missing, gemini_api_key)
+        if not new_text or not used_kw:
+            continue
+        if not _weave_gate_ok(original, new_text, used_kw):
+            continue
+        try:
+            cand.post_text = new_text
+            cand.title = f"🔥[急上昇入り: {used_kw}] {cand.title}"
+        except Exception:  # noqa: BLE001 - frozen 等はスキップ
+            continue
+        woven += 1
+        LOG.info("trend_weave applied kw=%s len=%d->%d", used_kw, len(original), len(new_text))
+    return woven
+
+
+def _weave_llm(
+    original: str, keywords: list[str], gemini_api_key: str
+) -> tuple[str, str]:
+    """(織り込み後の本文, 使った語)。不適合・失敗は ("", "")。"""
+    from google import genai
+
+    from src.x_post_branding_gen import (
+        _X_POST_DATA_LLM_MODEL,
+        _llm_budget_guard,
+        _x_post_generate_content,
+    )
+
+    try:
+        _llm_budget_guard("trend_weave")
+    except Exception as exc:  # noqa: BLE001 - 枠切れは静かにスキップ
+        LOG.info("trend_weave budget skip: %r", exc)
+        return "", ""
+    prompt = "\n".join([
+        "あなたは X 投稿の編集者です。下の投稿文に、候補ワードのうち投稿の内容に"
+        "本当に関係する語が 1 つあれば、その語を自然な形で 1 回だけ織り込んで"
+        "書き直してください。",
+        "",
+        "【ルール (最重要)】",
+        "- 語を入れる以外の変更はしない。事実・数字・選手名・絵文字を追加しない。",
+        "- 既存の数字・名前・意味を変えない。文体もそのまま。",
+        "- どの語も内容に関係しない、または入れると不自然になる場合は"
+        " NOCHANGE とだけ返す。",
+        "",
+        "候補ワード: " + " / ".join(keywords),
+        "",
+        "出力形式 (ラベル必須):",
+        "KEYWORD: <使った語 (NOCHANGE 時は書かない)>",
+        "POST: <書き直した本文 (NOCHANGE 時は NOCHANGE)>",
+        "",
+        "投稿文:",
+        original,
+    ])
+    try:
+        client = genai.Client(api_key=gemini_api_key)
+        response = _x_post_generate_content(
+            client,
+            model=_X_POST_DATA_LLM_MODEL,
+            contents=prompt,
+            config={"temperature": 0.2},
+        )
+        raw = (getattr(response, "text", None) or "").strip()
+    except Exception as exc:  # noqa: BLE001
+        LOG.info("trend_weave llm skip: %r", exc)
+        return "", ""
+    if "NOCHANGE" in raw[:200] and "POST:" not in raw:
+        return "", ""
+    kw_m = re.search(r"KEYWORD:\s*(.+)", raw)
+    post_m = re.search(r"POST:\s*(.+)", raw, re.DOTALL)
+    if not kw_m or not post_m:
+        return "", ""
+    used_kw = kw_m.group(1).strip()
+    new_text = post_m.group(1).strip()
+    if new_text == "NOCHANGE" or used_kw not in keywords:
+        return "", ""
+    return new_text, used_kw
+
+
+def build_trend_reaction_candidate(
+    relevant: list[dict[str, str]],
+    *,
+    gemini_api_key: str,
+    dedup_set: set[str] | None = None,
+    now_date: str = "",
+) -> Any:
+    """急上昇トレンド + そのニュース見出しから独立の反応ポスト候補を 1 本作る。
+
+    2026-07-10 user「毎時、野球トレンドキーワードをポストに入れるでもいい」:
+    既存候補への織り込みと別に、トレンド語そのものを主役にした候補を出す。
+    事実源 = Google Trends RSS が添える見出し (news_item_title) のみ。
+    voice は既存 build_quote_rt_comment (フーガ+缶詰、捏造数字 gate 込み)。
+    見出し無し / 生成失敗 / dedup 済みは None。
+    """
+    if not gemini_api_key:
+        return None
+    import hashlib as _hashlib
+
+    from src.x_post_branding_gen import build_quote_rt_comment
+
+    for t in relevant:
+        kw = t.get("keyword") or ""
+        news_title = t.get("news_title") or ""
+        if not kw or not news_title:
+            continue
+        signature = "trendreact|" + _hashlib.sha1(
+            f"{now_date}|{kw}".encode("utf-8")
+        ).hexdigest()[:16]
+        if dedup_set is not None and signature in dedup_set:
+            continue
+        source = t.get("news_source") or "Google Trends"
+        fact = f"いま検索急上昇「{kw}」。{news_title}（{source}）"
+        try:
+            post_text = (
+                build_quote_rt_comment(
+                    fact, "", "",
+                    gemini_api_key=gemini_api_key,
+                    subject="検索で急上昇中の野球トピック",
+                    db_fact="", require_db_fact=False,
+                    budget_site="trend_weave",
+                    extra_voice_note=(
+                        f"いま検索で急上昇中の話題への反応ポスト。トレンド語"
+                        f"「{kw}」を本文に必ず1回そのまま入れる。見出しにある"
+                        "事実だけで書き、見出しに無い数字・選手名・結果は作らない。"
+                    ),
+                ) or ""
+            ).strip()
+        except Exception as exc:  # noqa: BLE001
+            LOG.info("trend_react llm skip: %r", exc)
+            post_text = ""
+        if not post_text or kw not in post_text:
+            LOG.info("trend_react skip kw=%s reason=%s", kw, "no_voice" if not post_text else "kw_missing")
+            continue
+        from src.x_post_mail_lane import Candidate
+
+        LOG.info("trend_react built kw=%s", kw)
+        return Candidate(
+            title=f"🔥トレンド反応｜{kw}（{t.get('traffic') or '急上昇'}）",
+            metric="TREND_REACTION",
+            period_label="検索急上昇",
+            draft_text=f"{fact}\n(source: {t.get('news_url') or 'Google Trends'})",
+            char_count=len(post_text),
+            signature=signature,
+            post_text=post_text,
+            source_material_type="trend_reaction",
+        )
+    return None
+
+
+def _weave_gate_ok(original: str, new_text: str, keyword: str) -> bool:
+    """織り込み結果の決定論 gate。false = 元文のまま使う。"""
+    if not _keyword_hits(keyword, new_text):
+        LOG.info("trend_weave reject reason=keyword_missing")
+        return False
+    baseline = f"{original} {keyword}"
+    new_numbers = set(re.findall(r"\d[\d,.]*", new_text)) - set(
+        re.findall(r"\d[\d,.]*", baseline)
+    )
+    if new_numbers:
+        LOG.info("trend_weave reject reason=new_numbers %s", sorted(new_numbers))
+        return False
+    for tok in _giants_name_tokens():
+        if tok in new_text and tok not in baseline:
+            LOG.info("trend_weave reject reason=new_name %s", tok)
+            return False
+    try:
+        from src.x_post_mail_lane import x_weighted_len
+
+        if x_weighted_len(new_text) > x_weighted_len(original) + _WEAVE_MAX_EXTRA_WEIGHTED:
+            LOG.info("trend_weave reject reason=too_long")
+            return False
+    except Exception:  # noqa: BLE001 - 長さ検証不能時は plain len で代替
+        if len(new_text) > len(original) + _WEAVE_MAX_EXTRA_WEIGHTED:
+            return False
+    return True

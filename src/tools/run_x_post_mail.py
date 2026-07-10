@@ -4548,14 +4548,28 @@ def main(argv: Sequence[str] | None = None) -> int:
     if context_label and lineup_focus_names:
         context_note = "今日のスタメン優先: " + "、".join(lineup_focus_names)
     # 2026-07-10 user「検索キーワード/トレンドでインプを」: Google 急上昇 (JP) の
-    # 野球/巨人関連ワードを note 表示 + 一致候補に 🔥 タグ (失敗は "" で従来どおり)。
-    try:
-        from src.search_trend_note import build_trend_note_and_boost
+    # 野球/巨人関連ワードを note 表示 + 一致候補に 🔥 タグ + key があれば
+    # 織り込み/トレンド反応候補 append (失敗は "" で従来どおり)。
+    # 既定 OFF (unit test の hermetic 維持)、prod job は env で ON。
+    _trend_note = ""
+    _trend_flag = (os.environ.get("ENABLE_X_POST_SEARCH_TREND") or "").strip().lower()
+    if _trend_flag in {"1", "true", "yes", "on"}:
+        try:
+            from src.search_trend_note import build_trend_note_and_boost
 
-        _trend_note = build_trend_note_and_boost(candidates)
-    except Exception as _tr_exc:  # noqa: BLE001
-        LOG.info("trend note skip: %r", _tr_exc)
-        _trend_note = ""
+            _trend_note = build_trend_note_and_boost(
+                candidates,
+                gemini_api_key=(
+                    os.environ.get("GEMINI_API_KEY")
+                    or os.environ.get("GEMMA_BRANDING_GEMINI_API_KEY")
+                    or ""
+                ),
+                dedup_set=dedup_set,
+                now_date=now_jst.strftime("%Y%m%d"),
+            )
+        except Exception as _tr_exc:  # noqa: BLE001
+            LOG.info("trend note skip: %r", _tr_exc)
+            _trend_note = ""
     if _trend_note:
         context_note = f"{context_note}\n{_trend_note}".strip()
     mail = lane.compose_mail(

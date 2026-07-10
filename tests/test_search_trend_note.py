@@ -25,9 +25,11 @@ class _Cand:
 class ParseTests(unittest.TestCase):
     def test_parse_keywords_and_traffic(self):
         rows = stn.parse_trend_rss(_RSS)
-        self.assertEqual(rows[0], {"keyword": "アシナガバチ", "traffic": "200+"})
+        self.assertEqual(rows[0]["keyword"], "アシナガバチ")
+        self.assertEqual(rows[0]["traffic"], "200+")
         self.assertEqual(rows[1]["keyword"], "岡本和真")
-        self.assertEqual(rows[3], {"keyword": "有吉の壁", "traffic": ""})
+        self.assertEqual(rows[3]["keyword"], "有吉の壁")
+        self.assertEqual(rows[3]["traffic"], "")
 
     def test_parse_empty(self):
         self.assertEqual(stn.parse_trend_rss(""), [])
@@ -72,6 +74,110 @@ class NoteAndBoostTests(unittest.TestCase):
         c = _Cand(title="MLB", post_text="パドレスがdバックスに勝利")
         self._run([c])
         self.assertTrue(c.title.startswith("🔥"))
+
+
+class WeaveGateTests(unittest.TestCase):
+    def test_ok(self):
+        with patch.object(stn, "_giants_name_tokens", return_value={"岡本和真"}):
+            self.assertTrue(stn._weave_gate_ok(
+                "岡本和真が決めた。", "オールスターの岡本和真が決めた。", "オールスター"
+            ))
+
+    def test_keyword_missing_rejected(self):
+        self.assertFalse(stn._weave_gate_ok("本文。", "本文のまま。", "オールスター"))
+
+    def test_new_number_rejected(self):
+        with patch.object(stn, "_giants_name_tokens", return_value=set()):
+            self.assertFalse(stn._weave_gate_ok(
+                "岡本和真が決めた。", "オールスターで打率.999の岡本和真が決めた。", "オールスター"
+            ))
+
+    def test_new_roster_name_rejected(self):
+        with patch.object(stn, "_giants_name_tokens", return_value={"戸郷翔征"}):
+            self.assertFalse(stn._weave_gate_ok(
+                "岡本和真が決めた。", "オールスターは戸郷翔征と岡本和真。", "オールスター"
+            ))
+
+    def test_too_long_rejected(self):
+        with patch.object(stn, "_giants_name_tokens", return_value=set()):
+            self.assertFalse(stn._weave_gate_ok(
+                "短い。", "オールスター" + "あ" * 200, "オールスター"
+            ))
+
+
+class WeaveApplyTests(unittest.TestCase):
+    def test_weave_updates_post_and_title(self):
+        c = _Cand(title="候補A", post_text="岡本和真が決めた。")
+        with patch.object(
+            stn, "_weave_llm",
+            return_value=("オールスターの岡本和真が決めた。", "オールスター"),
+        ), patch.object(stn, "_giants_name_tokens", return_value=set()):
+            n = stn.weave_trends_into_candidates(
+                [c], [{"keyword": "オールスター", "traffic": ""}], gemini_api_key="k"
+            )
+        self.assertEqual(n, 1)
+        self.assertIn("オールスター", c.post_text)
+        self.assertTrue(c.title.startswith("🔥[急上昇入り: オールスター]"))
+
+    def test_candidate_already_containing_kw_skipped(self):
+        c = _Cand(title="候補A", post_text="オールスターだ。")
+        with patch.object(stn, "_weave_llm") as m:
+            n = stn.weave_trends_into_candidates(
+                [c], [{"keyword": "オールスター", "traffic": ""}], gemini_api_key="k"
+            )
+        self.assertEqual(n, 0)
+        m.assert_not_called()
+
+
+class TrendReactionTests(unittest.TestCase):
+    _REL = [{
+        "keyword": "岡本和真",
+        "traffic": "2万+",
+        "news_title": "岡本和真がサヨナラ打",
+        "news_url": "https://news.example/1",
+        "news_source": "報知",
+    }]
+
+    def test_builds_candidate_with_keyword(self):
+        with patch(
+            "src.x_post_branding_gen.build_quote_rt_comment",
+            return_value="岡本和真、これは効くわ。",
+        ):
+            cand = stn.build_trend_reaction_candidate(
+                self._REL, gemini_api_key="k", dedup_set=set(), now_date="20260710"
+            )
+        self.assertIsNotNone(cand)
+        self.assertEqual(cand.metric, "TREND_REACTION")
+        self.assertIn("岡本和真", cand.post_text)
+        self.assertTrue(cand.signature.startswith("trendreact|"))
+
+    def test_dedup_skips(self):
+        import hashlib
+
+        sig = "trendreact|" + hashlib.sha1(
+            "20260710|岡本和真".encode("utf-8")
+        ).hexdigest()[:16]
+        cand = stn.build_trend_reaction_candidate(
+            self._REL, gemini_api_key="k", dedup_set={sig}, now_date="20260710"
+        )
+        self.assertIsNone(cand)
+
+    def test_voice_without_keyword_rejected(self):
+        with patch(
+            "src.x_post_branding_gen.build_quote_rt_comment",
+            return_value="キーワードが入っていない文。",
+        ):
+            cand = stn.build_trend_reaction_candidate(
+                self._REL, gemini_api_key="k", dedup_set=set(), now_date="20260710"
+            )
+        self.assertIsNone(cand)
+
+    def test_no_news_title_skipped(self):
+        rel = [{"keyword": "巨人", "traffic": "", "news_title": ""}]
+        cand = stn.build_trend_reaction_candidate(
+            rel, gemini_api_key="k", dedup_set=set(), now_date="20260710"
+        )
+        self.assertIsNone(cand)
 
 
 if __name__ == "__main__":

@@ -16,8 +16,10 @@
 
 from __future__ import annotations
 
+import html as _html_mod
 import logging
 import re
+import time
 from typing import Any, Optional
 
 import requests
@@ -72,19 +74,40 @@ _NEWS_URL_RE = re.compile(r"<ht:news_item_url>([^<]+)</ht:news_item_url>")
 _NEWS_SOURCE_RE = re.compile(r"<ht:news_item_source>([^<]+)</ht:news_item_source>")
 
 
+# fetch memo (2026-07-10): 動画SNS lane のトレンド関連選手判定と後段の
+# build_trend_note_and_boost が同じ fire 内で同 URL を読むため、TTL 10 分の
+# process memo で 1 回に共有する (Cloud Run job は fire ごと新 process)。
+_FETCH_MEMO: dict[str, tuple[float, Any]] = {}
+_FETCH_MEMO_TTL_SECONDS = 600.0
+
+
+def _memoized(key: str, fn):
+    now = time.monotonic()
+    hit = _FETCH_MEMO.get(key)
+    if hit is not None and (now - hit[0]) < _FETCH_MEMO_TTL_SECONDS:
+        return hit[1]
+    value = fn()
+    _FETCH_MEMO[key] = (now, value)
+    return value
+
+
 def fetch_jp_trends(timeout: float = _TIMEOUT_SECONDS) -> list[dict[str, str]]:
-    """Google Trends JP RSS → [{keyword, traffic}]。失敗は []。"""
-    try:
-        resp = requests.get(
-            _TREND_RSS_URL,
-            timeout=timeout,
-            headers={"User-Agent": "Mozilla/5.0 (yoshilover trend note)"},
-        )
-        resp.raise_for_status()
-        return parse_trend_rss(resp.text)
-    except Exception as exc:  # noqa: BLE001 - トレンドは飾り、失敗で止めない
-        LOG.info("trend fetch skip: %r", exc)
-        return []
+    """Google Trends JP RSS → [{keyword, traffic}]。失敗は []。TTL memo 付き。"""
+
+    def _fetch() -> list[dict[str, str]]:
+        try:
+            resp = requests.get(
+                _TREND_RSS_URL,
+                timeout=timeout,
+                headers={"User-Agent": "Mozilla/5.0 (yoshilover trend note)"},
+            )
+            resp.raise_for_status()
+            return parse_trend_rss(resp.text)
+        except Exception as exc:  # noqa: BLE001 - トレンドは飾り、失敗で止めない
+            LOG.info("trend fetch skip: %r", exc)
+            return []
+
+    return _memoized("jp_trends", _fetch)
 
 
 def parse_trend_rss(xml_text: str) -> list[dict[str, str]]:
@@ -112,20 +135,24 @@ def parse_trend_rss(xml_text: str) -> list[dict[str, str]]:
 
 
 def fetch_yahoo_sports_topics(timeout: float = _TIMEOUT_SECONDS) -> list[str]:
-    """Yahoo スポーツ・トピックスの見出し list (最大20)。失敗は []。"""
-    try:
-        resp = requests.get(
-            _YAHOO_SPORTS_TOPICS_RSS,
-            timeout=timeout,
-            headers={"User-Agent": "Mozilla/5.0 (yoshilover trend note)"},
-        )
-        resp.raise_for_status()
-        titles = _TITLE_RE.findall(resp.text)
-        # 先頭はチャンネル名 (Yahoo!ニュース・トピックス - スポーツ)
-        return [t.strip() for t in titles if "Yahoo!ニュース" not in t][:20]
-    except Exception as exc:  # noqa: BLE001
-        LOG.info("yahoo topics fetch skip: %r", exc)
-        return []
+    """Yahoo スポーツ・トピックスの見出し list (最大20)。失敗は []。TTL memo 付き。"""
+
+    def _fetch() -> list[str]:
+        try:
+            resp = requests.get(
+                _YAHOO_SPORTS_TOPICS_RSS,
+                timeout=timeout,
+                headers={"User-Agent": "Mozilla/5.0 (yoshilover trend note)"},
+            )
+            resp.raise_for_status()
+            titles = _TITLE_RE.findall(resp.text)
+            # 先頭はチャンネル名 (Yahoo!ニュース・トピックス - スポーツ)
+            return [t.strip() for t in titles if "Yahoo!ニュース" not in t][:20]
+        except Exception as exc:  # noqa: BLE001
+            LOG.info("yahoo topics fetch skip: %r", exc)
+            return []
+
+    return _memoized("yahoo_sports_topics", _fetch)
 
 
 def merge_yahoo_topics_into_relevant(
@@ -470,6 +497,96 @@ def _weave_llm(
     return new_text, used_kw
 
 
+# --- トレンド反応の事実接地 (2026-07-10 user「トレンド反応みて、RSSで記事見て
+# 書けないの」) -------------------------------------------------------------
+# 見出し 1 行だけを事実源に 250-400 字を書かせると、LLM が経歴・移籍・所属を
+# 補完して捏造する (実例: 菅野のメジャー行き捏造)。対策は 2 段:
+# ① news_url の記事 lead (og:description 等) を取得して事実源に足す。
+#    記事が読めない候補は長文反応を作らない (安全側 skip)。
+# ② 生成文を決定的 gate で照合: 事実源に無い 移籍/メジャー系 claim 語・
+#    監視対象の実名 (巨人 roster + 日本人MLB) が入っていたら全破棄。
+
+_OG_DESC_RES = (
+    re.compile(
+        r'<meta[^>]+property=["\']og:description["\'][^>]+content=["\']([^"\']+)["\']',
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:description["\']',
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r'<meta[^>]+name=["\']description["\'][^>]+content=["\']([^"\']+)["\']',
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+name=["\']description["\']',
+        re.IGNORECASE,
+    ),
+)
+
+
+def _fetch_article_excerpt(url: str, timeout: float = _TIMEOUT_SECONDS) -> str:
+    """トレンド記事の lead 文 (og:description → meta description)。失敗は ""。
+
+    TTL memo 付き (同 URL は 1 fire 1 回)。転載ではなく事実接地用の内部素材。
+    """
+    if not (url or "").startswith("http"):
+        return ""
+
+    def _fetch() -> str:
+        try:
+            resp = requests.get(
+                url,
+                timeout=timeout,
+                headers={"User-Agent": "Mozilla/5.0 (yoshilover trend note)"},
+            )
+            resp.raise_for_status()
+            html_text = resp.text[:200_000]
+        except Exception as exc:  # noqa: BLE001
+            LOG.info("article excerpt fetch skip url=%s: %r", url, exc)
+            return ""
+        for pat in _OG_DESC_RES:
+            m = pat.search(html_text)
+            if m:
+                desc = _html_mod.unescape(m.group(1)).strip()
+                if len(desc) >= 20:
+                    return desc[:600]
+        return ""
+
+    return _memoized(f"article|{url}", _fetch)
+
+
+# 事実源に無ければ捏造とみなす claim 語 (移籍・所属・進退系)。
+_UNGROUNDED_CLAIM_WORDS = (
+    "メジャー", "MLB", "移籍", "トレード", "FA", "戦力外", "引退", "契約",
+    "昇格", "降格", "抹消",
+)
+# 日本人 MLB の監視実名 (姓のみ含む。「山本」「村上」単独は一般姓のため除外)
+_MLB_JP_NAME_TOKENS = (
+    "大谷翔平", "大谷", "山本由伸", "由伸", "鈴木誠也", "誠也", "村上宗隆",
+    "ダルビッシュ", "今永昇太", "今永", "菅野智之", "菅野", "佐々木朗希", "朗希",
+    "吉田正尚", "岡本和真", "岡本",
+)
+
+
+def _reaction_grounding_ok(post_text: str, source_text: str) -> bool:
+    """トレンド反応の生成文が事実源 (見出し+記事lead) に接地しているか。
+
+    事実源に無い claim 語 / 監視実名が生成文に入っていたら False (全破棄)。
+    """
+    for w in _UNGROUNDED_CLAIM_WORDS:
+        if w in post_text and w not in source_text:
+            LOG.info("trend_react gate: ungrounded claim word %r", w)
+            return False
+    guard_names = set(_MLB_JP_NAME_TOKENS) | _giants_name_tokens()
+    for name in guard_names:
+        if len(name) >= 2 and name in post_text and name not in source_text:
+            LOG.info("trend_react gate: ungrounded name %r", name)
+            return False
+    return True
+
+
 # トレンド反応の構成パターン (毎回ローテーション、2026-07-10 user)
 _TREND_ARRANGEMENTS = (
     "冒頭は違和感・驚きのフック1行 → 見出しの事実 → フーガ風の読み → 論点で締め",
@@ -520,8 +637,19 @@ def build_trend_reaction_candidate(
         ).hexdigest()[:16]
         if dedup_set is not None and signature in dedup_set:
             continue
+        # 記事接地 (2026-07-10 user「RSSで記事見て書けないの」): 見出し 1 行
+        # だけだと長文生成時に LLM が捏造で埋める。記事 lead を事実源に足し、
+        # 読めない候補は作らない。
+        excerpt = _fetch_article_excerpt(t.get("news_url") or "")
+        if not excerpt:
+            LOG.info("trend_react skip kw=%s reason=no_article", kw)
+            continue
         source = t.get("news_source") or "Google Trends"
-        fact = f"いま検索急上昇「{kw}」。{news_title}（{source}）"
+        fact = (
+            f"いま検索急上昇「{kw}」。{news_title}（{source}）\n"
+            f"記事より: {excerpt}"
+        )
+        source_text = f"{kw} {news_title} {excerpt}"
         # 構成ローテーション (2026-07-10 user「プレミアムなんで長文で。
         # 毎回アレンジ変えて」): 時間+語で決定論的に構成を変え、テンプレ臭を防ぐ。
         arrangement = _TREND_ARRANGEMENTS[
@@ -540,8 +668,9 @@ def build_trend_reaction_candidate(
                     extra_voice_note=(
                         f"いま検索で急上昇中の話題への反応ポスト (試合後の振り返り"
                         f"ではない)。トレンド語「{kw}」を本文に必ず1回そのまま入れる。"
-                        "見出しにある事実だけで書き、見出しに無い数字・選手名・結果は"
-                        f"作らない。今回の構成: {arrangement}。"
+                        "見出しと『記事より』にある事実だけで書き、そこに無い"
+                        "経歴・移籍・所属 (メジャー行き等)・数字・結果・選手名は"
+                        f"絶対に作らない。今回の構成: {arrangement}。"
                         "文体は必ず です・ます調 (丁寧語) で統一する "
                         "(「〜だよな」「〜だわ」等のカジュアル語尾は今回は禁止。"
                         "丁寧だが堅すぎない、読みやすい情報ポストの文体)。"
@@ -553,6 +682,11 @@ def build_trend_reaction_candidate(
             post_text = ""
         if not post_text or kw not in post_text:
             LOG.info("trend_react skip kw=%s reason=%s", kw, "no_voice" if not post_text else "kw_missing")
+            continue
+        # 決定的 gate: 事実源 (見出し+記事lead) に無い claim 語・実名は全破棄
+        # (2026-07-10 実事故: 菅野のメジャー行き捏造)。
+        if not _reaction_grounding_ok(post_text, source_text):
+            LOG.info("trend_react skip kw=%s reason=ungrounded", kw)
             continue
         from src.x_post_mail_lane import Candidate
 

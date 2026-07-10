@@ -5005,6 +5005,66 @@ class MultiTeamHandleGiantsGateTests(unittest.TestCase):
         self.assertEqual(len(posts), 1)
 
 
+class TrendPairVideoAndArticleTests(unittest.TestCase):
+    """2026-07-10 user「記事ポストもトレンドにかかわる人なら動画と記事ポストの2つ出したい」"""
+
+    # 同一選手×同一媒体で 動画付き + 記事 (静止) の 2 投稿
+    _FEED = (
+        "<rss><channel>"
+        "<item><title>坂本勇人 サヨナラ満塁ホームラン</title>"
+        "<description>坂本勇人 サヨナラ満塁ホームラン "
+        "&lt;img src=&quot;https://pbs.twimg.com/amplify_video_thumb/111/img/abc.jpg&quot;&gt;</description>"
+        "<link>https://x.com/hochi_giants/status/111</link></item>"
+        "<item><title>坂本勇人 復活のサヨナラ弾 一問一答</title>"
+        "<description>坂本勇人 復活のサヨナラ弾 一問一答</description>"
+        "<link>https://x.com/hochi_giants/status/112</link></item>"
+        "</channel></rss>"
+    )
+
+    def _detect_patch(self):
+        return patch(
+            "src.x_post_mail_lane.detect_giants_player_name",
+            side_effect=lambda t, alias_map=None: "坂本勇人" if "坂本" in str(t) else "",
+        )
+
+    # 同便内の同文 dedup (選手名除き) を避けるため、元投稿ごとに違うコメントを返す
+    @staticmethod
+    def _comment_fn(text, player, phase_hint="", **kw):
+        return f"{player}、{'この一撃は劇的' if '満塁' in str(text) else '言葉に重みがある'}。"
+
+    def test_trend_player_gets_video_and_article_pair(self):
+        from src import x_post_mail_lane as lane
+        with self._detect_patch(), patch.object(
+            lane, "_trending_text_blob", return_value="坂本勇人 サヨナラ"
+        ):
+            # max_count=1 でも、トレンド関連選手の記事側は枠外ボーナスで残る
+            cands = lane.build_video_radar_candidates(
+                db_path=None, max_count=1,
+                fetch_fn=lambda url: self._FEED,
+                allow_photo_and_article=True,
+                comment_fn=self._comment_fn,
+            )
+        self.assertEqual(len(cands), 2)
+        kinds = {c.title.split(")")[0] for c in cands}
+        self.assertEqual(kinds, {"(引用RT🎬", "(引用RT📰"})
+        self.assertTrue(all(c.focus_player == "坂本勇人" for c in cands))
+
+    def test_non_trend_player_still_one_per_player_and_media(self):
+        from src import x_post_mail_lane as lane
+        with self._detect_patch(), patch.object(
+            lane, "_trending_text_blob", return_value=""
+        ):
+            cands = lane.build_video_radar_candidates(
+                db_path=None, max_count=3,
+                fetch_fn=lambda url: self._FEED,
+                allow_photo_and_article=True,
+                comment_fn=self._comment_fn,
+            )
+        # トレンド外は従来通り (選手×媒体) 1 本 = 動画優先で 🎬 だけ
+        self.assertEqual(len(cands), 1)
+        self.assertIn("🎬", cands[0].title)
+
+
 class GameBuzzHandlesTests(unittest.TestCase):
     """2026-07-03 user「ホームでない場合は動画は DAZN にできる？日テレが出なくなる」"""
 
@@ -6103,8 +6163,9 @@ class VideoRadarSourceNarrowingTests(unittest.TestCase):
         self.assertEqual(self._handles_hit(18), self._GAME_SOURCES)
 
     def test_off_game_uses_all_sources(self):
-        # 10:00 = 試合外 → 全ソース (2026-07-02 差別化2アカ+日刊班+報知水上記者追加で 12)
-        self.assertEqual(len(self._handles_hit(10)), 12)
+        # 10:00 = 試合外 → 全ソース (2026-07-10 user「今あるもの全部見てね」で
+        # 大手野球全般6アカ+NPB公式を合流し 12→19)
+        self.assertEqual(len(self._handles_hit(10)), 19)
 
 
 class VideoRadarInGameFreshnessFloorTests(unittest.TestCase):

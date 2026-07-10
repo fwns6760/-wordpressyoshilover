@@ -48,6 +48,18 @@ _BUZZ_HANDLES = [
     # 2026-07-02 user 追加指定: 水上智恵 (スポーツ報知・巨人担当記者、投手&野手担当)。
     # 実 feed 検証: 18件中 動画10 (練習動画/球場動画中心、班アカ hochi_giants より動画率高)。
     "chiehochi6",
+    # 2026-07-10 user「動画SNSは公式だけでなく、今あるもの全部見てね」:
+    # システム内に既存の X source (sns_realtime_topic の大手野球全般アカ +
+    # player_voice の NPB 公式) を動画SNS lane にも合流。全て多球団アカのため
+    # _MULTI_TEAM_HANDLES gate (巨人選手検出 or 巨人語必須) を適用する。
+    # 実 feed は sns_realtime_topic / player_voice_digest で prod 稼働検証済。
+    "sponichiyakyuu",   # スポニチ 野球
+    "nikkan_yakyuude",  # 日刊スポーツ 野球取材基地
+    "Daily_Online",     # デイリースポーツ
+    "sponichiannex",    # スポニチ 公式 (general)
+    "nikkansports",     # 日刊スポーツ 公式 (general)
+    "ntv_sports_jp",    # 日テレスポーツ (general・動画多め)
+    "npb",              # NPB 公式 (ハイライト/公示/オールスター)
 ]
 
 # 2026-07-03 実事故: DAZNJPNBaseball (12球団アカ) のオリックス選手クリップが
@@ -57,6 +69,14 @@ _MULTI_TEAM_HANDLES = frozenset({
     "DAZNJPNBaseball",
     "TeamUehara",
     "samuraijapan_pr",
+    # 2026-07-10 合流分 (全て12球団/野球全般アカ)
+    "sponichiyakyuu",
+    "nikkan_yakyuude",
+    "Daily_Online",
+    "sponichiannex",
+    "nikkansports",
+    "ntv_sports_jp",
+    "npb",
 })
 
 # 「懐かしい / 名場面」系シグナル

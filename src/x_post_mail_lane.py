@@ -2303,6 +2303,46 @@ def game_buzz_handles(now: Optional[datetime] = None) -> list[str]:
     return handles
 
 
+# トレンド関連選手の 動画+記事 ペア (2026-07-10 user「記事ポストもトレンドに
+# かかわる人なら動画と記事ポストの2つ出したい」) 用の枠外ボーナス上限。
+_TREND_PAIR_BONUS_MAX = 2
+
+
+def _trending_text_blob() -> str:
+    """Google 急上昇語 + Yahoo トピックス見出しを連結した blob (トレンド選手判定用)。
+
+    ENABLE_X_POST_SEARCH_TREND が OFF なら "" (既存不変 / unit test hermetic)。
+    取得は search_trend_note 側の TTL memo で、後段 build_trend_note_and_boost と
+    1 fire 1 回に共有される。失敗は ""。
+    """
+    flag = (os.environ.get("ENABLE_X_POST_SEARCH_TREND") or "").strip().lower()
+    if flag not in {"1", "true", "yes", "on"}:
+        return ""
+    try:
+        from src import search_trend_note as _stn
+
+        parts = [t.get("keyword") or "" for t in _stn.fetch_jp_trends()]
+        parts += _stn.fetch_yahoo_sports_topics()
+        return " ".join(p for p in parts if p)
+    except Exception as exc:  # noqa: BLE001 - トレンドは飾り、失敗で止めない
+        LOG.info("trend blob skip: %r", exc)
+        return ""
+
+
+def _player_in_trend_blob(player: str, blob: str) -> bool:
+    """選手がいまのトレンド (急上昇語/トピックス見出し) に関わっているか。
+
+    フルネーム (空白除去) 一致、または姓 (2 字以上) 一致で True。
+    """
+    if not player or not blob:
+        return False
+    name = player.replace(" ", "").replace("　", "")
+    if name and name in blob:
+        return True
+    surname = _re.split(r"[ 　]", player, maxsplit=1)[0]
+    return len(surname) >= 2 and surname in blob
+
+
 def build_video_radar_candidates(
     db_path: Optional[str] = None,
     *,
@@ -2393,6 +2433,20 @@ def build_video_radar_candidates(
         return []
 
     phase_label, phase_hint = _video_comment_phase_hint(now)
+    # トレンド関連選手 (2026-07-10 user): 急上昇語に関わる選手は
+    # ①動画優先ソート内でさらに前へ ②動画+記事(写真)の 2 本出しを許可。
+    trend_blob = _trending_text_blob()
+    if trend_blob:
+        posts.sort(
+            key=lambda d: (
+                bool(d.get("has_video")),
+                _player_in_trend_blob((d.get("player") or "").strip(), trend_blob),
+                d.get("score") or 0,
+            ),
+            reverse=True,
+        )
+    trend_video_players: set[str] = set()  # 動画候補を出したトレンド関連選手
+    trend_bonus_used = 0
     out: list[Candidate] = []
     used_players: set[str] = set()
     # 2026-07-08 user「同じような文章が」: 定型 fallback (_x_buzz_event_comment) は
@@ -2405,15 +2459,27 @@ def build_video_radar_candidates(
         if _normalize_player_name(name)
     }
     for p in posts:
+        _is_video = bool(p.get("has_video"))
+        player = (p.get("player") or "").strip()
+        _is_trend_player = _player_in_trend_blob(player, trend_blob)
+        _bonus_entry = False
         if len(out) >= max_count:
-            break
+            # 枠が動画で埋まっても、トレンド関連選手の記事/写真側だけは枠外ボーナス
+            # (最大 _TREND_PAIR_BONUS_MAX 本) でペア成立を許す (2026-07-10 user)。
+            if (
+                _is_video
+                or not _is_trend_player
+                or player not in trend_video_players
+                or trend_bonus_used >= _TREND_PAIR_BONUS_MAX
+            ):
+                continue
+            _bonus_entry = True
         url = (p.get("url") or "").strip()
         if not url:
             continue
         signature = "xbuzz|" + _hashlib.sha1(url.encode("utf-8")).hexdigest()[:16]
         if dedup_set is not None and signature in dedup_set:
             continue
-        player = (p.get("player") or "").strip()
         player_key = _normalize_player_name(player)
         if player_key and player_key in avoid_names:
             LOG.info("x_buzz skip: player in live duplicate cooldown player=%s", player)
@@ -2432,7 +2498,11 @@ def build_video_radar_candidates(
         # 一記事一本 → (選手×媒体) 一本 (2026-07-02 user 決定): 動画SNS は
         # インプが取れるため、 同じ選手でも発信メディア (@handle) が違えば
         # 別候補として残す。 同一選手×同一媒体だけ 1 本に抑える。
+        # トレンド関連選手は 動画/静止 (記事・写真) を別枠にし 2 本出しを許可
+        # (2026-07-10 user「トレンドにかかわる人なら動画と記事ポストの2つ」)。
         _pm_key = f"{player}|{(p.get('handle') or '').strip().lower()}"
+        if _is_trend_player:
+            _pm_key += "|video" if _is_video else "|static"
         if player and _pm_key in used_players:
             continue
         if player:
@@ -2494,7 +2564,6 @@ def build_video_radar_candidates(
                 brand_img = b""
         # 種別 (2026-07-10 user「記事も。報知とか公式とかの記事や写真系」):
         # 動画🎬 / 写真📷 / 記事📰 をタイトルと手順文に明示する。
-        _is_video = bool(p.get("has_video"))
         _kind, _kind_emoji = (
             ("動画", "🎬") if _is_video
             else ("写真", "📷") if p.get("has_image")
@@ -2538,6 +2607,15 @@ def build_video_radar_candidates(
             image_alt_text=(f"ヨシラバー {player}" if player else "ヨシラバー"),
             media_handle=(handle or "").strip().lower(),
         ))
+        if _is_trend_player and player:
+            if _is_video:
+                trend_video_players.add(player)
+            if _bonus_entry:
+                trend_bonus_used += 1
+                LOG.info(
+                    "x_buzz trend pair bonus: player=%s kind=%s (%d/%d)",
+                    player, _kind, trend_bonus_used, _TREND_PAIR_BONUS_MAX,
+                )
     LOG.info("x_buzz: built %d candidates (from X posts via RSSHub)", len(out))
     return out
 

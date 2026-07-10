@@ -154,18 +154,27 @@ class TrendReactionTests(unittest.TestCase):
         "news_url": "https://news.example/1",
         "news_source": "報知",
     }]
+    _EXCERPT = "岡本和真が9回2死から左翼席へサヨナラ打を放ち、チームは連敗を止めた。"
+
+    def _excerpt_patch(self, value=None):
+        return patch.object(
+            stn, "_fetch_article_excerpt",
+            return_value=(self._EXCERPT if value is None else value),
+        )
 
     def test_builds_candidate_with_keyword(self):
         with patch(
             "src.x_post_branding_gen.build_quote_rt_comment",
             return_value="岡本和真、これは効くわ。",
-        ):
+        ), self._excerpt_patch():
             cand = stn.build_trend_reaction_candidate(
                 self._REL, gemini_api_key="k", dedup_set=set(), now_date="20260710"
             )
         self.assertIsNotNone(cand)
         self.assertEqual(cand.metric, "TREND_REACTION")
         self.assertIn("岡本和真", cand.post_text)
+        # 記事 lead が mail の事実源 (draft) に載り、user が照合できる
+        self.assertIn("記事より", cand.draft_text)
         self.assertTrue(cand.signature.startswith("trendreact|"))
 
     def test_dedup_skips_same_headline(self):
@@ -188,7 +197,7 @@ class TrendReactionTests(unittest.TestCase):
         with patch(
             "src.x_post_branding_gen.build_quote_rt_comment",
             return_value="岡本和真、続報も見逃せないな。",
-        ):
+        ), self._excerpt_patch():
             cand = stn.build_trend_reaction_candidate(
                 self._REL, gemini_api_key="k", dedup_set={old_sig},
                 now_date="20260710",
@@ -199,11 +208,58 @@ class TrendReactionTests(unittest.TestCase):
         with patch(
             "src.x_post_branding_gen.build_quote_rt_comment",
             return_value="キーワードが入っていない文。",
+        ), self._excerpt_patch():
+            cand = stn.build_trend_reaction_candidate(
+                self._REL, gemini_api_key="k", dedup_set=set(), now_date="20260710"
+            )
+        self.assertIsNone(cand)
+
+    def test_article_unreachable_skipped(self):
+        # 記事が読めない候補は長文反応を作らない (2026-07-10 捏造対策)
+        with patch(
+            "src.x_post_branding_gen.build_quote_rt_comment",
+            return_value="岡本和真、これは効くわ。",
+        ), self._excerpt_patch(value=""):
+            cand = stn.build_trend_reaction_candidate(
+                self._REL, gemini_api_key="k", dedup_set=set(), now_date="20260710"
+            )
+        self.assertIsNone(cand)
+
+    def test_ungrounded_mlb_claim_rejected(self):
+        # 実事故 (2026-07-10): 事実源に無い「メジャー行き」を LLM が補完 → 全破棄
+        with patch(
+            "src.x_post_branding_gen.build_quote_rt_comment",
+            return_value="岡本和真がメジャーでも通用する打棒を見せました。",
+        ), self._excerpt_patch():
+            cand = stn.build_trend_reaction_candidate(
+                self._REL, gemini_api_key="k", dedup_set=set(), now_date="20260710"
+            )
+        self.assertIsNone(cand)
+
+    def test_ungrounded_player_name_rejected(self):
+        # 事実源に無い実名 (roster) が生成文に混入 → 全破棄
+        with patch(
+            "src.x_post_branding_gen.build_quote_rt_comment",
+            return_value="岡本和真に続いて坂本勇人にも期待ですね。",
+        ), self._excerpt_patch(), patch.object(
+            stn, "_giants_name_tokens", return_value={"坂本勇人", "坂本"}
         ):
             cand = stn.build_trend_reaction_candidate(
                 self._REL, gemini_api_key="k", dedup_set=set(), now_date="20260710"
             )
         self.assertIsNone(cand)
+
+    def test_grounded_claim_word_allowed(self):
+        # 事実源に claim 語がある場合は通る (over-blocking しない)
+        rel = [{**self._REL[0], "news_title": "岡本和真 メジャー挑戦を表明"}]
+        with patch(
+            "src.x_post_branding_gen.build_quote_rt_comment",
+            return_value="岡本和真のメジャー挑戦、ついに来ましたね。",
+        ), self._excerpt_patch(value="岡本和真が会見でメジャー挑戦の意向を明らかにした。"):
+            cand = stn.build_trend_reaction_candidate(
+                rel, gemini_api_key="k", dedup_set=set(), now_date="20260710"
+            )
+        self.assertIsNotNone(cand)
 
     def test_no_news_title_skipped(self):
         rel = [{
@@ -232,6 +288,9 @@ class TrendReactionTests(unittest.TestCase):
         with patch(
             "src.x_post_branding_gen.build_quote_rt_comment",
             return_value="大谷翔平、この打球速度は別格ですね。",
+        ), patch.object(
+            stn, "_fetch_article_excerpt",
+            return_value="大谷翔平が第1打席で今季30号となる先制ソロを放った。",
         ):
             cand = stn.build_trend_reaction_candidate(
                 rel, gemini_api_key="k", dedup_set=set(), now_date="20260710"

@@ -2886,6 +2886,7 @@ def build_live_game_candidates(
         return ""
 
     win = cur.giants_score > cur.opp_score
+    losing = cur.giants_score < cur.opp_score
     out: list[Candidate] = []
     for ev in events[: max(0, max_count)]:
         is_recap = ev.get("kind") == "game_end"
@@ -2902,8 +2903,10 @@ def build_live_game_candidates(
         post_text = ""
         if comment_fn is not None:
             try:
-                post_text = (comment_fn(fact, long=is_recap) or "").strip()
-            except TypeError:  # comment_fn が long kwarg 非対応 (後方互換)
+                post_text = (
+                    comment_fn(fact, long=is_recap, losing=losing) or ""
+                ).strip()
+            except TypeError:  # comment_fn が kwarg 非対応 (後方互換)
                 post_text = (comment_fn(fact) or "").strip()
             except Exception as exc:  # noqa: BLE001
                 LOG.info("live_game comment_fn failed: %r", exc)

@@ -3791,8 +3791,25 @@ def main(argv: Sequence[str] | None = None) -> int:
             try:
                 from src import x_post_branding_gen as _lg_xbg
 
-                def live_comment_fn(fact_line, long=False, _k=_lg_key, _g=_lg_xbg, _now=now_jst):  # noqa: E731
+                def live_comment_fn(fact_line, long=False, losing=False, _k=_lg_key, _g=_lg_xbg, _now=now_jst):  # noqa: E731
                     # long=True (試合後 recap): フーガ風の長文・改行入りに切替 (2026-07-09 user)。
+                    # losing=True (2026-07-10 user「負けの悔しさも入れて」): フーガ例C の
+                    # 辛口+理由+着地の形で、悔しさ・歯がゆさを隠さず書く。
+                    note = (
+                        "これは試合後の振り返りポスト。速報行にある事実 (選手名・結果) だけで、"
+                        "フーガ風に長めに読み解く。速報行に無い選手名・数字は作らない。"
+                        if long else
+                        "これは観戦中の実況ポスト。速報行にある事実だけで、缶詰モードの"
+                        "即時反応を書く。速報行に姓しか無い選手名をフルネーム化・推測補完"
+                        "しない (そのままの表記で書くか、名前を出さずに書く)。"
+                    )
+                    if losing:
+                        note += (
+                            "巨人がリードされている試合。悔しさ・歯がゆさを隠さず本音で"
+                            "書く (「うーん」「流石に苦しい」「歯がゆい」系)。ただし選手"
+                            "個人への攻撃・戦犯探しはせず、悔しさの後は理由か次への期待に"
+                            "一言で着地する (フーガの辛口の形)。"
+                        )
                     return _g.build_quote_rt_comment(
                         fact_line, "", "試合後" if long else "試合中",
                         gemini_api_key=_k, now=_now,
@@ -3800,14 +3817,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                         db_fact="", require_db_fact=False,
                         budget_site="live_game",
                         force_long=long,
-                        extra_voice_note=(
-                            "これは試合後の振り返りポスト。速報行にある事実 (選手名・結果) だけで、"
-                            "フーガ風に長めに読み解く。速報行に無い選手名・数字は作らない。"
-                            if long else
-                            "これは観戦中の実況ポスト。速報行にある事実だけで、缶詰モードの"
-                            "即時反応を書く。速報行に姓しか無い選手名をフルネーム化・推測補完"
-                            "しない (そのままの表記で書くか、名前を出さずに書く)。"
-                        ),
+                        extra_voice_note=note,
                     )
             except Exception as _lg_imp_exc:  # noqa: BLE001
                 LOG.warning("live_game LLM comment unavailable: %r", _lg_imp_exc)

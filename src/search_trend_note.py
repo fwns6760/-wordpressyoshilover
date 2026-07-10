@@ -587,6 +587,43 @@ def _reaction_grounding_ok(post_text: str, source_text: str) -> bool:
     return True
 
 
+_TOMORROW_WORDS = ("あす", "あした", "明日")
+_TODAY_WORDS = ("きょう", "今日", "今夜", "本日")
+
+
+def _time_context_ok(post_text: str, news_title: str, now_date: str = "") -> bool:
+    """見出しに日付/時制語があるとき、本文にも整合する時制表現を要求する。
+
+    2026-07-10 実運用: 「11日の巨人戦で今季初先発」(あすの予告先発) 記事への
+    反応が、試合中の便では今夜の先発の話に読めてしまった。見出しの日付を
+    本文へ持ち込む (または今日基準で正しい あす/今夜 に言い換える) ことを
+    gate で強制する。見出しに時制が無ければ通す。
+    """
+    dates = re.findall(r"\d{1,2}日", news_title)
+    title_tomorrow = any(w in news_title for w in _TOMORROW_WORDS)
+    title_today = any(w in news_title for w in _TODAY_WORDS)
+    if not dates and not title_tomorrow and not title_today:
+        return True
+    allowed: set[str] = set(dates)
+    day = 0
+    if len(now_date) >= 8 and now_date[:8].isdigit():
+        day = int(now_date[6:8])
+    for d in dates:
+        try:
+            dn = int(d.rstrip("日"))
+        except ValueError:
+            continue
+        if day and dn == day:
+            allowed.update(_TODAY_WORDS)
+        elif day and dn == day + 1:
+            allowed.update(_TOMORROW_WORDS)
+    if title_tomorrow:
+        allowed.update(_TOMORROW_WORDS)
+    if title_today:
+        allowed.update(_TODAY_WORDS)
+    return any(tok in post_text for tok in allowed)
+
+
 # トレンド反応の構成パターン (毎回ローテーション、2026-07-10 user)
 _TREND_ARRANGEMENTS = (
     "冒頭は違和感・驚きのフック1行 → 見出しの事実 → フーガ風の読み → 論点で締め",
@@ -670,7 +707,9 @@ def build_trend_reaction_candidate(
                         f"ではない)。トレンド語「{kw}」を本文に必ず1回そのまま入れる。"
                         "見出しと『記事より』にある事実だけで書き、そこに無い"
                         "経歴・移籍・所属 (メジャー行き等)・数字・結果・選手名は"
-                        f"絶対に作らない。今回の構成: {arrangement}。"
+                        "絶対に作らない。見出しに日付 (「11日」等) や「あす」が"
+                        "ある時は、それがいつの話か本文に必ず明示する (今夜の"
+                        f"試合の話と誤読させない)。今回の構成: {arrangement}。"
                         "文体は必ず です・ます調 (丁寧語) で統一する "
                         "(「〜だよな」「〜だわ」等のカジュアル語尾は今回は禁止。"
                         "丁寧だが堅すぎない、読みやすい情報ポストの文体)。"
@@ -687,6 +726,11 @@ def build_trend_reaction_candidate(
         # (2026-07-10 実事故: 菅野のメジャー行き捏造)。
         if not _reaction_grounding_ok(post_text, source_text):
             LOG.info("trend_react skip kw=%s reason=ungrounded", kw)
+            continue
+        # 時制 gate: 見出しが日付付き (予告先発等の未来/過去ネタ) なのに本文が
+        # 時制を落とすと、試合中の便では今夜の話に誤読される (藤浪 11日先発の実例)。
+        if not _time_context_ok(post_text, news_title, now_date):
+            LOG.info("trend_react skip kw=%s reason=time_context", kw)
             continue
         from src.x_post_mail_lane import Candidate
 

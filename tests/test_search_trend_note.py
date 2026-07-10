@@ -249,6 +249,30 @@ class TrendReactionTests(unittest.TestCase):
             )
         self.assertIsNone(cand)
 
+    def test_dated_headline_requires_time_context(self):
+        # 実運用 2026-07-10: 「11日の巨人戦で今季初先発」記事への反応が
+        # 今夜の話に読める文になった → 日付/時制の明示を gate で強制
+        rel = [{**self._REL[0], "news_title": "岡本和真 11日の中日戦で復帰へ"}]
+        with patch(
+            "src.x_post_branding_gen.build_quote_rt_comment",
+            return_value="岡本和真の復帰、待ちに待った瞬間ですね。",
+        ), self._excerpt_patch(value="岡本和真が11日の中日戦で戦列復帰する見込みだ。"):
+            cand = stn.build_trend_reaction_candidate(
+                rel, gemini_api_key="k", dedup_set=set(), now_date="20260710-19"
+            )
+        self.assertIsNone(cand)  # 本文に「11日」も「あす」も無い → 破棄
+
+    def test_dated_headline_with_tomorrow_word_allowed(self):
+        rel = [{**self._REL[0], "news_title": "岡本和真 11日の中日戦で復帰へ"}]
+        with patch(
+            "src.x_post_branding_gen.build_quote_rt_comment",
+            return_value="岡本和真があす復帰とのこと、待ちに待った瞬間ですね。",
+        ), self._excerpt_patch(value="岡本和真が11日の中日戦で戦列復帰する見込みだ。"):
+            cand = stn.build_trend_reaction_candidate(
+                rel, gemini_api_key="k", dedup_set=set(), now_date="20260710-19"
+            )
+        self.assertIsNotNone(cand)  # 10日基準で 11日=あす の言い換えは整合
+
     def test_grounded_claim_word_allowed(self):
         # 事実源に claim 語がある場合は通る (over-blocking しない)
         rel = [{**self._REL[0], "news_title": "岡本和真 メジャー挑戦を表明"}]

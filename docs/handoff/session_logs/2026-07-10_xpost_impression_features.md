@@ -1,0 +1,34 @@
+# 2026-07-10 X-post インプ強化セッション (Claude直接開発+deploy)
+
+目標 (user): インプを稼いで認知を上げる。ガードは維持。
+
+## 着地 (すべて x-post-mail-lane、最終 image = digesthourly-8f122f1a)
+
+- 10:15 JST | scheduler | x-post-mail-flush-mlb-morning 30 8-13 → 0 8-11 (毎時00分発火、12/13時は既存便と衝突回避)
+- 11:00 JST | manual-intake | ef4dcf8f リプに記事クリック訴求 / 9e6943ed 引用文読みどころ選択(literal gate)+おりポス可読性+リプcuriosity gap → revision 00120
+- 11:40 JST | live_game | b1620ed2 候補4/便+voice枠4+巨人選手フルネーム化(roster一意解決)
+- 12:00 JST | live_game | 6128fe65 劣勢時フーガ風悔しさvoice
+- 12:20 JST | trend | a8b0eca7 Google Trends RSS採用(Yahooリアルタイムscrape破損を実測確認) note+🔥タグ
+- 12:40 JST | trend | f333ed06 織り込み(gate:literal/数字/名前/長さ)+反応候補、時間粒度dedup(1日1回制限撤廃)
+- 12:27 JST | poll | 8594a57b MVP Poll案 → user「アプリはいいかな」で469ab4a3 revert (未deploy、mail完結維持)
+- 12:50 JST | trend | 3c33dd6b 反応ポスト優先実行(毎便確実に1本)、35c8bf5c 長文化+構成5パターンローテ+10位まで+総合TOP10参考行
+- 13:00 JST | quote-RT | e7c8af86 動画に加え写真📷・記事📰も引用RT候補 (ENABLE_X_POST_QUOTE_RT_ARTICLES=1)
+- 13:10 JST | digest | 8f122f1a 毎時の定点観測ポスト(話題選手TOP5言及数+急上昇ワード+読み解き+締め、437カード自動) (ENABLE_X_POST_MORNING_DIGEST=1)
+
+## env 追加 (x-post-mail-lane job)
+
+- ENABLE_X_POST_SEARCH_TREND=1 / ENABLE_X_POST_QUOTE_RT_ARTICLES=1 / ENABLE_X_POST_MORNING_DIGEST=1
+- いずれもコード既定 OFF (unit test hermetic 維持)
+
+## 決定事項 / 学び
+
+- user: プレミアム前提で長文OK・毎回アレンジ変更・トレンド毎時・Xアプリ操作必須の施策はNG (Poll却下)
+- 読了率(滞在時間)狙い: force_long にフック行必須を追加 (recap にも効く)
+- テスト事故: ローカル .env の GEMINI_API_KEY が unit test で実API を呼ぶ → _IntakeBaseTest で遮断 (今後の新LLM経路は env opt-in 方式にする)
+- aux LLM 小枠: live_game=4 / trend_weave=3 / morning_digest=1 (共有20枠とは別勘定)
+
+## 次の観察
+
+- 今日の便で: トレンド一覧/🔥タグ/反応ポスト/定点観測がメールに出るか、織り込みが自然か
+- 今夜の試合: 観戦候補4件/フルネーム/悔しさvoice
+- 1-2週間: x-engagement で 🔥付き vs 通常、長文 vs 短文のインプ比較 → 効かない要素は切る

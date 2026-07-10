@@ -2603,6 +2603,7 @@ _MLB_WATCH_PLAYERS: dict[str, tuple[str, ...]] = {
     "岡本和真": ("岡本", "Okamoto", "Kazuma"),
     # 2026-07-10 user 追加 (元巨人枠)。カタカナは MLB 文脈 feed 限定で安全。
     "グリフィン": ("グリフィン", "Griffin", "Foster"),
+    "マイコラス": ("マイコラス", "Mikolas", "Miles"),
     "大谷翔平": ("大谷", "Ohtani", "Shohei"),
     "山本由伸": ("山本由伸", "Yamamoto", "Yoshinobu"),
     "鈴木誠也": ("鈴木誠也", "Suzuki", "Seiya"),
@@ -2613,7 +2614,7 @@ _MLB_WATCH_PLAYERS: dict[str, tuple[str, ...]] = {
     "今永昇太": ("今永", "Imanaga", "Shota"),
     "吉田正尚": ("吉田正尚", "Yoshida", "Masataka"),
 }
-_MLB_EX_GIANTS = frozenset({"菅野智之", "岡本和真", "グリフィン"})
+_MLB_EX_GIANTS = frozenset({"菅野智之", "岡本和真", "グリフィン", "マイコラス"})
 # 2026-07-05 user lock: 山本由伸/鈴木誠也/村上宗隆も対象。ただし元巨人では
 # ないので、LLM framing では「巨人から送り出した」文脈にしない。
 _MLB_EXTRA_STARS = frozenset({

@@ -41,12 +41,16 @@ class NoteAndBoostTests(unittest.TestCase):
              patch.object(stn, "_giants_name_tokens", return_value=roster or set()):
             return stn.build_trend_note_and_boost(candidates)
 
-    def test_note_lists_only_baseball_related(self):
+    def test_note_lists_baseball_first_and_top10_reference(self):
         note = self._run([], roster={"岡本和真", "岡本"})
-        self.assertIn("岡本和真(2万+)", note)
-        self.assertIn("パドレス 対 dバックス(500+)", note)
-        self.assertNotIn("アシナガバチ", note)
-        self.assertNotIn("有吉の壁", note)
+        fire_line, ref_line = note.split("\n", 1)
+        self.assertIn("岡本和真(2万+)", fire_line)
+        self.assertIn("パドレス 対 dバックス(500+)", fire_line)
+        # 野球関連行には一般語を入れない (参考TOP10 行には入る)
+        self.assertNotIn("アシナガバチ", fire_line)
+        self.assertIn("📈 参考・総合急上昇TOP10", ref_line)
+        self.assertIn("アシナガバチ", ref_line)
+        self.assertIn("有吉の壁", ref_line)
 
     def test_matching_candidate_gets_fire_tag(self):
         c = _Cand(title="本塁打", post_text="岡本和真が决めた")
@@ -59,12 +63,15 @@ class NoteAndBoostTests(unittest.TestCase):
         self._run([c], roster={"岡本和真"})
         self.assertEqual(c.title, "登録公示")
 
-    def test_no_relevant_trend_returns_empty(self):
+    def test_no_relevant_trend_returns_top10_reference_only(self):
         with patch.object(
             stn, "fetch_jp_trends",
             return_value=[{"keyword": "有吉の壁", "traffic": ""}],
         ), patch.object(stn, "_giants_name_tokens", return_value=set()):
-            self.assertEqual(stn.build_trend_note_and_boost([]), "")
+            note = stn.build_trend_note_and_boost([])
+        self.assertIn("📈 参考・総合急上昇TOP10", note)
+        self.assertIn("有吉の壁", note)
+        self.assertNotIn("🔥", note)
 
     def test_fetch_failure_returns_empty(self):
         with patch.object(stn, "fetch_jp_trends", return_value=[]):

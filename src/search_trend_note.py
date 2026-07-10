@@ -127,10 +127,13 @@ def build_trend_note_and_boost(
             return True
         return any(tok in kw for tok in roster)
 
-    relevant = [t for t in trends if _relevant(t["keyword"])][:6]
+    # 10位まで拾う (2026-07-10 user「トレンドワードを沢山、10位までとか」)
+    relevant = [t for t in trends if _relevant(t["keyword"])][:10]
     if not relevant:
         LOG.info("search_trend: no baseball-related trend (total=%d)", len(trends))
-        return ""
+        # 野球関連が無くても総合トップ10は参考表示する
+        top10 = " / ".join(t["keyword"] for t in trends[:10])
+        return f"📈 参考・総合急上昇TOP10: {top10}" if top10 else ""
     boosted = 0
     for cand in candidates:
         hay = " ".join(
@@ -170,6 +173,9 @@ def build_trend_note_and_boost(
         f"{t['keyword']}({t['traffic']})" if t["traffic"] else t["keyword"]
         for t in relevant
     )
+    top10 = " / ".join(t["keyword"] for t in trends[:10])
+    if top10:
+        note += f"\n📈 参考・総合急上昇TOP10: {top10}"
     LOG.info(
         "search_trend: relevant=%d boosted=%d woven=%d total=%d",
         len(relevant), boosted, woven, len(trends),
@@ -300,6 +306,16 @@ def _weave_llm(
     return new_text, used_kw
 
 
+# トレンド反応の構成パターン (毎回ローテーション、2026-07-10 user)
+_TREND_ARRANGEMENTS = (
+    "冒頭は違和感・驚きのフック1行 → 見出しの事実 → フーガ風の読み → 論点で締め",
+    "冒頭は読者への問いかけ1行 (「どう思う?」の直球は禁止) → 自分の立場 → 理由 → 展望",
+    "冒頭は結論を半分だけ言う1行 (オチは後半まで引っ張る) → 経緯 → 事実 → 巨人ファンとしての本音",
+    "冒頭は場面・空気の描写1行 → 何が起きたか → なぜ効くのか → 一言で締め",
+    "冒頭はトレンド語を主語にした断定1行 → 根拠 → 逆側の見方に一言触れる → 自分はこう見る、で締め",
+)
+
+
 def build_trend_reaction_candidate(
     relevant: list[dict[str, str]],
     *,
@@ -337,6 +353,12 @@ def build_trend_reaction_candidate(
             continue
         source = t.get("news_source") or "Google Trends"
         fact = f"いま検索急上昇「{kw}」。{news_title}（{source}）"
+        # 構成ローテーション (2026-07-10 user「プレミアムなんで長文で。
+        # 毎回アレンジ変えて」): 時間+語で決定論的に構成を変え、テンプレ臭を防ぐ。
+        arrangement = _TREND_ARRANGEMENTS[
+            int(_hashlib.sha1(f"{now_date}|{kw}".encode("utf-8")).hexdigest(), 16)
+            % len(_TREND_ARRANGEMENTS)
+        ]
         try:
             post_text = (
                 build_quote_rt_comment(
@@ -345,10 +367,12 @@ def build_trend_reaction_candidate(
                     subject="検索で急上昇中の野球トピック",
                     db_fact="", require_db_fact=False,
                     budget_site="trend_weave",
+                    force_long=True,
                     extra_voice_note=(
-                        f"いま検索で急上昇中の話題への反応ポスト。トレンド語"
-                        f"「{kw}」を本文に必ず1回そのまま入れる。見出しにある"
-                        "事実だけで書き、見出しに無い数字・選手名・結果は作らない。"
+                        f"いま検索で急上昇中の話題への反応ポスト (試合後の振り返り"
+                        f"ではない)。トレンド語「{kw}」を本文に必ず1回そのまま入れる。"
+                        "見出しにある事実だけで書き、見出しに無い数字・選手名・結果は"
+                        f"作らない。今回の構成: {arrangement}"
                     ),
                 ) or ""
             ).strip()

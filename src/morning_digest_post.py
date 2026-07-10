@@ -23,7 +23,8 @@ from typing import Any, Optional
 LOG = logging.getLogger("morning_digest_post")
 
 _WEEKDAYS_JA = ("月", "火", "水", "木", "金", "土", "日")
-_TOP_N = 5
+# 2026-07-10 user「トップ10位でいいのでは」(金融アカの売買代金上位10と同じ粒度)
+_TOP_N = 10
 
 
 def build_morning_digest_candidate(
@@ -74,7 +75,7 @@ def build_morning_digest_candidate(
     # ランキングは文字で書く (2026-07-10 user「図が意味わからない。ランキング
     # 書けばいいじゃん」: 437 カードは使わない = draft にランキング行 format を
     # 入れない)。巨人は2パターン (①言及数ランキング ②巨人トレンド語)。
-    section = "【いま話題の巨人選手 TOP5】(スポーツ媒体Xでの言及数)"
+    section = f"【いま話題の巨人選手 TOP{len(ranked)}】(スポーツ媒体Xでの言及数)"
     plain_lines = [f"{i}位 {name}" for i, (name, _c) in enumerate(ranked, 1)]
     trend_lines = [
         line for line in (
@@ -119,7 +120,7 @@ def build_morning_digest_candidate(
         "morning_digest built names=%d trends=%d", len(ranked), len(flat_trends)
     )
     return Candidate(
-        title=f"📊{now.hour}時の定点観測｜話題選手TOP5｜{ranked[0][0]}",
+        title=f"📊{now.hour}時の定点観測｜話題選手TOP{len(ranked)}｜{ranked[0][0]}",
         metric="MORNING_DIGEST",
         period_label="毎朝定点",
         draft_text=draft,

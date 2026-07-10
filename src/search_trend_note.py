@@ -326,8 +326,12 @@ def build_trend_reaction_candidate(
         news_title = t.get("news_title") or ""
         if not kw or not news_title:
             continue
+        # dedup 粒度 = 時間 + 語 + 見出し (2026-07-10 user「同じ語は1日1回を
+        # 省いて」): 同じ語でも毎時再度出す (voice は都度生成で文面は変わる)。
+        # 15分毎の試合帯で全く同じ候補が4連続で並ぶのだけ防ぐ。
+        # 見出しが更新されれば同じ時間内でも新候補。
         signature = "trendreact|" + _hashlib.sha1(
-            f"{now_date}|{kw}".encode("utf-8")
+            f"{now_date}|{kw}|{news_title}".encode("utf-8")
         ).hexdigest()[:16]
         if dedup_set is not None and signature in dedup_set:
             continue

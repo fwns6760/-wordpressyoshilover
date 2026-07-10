@@ -151,16 +151,32 @@ class TrendReactionTests(unittest.TestCase):
         self.assertIn("岡本和真", cand.post_text)
         self.assertTrue(cand.signature.startswith("trendreact|"))
 
-    def test_dedup_skips(self):
+    def test_dedup_skips_same_headline(self):
         import hashlib
 
         sig = "trendreact|" + hashlib.sha1(
-            "20260710|岡本和真".encode("utf-8")
+            "20260710|岡本和真|岡本和真がサヨナラ打".encode("utf-8")
         ).hexdigest()[:16]
         cand = stn.build_trend_reaction_candidate(
             self._REL, gemini_api_key="k", dedup_set={sig}, now_date="20260710"
         )
         self.assertIsNone(cand)
+
+    def test_new_headline_fires_again(self):
+        import hashlib
+
+        old_sig = "trendreact|" + hashlib.sha1(
+            "20260710|岡本和真|昨夜の見出し".encode("utf-8")
+        ).hexdigest()[:16]
+        with patch(
+            "src.x_post_branding_gen.build_quote_rt_comment",
+            return_value="岡本和真、続報も見逃せないな。",
+        ):
+            cand = stn.build_trend_reaction_candidate(
+                self._REL, gemini_api_key="k", dedup_set={old_sig},
+                now_date="20260710",
+            )
+        self.assertIsNotNone(cand)
 
     def test_voice_without_keyword_rejected(self):
         with patch(

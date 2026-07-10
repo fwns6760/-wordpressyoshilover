@@ -4565,7 +4565,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                     or ""
                 ),
                 dedup_set=dedup_set,
-                now_date=now_jst.strftime("%Y%m%d"),
+                # 時間粒度 (同じ語は1時間1回、毎時OK。user「1日1回を省いて」)
+                now_date=now_jst.strftime("%Y%m%d-%H"),
             )
         except Exception as _tr_exc:  # noqa: BLE001
             LOG.info("trend note skip: %r", _tr_exc)

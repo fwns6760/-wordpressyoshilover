@@ -165,6 +165,61 @@ def merge_yahoo_topics_into_relevant(
         seen.add(title)
 
 
+def _mlb_mention_keywords(limit: int = 4) -> list[str]:
+    """MLB系日本語アカ feed の直近ポストから watch 選手の言及数上位を返す。
+
+    2026-07-10 user「検索トレンドにメジャーはないの？」: JST 午後は Google /
+    Yahoo トピックスとも MLB ネタが消えるため、常時出せる fallback。
+    名前は検索インプ源としてそのまま使える。失敗は []。
+    """
+    try:
+        from src import video_radar as vr
+        from src.x_post_mail_lane import (
+            _MLB_WATCH_HANDLES,
+            _detect_mlb_watch_player,
+        )
+
+        urls = {
+            h: f"{vr._RSSHUB_BASE}/twitter/user/{h}?limit=30"
+            for h in _MLB_WATCH_HANDLES
+        }
+        fetched = vr.prefetch_feeds(list(urls.values()), vr._cached_default_fetch)
+        counts: dict[str, int] = {}
+        for h in _MLB_WATCH_HANDLES:
+            xml = fetched.get(urls[h])
+            if not isinstance(xml, str):
+                continue
+            for item in vr._extract_rss_items(xml):
+                p = _detect_mlb_watch_player(item.get("text", ""))
+                if p:
+                    counts[p] = counts.get(p, 0) + 1
+        return [
+            n for n, _ in sorted(counts.items(), key=lambda kv: -kv[1])[:limit]
+        ]
+    except Exception as exc:  # noqa: BLE001
+        LOG.info("mlb mention keywords skip: %r", exc)
+        return []
+
+
+def fill_mlb_from_mentions(
+    relevant: list[dict[str, str]], *, keywords: Optional[list[str]] = None
+) -> None:
+    """relevant に MLB カテゴリが無ければ言及数上位の選手名で埋める (in-place)。"""
+    if any(t.get("category") == "mlb" for t in relevant):
+        return
+    if keywords is None:
+        keywords = _mlb_mention_keywords()
+    for name in keywords:
+        relevant.append({
+            "keyword": name,
+            "traffic": "",
+            "category": "mlb",
+            "news_title": "",
+            "news_url": "",
+            "news_source": "MLB媒体X言及",
+        })
+
+
 def _giants_name_tokens() -> set[str]:
     """roster のフルネーム + 姓 (2 字以上)。取得失敗は空 set。"""
     try:
@@ -217,6 +272,11 @@ def build_trend_note_and_boost(
         merge_yahoo_topics_into_relevant(relevant, roster)
     except Exception as exc:  # noqa: BLE001
         LOG.info("yahoo topics merge skip: %r", exc)
+    # MLB が空なら MLB 媒体 X の言及数上位で埋める (JST 午後の MLB 空白対策)
+    try:
+        fill_mlb_from_mentions(relevant)
+    except Exception as exc:  # noqa: BLE001
+        LOG.info("mlb mentions fill skip: %r", exc)
     if not relevant:
         LOG.info("search_trend: no baseball-related trend (total=%d)", len(trends))
         # 野球関連が無くても総合トップ10は参考表示する

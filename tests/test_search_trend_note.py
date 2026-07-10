@@ -265,3 +265,20 @@ class YahooTopicsMergeTests(unittest.TestCase):
         self.assertEqual(
             len([t for t in relevant if t["category"] == "giants"]), 5
         )
+
+
+class MlbMentionFillTests(unittest.TestCase):
+    """2026-07-10 user「検索トレンドにメジャーはないの？」: MLB 空白の fallback。"""
+
+    def test_fills_when_mlb_empty(self):
+        relevant = [{"keyword": "巨人 スタメン", "traffic": "", "category": "giants"}]
+        stn.fill_mlb_from_mentions(relevant, keywords=["大谷翔平", "マイコラス"])
+        mlb = [t for t in relevant if t["category"] == "mlb"]
+        self.assertEqual([t["keyword"] for t in mlb], ["大谷翔平", "マイコラス"])
+        # news_title 無し = トレンド反応候補の素材にはしない
+        self.assertTrue(all(not t["news_title"] for t in mlb))
+
+    def test_skips_when_mlb_already_present(self):
+        relevant = [{"keyword": "大谷翔平", "traffic": "", "category": "mlb"}]
+        stn.fill_mlb_from_mentions(relevant, keywords=["山本由伸"])
+        self.assertEqual(len(relevant), 1)

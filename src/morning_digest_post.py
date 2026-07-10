@@ -172,6 +172,8 @@ def _fetch_baseball_trends() -> dict[str, list[str]]:
                 relevant.append({"keyword": kw, "category": cat})
         # Yahoo トピックス合流 (Google に野球ゼロでも各カテゴリを埋める)
         stn.merge_yahoo_topics_into_relevant(relevant, roster)
+        # MLB 空白は MLB 媒体 X の言及数上位で埋める
+        stn.fill_mlb_from_mentions(relevant)
         for t in relevant:
             out[t["category"]].append(t["keyword"])
         return out

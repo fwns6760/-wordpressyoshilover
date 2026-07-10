@@ -719,7 +719,11 @@ def build_trend_reaction_candidate(
         except Exception as exc:  # noqa: BLE001
             LOG.info("trend_react llm skip: %r", exc)
             post_text = ""
-        if not post_text or kw not in post_text:
+        # kw 一致は token + case 非依存 (2026-07-10 19:30便実測: 「dena 対 巨人」を
+        # LLM が自然表記「DeNA対巨人」で書き、逐語一致で毎回落ちた。検索インプは
+        # token 単位で効くので token 一致で足りる)。
+        kw_ok = bool(post_text) and _keyword_hits(kw.casefold(), post_text.casefold())
+        if not kw_ok:
             LOG.info("trend_react skip kw=%s reason=%s", kw, "no_voice" if not post_text else "kw_missing")
             continue
         # 決定的 gate: 事実源 (見出し+記事lead) に無い claim 語・実名は全破棄

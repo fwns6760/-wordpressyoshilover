@@ -273,6 +273,23 @@ class TrendReactionTests(unittest.TestCase):
             )
         self.assertIsNotNone(cand)  # 10日基準で 11日=あす の言い換えは整合
 
+    def test_compound_keyword_natural_notation_ok(self):
+        # 2026-07-10 19:30便実測: kw「dena 対 巨人」を LLM が「DeNA対巨人」と
+        # 自然表記 → 逐語一致で毎回落ちた。token + case 非依存で通す。
+        rel = [{
+            "keyword": "dena 対 巨人", "traffic": "5万+", "category": "giants",
+            "news_title": "巨人がDeNAと今夜対戦", "news_url": "https://news.example/9",
+            "news_source": "報知",
+        }]
+        with patch(
+            "src.x_post_branding_gen.build_quote_rt_comment",
+            return_value="今夜のDeNA対巨人、序盤から目が離せない展開ですね。",
+        ), self._excerpt_patch(value="巨人は今夜、横浜スタジアムでDeNAと対戦する。"):
+            cand = stn.build_trend_reaction_candidate(
+                rel, gemini_api_key="k", dedup_set=set(), now_date="20260710-19"
+            )
+        self.assertIsNotNone(cand)
+
     def test_grounded_claim_word_allowed(self):
         # 事実源に claim 語がある場合は通る (over-blocking しない)
         rel = [{**self._REL[0], "news_title": "岡本和真 メジャー挑戦を表明"}]

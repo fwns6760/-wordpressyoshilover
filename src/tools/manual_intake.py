@@ -1797,11 +1797,13 @@ def _maybe_insert_source_body_excerpt(
                 or ""
             )
             if _api_key:
+                # 8000 字 = 記事全文相当 (2026-07-10 user「冒頭しか取ってない」:
+                # 3200 だと中盤・終盤の発言が選択対象に入らなかった)
                 long_text = extract_article_body_excerpt(
                     raw_html,
                     source_url,
                     title=title,
-                    max_chars=3200,
+                    max_chars=8000,
                 )
                 from src.source_excerpt_refiner import refine_excerpt
 

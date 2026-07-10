@@ -301,17 +301,22 @@ def gather_buzz_posts(
     limit: int = 30,
     min_score: int = 2,
     require_video: bool = True,
+    allow_photo_and_article: bool = False,
     now: Optional[_datetime] = None,
     max_age_hours: float = 48.0,
 ) -> list[dict]:
     """巨人系 X account の投稿を巡回し、 引用RT 候補に値する投稿を score 降順で返す。
 
-    各 dict: ``text / url / handle / player / score / type_tag / has_video``。 X 内で完結する
-    引用RT/リプライ用なので、 YouTube 等の外部リンクは扱わない。
+    各 dict: ``text / url / handle / player / score / type_tag / has_video / has_image``。
+    X 内で完結する引用RT/リプライ用なので、 YouTube 等の外部リンクは扱わない。
 
     ``require_video=True`` (既定) のとき、 **動画が付いた投稿だけ** を候補にする。
     動画なし投稿では「動画をポスト」長押しが無意味で、 動画こそがインプを稼ぐため
     (user 2026-06-01)。 動画判定は description の動画サムネ/動画要素マーカー (実 feed 検証済)。
+
+    ``allow_photo_and_article=True`` (2026-07-10 user「記事も。報知とか公式とかの
+    記事や写真系」) のとき動画 gate を外し、 写真付き・記事見出し投稿も通す
+    (handle は全て媒体/公式/記者アカのため、 score gate と鮮度 gate はそのまま効く)。
 
     ``max_age_hours`` (既定 48h) より古い投稿は除外する (user 2026-06-01「古いデータ出さない」)。
     feed には最大 1 週間前の投稿が混ざるため、 pubDate ベースで鮮度 gate する。 投稿日時不明は
@@ -336,7 +341,7 @@ def gather_buzz_posts(
             if _is_retweet_text(text):
                 continue
             has_video = bool(item.get("has_video"))
-            if require_video and not has_video:
+            if require_video and not has_video and not allow_photo_and_article:
                 continue
             published_at = item.get("published_at")
             if published_at is not None:
@@ -367,6 +372,7 @@ def gather_buzz_posts(
                 "score": score,
                 "type_tag": tag,
                 "has_video": has_video,
+                "has_image": bool(item.get("has_image")),
             })
     out.sort(key=lambda d: d["score"], reverse=True)
     return out

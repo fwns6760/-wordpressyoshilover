@@ -2315,9 +2315,13 @@ def build_video_radar_candidates(
     handles: Optional[list[str]] = None,
     avoid_player_names: Optional[set[str]] = None,
     keep_low_signal: bool = False,
+    allow_photo_and_article: bool = False,
 ) -> list[Candidate]:
     """451: 巨人系 X account の投稿 (RSSHub 経由) から「懐かしい・ファンが面白い・いま話題」の
     投稿を拾い、 **引用RT / リプライ** 用の X 投稿候補 (メール) を作る。
+
+    ``allow_photo_and_article=True`` (2026-07-10 user): 動画だけでなく報知・公式等の
+    写真付き投稿・記事見出し投稿も引用RT候補に含める (📷/📰 で種別表示)。
 
     user 方針 (2026-06-01): **YouTube は使わない**。 外部リンクは X でリーチが落ちるため、
     X 内で完結する引用RT/リプライ候補にする (本文に外部リンクを貼らない)。 一記事一本 (選手ごと 1 本)。
@@ -2382,6 +2386,7 @@ def build_video_radar_candidates(
             # 動画 lane だけ floor 2h を敷く。 news/fan_voice lane の 0.5h は不変。
             max_age_hours=max(2.0, phase_freshness_max_age_hours(now)),
             handles=handles,
+            allow_photo_and_article=allow_photo_and_article,
         )
     except Exception as exc:  # noqa: BLE001
         LOG.warning("x_buzz gather failed: %r", exc)
@@ -2487,22 +2492,38 @@ def build_video_radar_candidates(
             except Exception as _bexc:  # noqa: BLE001
                 LOG.info("brand image skip player=%s: %r", player, _bexc)
                 brand_img = b""
+        # 種別 (2026-07-10 user「記事も。報知とか公式とかの記事や写真系」):
+        # 動画🎬 / 写真📷 / 記事📰 をタイトルと手順文に明示する。
+        _is_video = bool(p.get("has_video"))
+        _kind, _kind_emoji = (
+            ("動画", "🎬") if _is_video
+            else ("写真", "📷") if p.get("has_image")
+            else ("記事", "📰")
+        )
         draft = "\n".join([
-            f"【動画ポスト候補: {tag}】 @{handle}",
+            f"【{_kind}引用RT候補: {tag}】 @{handle}",
             f"検出選手: {player or '(なし)'}",
-            f"▶ 元動画ツイート (タップで開く): {url}",
+            f"▶ 元{_kind}ツイート (タップで開く): {url}",
             f"元投稿本文: {src_text}",
             "",
-            f"▼ コピペ用（このコメントだけ貼って動画と一緒に投稿 / {len(post_text)}字）",
+            (
+                f"▼ コピペ用（このコメントだけ貼って動画と一緒に投稿 / {len(post_text)}字）"
+                if _is_video else
+                f"▼ コピペ用（元ポストを引用RTしてこのコメントを貼る / {len(post_text)}字）"
+            ),
             post_text,
             "── ここまで貼る ──",
             "",
             f"参考 (今季・本文には入れない): {fact}" if fact else "",
-            "※ 本文が長いと X で動画を一緒に投稿できないため、上のコメントは短く調整済み。",
+            (
+                "※ 本文が長いと X で動画を一緒に投稿できないため、上のコメントは短く調整済み。"
+                if _is_video else
+                "※ 引用RTなので元ポストの記事リンク・写真がそのまま読者に見える。転載はしない。"
+            ),
             "※ 外部リンク (YouTube 等) は貼らない (リーチ減)。 動画ファイルの転載はしない。",
         ])
         out.append(Candidate(
-            title=f"(引用RT) {tag}｜@{handle}｜{player or '巨人'}",
+            title=f"(引用RT{_kind_emoji}) {tag}｜@{handle}｜{player or '巨人'}",
             metric=_VIDEO_RADAR_METRIC,
             period_label="引用RT候補",
             draft_text=draft,

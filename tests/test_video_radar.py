@@ -64,6 +64,25 @@ class FetchBuzzingPlayersTests(unittest.TestCase):
         self.assertEqual(buzz.get("坂本勇人"), 2)
         self.assertNotIn("戸郷翔征", buzz)
 
+    def test_retweets_are_not_counted(self):
+        feed = (
+            "<rss><channel>"
+            "<item><title>RT 小早川宗一郎: 坂本勇人 好調</title><link>http://x/1</link></item>"
+            "<item><title>戸郷翔征 完投</title><link>http://x/2</link></item>"
+            "</channel></rss>"
+        )
+        def detect(t):
+            for n in ("坂本勇人", "戸郷翔征"):
+                if n[:2] in t:
+                    return n
+            return ""
+        buzz = vr.fetch_buzzing_players(
+            detect_player_fn=detect, fetch_fn=lambda u: feed,
+            handles=["hochi_giants"], min_mentions=1,
+        )
+        self.assertNotIn("坂本勇人", buzz)
+        self.assertEqual(buzz.get("戸郷翔征"), 1)
+
 
 class GatherBuzzPostsTests(unittest.TestCase):
     def test_filters_and_sorts_with_url(self):
@@ -80,6 +99,24 @@ class GatherBuzzPostsTests(unittest.TestCase):
         self.assertEqual(posts[0]["player"], "坂本勇人")
         self.assertEqual(posts[0]["url"], "https://x.com/yomiuri_giants/status/111")
         self.assertEqual(posts[0]["type_tag"], "Xで話題")
+
+    def test_retweets_are_not_gathered(self):
+        feed = (
+            "<rss><channel>"
+            "<item><title>RT 小早川宗一郎: 坂本勇人 サヨナラ満塁ホームラン</title>"
+            "<description>劇的 &lt;img src=&quot;https://pbs.twimg.com/amplify_video_thumb/1/img/a.jpg&quot;&gt;</description>"
+            "<link>https://x.com/y/status/1</link></item>"
+            "<item><title>坂本勇人 サヨナラ満塁ホームラン</title>"
+            "<description>劇的 &lt;img src=&quot;https://pbs.twimg.com/amplify_video_thumb/2/img/b.jpg&quot;&gt;</description>"
+            "<link>https://x.com/y/status/2</link></item>"
+            "</channel></rss>"
+        )
+        det = lambda t: "坂本勇人" if "坂本" in t else ""  # noqa: E731
+        posts = vr.gather_buzz_posts(
+            detect_player_fn=det, fetch_fn=lambda u: feed, handles=["hochi_giants"],
+            buzz_players={"坂本勇人"}, min_score=2, require_video=True, max_age_hours=1e9,
+        )
+        self.assertEqual([p["url"] for p in posts], ["https://x.com/y/status/2"])
 
     def test_require_video_keeps_only_video_posts(self):
         # 動画サムネ (amplify_video_thumb) を持つ投稿だけ残す。
@@ -136,3 +173,45 @@ class GatherBuzzPostsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PhotoAndArticleTests(unittest.TestCase):
+    """2026-07-10 user「記事も。報知とか公式とかの記事や写真系」。"""
+
+    _FEED3 = (
+        "<rss><channel>"
+        "<item><title>坂本勇人 サヨナラ満塁ホームラン</title>"
+        "<description>劇的 &lt;img src=&quot;https://pbs.twimg.com/amplify_video_thumb/1/img/a.jpg&quot;&gt;</description>"
+        "<link>https://x.com/y/status/1</link></item>"
+        "<item><title>坂本勇人 練習の様子 衝撃</title><description>写真 "
+        "&lt;img src=&quot;https://pbs.twimg.com/media/b.jpg&quot;&gt;</description>"
+        "<link>https://x.com/y/status/2</link></item>"
+        "<item><title>坂本勇人 劇的な独占インタビュー記事</title>"
+        "<description>記事リンクのみ</description>"
+        "<link>https://x.com/y/status/3</link></item>"
+        "</channel></rss>"
+    )
+
+    def _gather(self, **kw):
+        det = lambda t: "坂本勇人" if "坂本" in t else ""  # noqa: E731
+        return vr.gather_buzz_posts(
+            detect_player_fn=det, fetch_fn=lambda u: self._FEED3, handles=["y"],
+            buzz_players={"坂本勇人"}, min_score=2, max_age_hours=1e9, **kw,
+        )
+
+    def test_flag_on_keeps_photo_and_article(self):
+        posts = self._gather(require_video=True, allow_photo_and_article=True)
+        urls = [p["url"] for p in posts]
+        self.assertIn("https://x.com/y/status/1", urls)  # 動画
+        self.assertIn("https://x.com/y/status/2", urls)  # 写真
+        self.assertIn("https://x.com/y/status/3", urls)  # 記事 (テキストのみ)
+        photo = [p for p in posts if p["url"].endswith("/2")][0]
+        self.assertFalse(photo["has_video"])
+        self.assertTrue(photo["has_image"])
+        article = [p for p in posts if p["url"].endswith("/3")][0]
+        self.assertFalse(article["has_video"])
+        self.assertFalse(article["has_image"])
+
+    def test_flag_off_keeps_video_only(self):
+        posts = self._gather(require_video=True, allow_photo_and_article=False)
+        self.assertEqual([p["url"] for p in posts], ["https://x.com/y/status/1"])

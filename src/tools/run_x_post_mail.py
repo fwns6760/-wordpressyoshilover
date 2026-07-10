@@ -3763,6 +3763,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                     avoid_player_names=live_duplicate_players,
                     min_score=1 if _vr_pregame else 2,
                     keep_low_signal=_vr_pregame,
+                    # 2026-07-10 user「記事も。報知とか公式とかの記事や写真系」:
+                    # env opt-in で写真📷・記事📰の引用RT候補も通す (既定 OFF =
+                    # unit test hermetic 維持、prod job は env で ON)。
+                    allow_photo_and_article=(
+                        (os.environ.get("ENABLE_X_POST_QUOTE_RT_ARTICLES") or "")
+                        .strip().lower() in {"1", "true", "yes", "on"}
+                    ),
                 )
             except Exception as _vr_exc:  # noqa: BLE001
                 LOG.warning("video_radar build failed: %r", _vr_exc)

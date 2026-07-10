@@ -26,6 +26,7 @@ import json as _json
 import logging as _logging
 import os as _os
 import re as _re
+import time as _time
 from typing import Any, Optional
 
 # 既存 ``x_post_mail_lane`` の Candidate / 共通 helper を再利用する。
@@ -335,12 +336,30 @@ def _mark_model_quota_dead(model: str, exc: Exception, now=None) -> None:
     )
 
 
+def _rpm_retry_delay_seconds(exc: Exception) -> Optional[float]:
+    """分間 (RPM) 429 の指示 retry 秒数。RPM でない / 読めない時は None。"""
+    s = f"{exc}"
+    if "PerMinute" not in s and "perminute" not in s.lower():
+        return None
+    m = _re.search(r"retry in ([\d.]+)\s*s", s)
+    if not m:
+        return None
+    try:
+        return float(m.group(1))
+    except ValueError:
+        return None
+
+
 def _x_post_generate_content(client, *, model, contents, config):
     """X-post 用 generate_content。無料枠上限/一時不可 (429/quota/503) は fallback
     連鎖で自動切替、それ以外の例外は即 raise。
     試合時間帯外は primary を使わず fallback を直接使う(3.5 の 20回/日 枠温存)。
-    2026-07-08 (user GO): 連鎖は 要求model → もう片方 → 緊急枠
-    (_X_POST_GEMINI_EMERGENCY_MODELS、既定 2.5-flash → 2.5-flash-lite)。
+    2026-07-08 (user GO): 緊急枠の順は 2.5-flash (品質優先) → 2.5-flash-lite。
+    2026-07-10 実測修正: 13時便で flash-lite の RPM(15/分) あふれが 3.5-flash
+    (20回/日) へ流れて日中に食い潰した。対策2点:
+    - primary (3.5) は連鎖の最後尾 (直接要求されない限り温存。試合帯の
+      quote_rt 等は model=3.5 で直接要求するので従来どおり先頭)
+    - RPM 429 で指示待ち時間が 3 秒以下なら同モデルで 1 回だけ短待ちリトライ
     無料枠はモデル別勘定なので旧世代 flash が独自の日次枠を持つ。
     日次枠 429 を検知したモデルは 16:00 JST まで dead マークして呼ばない
     (circuit breaker)。全滅なら API を呼ばず raise (caller が graceful skip)。"""
@@ -349,8 +368,8 @@ def _x_post_generate_content(client, *, model, contents, config):
     chain = [model]
     for m in (
         _X_POST_GEMINI_FALLBACK_MODEL,
-        _X_POST_GEMINI_PRIMARY_MODEL,
         *_X_POST_GEMINI_EMERGENCY_MODELS,
+        _X_POST_GEMINI_PRIMARY_MODEL,
     ):
         if m and m not in chain:
             chain.append(m)
@@ -366,13 +385,23 @@ def _x_post_generate_content(client, *, model, contents, config):
                 m,
                 last_exc,
             )
-        try:
-            return client.models.generate_content(model=m, contents=contents, config=config)
-        except Exception as exc:  # noqa: BLE001 - fallback handling
-            if not _x_post_model_unavailable(exc):
-                raise
-            _mark_model_quota_dead(m, exc)
-            last_exc = exc
+        for attempt in (0, 1):
+            try:
+                return client.models.generate_content(model=m, contents=contents, config=config)
+            except Exception as exc:  # noqa: BLE001 - fallback handling
+                if not _x_post_model_unavailable(exc):
+                    raise
+                delay = _rpm_retry_delay_seconds(exc) if attempt == 0 else None
+                if delay is not None and delay <= 3.0:
+                    log.info(
+                        "x_post_llm_rpm_wait model=%s delay=%.1fs (同モデル再試行)",
+                        m, delay,
+                    )
+                    _time.sleep(delay + 0.2)
+                    continue
+                _mark_model_quota_dead(m, exc)
+                last_exc = exc
+                break
     if last_exc is not None:
         raise last_exc
     raise RuntimeError(

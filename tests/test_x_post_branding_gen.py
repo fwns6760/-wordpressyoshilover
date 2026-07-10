@@ -100,8 +100,9 @@ class PrimeHoursTests(unittest.TestCase):
         )
 
     def test_generate_content_reverse_fallback_when_lite_quota_dead(self) -> None:
-        # 2026-07-07: fallback(lite) の日次枠枯渇 (429 RESOURCE_EXHAUSTED) 時は
-        # primary(3.5) を 1 回試す (リプ voice 全滅 → レス mail 空の再発防止)。
+        # 2026-07-07: fallback(lite) の日次枠枯渇時も voice を全滅させない。
+        # 2026-07-10 実測修正: あふれ先は 3.5 (20回/日) ではなく緊急枠
+        # (2.5-flash) を先に使う (13時便の RPM あふれが 3.5 を日中に食い潰した)。
         client = MagicMock()
         quota_err = RuntimeError("429 RESOURCE_EXHAUSTED daily quota")
         ok = MagicMock()
@@ -116,7 +117,7 @@ class PrimeHoursTests(unittest.TestCase):
         ]
         self.assertEqual(
             models,
-            [xbg._X_POST_GEMINI_FALLBACK_MODEL, xbg._X_POST_GEMINI_PRIMARY_MODEL],
+            [xbg._X_POST_GEMINI_FALLBACK_MODEL, "gemini-2.5-flash"],
         )
 
     def test_generate_content_raises_when_both_models_quota_dead(self) -> None:
@@ -154,8 +155,9 @@ class PrimeHoursTests(unittest.TestCase):
         self.assertEqual(client.models.generate_content.call_count, first_calls)
 
     def test_emergency_chain_order_quality_first(self) -> None:
-        # 2026-07-08 user 指定: 3.5 / lite 両方 dead 時は 2.5-flash (品質優先) →
-        # 2.5-flash-lite の順で緊急枠へ逃げる。
+        # 2026-07-08 user 指定: 緊急枠は 2.5-flash (品質優先) → 2.5-flash-lite。
+        # 2026-07-10 実測修正: 3.5 (20回/日) は連鎖の最後尾へ温存
+        # (lite dead → 2.5-flash → 2.5-flash-lite → 最後に 3.5)。
         client = MagicMock()
         daily_err = RuntimeError(
             "429 RESOURCE_EXHAUSTED GenerateRequestsPerDayPerProjectPerModel-FreeTier"
@@ -174,12 +176,12 @@ class PrimeHoursTests(unittest.TestCase):
             models,
             [
                 xbg._X_POST_GEMINI_FALLBACK_MODEL,
-                xbg._X_POST_GEMINI_PRIMARY_MODEL,
                 "gemini-2.5-flash",
+                "gemini-2.5-flash-lite",
             ],
         )
-        # 4段目 (2.5-flash-lite) は温存されたまま
-        self.assertNotIn("gemini-2.5-flash-lite", xbg._MODEL_QUOTA_DEAD_UNTIL)
+        # 最後尾の 3.5 は温存されたまま (呼ばれていない)
+        self.assertNotIn(xbg._X_POST_GEMINI_PRIMARY_MODEL, models[:2])
 
     def test_per_minute_429_does_not_trip_breaker(self) -> None:
         # RPM (per-minute) の 429 は breaker 対象外 — 次の呼び出しは普通に API を試す。
@@ -1234,3 +1236,50 @@ class EndingStyleRotationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RpmShortRetryTests(unittest.TestCase):
+    """2026-07-10: RPM 429 の指示待ちが3秒以下なら同モデルで1回だけ再試行。"""
+
+    def test_short_rpm_wait_retries_same_model(self):
+        client = MagicMock()
+        rpm_err = RuntimeError(
+            "429 RESOURCE_EXHAUSTED GenerateRequestsPerMinutePerProjectPerModel-FreeTier "
+            "Please retry in 0.4s."
+        )
+        ok = MagicMock()
+        client.models.generate_content.side_effect = [rpm_err, ok]
+        with patch.object(xbg, "_x_post_in_prime_hours", return_value=False), \
+             patch.object(xbg._time, "sleep") as slp:
+            result = xbg._x_post_generate_content(
+                client, model="gemini-3.1-flash-lite", contents="p", config={}
+            )
+        self.assertIs(result, ok)
+        slp.assert_called_once()
+        models = [c.kwargs["model"] for c in client.models.generate_content.call_args_list]
+        self.assertEqual(models, ["gemini-3.1-flash-lite", "gemini-3.1-flash-lite"])
+
+    def test_long_rpm_wait_falls_through_chain(self):
+        client = MagicMock()
+        rpm_err = RuntimeError(
+            "429 GenerateRequestsPerMinutePerProjectPerModel-FreeTier Please retry in 53.0s."
+        )
+        ok = MagicMock()
+        client.models.generate_content.side_effect = [rpm_err, ok]
+        with patch.object(xbg, "_x_post_in_prime_hours", return_value=False), \
+             patch.object(xbg._time, "sleep") as slp:
+            result = xbg._x_post_generate_content(
+                client, model="gemini-3.1-flash-lite", contents="p", config={}
+            )
+        self.assertIs(result, ok)
+        slp.assert_not_called()
+        models = [c.kwargs["model"] for c in client.models.generate_content.call_args_list]
+        # 長待ちは 2.5-flash へ (3.5 には行かない)
+        self.assertEqual(models, ["gemini-3.1-flash-lite", "gemini-2.5-flash"])
+
+    def test_rpm_delay_parse(self):
+        self.assertAlmostEqual(
+            xbg._rpm_retry_delay_seconds(RuntimeError(
+                "PerMinutePerProjectPerModel Please retry in 1.5s")), 1.5)
+        self.assertIsNone(xbg._rpm_retry_delay_seconds(RuntimeError(
+            "PerDayPerProjectPerModel Please retry in 1.5s")))

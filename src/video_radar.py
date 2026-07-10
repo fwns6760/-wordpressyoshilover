@@ -374,5 +374,7 @@ def gather_buzz_posts(
                 "has_video": has_video,
                 "has_image": bool(item.get("has_image")),
             })
-    out.sort(key=lambda d: d["score"], reverse=True)
+    # 2026-07-10 user「動画系がないとインプとれないよ。動画が優先」:
+    # 📷/📰 合流後も動画🎬が枠を先取りする (動画優先 → score 降順)。
+    out.sort(key=lambda d: (d["has_video"], d["score"]), reverse=True)
     return out

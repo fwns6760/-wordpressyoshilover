@@ -52,3 +52,7 @@
 - 15:50 JST | fan_pulse | ea146d33 ファンの反応まとめ (user GO「記事とポスト。昼/試合後。noindex。アイキャッチはルール通り」)。WP記事自動公開+💬ポスト候補、昼=話題選手/23時=試合反応、oEmbed引用、mail-lane job に WP 認証追加
 - env: ENABLE_X_POST_FAN_PULSE=1 / WP_URL / WP_USER / WP_APP_PASSWORD(secret)
 - 初回実弾: 23:05便 (今日のDeNA戦の反応まとめ記事+ポスト)
+- 17:39 JST | scheduler | x-post-mail-flush-lineup 0 12,14,16 → 0 12,14,16,17 (18:15開始日にgame窓が18:00まで開かず17時台mailゼロになる穴。lineup窓=start-4hなので17:00発火は試合日に通る)
+- 17:30便(lineup-1730)は gemini-3.5-flash 503連発→3.1-flash-lite fallback で生成遅延、実行10分超を観測
+- 17:52 JST | incident | 17:30 lineup便 attempt1 が task timeout 600s で mail送信前にkill (機能増+3.5-flash 503 fallback+RSSHub timeout×11源×2パスで10分超過)。attempt2 が 17:47:24 に status=sent で送達
+- 17:46 JST | fix | x-post-mail-lane task-timeout 600→1200s (gcloud run jobs update)。残課題: RSSHub twitter route全源read timeout / 3.5-flash 503常態化は要観察

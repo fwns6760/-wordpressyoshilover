@@ -337,6 +337,14 @@ def _mark_model_quota_dead(model: str, exc: Exception, now=None) -> None:
     )
 
 
+# RPM 429 の指示待ち上限 (2026-07-10 18:45便実測: flash-lite が「retry in
+# 9〜39s」を返したのに旧上限 3s で待てず 2.5-flash へ落ち、品質 gate 落ち連発で
+# live_game 候補が全滅した)。待っても無料枠は消費しない。1 run の合計待ち時間は
+# _RPM_WAIT_RUN_BUDGET で cap (job timeout 1200s 内に収める)。
+_RPM_WAIT_MAX_SECONDS = 45.0
+_RPM_WAIT_RUN_BUDGET = {"remaining": 120.0}
+
+
 def _rpm_retry_delay_seconds(exc: Exception) -> Optional[float]:
     """分間 (RPM) 429 の指示 retry 秒数。RPM でない / 読めない時は None。"""
     s = f"{exc}"
@@ -360,7 +368,9 @@ def _x_post_generate_content(client, *, model, contents, config):
     (20回/日) へ流れて日中に食い潰した。対策2点:
     - primary (3.5) は連鎖の最後尾 (直接要求されない限り温存。試合帯の
       quote_rt 等は model=3.5 で直接要求するので従来どおり先頭)
-    - RPM 429 で指示待ち時間が 3 秒以下なら同モデルで 1 回だけ短待ちリトライ
+    - RPM 429 は指示待ち時間 45 秒以下なら同モデルで 1 回だけ待ちリトライ
+      (run 合計 120s cap。2026-07-10 18:45 実測: 3s 上限では 9〜39s 指示を
+      待てず品質劣化連鎖になった)
     無料枠はモデル別勘定なので旧世代 flash が独自の日次枠を持つ。
     日次枠 429 を検知したモデルは 16:00 JST まで dead マークして呼ばない
     (circuit breaker)。全滅なら API を呼ばず raise (caller が graceful skip)。"""
@@ -393,10 +403,16 @@ def _x_post_generate_content(client, *, model, contents, config):
                 if not _x_post_model_unavailable(exc):
                     raise
                 delay = _rpm_retry_delay_seconds(exc) if attempt == 0 else None
-                if delay is not None and delay <= 3.0:
+                if (
+                    delay is not None
+                    and delay <= _RPM_WAIT_MAX_SECONDS
+                    and _RPM_WAIT_RUN_BUDGET["remaining"] >= delay
+                ):
+                    _RPM_WAIT_RUN_BUDGET["remaining"] -= delay
                     log.info(
-                        "x_post_llm_rpm_wait model=%s delay=%.1fs (同モデル再試行)",
-                        m, delay,
+                        "x_post_llm_rpm_wait model=%s delay=%.1fs (同モデル再試行、"
+                        "run残待ち枠=%.0fs)",
+                        m, delay, _RPM_WAIT_RUN_BUDGET["remaining"],
                     )
                     _time.sleep(delay + 0.2)
                     continue

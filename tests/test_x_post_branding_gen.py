@@ -1239,7 +1239,49 @@ if __name__ == "__main__":
 
 
 class RpmShortRetryTests(unittest.TestCase):
-    """2026-07-10: RPM 429 の指示待ちが3秒以下なら同モデルで1回だけ再試行。"""
+    """2026-07-10: RPM 429 の指示待ちが45秒以下なら同モデルで1回だけ再試行
+    (run 合計 120s cap)。18:45便実測: 9〜39s 指示を待てず品質劣化連鎖になった。"""
+
+    def setUp(self):
+        xbg._RPM_WAIT_RUN_BUDGET["remaining"] = 120.0
+
+    def test_mid_rpm_wait_retries_same_model(self):
+        # 18:45 実測の「retry in 9s」パターン: 待てば同モデルで通る
+        client = MagicMock()
+        rpm_err = RuntimeError(
+            "429 RESOURCE_EXHAUSTED GenerateRequestsPerMinutePerProjectPerModel-FreeTier "
+            "Please retry in 9.0s."
+        )
+        ok = MagicMock()
+        client.models.generate_content.side_effect = [rpm_err, ok]
+        with patch.object(xbg, "_x_post_in_prime_hours", return_value=False), \
+             patch.object(xbg._time, "sleep") as slp:
+            result = xbg._x_post_generate_content(
+                client, model="gemini-3.1-flash-lite", contents="p", config={}
+            )
+        self.assertIs(result, ok)
+        slp.assert_called_once()
+        models = [c.kwargs["model"] for c in client.models.generate_content.call_args_list]
+        self.assertEqual(models, ["gemini-3.1-flash-lite", "gemini-3.1-flash-lite"])
+
+    def test_rpm_wait_run_budget_cap(self):
+        # run 合計待ち枠を使い切ったら待たずに連鎖へ (job timeout 保護)
+        xbg._RPM_WAIT_RUN_BUDGET["remaining"] = 5.0
+        client = MagicMock()
+        rpm_err = RuntimeError(
+            "429 GenerateRequestsPerMinutePerProjectPerModel-FreeTier Please retry in 9.0s."
+        )
+        ok = MagicMock()
+        client.models.generate_content.side_effect = [rpm_err, ok]
+        with patch.object(xbg, "_x_post_in_prime_hours", return_value=False), \
+             patch.object(xbg._time, "sleep") as slp:
+            result = xbg._x_post_generate_content(
+                client, model="gemini-3.1-flash-lite", contents="p", config={}
+            )
+        self.assertIs(result, ok)
+        slp.assert_not_called()
+        models = [c.kwargs["model"] for c in client.models.generate_content.call_args_list]
+        self.assertEqual(models, ["gemini-3.1-flash-lite", "gemini-2.5-flash"])
 
     def test_short_rpm_wait_retries_same_model(self):
         client = MagicMock()

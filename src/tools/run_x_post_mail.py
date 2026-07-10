@@ -4634,6 +4634,33 @@ def main(argv: Sequence[str] | None = None) -> int:
                 LOG.info("lineup_announce appended: %s", _la_cand.title)
         except Exception as _sm_exc:  # noqa: BLE001
             LOG.info("starter_matchup/lineup skip: %r", _sm_exc)
+    # 2026-07-10 user GO「記事とポスト」: ファンの反応まとめ (fan_pulse)。
+    # 昼 (12時台) = 話題選手 / 試合後 (23時台) = 今日の巨人戦。
+    # WP 記事 (noindex 環境・アイキャッチは既存ルール) + X ポスト候補。
+    # 既定 OFF (test hermetic)、prod job は env ON + WP 認証が必要。
+    _fp_flag = (os.environ.get("ENABLE_X_POST_FAN_PULSE") or "").strip().lower()
+    _fp_window = (
+        "noon" if now_jst.hour == 12 else "postgame" if now_jst.hour == 23 else ""
+    )
+    if _fp_flag in {"1", "true", "yes", "on"} and _fp_window:
+        try:
+            from src.fan_pulse import build_fan_pulse
+
+            _fp_cand = build_fan_pulse(
+                now=now_jst,
+                window=_fp_window,
+                gemini_api_key=(
+                    os.environ.get("GEMINI_API_KEY")
+                    or os.environ.get("GEMMA_BRANDING_GEMINI_API_KEY")
+                    or ""
+                ),
+                dedup_set=dedup_set,
+            )
+            if _fp_cand is not None:
+                candidates.insert(0, _fp_cand)
+                LOG.info("fan_pulse appended: %s", _fp_cand.title)
+        except Exception as _fp_exc:  # noqa: BLE001
+            LOG.info("fan_pulse skip: %r", _fp_exc)
     mail = lane.compose_mail(
         candidates,
         context_label=context_label,

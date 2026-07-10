@@ -254,3 +254,39 @@ class FullnameMapTests(unittest.TestCase):
             side_effect=RuntimeError("net down"),
         ):
             self.assertEqual(lgw.giants_fullname_map(), {})
+
+
+class MvpPollLineTests(unittest.TestCase):
+    """試合後 MVP Poll 案 (2026-07-10 小手先インプ策)。"""
+
+    _PLAYS = [
+        {"giants_batting": True, "batter": "岡本和真", "pitcher": "才木",
+         "outcome": "ライトへのホームラン"},
+        {"giants_batting": True, "batter": "泉口友汰", "pitcher": "才木",
+         "outcome": "センターへのヒット"},
+        {"giants_batting": True, "batter": "キャベッジ", "pitcher": "才木",
+         "outcome": "レフトへのツーベース"},
+        {"giants_batting": False, "batter": "大山", "pitcher": "戸郷翔征",
+         "outcome": "空振り三振"},
+    ]
+
+    def test_win_poll_bundles_names(self):
+        from src.live_game_watch import build_mvp_poll_line
+
+        line = build_mvp_poll_line(self._PLAYS, True)
+        self.assertIn("今日のMVPは？", line)
+        self.assertIn("岡本和真", line)
+        self.assertIn("戸郷翔征", line)
+
+    def test_loss_uses_forward_looking_question(self):
+        from src.live_game_watch import build_mvp_poll_line
+
+        line = build_mvp_poll_line(self._PLAYS, False)
+        self.assertIn("明日、期待したいのは？", line)
+
+    def test_too_few_names_returns_empty(self):
+        from src.live_game_watch import build_mvp_poll_line
+
+        self.assertEqual(build_mvp_poll_line([], True), "")
+        one = [{"giants_batting": True, "batter": "岡本和真", "outcome": "ヒット"}]
+        self.assertEqual(build_mvp_poll_line(one, True), "")

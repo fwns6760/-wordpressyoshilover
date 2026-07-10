@@ -152,12 +152,8 @@ def build_trend_note_and_boost(
                 pass
     woven = 0
     if gemini_api_key:
-        try:
-            woven = weave_trends_into_candidates(
-                candidates, relevant, gemini_api_key=gemini_api_key
-            )
-        except Exception as exc:  # noqa: BLE001 - 織り込み失敗は note のみで続行
-            LOG.info("trend_weave skip: %r", exc)
+        # 反応ポストを織り込みより先に作る (2026-07-10 user「毎時出るんでしょ」:
+        # trend_weave の LLM 小枠を織り込みが先に食うと反応ポストが毎便出ない)
         try:
             reaction = build_trend_reaction_candidate(
                 relevant,
@@ -169,6 +165,12 @@ def build_trend_note_and_boost(
                 candidates.append(reaction)
         except Exception as exc:  # noqa: BLE001 - 反応候補失敗は note のみで続行
             LOG.info("trend_react skip: %r", exc)
+        try:
+            woven = weave_trends_into_candidates(
+                candidates, relevant, gemini_api_key=gemini_api_key
+            )
+        except Exception as exc:  # noqa: BLE001 - 織り込み失敗は note のみで続行
+            LOG.info("trend_weave skip: %r", exc)
     note = "🔥 Google急上昇 (野球/巨人関連): " + " / ".join(
         f"{t['keyword']}({t['traffic']})" if t["traffic"] else t["keyword"]
         for t in relevant
@@ -196,8 +198,9 @@ def _keyword_hits(keyword: str, haystack: str) -> bool:
 # ---------------------------------------------------------------------------
 
 # 2026-07-10 user「プレミアムプランだから長めで行ける」「毎時トレンド語を
-# ポストに入れるでもいい」: 織り込みは3候補まで、追加は全角60字相当まで許容。
-_WEAVE_MAX_PER_MAIL = 3
+# ポストに入れるでもいい」: 織り込みは2候補まで (LLM小枠3 = 反応1+織り込み2)、
+# 追加は全角60字相当まで許容。
+_WEAVE_MAX_PER_MAIL = 2
 _WEAVE_MAX_EXTRA_WEIGHTED = 120
 
 
@@ -222,6 +225,8 @@ def weave_trends_into_candidates(
     for cand in candidates:
         if woven >= _WEAVE_MAX_PER_MAIL:
             break
+        if str(getattr(cand, "metric", "")) == "TREND_REACTION":
+            continue  # 反応ポストに別のトレンド語を重ね織りしない
         original = str(getattr(cand, "post_text", "") or "")
         if not original:
             continue

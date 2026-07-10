@@ -58,12 +58,13 @@ _LLM_BUDGET = {"used": 0, "max": None, "reply_reserve": 0, "reply_used": 0}
 # 持つ。 caps を上げる時はコスト gate (user 判断) を通す。
 # live_game 2→4 (2026-07-10 user「観戦ポストがあまり出なかった」: 便あたり
 # 候補上限 4 に合わせて voice 生成枠も 4。夜試合は 16:00 JST 枠リセット後)。
-# trend_weave (2026-07-10 user「トレンド語をポストに自然に入れて」): 1便2回まで。
+# trend_weave (2026-07-10 user「トレンド語をポストに自然に入れて」「毎時出る
+# んでしょ」): 反応ポスト1 + 織り込み2 = 1便3回まで。
 _AUX_LLM_BUDGET_CAPS = {
     "comment_context": 4,
     "record_plain": 4,
     "live_game": 4,
-    "trend_weave": 2,
+    "trend_weave": 3,
 }
 _AUX_LLM_BUDGET_USED: dict[str, int] = {}
 

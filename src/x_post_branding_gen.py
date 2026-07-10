@@ -65,6 +65,7 @@ _AUX_LLM_BUDGET_CAPS = {
     "record_plain": 4,
     "live_game": 4,
     "trend_weave": 3,
+    "morning_digest": 1,
 }
 _AUX_LLM_BUDGET_USED: dict[str, int] = {}
 

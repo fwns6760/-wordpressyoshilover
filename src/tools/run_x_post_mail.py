@@ -4580,6 +4580,28 @@ def main(argv: Sequence[str] | None = None) -> int:
             _trend_note = ""
     if _trend_note:
         context_note = f"{context_note}\n{_trend_note}".strip()
+    # 2026-07-10 user (金融アカの定点ポスト翻訳): 毎朝 1 本の巨人データ定点観測
+    # 候補 (話題選手TOP5 + 急上昇ワード + 解説/締め、カードは 437 に自動で乗る)。
+    # 既定 OFF (test hermetic)、prod job は env ON。朝 7-10 時台の便のみ。
+    _md_flag = (os.environ.get("ENABLE_X_POST_MORNING_DIGEST") or "").strip().lower()
+    if _md_flag in {"1", "true", "yes", "on"} and 7 <= now_jst.hour <= 10:
+        try:
+            from src.morning_digest_post import build_morning_digest_candidate
+
+            _md_cand = build_morning_digest_candidate(
+                now=now_jst,
+                gemini_api_key=(
+                    os.environ.get("GEMINI_API_KEY")
+                    or os.environ.get("GEMMA_BRANDING_GEMINI_API_KEY")
+                    or ""
+                ),
+                dedup_set=dedup_set,
+            )
+            if _md_cand is not None:
+                candidates.insert(0, _md_cand)
+                LOG.info("morning_digest appended: %s", _md_cand.title)
+        except Exception as _md_exc:  # noqa: BLE001
+            LOG.info("morning_digest skip: %r", _md_exc)
     mail = lane.compose_mail(
         candidates,
         context_label=context_label,

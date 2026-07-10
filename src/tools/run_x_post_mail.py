@@ -1316,7 +1316,45 @@ def _load_news_fallback_sources(path: Path = RSS_SOURCES_FILE) -> list[dict]:
     return out
 
 
+# 2026-07-10 コスト削減 (user「運用に影響なく安く」): news fallback source の
+# fetch は 1 便 8〜10 本の直列待ち (~25-30s) で vCPU 秒の主要因。並列 prefetch
+# + run 内 memo 化で wall time を短縮する (選択ロジック・順序・内容は不変)。
+_FEED_ENTRIES_CACHE: dict[str, list] = {}
+
+
+def _feed_cache_key(source: dict) -> str:
+    return f"{source.get('type')}|{source.get('scraper')}|{source.get('url')}"
+
+
+def _prefetch_news_fallback_feeds(sources: list[dict], *, timeout_seconds: int) -> None:
+    """source 群を並列 fetch して memo に載せる。失敗は従来どおり各 source 側で処理。"""
+    from concurrent.futures import ThreadPoolExecutor
+
+    targets = [s for s in sources if _feed_cache_key(s) not in _FEED_ENTRIES_CACHE]
+    if not targets:
+        return
+    with ThreadPoolExecutor(max_workers=min(6, len(targets))) as ex:
+        futs = [
+            ex.submit(_fetch_feed_entries, s, timeout_seconds=timeout_seconds)
+            for s in targets
+        ]
+        for f in futs:
+            try:
+                f.result()
+            except Exception:  # noqa: BLE001 - 個別失敗は fetch 側で log 済み
+                pass
+
+
 def _fetch_feed_entries(source: dict, *, timeout_seconds: int) -> list[dict]:
+    key = _feed_cache_key(source)
+    if key in _FEED_ENTRIES_CACHE:
+        return _FEED_ENTRIES_CACHE[key]
+    entries = _fetch_feed_entries_uncached(source, timeout_seconds=timeout_seconds)
+    _FEED_ENTRIES_CACHE[key] = entries
+    return entries
+
+
+def _fetch_feed_entries_uncached(source: dict, *, timeout_seconds: int) -> list[dict]:
     if str(source.get("type") or "") == "tag_scrape":
         from src import tag_page_scraper
 
@@ -1581,7 +1619,9 @@ def _fetch_news_opinion_fallback_candidates(
     skipped_no_date = 0
     seen_urls: set[str] = set()
     out: list[lane.Candidate] = []
-    for source in _load_news_fallback_sources()[:source_limit]:
+    _news_srcs = _load_news_fallback_sources()[:source_limit]
+    _prefetch_news_fallback_feeds(_news_srcs, timeout_seconds=timeout_seconds)
+    for source in _news_srcs:
         if len(out) >= needed:
             break
         for entry in _fetch_feed_entries(source, timeout_seconds=timeout_seconds)[:entry_limit]:
@@ -1868,7 +1908,9 @@ def _fetch_record_article_priority_candidates(
     max_age_hours = lane.phase_freshness_max_age_hours(now)
     seen_urls: set[str] = set()
     out: list[lane.Candidate] = []
-    for source in _load_news_fallback_sources()[:source_limit]:
+    _news_srcs = _load_news_fallback_sources()[:source_limit]
+    _prefetch_news_fallback_feeds(_news_srcs, timeout_seconds=timeout_seconds)
+    for source in _news_srcs:
         if len(out) >= max_records:
             break
         for entry in _fetch_feed_entries(source, timeout_seconds=timeout_seconds)[:entry_limit]:
@@ -3049,6 +3091,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         # 自動注入し、毎回の手動 env 更新を不要にする。
         _maybe_inject_day_game_mode(_game_start, _now_jst)
 
+    # feed memo は 1 fire 単位 (テスト間・多重呼び出しの汚染防止)
+    _FEED_ENTRIES_CACHE.clear()
     # per-fire LLM 生成上限 (2026-06-03 コスト削減)。1 fire の全 Gemini 経路
     # (buzz/reply/引用RT/queue/roundup) 合算の生成回数を上限で抑える。0 = 無制限。
     # 既定 8 (実測 8-18/fire → 高い回を 8 に抑制、 出力 1-7 候補は維持余地)。

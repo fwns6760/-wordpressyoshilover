@@ -4603,6 +4603,37 @@ def main(argv: Sequence[str] | None = None) -> int:
                 LOG.info("morning_digest appended: %s", _md_cand.title)
         except Exception as _md_exc:  # noqa: BLE001
             LOG.info("morning_digest skip: %r", _md_exc)
+    # 2026-07-10 user GO (A+C、検索需要の先回り): A=予告先発予習 (朝/昼/試合前の
+    # 最大3回)、C=スタメン発表の9人フルネーム列挙 (発表検知時)。既定 OFF
+    # (test hermetic)、prod job は env ON。
+    _sm_flag = (os.environ.get("ENABLE_X_POST_STARTER_MATCHUP") or "").strip().lower()
+    if _sm_flag in {"1", "true", "yes", "on"}:
+        try:
+            from src.starter_matchup_post import (
+                build_lineup_announce_candidate,
+                build_starter_matchup_candidate,
+            )
+
+            _sm_cand = build_starter_matchup_candidate(
+                now=now_jst,
+                gemini_api_key=(
+                    os.environ.get("GEMINI_API_KEY")
+                    or os.environ.get("GEMMA_BRANDING_GEMINI_API_KEY")
+                    or ""
+                ),
+                dedup_set=dedup_set,
+            )
+            if _sm_cand is not None:
+                candidates.insert(0, _sm_cand)
+                LOG.info("starter_matchup appended: %s", _sm_cand.title)
+            _la_cand = build_lineup_announce_candidate(
+                now=now_jst, dedup_set=dedup_set
+            )
+            if _la_cand is not None:
+                candidates.insert(0, _la_cand)
+                LOG.info("lineup_announce appended: %s", _la_cand.title)
+        except Exception as _sm_exc:  # noqa: BLE001
+            LOG.info("starter_matchup/lineup skip: %r", _sm_exc)
     mail = lane.compose_mail(
         candidates,
         context_label=context_label,

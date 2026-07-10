@@ -41,3 +41,14 @@
 - 14:40 JST | Claude発案 user GO「AとC」 | 585373ec A=予告先発予習(Yahoo試合ページparse、朝/昼/試合前3回、ですます) + C=スタメン発表9人フルネーム列挙(deterministic、変更で再発火)。B(クイズ)は「インプが自然に上がらない」で却下
 - env 追加: ENABLE_X_POST_STARTER_MATCHUP=1 / X_POST_RANKING_CARD_ENABLED=0
 - 検証観点追加: 16時台便=A試合前枠、17時台=Cスタメン、毎時=定点TOP10+トレンド3カテゴリ
+
+## PM2 追加分 (最終 image = fanpulse-ea146d33)
+
+- 15:00 JST | llm | 615ad277 3.5-flash温存(連鎖最後尾)+RPM短待ちリトライ (13時便で3.5の20/日を昼に食い潰した実測対策)
+- 15:05 JST | excerpt | b4a8c8cd 選択2〜4節600-1000字+400字未満は冒頭1200字へfallback / c59a5ea7 選択対象8000字+冒頭偏り禁止 (user「引用が短い/冒頭しか取ってない」)
+- 15:10 JST | mlb | 39319bb9 グリフィン+マイコラスを元巨人枠に追加
+- 15:20 JST | scheduler | x-post-mail-flush に 14:05 追加 (14:00 lineup便がスタメン窓外で丸ごとskipし毎時カバーが欠ける穴)
+- 15:30 JST | trend | ad7f03ec Yahooスポーツトピックス合流 (Googleに野球ゼロの便でも巨人/プロ野球/メジャー行+反応候補素材を確保)
+- 15:50 JST | fan_pulse | ea146d33 ファンの反応まとめ (user GO「記事とポスト。昼/試合後。noindex。アイキャッチはルール通り」)。WP記事自動公開+💬ポスト候補、昼=話題選手/23時=試合反応、oEmbed引用、mail-lane job に WP 認証追加
+- env: ENABLE_X_POST_FAN_PULSE=1 / WP_URL / WP_USER / WP_APP_PASSWORD(secret)
+- 初回実弾: 23:05便 (今日のDeNA戦の反応まとめ記事+ポスト)

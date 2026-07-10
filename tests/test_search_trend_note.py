@@ -149,6 +149,7 @@ class TrendReactionTests(unittest.TestCase):
     _REL = [{
         "keyword": "岡本和真",
         "traffic": "2万+",
+        "category": "giants",
         "news_title": "岡本和真がサヨナラ打",
         "news_url": "https://news.example/1",
         "news_source": "報知",
@@ -205,11 +206,39 @@ class TrendReactionTests(unittest.TestCase):
         self.assertIsNone(cand)
 
     def test_no_news_title_skipped(self):
-        rel = [{"keyword": "巨人", "traffic": "", "news_title": ""}]
+        rel = [{
+            "keyword": "巨人", "traffic": "", "category": "giants",
+            "news_title": "",
+        }]
         cand = stn.build_trend_reaction_candidate(
             rel, gemini_api_key="k", dedup_set=set(), now_date="20260710"
         )
         self.assertIsNone(cand)
+
+    def test_npb_other_team_skipped_mlb_ok(self):
+        # 2026-07-10 user「巨人やメジャーならいいけど。他球団なら意味ない」
+        rel = [
+            {
+                "keyword": "阪神", "traffic": "5万+", "category": "npb",
+                "news_title": "阪神が首位攻防戦を制す",
+                "news_url": "https://news.example/2", "news_source": "報知",
+            },
+            {
+                "keyword": "大谷翔平", "traffic": "10万+", "category": "mlb",
+                "news_title": "大谷翔平が30号ホームラン",
+                "news_url": "https://news.example/3", "news_source": "報知",
+            },
+        ]
+        with patch(
+            "src.x_post_branding_gen.build_quote_rt_comment",
+            return_value="大谷翔平、この打球速度は別格ですね。",
+        ):
+            cand = stn.build_trend_reaction_candidate(
+                rel, gemini_api_key="k", dedup_set=set(), now_date="20260710"
+            )
+        self.assertIsNotNone(cand)
+        self.assertIn("大谷翔平", cand.title)
+        self.assertNotIn("阪神", cand.title)
 
 
 if __name__ == "__main__":

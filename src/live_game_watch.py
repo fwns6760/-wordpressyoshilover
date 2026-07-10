@@ -379,42 +379,6 @@ def detect_play_events(
     return [e for _, e in scored[: max(0, max_count)]]
 
 
-def build_mvp_poll_line(
-    plays: list[dict[str, Any]], win: bool
-) -> str:
-    """試合後 recap 用の Poll 案 1 行 (2026-07-10 user「小手先でインプ」)。
-
-    Poll は投票→表示の好循環でインプが伸びやすい。X API Free では自動投稿
-    しないので、mail に選択肢を書いて user が X アプリで 30 秒で Poll 化する。
-    選択肢 = 一球速報の巨人側活躍選手 (本塁打 → 安打順 → 登板投手) 最大4人。
-    2人未満なら Poll にならないので "" を返す。
-    """
-    hrs: list[str] = []
-    hits: list[str] = []
-    pitchers: list[str] = []
-    for p in plays:
-        oc = p.get("outcome", "")
-        b = p.get("batter", "")
-        if p.get("giants_batting") and b:
-            if ("ホームラン" in oc or "本塁打" in oc) and b not in hrs:
-                hrs.append(b)
-            elif any(w in oc for w in _HIT_WORDS) and b not in hits:
-                hits.append(b)
-        pit = p.get("pitcher", "")
-        if (not p.get("giants_batting")) and pit and pit not in pitchers:
-            pitchers.append(pit)
-    names: list[str] = []
-    for nm in hrs + hits + pitchers[:1]:
-        if nm not in names:
-            names.append(nm)
-        if len(names) >= 4:
-            break
-    if len(names) < 2:
-        return ""
-    q = "今日のMVPは？" if win else "明日、期待したいのは？"
-    return f"📊 Poll案「{q}」→ " + " / ".join(names)
-
-
 def giants_fullname_map() -> dict[str, str]:
     """姓 → フルネーム (敬称なし・スペースなし)。姓が roster 内で一意な選手のみ。
 

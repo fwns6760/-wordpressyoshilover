@@ -2922,19 +2922,11 @@ def build_live_game_candidates(
             # 勝=うさほー🐰👊グータッチ / 負=まけほー🐰 で開幕 (2026-07-09 user、絵文字はガード後に付与)
             opener = "うさほー🐰👊 グータッチ！\n\n" if win else "まけほー🐰\n\n"
             post_text = opener + post_text
-        # recap には MVP Poll 案を添える (2026-07-10 user 小手先インプ策。
-        # 投稿はしない、mail の draft 欄に選択肢を出すだけ)
-        poll_line = (
-            lgw.build_mvp_poll_line(plays, win) if (is_recap and plays) else ""
-        )
-        draft = f"{fact}\n(出典: NPB公式一球速報 {cur.game_url})"
-        if poll_line:
-            draft = f"{draft}\n{poll_line}"
         out.append(Candidate(
             title=f"⚾{'試合後recap' if is_recap else '実況候補'}｜{score_ctx}｜{cur.inning_label or '試合終了'}",
             metric="LIVE_GAME",
             period_label="実況",
-            draft_text=draft,
+            draft_text=f"{fact}\n(出典: NPB公式一球速報 {cur.game_url})",
             char_count=len(post_text),
             signature=signature,
             post_text=post_text,

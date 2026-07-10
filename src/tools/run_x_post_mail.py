@@ -4547,6 +4547,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     context_note = ""
     if context_label and lineup_focus_names:
         context_note = "今日のスタメン優先: " + "、".join(lineup_focus_names)
+    # 2026-07-10 user「検索キーワード/トレンドでインプを」: Google 急上昇 (JP) の
+    # 野球/巨人関連ワードを note 表示 + 一致候補に 🔥 タグ (失敗は "" で従来どおり)。
+    try:
+        from src.search_trend_note import build_trend_note_and_boost
+
+        _trend_note = build_trend_note_and_boost(candidates)
+    except Exception as _tr_exc:  # noqa: BLE001
+        LOG.info("trend note skip: %r", _tr_exc)
+        _trend_note = ""
+    if _trend_note:
+        context_note = f"{context_note}\n{_trend_note}".strip()
     mail = lane.compose_mail(
         candidates,
         context_label=context_label,

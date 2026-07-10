@@ -27,14 +27,38 @@ LOG = logging.getLogger("search_trend_note")
 _TREND_RSS_URL = "https://trends.google.co.jp/trending/rss?geo=JP"
 _TIMEOUT_SECONDS = 5
 
-# 野球関連とみなす marker (トレンド語側に含まれていれば roster 一致不要)
-_BASEBALL_MARKERS = (
-    "巨人", "ジャイアンツ", "読売", "プロ野球", "野球", "NPB", "セリーグ", "セ・リーグ",
+# カテゴリ別 marker (2026-07-10 user「巨人だけでなくプロ野球とメジャーも」)。
+# トレンド語側に含まれていれば roster 一致不要。
+_GIANTS_MARKERS = ("巨人", "ジャイアンツ", "読売")
+_NPB_MARKERS = (
+    "プロ野球", "野球", "NPB", "セリーグ", "セ・リーグ", "パリーグ", "パ・リーグ",
     "甲子園", "オールスター", "球宴", "サヨナラ", "ホームラン", "ノーヒットノーラン",
     "完全試合", "阪神", "タイガース", "広島", "カープ", "中日", "ドラゴンズ",
-    "ヤクルト", "スワローズ", "DeNA", "ベイスターズ", "横浜",
-    "MLB", "メジャー", "ドジャース", "パドレス", "大谷翔平",
+    "ヤクルト", "スワローズ", "DeNA", "ベイスターズ", "横浜", "ソフトバンク",
+    "ホークス", "日本ハム", "ファイターズ", "ロッテ", "マリーンズ", "楽天",
+    "イーグルス", "西武", "ライオンズ", "オリックス", "バファローズ",
 )
+_MLB_MARKERS = (
+    "MLB", "メジャー", "大谷翔平", "山本由伸", "鈴木誠也", "村上宗隆",
+    "ドジャース", "パドレス", "ヤンキース", "メッツ", "カブス", "レッドソックス",
+    "ダルビッシュ", "今永昇太", "菅野智之", "佐々木朗希", "dバックス",
+)
+# 後方互換 (旧 relevance 判定): 全カテゴリの和
+_BASEBALL_MARKERS = _GIANTS_MARKERS + _NPB_MARKERS + _MLB_MARKERS
+
+
+def categorize_trend_keyword(kw: str, roster: set[str]) -> str:
+    """トレンド語のカテゴリ ("giants" / "mlb" / "npb" / "")。
+
+    判定順: 巨人 (marker or roster 名) → MLB → NPB。roster 名一致は巨人扱い。
+    """
+    if any(mk in kw for mk in _GIANTS_MARKERS) or any(tok in kw for tok in roster):
+        return "giants"
+    if any(mk in kw for mk in _MLB_MARKERS):
+        return "mlb"
+    if any(mk in kw for mk in _NPB_MARKERS):
+        return "npb"
+    return ""
 
 _ITEM_RE = re.compile(r"<item>(.*?)</item>", re.DOTALL)
 _TITLE_RE = re.compile(r"<title>([^<]+)</title>")
@@ -122,13 +146,14 @@ def build_trend_note_and_boost(
         return ""
     roster = _giants_name_tokens()
 
-    def _relevant(kw: str) -> bool:
-        if any(mk in kw for mk in _BASEBALL_MARKERS):
-            return True
-        return any(tok in kw for tok in roster)
-
-    # 10位まで拾う (2026-07-10 user「トレンドワードを沢山、10位までとか」)
-    relevant = [t for t in trends if _relevant(t["keyword"])][:10]
+    # カテゴリ付与 (巨人/プロ野球/メジャー、2026-07-10 user)。10位まで拾う。
+    relevant: list[dict[str, str]] = []
+    for t in trends:
+        cat = categorize_trend_keyword(t["keyword"], roster)
+        if cat:
+            relevant.append({**t, "category": cat})
+        if len(relevant) >= 10:
+            break
     if not relevant:
         LOG.info("search_trend: no baseball-related trend (total=%d)", len(trends))
         # 野球関連が無くても総合トップ10は参考表示する
@@ -171,10 +196,21 @@ def build_trend_note_and_boost(
             )
         except Exception as exc:  # noqa: BLE001 - 織り込み失敗は note のみで続行
             LOG.info("trend_weave skip: %r", exc)
-    note = "🔥 Google急上昇 (野球/巨人関連): " + " / ".join(
-        f"{t['keyword']}({t['traffic']})" if t["traffic"] else t["keyword"]
-        for t in relevant
-    )
+    def _cat_line(label: str, cat: str) -> str:
+        items = [
+            f"{t['keyword']}({t['traffic']})" if t["traffic"] else t["keyword"]
+            for t in relevant if t.get("category") == cat
+        ]
+        return f"{label}: " + " / ".join(items) if items else ""
+
+    note_lines = [
+        line for line in (
+            _cat_line("🔥 急上昇/巨人", "giants"),
+            _cat_line("⚾ 急上昇/プロ野球", "npb"),
+            _cat_line("🌍 急上昇/メジャー", "mlb"),
+        ) if line
+    ]
+    note = "\n".join(note_lines)
     top10 = " / ".join(t["keyword"] for t in trends[:10])
     if top10:
         note += f"\n📈 参考・総合急上昇TOP10: {top10}"
@@ -377,7 +413,10 @@ def build_trend_reaction_candidate(
                         f"いま検索で急上昇中の話題への反応ポスト (試合後の振り返り"
                         f"ではない)。トレンド語「{kw}」を本文に必ず1回そのまま入れる。"
                         "見出しにある事実だけで書き、見出しに無い数字・選手名・結果は"
-                        f"作らない。今回の構成: {arrangement}"
+                        f"作らない。今回の構成: {arrangement}。"
+                        "文体は必ず です・ます調 (丁寧語) で統一する "
+                        "(「〜だよな」「〜だわ」等のカジュアル語尾は今回は禁止。"
+                        "丁寧だが堅すぎない、読みやすい情報ポストの文体)。"
                     ),
                 ) or ""
             ).strip()

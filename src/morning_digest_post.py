@@ -56,6 +56,13 @@ def build_morning_digest_candidate(
 
     if trend_keywords is None:
         trend_keywords = _fetch_baseball_trends()
+    by_cat: dict[str, list[str]] = {"giants": [], "npb": [], "mlb": []}
+    if isinstance(trend_keywords, dict):
+        for cat in by_cat:
+            by_cat[cat] = list(trend_keywords.get(cat) or [])
+    else:  # 後方互換 (list) は巨人枠に寄せる
+        by_cat["giants"] = list(trend_keywords or [])
+    flat_trends = by_cat["giants"] + by_cat["npb"] + by_cat["mlb"]
 
     date_label = f"{now.month}/{now.day}({_WEEKDAYS_JA[now.weekday()]})"
     greeting = (
@@ -64,48 +71,52 @@ def build_morning_digest_candidate(
         else ""
     )
     header = f"{greeting}{date_label} {now.hour}時の巨人データ定点観測🐰"
+    # ランキングは文字で書く (2026-07-10 user「図が意味わからない。ランキング
+    # 書けばいいじゃん」: 437 カードは使わない = draft にランキング行 format を
+    # 入れない)。巨人は2パターン (①言及数ランキング ②巨人トレンド語)。
     section = "【いま話題の巨人選手 TOP5】(スポーツ媒体Xでの言及数)"
     plain_lines = [f"{i}位 {name}" for i, (name, _c) in enumerate(ranked, 1)]
-    card_lines = [
-        f"{i}位 {name}（巨人）言及{cnt}件 🟧巨人🟧"
-        for i, (name, cnt) in enumerate(ranked, 1)
+    trend_lines = [
+        line for line in (
+            ("【検索トレンド/巨人】" + " / ".join(by_cat["giants"][:5])
+             if by_cat["giants"] else ""),
+            ("【検索トレンド/プロ野球】" + " / ".join(by_cat["npb"][:5])
+             if by_cat["npb"] else ""),
+            ("【検索トレンド/メジャー】" + " / ".join(by_cat["mlb"][:5])
+             if by_cat["mlb"] else ""),
+        ) if line
     ]
-    trend_line = (
-        "【検索で急上昇中の野球ワード】" + " / ".join(trend_keywords[:5])
-        if trend_keywords else ""
-    )
 
     fact = (
         f"{date_label}のスポーツ媒体Xでの巨人選手言及数ランキング: "
         + "、".join(f"{i}位 {n} ({c}件)" for i, (n, c) in enumerate(ranked, 1))
-        + (("。検索急上昇の野球ワード: " + "、".join(trend_keywords[:5]))
-           if trend_keywords else "")
+        + (("。検索急上昇の野球ワード: " + "、".join(flat_trends[:8]))
+           if flat_trends else "")
     )
     comment = _build_digest_comment(fact, gemini_api_key)
     if not comment:
         # LLM 不達でも定点データ自体に価値があるので deterministic 締めで成立させる
         top_name = ranked[0][0]
         comment = (
-            f"言及が集まる場所は、ファンの目線が集まる場所。今日は{top_name}から"
-            "目が離せない一日になりそう。"
+            f"言及が集まる場所は、ファンの目線が集まる場所です。今日は{top_name}"
+            "から目が離せません。"
         )
 
     body_parts = [header, "", section, *plain_lines]
-    if trend_line:
-        body_parts += ["", trend_line]
+    for line in trend_lines:
+        body_parts += ["", line]
     body_parts += ["", comment]
     post_text = "\n".join(body_parts)
 
     from src.x_post_mail_lane import Candidate
 
     draft = "\n".join([
-        f"毎朝の定点ポスト ({date_label})。言及数 = RSSHub 経由のスポーツ媒体X実測。",
-        *card_lines,
-        f"検索急上昇: {' / '.join(trend_keywords[:5])}" if trend_keywords else "",
-        "(カードは上のランキング行から自動生成)",
+        f"毎時の定点ポスト ({date_label} {now.hour}時)。"
+        "言及数 = RSSHub 経由のスポーツ媒体X実測。",
+        "ランキングは本文の文字表記のみ (カードは使わない、2026-07-10 user)。",
     ])
     LOG.info(
-        "morning_digest built names=%d trends=%d", len(ranked), len(trend_keywords or [])
+        "morning_digest built names=%d trends=%d", len(ranked), len(flat_trends)
     )
     return Candidate(
         title=f"📊{now.hour}時の定点観測｜話題選手TOP5｜{ranked[0][0]}",
@@ -145,23 +156,23 @@ def _fetch_buzz_counts() -> dict[str, int]:
         return {}
 
 
-def _fetch_baseball_trends() -> list[str]:
+def _fetch_baseball_trends() -> dict[str, list[str]]:
+    """カテゴリ別 (giants/npb/mlb) の急上昇ワード。失敗は空 dict。"""
+    out: dict[str, list[str]] = {"giants": [], "npb": [], "mlb": []}
     try:
         from src import search_trend_note as stn
 
         trends = stn.fetch_jp_trends()
         roster = stn._giants_name_tokens()
-        out = []
         for t in trends:
             kw = t.get("keyword") or ""
-            if any(mk in kw for mk in stn._BASEBALL_MARKERS) or any(
-                tok in kw for tok in roster
-            ):
-                out.append(kw)
+            cat = stn.categorize_trend_keyword(kw, roster)
+            if cat:
+                out[cat].append(kw)
         return out
     except Exception as exc:  # noqa: BLE001
         LOG.info("morning_digest trends skip: %r", exc)
-        return []
+        return out
 
 
 def _build_digest_comment(fact: str, gemini_api_key: str) -> str:
@@ -179,11 +190,13 @@ def _build_digest_comment(fact: str, gemini_api_key: str) -> str:
                 db_fact="", require_db_fact=False,
                 budget_site="morning_digest",
                 extra_voice_note=(
-                    "毎朝の定点データポストの締め。上のランキングの読み解き"
+                    "毎時の定点データポストの締め。上のランキングの読み解き"
                     " (どこに関心が集まっているか、なぜか) を1〜2文 + ヨシラバー"
                     "の立場 (データは辛口・巨人愛は本物) の一言で締める。"
                     "2〜3文、80〜140字。ランキングの数字・選手名は fact に"
                     "あるものだけ使い、新しい数字・選手名は作らない。"
+                    "文体は必ず です・ます調 (丁寧語) で統一する "
+                    "(「〜だよな」等のカジュアル語尾は禁止)。"
                 ),
             ) or ""
         ).strip()

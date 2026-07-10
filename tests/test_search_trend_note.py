@@ -41,16 +41,25 @@ class NoteAndBoostTests(unittest.TestCase):
              patch.object(stn, "_giants_name_tokens", return_value=roster or set()):
             return stn.build_trend_note_and_boost(candidates)
 
-    def test_note_lists_baseball_first_and_top10_reference(self):
+    def test_note_categorized_lines_and_top10_reference(self):
         note = self._run([], roster={"岡本和真", "岡本"})
-        fire_line, ref_line = note.split("\n", 1)
-        self.assertIn("岡本和真(2万+)", fire_line)
-        self.assertIn("パドレス 対 dバックス(500+)", fire_line)
+        lines = note.split("\n")
+        giants = next(l for l in lines if l.startswith("🔥 急上昇/巨人"))
+        mlb = next(l for l in lines if l.startswith("🌍 急上昇/メジャー"))
+        ref = next(l for l in lines if l.startswith("📈 参考・総合急上昇TOP10"))
+        self.assertIn("岡本和真(2万+)", giants)
+        self.assertIn("パドレス 対 dバックス(500+)", mlb)
         # 野球関連行には一般語を入れない (参考TOP10 行には入る)
-        self.assertNotIn("アシナガバチ", fire_line)
-        self.assertIn("📈 参考・総合急上昇TOP10", ref_line)
-        self.assertIn("アシナガバチ", ref_line)
-        self.assertIn("有吉の壁", ref_line)
+        self.assertNotIn("アシナガバチ", giants)
+        self.assertIn("アシナガバチ", ref)
+        self.assertIn("有吉の壁", ref)
+
+    def test_categorize_trend_keyword(self):
+        self.assertEqual(stn.categorize_trend_keyword("巨人 スタメン", set()), "giants")
+        self.assertEqual(stn.categorize_trend_keyword("泉口友汰", {"泉口友汰"}), "giants")
+        self.assertEqual(stn.categorize_trend_keyword("大谷翔平", set()), "mlb")
+        self.assertEqual(stn.categorize_trend_keyword("阪神 先発", set()), "npb")
+        self.assertEqual(stn.categorize_trend_keyword("有吉の壁", set()), "")
 
     def test_matching_candidate_gets_fire_tag(self):
         c = _Cand(title="本塁打", post_text="岡本和真が决めた")

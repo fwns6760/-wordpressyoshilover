@@ -36,16 +36,21 @@ class BuildTests(unittest.TestCase):
         self.assertNotIn("言及12件", c.post_text)
         self.assertEqual(c.focus_player, "岡本和真")
 
-    def test_card_ranking_lines_parse(self):
-        """draft の ranking 行が 437 カード生成の parser に乗ること。"""
+    def test_no_card_ranking_lines_in_draft(self):
+        """2026-07-10 user「図が意味わからない」: draft に 437 カード用の
+        ranking 行 format を入れない = カードが生成されないこと。"""
         from src.x_post_mail_lane import _extract_ranking_rows_from_draft
 
         c = self._build()
-        rows = _extract_ranking_rows_from_draft(c.draft_text)
-        self.assertEqual(len(rows), 4)
-        self.assertEqual(rows[0]["name"], "岡本和真")
-        self.assertTrue(rows[0]["is_giants"])
-        self.assertEqual(rows[0]["value"], "言及12件")
+        self.assertEqual(_extract_ranking_rows_from_draft(c.draft_text), [])
+
+    def test_categorized_trend_sections(self):
+        c = self._build(trend_keywords={
+            "giants": ["岡本和真"], "npb": ["阪神 先発"], "mlb": ["大谷翔平"],
+        })
+        self.assertIn("【検索トレンド/巨人】岡本和真", c.post_text)
+        self.assertIn("【検索トレンド/プロ野球】阪神 先発", c.post_text)
+        self.assertIn("【検索トレンド/メジャー】大谷翔平", c.post_text)
 
     def test_fewer_than_three_names_skips(self):
         self.assertIsNone(self._build(buzz_counts={"岡本和真": 5, "泉口友汰": 2}))

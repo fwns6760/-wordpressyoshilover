@@ -94,7 +94,7 @@ def build_morning_digest_candidate(
         + (("。検索急上昇の野球ワード: " + "、".join(flat_trends[:8]))
            if flat_trends else "")
     )
-    comment = _build_digest_comment(fact, gemini_api_key)
+    comment = _build_digest_comment(fact, gemini_api_key, hour=now.hour)
     if not comment:
         # LLM 不達でも定点データ自体に価値があるので deterministic 締めで成立させる
         top_name = ranked[0][0]
@@ -182,10 +182,24 @@ def _fetch_baseball_trends() -> dict[str, list[str]]:
         return out
 
 
-def _build_digest_comment(fact: str, gemini_api_key: str) -> str:
-    """解説+締めの 2〜3 文 (LLM)。失敗は ""。"""
+# 締めのエンゲ型ローテ (2026-07-10 user「エンゲージ>インプ」「1から3と
+# ランキングポストの全部」): 返信を誘う締め3型を時刻で回す。
+# ランキング本文 (TOP5 行・トレンド行) は不変、変わるのは締め 2〜3 文のみ。
+_DIGEST_CLOSING_STYLES = (
+    "ランキングの中の1点にあえて強めの自分の断定を出し、反対意見の余地を"
+    "一言だけ残して締める (賛否が割れる形。直球の「どう思う?」は禁止)",
+    "ランキングから論点を二択で示し (例: 1位の勢い継続か、2位の巻き返しか)、"
+    "自分はどちら派か理由付きで断定して締める (読者が反対側に立ちたくなる形)",
+    "次の1時間または今夜のランキングの動きを1つだけ断定予想して締める "
+    "(次の定点ポストが答え合わせになる形。予想は fact にある選手の範囲のみ)",
+)
+
+
+def _build_digest_comment(fact: str, gemini_api_key: str, hour: int = 0) -> str:
+    """解説+締めの 2〜3 文 (LLM)。失敗は ""。締めはエンゲ3型を時刻ローテ。"""
     if not gemini_api_key:
         return ""
+    closing = _DIGEST_CLOSING_STYLES[hour % len(_DIGEST_CLOSING_STYLES)]
     try:
         from src.x_post_branding_gen import build_quote_rt_comment
 
@@ -200,6 +214,7 @@ def _build_digest_comment(fact: str, gemini_api_key: str) -> str:
                     "毎時の定点データポストの締め。上のランキングの読み解き"
                     " (どこに関心が集まっているか、なぜか) を1〜2文 + ヨシラバー"
                     "の立場 (データは辛口・巨人愛は本物) の一言で締める。"
+                    f"締め方は今回この型で: {closing}。"
                     "2〜3文、80〜140字。ランキングの数字・選手名は fact に"
                     "あるものだけ使い、新しい数字・選手名は作らない。"
                     "文体は必ず です・ます調 (丁寧語) で統一する "

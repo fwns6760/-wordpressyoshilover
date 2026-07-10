@@ -254,3 +254,87 @@ class FullnameMapTests(unittest.TestCase):
             side_effect=RuntimeError("net down"),
         ):
             self.assertEqual(lgw.giants_fullname_map(), {})
+
+
+class ScoreTransitionLabelTests(unittest.TestCase):
+    """展開ラベル (2026-07-10): コード計算のみ、両軍得点便・判定不能は ""。"""
+
+    def test_no_prev_returns_empty(self):
+        from src.live_game_watch import score_transition_label
+
+        self.assertEqual(score_transition_label(None, _state(3, 2)), "")
+
+    def test_giants_comeback(self):
+        from src.live_game_watch import score_transition_label
+
+        prev = {"giants_score": 1, "opp_score": 2}
+        self.assertEqual(score_transition_label(prev, _state(3, 2)), "巨人が逆転")
+
+    def test_giants_tie_and_go_ahead(self):
+        from src.live_game_watch import score_transition_label
+
+        self.assertEqual(
+            score_transition_label({"giants_score": 1, "opp_score": 2}, _state(2, 2)),
+            "巨人が同点に追いつく",
+        )
+        self.assertEqual(
+            score_transition_label({"giants_score": 2, "opp_score": 2}, _state(3, 2)),
+            "巨人が勝ち越し",
+        )
+
+    def test_opp_comeback(self):
+        from src.live_game_watch import score_transition_label
+
+        prev = {"giants_score": 2, "opp_score": 1}
+        self.assertEqual(score_transition_label(prev, _state(2, 3)), "逆転を許す")
+
+    def test_both_scored_is_ambiguous(self):
+        from src.live_game_watch import score_transition_label
+
+        prev = {"giants_score": 1, "opp_score": 2}
+        self.assertEqual(score_transition_label(prev, _state(3, 3)), "")
+
+    def test_no_change_returns_empty(self):
+        from src.live_game_watch import score_transition_label
+
+        prev = {"giants_score": 2, "opp_score": 2}
+        self.assertEqual(score_transition_label(prev, _state(2, 2)), "")
+
+
+class FindUnsupportedClaimTests(unittest.TestCase):
+    """claim 語 gate (2026-07-10): 事実行に無い場面 claim / 球種語は捏造扱い。"""
+
+    def test_claim_not_in_fact_is_flagged(self):
+        from src.live_game_watch import find_unsupported_claim
+
+        self.assertEqual(
+            find_unsupported_claim("ここで逆転だ！", "7回裏、巨人・泉口がタイムリー"),
+            "逆転",
+        )
+
+    def test_pitch_type_not_in_fact_is_flagged(self):
+        from src.live_game_watch import find_unsupported_claim
+
+        self.assertEqual(
+            find_unsupported_claim("外のストレートを完璧に捉えた", "巨人・岡本がホームラン"),
+            "ストレート",
+        )
+
+    def test_claim_present_in_fact_passes(self):
+        from src.live_game_watch import find_unsupported_claim
+
+        self.assertEqual(
+            find_unsupported_claim(
+                "ついに逆転！しびれる展開",
+                "7回裏、巨人・泉口がタイムリー。巨人3-2広島（巨人が逆転）",
+            ),
+            "",
+        )
+
+    def test_plain_post_passes(self):
+        from src.live_game_watch import find_unsupported_claim
+
+        self.assertEqual(
+            find_unsupported_claim("泉口の一打で流れが来た", "巨人・泉口がタイムリー"),
+            "",
+        )

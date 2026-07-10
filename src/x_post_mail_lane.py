@@ -2954,7 +2954,13 @@ def build_live_game_candidates(
     if cur is None:
         return []
     date_key = cur.date_key
-    score_ctx = f"巨人{cur.giants_score}-{cur.opp_score}{cur.opp_name}"
+    # 展開ラベル (逆転/同点/勝ち越し) は前便 state 比のコード計算 (LLM に展開を
+    # 読ませない、2026-07-10 user GO)。prev_state は ② の detect_events でも使う。
+    prev_state = lgw.load_prev_state(date_key)
+    transition = lgw.score_transition_label(prev_state, cur)
+    score_ctx = f"巨人{cur.giants_score}-{cur.opp_score}{cur.opp_name}" + (
+        f"（{transition}）" if transition else ""
+    )
 
     # ① 一球速報ベースの新規プレー (トリガー低・複数選手束ね)
     plays = lgw.fetch_today_plays(now)
@@ -2973,7 +2979,6 @@ def build_live_game_candidates(
         lgw.save_play_cursor(date_key, len(plays))
 
     # ② 試合終了はスコア state から (playbyplay には出ない)
-    prev_state = lgw.load_prev_state(date_key)
     score_events = lgw.detect_events(prev_state, cur)
     lgw.save_state(cur)
     events += [e for e in score_events if e.get("kind") == "game_end"]
@@ -2997,6 +3002,11 @@ def build_live_game_candidates(
             lgw.build_recap_fact(plays, cur.giants_score, cur.opp_score, cur.opp_name)
             if (is_recap and plays) else ev["fact"]
         )
+        # 実名必須 gate (2026-07-10 user GO): 実名ゼロの事実行は候補にしない。
+        # 実測で fav=0 だった唯一の観戦ポスト = 唯一の実名ゼロ文 (検索インプ源が無い)。
+        if not any(nm and nm in fact for nm in roster):
+            LOG.info("live_game skip: no player name in fact kind=%s", ev["kind"])
+            continue
         signature = "livegame|" + _hashlib.sha1(
             f"{date_key}|{fact}".encode("utf-8")
         ).hexdigest()[:16]
@@ -3019,6 +3029,12 @@ def build_live_game_candidates(
         bad = _fabricated_name(post_text, fact)
         if bad:
             LOG.info("live_game skip: fabricated name=%s not in fact", bad)
+            continue
+        # claim 語 gate (2026-07-10 user GO): 事実行に無い場面 claim / 球種語は
+        # 出力ごと破棄 (トレンド lane c3c62b25 と同型の決定的 gate)。
+        bad_claim = lgw.find_unsupported_claim(post_text, fact)
+        if bad_claim:
+            LOG.info("live_game skip: unsupported claim=%s not in fact", bad_claim)
             continue
         if is_recap:
             # 勝=うさほー🐰👊グータッチ / 負=まけほー🐰 で開幕 (2026-07-09 user、絵文字はガード後に付与)

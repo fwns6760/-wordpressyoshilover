@@ -2836,6 +2836,12 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         help="試合帯 scheduler 便の目印 (2026-07-02 試合日 gate)。"
              "lineup/game 指定時は今日の試合日程で実行可否を判定する。",
     )
+    parser.add_argument(
+        "--live-only",
+        action="store_true",
+        help="巨人戦ライブ実況だけの軽量便 (2026-07-10)。他 lane を全て skip し、"
+             "一球速報 → voice → mail のみ (~30秒)。*/5 高頻度 scheduler 用。",
+    )
     return parser.parse_args(argv)
 
 
@@ -3071,6 +3077,152 @@ def _maybe_inject_day_game_mode(game_start, now_jst) -> bool:
     return True
 
 
+def _build_live_game_comment_fn(now_jst: datetime):
+    """live_game 用 voice 生成 fn (統合便 / --live-only 便で共用)。key 不在は None。"""
+    _lg_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GEMMA_BRANDING_GEMINI_API_KEY") or ""
+    if not _lg_key:
+        return None
+    try:
+        from src import x_post_branding_gen as _lg_xbg
+    except Exception as _lg_imp_exc:  # noqa: BLE001
+        LOG.warning("live_game LLM comment unavailable: %r", _lg_imp_exc)
+        return None
+
+    def live_comment_fn(fact_line, long=False, losing=False, _k=_lg_key, _g=_lg_xbg, _now=now_jst):
+        # long=True (試合後 recap): フーガ風の長文・改行入りに切替 (2026-07-09 user)。
+        # losing=True (2026-07-10 user「負けの悔しさも入れて」): フーガ例C の
+        # 辛口+理由+着地の形で、悔しさ・歯がゆさを隠さず書く。
+        note = (
+            "これは試合後の振り返りポスト。速報行にある事実 (選手名・結果) だけで、"
+            "フーガ風に長めに読み解く。速報行に無い選手名・数字は作らない。"
+            if long else
+            "これは観戦中の実況ポスト。速報行にある事実だけで、缶詰モードの"
+            "即時反応を書く。速報行に姓しか無い選手名をフルネーム化・推測補完"
+            "しない (そのままの表記で書くか、名前を出さずに書く)。"
+        )
+        if losing:
+            note += (
+                "巨人がリードされている試合。悔しさ・歯がゆさを隠さず本音で"
+                "書く (「うーん」「流石に苦しい」「歯がゆい」系)。ただし選手"
+                "個人への攻撃・戦犯探しはせず、悔しさの後は理由か次への期待に"
+                "一言で着地する (フーガの辛口の形)。"
+            )
+        return _g.build_quote_rt_comment(
+            fact_line, "", "試合後" if long else "試合中",
+            gemini_api_key=_k, now=_now,
+            subject="巨人戦の試合結果" if long else "巨人戦のスコア速報",
+            db_fact="", require_db_fact=False,
+            budget_site="live_game",
+            force_long=long,
+            extra_voice_note=note,
+        )
+
+    return live_comment_fn
+
+
+def _main_live_only(args: argparse.Namespace, recipients: list[str]) -> int:
+    """--live-only: 巨人戦ライブ実況だけの軽量便 (2026-07-10 user GO)。
+
+    統合便 (insight.db DL + 全 lane、実測 1.5-2.5 分) を回さず、一球速報 fetch →
+    voice 生成 (aux 小枠 live_game) → mail 送信のみ (~30 秒)。*/5 の高頻度
+    scheduler から叩き、観戦ポストの scheduler 待ちを平均 7.5 分 → 2.5 分へ縮める。
+    イベント無し便は mail を送らない (洪水防止)。cursor / signature dedup は
+    統合便と共有するため、両便が並走しても同じプレーは二重 mail にならない。
+    """
+    now_jst = datetime.now(ZoneInfo("Asia/Tokyo"))
+    if os.environ.get("ENABLE_X_POST_LIVE_GAME", "1").strip() in {"0", "false", "no"}:
+        LOG.info("live-only: ENABLE_X_POST_LIVE_GAME=0 — skip")
+        return 0
+    live_max = _resolve_int_env("X_POST_LIVE_GAME_MAX", 4, min_value=0)
+    if _xbg is not None:
+        # 統合便の per-fire budget と同じ機構で、live voice 分だけに絞る。
+        _xbg.set_llm_budget(live_max, reply_reserve=0)
+
+    # signature dedup は統合便と同じ GCS 台帳を共有 (並走時の二重 mail 防止)。
+    # live signature は日付+事実行なので lookback は 24h で足りる。
+    dedup_set: set[str] | None = None
+    bucket_name = os.environ.get("INSIGHT_GCS_BUCKET") or ""
+    if bucket_name and (os.environ.get("X_POST_MAIL_DEDUP_DISABLED") or "").strip() not in {"1", "true", "yes"}:
+        try:
+            _records = lane._load_recent_dedup_records(
+                bucket_name, now_jst, lookback_hours=24
+            )
+            dedup_set = {
+                str(rec.get("signature") or "")
+                for rec in _records
+                if str(rec.get("signature") or "")
+            }
+        except Exception as exc:  # noqa: BLE001 - dedup 不達でも便は止めない
+            LOG.warning("live-only: dedup load failed (dedup off this run): %r", exc)
+            dedup_set = None
+
+    try:
+        candidates = lane.build_live_game_candidates(
+            now=now_jst,
+            dedup_set=dedup_set,
+            comment_fn=_build_live_game_comment_fn(now_jst),
+            max_count=live_max,
+        )
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("live-only: build failed: %r", exc)
+        return 0
+    if not candidates:
+        LOG.info("live-only: no new live events — silent skip (no mail)")
+        return 0
+
+    mail = lane.compose_mail(
+        candidates,
+        context_label="巨人戦ライブ実況 (live-only 便)",
+        context_note="",
+    )
+    if args.dry_run:
+        LOG.info("[dry-run live-only] subject=%s", mail.subject)
+        LOG.info("[dry-run live-only] candidate count=%d", mail.candidate_count)
+        LOG.info(
+            "[dry-run live-only] text body preview (first 600 chars):\n%s",
+            mail.text_body[:600],
+        )
+        return 0
+    LOG.info("live-only: sending mail to %s …", recipients)
+    request = mdb.MailRequest(
+        to=recipients,
+        subject=mail.subject,
+        text_body=mail.text_body,
+        html_body=mail.html_body,
+        sender=_resolve_sender(),
+        reply_to=_resolve_reply_to(),
+        metadata={"lane": "x_post_mail", "mode": "live-only", "candidate_count": mail.candidate_count},
+        inline_images=[
+            mdb.InlineImage(
+                content_id=ci.cid,
+                data=ci.png,
+                mime_subtype="png",
+                filename=f"{ci.cid}.png",
+            )
+            for ci in mail.candidate_images
+        ],
+    )
+    result = mdb.send(request, dry_run=False)
+    LOG.info("live-only: mail send result status=%s reason=%s", result.status, result.reason)
+    if result.status not in {"sent", "dry_run"}:
+        return 4
+    if dedup_set is not None and bucket_name:
+        signatures = [c.signature for c in candidates if c.signature]
+        if signatures:
+            signed = [c for c in candidates if c.signature]
+            ok = lane._record_dedup_signatures(
+                bucket_name,
+                signatures,
+                now_jst,
+                focus_players=[c.focus_player for c in signed],
+                metrics=[c.metric for c in signed],
+                period_labels=[c.period_label for c in signed],
+                media_handles=[c.media_handle for c in signed],
+            )
+            LOG.info("live-only: recorded %d dedup signatures (ok=%s)", len(signatures), ok)
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     _configure_logging()
     args = _parse_args(argv)
@@ -3116,6 +3268,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not recipients and not args.dry_run:
         LOG.error("No recipients configured (MAIL_BRIDGE_TO env or --to). Aborting.")
         return 2
+
+    # 2026-07-10: live 軽量便は統合 path (insight.db DL + 全 lane) を回さない。
+    # 試合日 gate (--window=game 併用) は上で通過済み。
+    if getattr(args, "live_only", False):
+        return _main_live_only(args, recipients)
 
     # 424: --mode 引数は廃止扱い (lag tolerance のため argparse は残置)、
     # 全 fire を統合 path で処理する。 queue 417 drain は compose_mail 直前
@@ -3836,43 +3993,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         os.environ.get("ENABLE_X_POST_LIVE_GAME", "1").strip() not in {"0", "false", "no"}
         and 17 <= now_jst.hour <= 22
     ):
-        live_comment_fn = None
-        _lg_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GEMMA_BRANDING_GEMINI_API_KEY") or ""
-        if _lg_key:
-            try:
-                from src import x_post_branding_gen as _lg_xbg
-
-                def live_comment_fn(fact_line, long=False, losing=False, _k=_lg_key, _g=_lg_xbg, _now=now_jst):  # noqa: E731
-                    # long=True (試合後 recap): フーガ風の長文・改行入りに切替 (2026-07-09 user)。
-                    # losing=True (2026-07-10 user「負けの悔しさも入れて」): フーガ例C の
-                    # 辛口+理由+着地の形で、悔しさ・歯がゆさを隠さず書く。
-                    note = (
-                        "これは試合後の振り返りポスト。速報行にある事実 (選手名・結果) だけで、"
-                        "フーガ風に長めに読み解く。速報行に無い選手名・数字は作らない。"
-                        if long else
-                        "これは観戦中の実況ポスト。速報行にある事実だけで、缶詰モードの"
-                        "即時反応を書く。速報行に姓しか無い選手名をフルネーム化・推測補完"
-                        "しない (そのままの表記で書くか、名前を出さずに書く)。"
-                    )
-                    if losing:
-                        note += (
-                            "巨人がリードされている試合。悔しさ・歯がゆさを隠さず本音で"
-                            "書く (「うーん」「流石に苦しい」「歯がゆい」系)。ただし選手"
-                            "個人への攻撃・戦犯探しはせず、悔しさの後は理由か次への期待に"
-                            "一言で着地する (フーガの辛口の形)。"
-                        )
-                    return _g.build_quote_rt_comment(
-                        fact_line, "", "試合後" if long else "試合中",
-                        gemini_api_key=_k, now=_now,
-                        subject="巨人戦の試合結果" if long else "巨人戦のスコア速報",
-                        db_fact="", require_db_fact=False,
-                        budget_site="live_game",
-                        force_long=long,
-                        extra_voice_note=note,
-                    )
-            except Exception as _lg_imp_exc:  # noqa: BLE001
-                LOG.warning("live_game LLM comment unavailable: %r", _lg_imp_exc)
-                live_comment_fn = None
+        live_comment_fn = _build_live_game_comment_fn(now_jst)
         try:
             live_candidates = lane.build_live_game_candidates(
                 now=now_jst,

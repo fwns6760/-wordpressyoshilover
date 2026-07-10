@@ -237,6 +237,54 @@ def detect_events(prev: Optional[dict[str, Any]], cur: LiveGameState) -> list[di
     return events[:2]
 
 
+def score_transition_label(prev: Optional[dict[str, Any]], cur: LiveGameState) -> str:
+    """前便比のスコア推移ラベル (逆転/同点/勝ち越し)。コード計算のみで LLM に渡す
+    事実行へ足す (2026-07-10 user GO: 展開はラベル1語まで、LLM に読ませない)。
+    両軍とも得点した便・判定不能は "" (安全側)。"""
+    if prev is None or cur.status == "試合前":
+        return ""
+    try:
+        pg, po = int(prev.get("giants_score") or 0), int(prev.get("opp_score") or 0)
+    except (TypeError, ValueError):
+        return ""
+    dg, do = cur.giants_score - pg, cur.opp_score - po
+    prev_diff, cur_diff = pg - po, cur.giants_score - cur.opp_score
+    if dg > 0 and do <= 0:
+        if prev_diff < 0 and cur_diff > 0:
+            return "巨人が逆転"
+        if prev_diff < 0 and cur_diff == 0:
+            return "巨人が同点に追いつく"
+        if prev_diff == 0 and cur_diff > 0:
+            return "巨人が勝ち越し"
+    if do > 0 and dg <= 0:
+        if prev_diff > 0 and cur_diff < 0:
+            return "逆転を許す"
+        if prev_diff > 0 and cur_diff == 0:
+            return "同点に追いつかれる"
+        if prev_diff == 0 and cur_diff < 0:
+            return "勝ち越しを許す"
+    return ""
+
+
+# 事実行に無ければ捏造とみなす決定的 claim 語 (2026-07-10 user GO)。場面 claim +
+# 一球速報に存在しない球種語。トレンド lane の決定的 gate (c3c62b25) と同型。
+_CLAIM_WORDS = (
+    "逆転", "サヨナラ", "満塁", "押し出し", "完封", "完投", "完全試合",
+    "ノーヒットノーラン", "ノーノー",
+    "ストレート", "直球", "速球", "フォーク", "スライダー", "カーブ",
+    "カットボール", "シュート", "シンカー", "チェンジアップ",
+    "ツーシーム", "ワンシーム", "スプリット", "ナックル",
+)
+
+
+def find_unsupported_claim(post: str, fact: str) -> str:
+    """post に含まれるが fact に無い claim 語を返す (無ければ "")。"""
+    for w in _CLAIM_WORDS:
+        if w in post and w not in fact:
+            return w
+    return ""
+
+
 # ── 一球速報 (playbyplay) ベースのプレー検出 (2026-07-09 user) ──────────────
 # 得点イベントだけだと投手戦で沈黙する & 観戦ポストが出てこない。
 # NPB 一球速報の 1 打席ごとの literal 結果 (見逃し三振 / レフト前ヒット / 併殺 等) を

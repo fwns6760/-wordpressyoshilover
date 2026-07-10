@@ -189,3 +189,68 @@ class PitcherChangeTests(unittest.TestCase):
         oyama = [p for p in plays if p["batter"] == "大山"][0]
         self.assertEqual(oyama["pitcher"], "田和")
         self.assertNotEqual(oyama["pitcher"], "西舘")
+
+
+class FullnameMapTests(unittest.TestCase):
+    """姓→フルネーム解決 (2026-07-10 user 検索インプ)。roster は mock。"""
+
+    _ROSTER = [
+        {"name": "泉口 友汰"},
+        {"name": "西舘 勇陽"},
+        {"name": "キャベッジ"},          # 一語登録名 → 置換対象外
+        {"name": "岡本 和真"},
+        {"name": "岡本 大翔"},           # 同姓複数 → 置換対象外
+    ]
+
+    def _map(self):
+        from unittest.mock import patch
+
+        from src import live_game_watch as lgw
+
+        with patch(
+            "src.giants_roster_loader.load_active_roster",
+            return_value=self._ROSTER,
+        ):
+            return lgw.giants_fullname_map()
+
+    def test_unique_surname_resolves(self):
+        m = self._map()
+        self.assertEqual(m.get("泉口"), "泉口友汰")
+        self.assertEqual(m.get("西舘"), "西舘勇陽")
+
+    def test_ambiguous_and_single_word_not_mapped(self):
+        m = self._map()
+        self.assertNotIn("岡本", m)      # 同姓 2 人
+        self.assertNotIn("キャベッジ", m)  # full == 姓
+
+    def test_apply_only_to_giants_side(self):
+        from src.live_game_watch import apply_fullname_map
+
+        plays = [
+            # 巨人の攻撃: batter=巨人 → 置換 / pitcher=相手 → 触らない
+            {"giants_batting": True, "batter": "泉口", "pitcher": "才木"},
+            # 相手の攻撃: pitcher=巨人 → 置換 / batter=相手 → 触らない
+            {"giants_batting": False, "batter": "泉口", "pitcher": "西舘"},
+        ]
+        out = apply_fullname_map(plays, {"泉口": "泉口友汰", "西舘": "西舘勇陽"})
+        self.assertEqual(out[0]["batter"], "泉口友汰")
+        self.assertEqual(out[0]["pitcher"], "才木")
+        self.assertEqual(out[1]["batter"], "泉口")  # 相手の同姓は誤置換しない
+        self.assertEqual(out[1]["pitcher"], "西舘勇陽")
+
+    def test_empty_map_returns_same(self):
+        from src.live_game_watch import apply_fullname_map
+
+        plays = [{"giants_batting": True, "batter": "泉口", "pitcher": ""}]
+        self.assertIs(apply_fullname_map(plays, {}), plays)
+
+    def test_roster_failure_returns_empty(self):
+        from unittest.mock import patch
+
+        from src import live_game_watch as lgw
+
+        with patch(
+            "src.giants_roster_loader.load_active_roster",
+            side_effect=RuntimeError("net down"),
+        ):
+            self.assertEqual(lgw.giants_fullname_map(), {})

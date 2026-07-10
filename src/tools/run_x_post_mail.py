@@ -3817,7 +3817,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 now=now_jst,
                 dedup_set=dedup_set,
                 comment_fn=live_comment_fn,
-                max_count=_resolve_int_env("X_POST_LIVE_GAME_MAX", 2, min_value=0),
+                # 2 → 4 (2026-07-10 user「あまり出なかった」。mail 選択肢を
+                # 増やすだけで自動投稿はしない。voice 枠 live_game=4 と対)
+                max_count=_resolve_int_env("X_POST_LIVE_GAME_MAX", 4, min_value=0),
             )
         except Exception as _lg_exc:  # noqa: BLE001
             LOG.warning("live_game build failed: %r", _lg_exc)

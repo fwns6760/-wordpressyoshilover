@@ -2859,6 +2859,9 @@ def build_live_game_candidates(
     events: list[dict] = []
     roster: set[str] = set()
     if plays:
+        # 2026-07-10 user「検索インプ用に選手名を」: 巨人側の姓のみ表記を
+        # roster で一意解決できる分だけフルネーム化 (泉口→泉口友汰)。
+        plays = lgw.apply_fullname_map(plays, lgw.giants_fullname_map())
         roster = {p["batter"] for p in plays if p.get("batter")}
         roster |= {p["pitcher"] for p in plays if p.get("pitcher")}
         prev_cursor = lgw.load_play_cursor(date_key)

@@ -379,6 +379,58 @@ def detect_play_events(
     return [e for _, e in scored[: max(0, max_count)]]
 
 
+def giants_fullname_map() -> dict[str, str]:
+    """姓 → フルネーム (敬称なし・スペースなし)。姓が roster 内で一意な選手のみ。
+
+    NPB 一球速報の選手名は姓のみ (泉口 / 西舘)。X の検索インプはフルネーム
+    (泉口友汰) で拾われるため (2026-07-10 user)、roster で一意に解決できる
+    姓だけ決定論的に置換する。同姓複数・roster 外 (相手チーム)・外国人等の
+    一語登録名 (キャベッジ) はそのまま = 捏造ゼロ。roster 取得失敗は空 map。
+    """
+    try:
+        from src.giants_roster_loader import load_active_roster
+
+        entries = load_active_roster()
+    except Exception as exc:  # noqa: BLE001 - roster 不達は置換なしで続行
+        LOG.info("giants_fullname_map skip: %r", exc)
+        return {}
+    by_surname: dict[str, list[str]] = {}
+    for e in entries or []:
+        name = str(e.get("name") or "").strip()
+        if not name:
+            continue
+        surname = name.split(" ", 1)[0]
+        full = name.replace(" ", "")
+        if full and full not in by_surname.setdefault(surname, []):
+            by_surname[surname].append(full)
+    return {
+        s: fulls[0]
+        for s, fulls in by_surname.items()
+        if len(fulls) == 1 and s != fulls[0]
+    }
+
+
+def apply_fullname_map(
+    plays: list[dict[str, Any]], fmap: dict[str, str]
+) -> list[dict[str, Any]]:
+    """plays の巨人側の名前だけフルネーム化した copy を返す。
+
+    巨人側 = giants_batting=True の batter / giants_batting=False の pitcher。
+    相手選手は roster に無いので触らない (同姓の巨人選手がいても誤置換しない)。
+    """
+    if not fmap:
+        return plays
+    out: list[dict[str, Any]] = []
+    for p in plays:
+        q = dict(p)
+        if p.get("giants_batting"):
+            q["batter"] = fmap.get(p.get("batter", ""), p.get("batter", ""))
+        else:
+            q["pitcher"] = fmap.get(p.get("pitcher", ""), p.get("pitcher", ""))
+        out.append(q)
+    return out
+
+
 def build_recap_fact(
     plays: list[dict[str, Any]], giants_score: int, opp_score: int, opp_name: str
 ) -> str:

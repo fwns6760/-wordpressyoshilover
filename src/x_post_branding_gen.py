@@ -56,7 +56,9 @@ _LLM_BUDGET = {"used": 0, "max": None, "reply_reserve": 0, "reply_used": 0}
 # voice が使い切る共有 non-reply 枠に入れると毎便枯渇する (dry-run 実測)。
 # 総共有枠は据え置きのまま、 flash-lite の小さな専用枠 (各 4 回/便) を別勘定で
 # 持つ。 caps を上げる時はコスト gate (user 判断) を通す。
-_AUX_LLM_BUDGET_CAPS = {"comment_context": 4, "record_plain": 4, "live_game": 2}
+# live_game 2→4 (2026-07-10 user「観戦ポストがあまり出なかった」: 便あたり
+# 候補上限 4 に合わせて voice 生成枠も 4。夜試合は 16:00 JST 枠リセット後)。
+_AUX_LLM_BUDGET_CAPS = {"comment_context": 4, "record_plain": 4, "live_game": 4}
 _AUX_LLM_BUDGET_USED: dict[str, int] = {}
 
 

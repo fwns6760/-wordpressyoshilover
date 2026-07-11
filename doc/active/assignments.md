@@ -1,6 +1,14 @@
 # assignments — 現場担当と次アクション
 
-最終更新: 2026-07-03 JST (リプ補足型化 + リプ対象拡張 + MLBリプ lane deploy)
+最終更新: 2026-07-11 JST (478 MLB動画 mlb-only 高速便 + 3万フォロワー計画)
+
+## 2026-07-11 — 478 MLB動画 高速引用RT便 (user「メジャーの動画が日本人より早くほしい」)
+
+- **背景**: 1万フォロワー達成 → 目標3万。戦略3層(勝ち型集中 / 連載固定化 / 学習ループ)を user 承認「全部やる」。固定ポスト刷新のみ user 却下。
+- **実装** (commit `2045c149`): ①`build_mlb_watch_candidates` の動画候補を published_at 鮮度順に(従来 handle 定義順=日本語メディア優先)②`--mlb-only` 軽量便(live-only ミラー、米国系 10 handle subset `X_POST_MLB_FAST_HANDLES`、dedup 統合便共有、候補ゼロ silent skip)。test 283 passed。
+- **deploy**: クリーン worktree (2045c149) から Cloud Build、image `x-post-mail-lane:mlbonly-2045c149`。dirty tree からの初回 build は hygiene 違反として CANCELLED(image 未push)。
+- **scheduler**: `x-post-mail-flush-mlb-live` `*/10 8-15 * * *` Asia/Tokyo、args `--mlb-only`(新設)。既存 mlb-morning / mlb-13h は不変。rollback = scheduler pause のみ。
+- **残タスク (3万計画)**: ①フォロワー日次スナップショット+型別帰属分析(無認証 syndication 経路は全滅確認済み、経路再設計から)②x-engagement 30日棚卸し→DAILY_LIMIT 配分 ③連載2枠テンプレ。詳細 = `doc/active/478-XPOST-mlb-only-fast-lane.md` / session log 2026-07-11。
 
 ## 2026-07-03 — X案リプ: 補足リプ型に短縮 + 対象アカ拡張 + MLBリプ lane (user 3指示)
 

@@ -2791,9 +2791,18 @@ def build_mlb_watch_candidates(
                 "handle": h,
                 "player": player,
                 "has_video": bool(item.get("has_video")),
+                "published_at": published_at,
             })
-    # 動画多め: 動画付きを先に。feed 順 (新しい順) は安定 sort で維持。
-    posts.sort(key=lambda p: (not p["has_video"],))
+    # 動画多め: 動画付きを先に。2026-07-11 user「メジャーの動画が日本人より
+    # 早くほしい」: 従来は handle 定義順 (=日本語メディア先頭) がそのまま優先に
+    # なっていたため、動画グループ内は鮮度順 (新しい順) に並べ替える。最速で
+    # clip を出した海外公式が自然に先頭へ来る。published_at 不明は最後尾。
+    posts.sort(
+        key=lambda p: (
+            not p["has_video"],
+            -(p["published_at"].timestamp() if p["published_at"] is not None else 0.0),
+        )
+    )
     out: list[Candidate] = []
     used_player_handles: set[str] = set()
     player_counts: dict[str, int] = {}

@@ -285,6 +285,28 @@ class ReplyTargetHandleTests(unittest.TestCase):
             self.assertTrue(runner._mlb_reply_enabled())
             self.assertEqual(runner._mlb_reply_target_handles(), ["MLBJapan"])
 
+    def test_mlb_fast_handles_default_and_env(self) -> None:
+        """2026-07-11 mlb-only 高速便: 既定は米国系 subset、env で差し替え可。"""
+        from src.tools import run_x_post_mail as runner
+
+        with patch.dict("os.environ", {}, clear=True):
+            handles = runner._mlb_fast_handles()
+            self.assertIn("MLB", handles)
+            self.assertIn("PitchingNinja", handles)
+            # 日本語メディアは高速便の既定に含めない (統合便がカバー)
+            self.assertNotIn("MLBJapan", handles)
+        with patch.dict("os.environ", {"X_POST_MLB_FAST_HANDLES": "@MLB, Dodgers"}):
+            self.assertEqual(runner._mlb_fast_handles(), ["MLB", "Dodgers"])
+
+    def test_main_mlb_only_skips_when_watch_disabled(self) -> None:
+        """--mlb-only は ENABLE_X_POST_MLB_WATCH off なら network に触らず 0 で終わる。"""
+        import argparse as _ap
+        from src.tools import run_x_post_mail as runner
+
+        args = _ap.Namespace(dry_run=True, mlb_only=True)
+        with patch.dict("os.environ", {}, clear=True):
+            self.assertEqual(runner._main_mlb_only(args, []), 0)
+
     def test_tokyo_giants_reply_candidate_uses_official_label(self) -> None:
         from src.tools import run_x_post_mail as runner
 
@@ -5168,6 +5190,49 @@ class BuildMlbWatchCandidatesTests(unittest.TestCase):
         )
         self.assertEqual(len(cands), 1)
         self.assertTrue(cands[0].post_text.startswith("岡本和真、"))
+
+    def test_video_posts_ordered_by_recency_across_handles(self):
+        """2026-07-11 user「メジャーの動画が日本人より早くほしい」: 動画グループ内は
+        handle 定義順ではなく鮮度順。後段 handle (海外公式) の新しい clip が、
+        先頭 handle (日本語メディア) の古い clip より先に選ばれる。"""
+        from datetime import datetime, timedelta, timezone
+        from email.utils import format_datetime
+        from src import x_post_mail_lane as lane
+
+        now = datetime(2026, 7, 11, 10, 0, tzinfo=timezone(timedelta(hours=9)))
+
+        def item_with_pub(title: str, status_id: str, handle: str, age_hours: float) -> str:
+            pub = format_datetime((now - timedelta(hours=age_hours)).astimezone(timezone.utc))
+            return (
+                f"<item><title>{title}</title>"
+                f"<description>{title} &lt;img src=&quot;"
+                f"https://pbs.twimg.com/amplify_video_thumb/{status_id}/img/x.jpg&quot;&gt;"
+                f"</description>"
+                f"<link>https://x.com/{handle}/status/{status_id}</link>"
+                f"<pubDate>{pub}</pubDate></item>"
+            )
+
+        jp_feed = self._feed(item_with_pub("大谷翔平が第30号ホームラン", "21", "MLBJapan", 6.0))
+        us_feed = self._feed(item_with_pub("Kazuma Okamoto crushes a homer", "22", "MLB", 0.5))
+
+        def fetch(url: str) -> str:
+            if "user/MLBJapan" in url:
+                return jp_feed
+            if "user/MLB?" in url or url.rstrip("/").endswith("user/MLB"):
+                return us_feed
+            return "<rss><channel></channel></rss>"
+
+        cands = lane.build_mlb_watch_candidates(
+            now=now,
+            max_count=2,
+            handles=["MLBJapan", "MLB"],
+            fetch_fn=fetch,
+            comment_fn=lambda _pt, pl: f"{pl}、これは効く一発。",
+        )
+        self.assertEqual(len(cands), 2)
+        # 鮮度順: 0.5h 前の海外公式 clip (岡本) が 6h 前の日本語メディア (大谷) より先
+        self.assertEqual(cands[0].focus_player, "岡本和真")
+        self.assertEqual(cands[1].focus_player, "大谷翔平")
 
     def test_ohtani_video_capped_at_one_rest_info_type(self):
         """2026-07-07 user「大谷HR動画は一個でいい。他の動画ではなく情報系を拾って」:

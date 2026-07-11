@@ -2842,6 +2842,13 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         help="巨人戦ライブ実況だけの軽量便 (2026-07-10)。他 lane を全て skip し、"
              "一球速報 → voice → mail のみ (~30秒)。*/5 高頻度 scheduler 用。",
     )
+    parser.add_argument(
+        "--mlb-only",
+        action="store_true",
+        help="MLB watch 引用RT候補だけの軽量便 (2026-07-11)。他 lane を全て skip し、"
+             "海外 feed fetch → voice → mail のみ。朝〜昼帯の高頻度 scheduler 用 "
+             "(海外動画 clip を日本語圏アカより先に引用RTする鮮度勝負)。",
+    )
     return parser.parse_args(argv)
 
 
@@ -3223,6 +3230,158 @@ def _main_live_only(args: argparse.Namespace, recipients: list[str]) -> int:
     return 0
 
 
+# 2026-07-11 user「メジャーの動画が日本人より早くほしい。動画が見れるポスト、
+# だから海外のものが良い」: 高頻度 mlb-only 便の既定 watch 対象。フル
+# _MLB_WATCH_HANDLES (20) を */10 で回すと RSSHub の Twitter 呼び出しが跳ねる
+# ため、分単位で clip が出る米国系に絞る (日本語メディアは統合便が従来カバー)。
+_DEFAULT_MLB_FAST_HANDLES = (
+    "MLB,Dodgers,BlueJays,Rockies,Cubs,RedSox,"
+    "PitchingNinja,MLBStats,MLBONFOX,MLBNetwork"
+)
+
+
+def _mlb_fast_handles() -> list[str]:
+    raw = (os.environ.get("X_POST_MLB_FAST_HANDLES") or _DEFAULT_MLB_FAST_HANDLES).strip()
+    handles = [h.strip().lstrip("@") for h in raw.split(",") if h.strip()]
+    return handles or _DEFAULT_MLB_FAST_HANDLES.split(",")
+
+
+def _main_mlb_only(args: argparse.Namespace, recipients: list[str]) -> int:
+    """--mlb-only: MLB watch 引用RT候補だけの軽量便 (2026-07-11)。
+
+    統合便 (insight.db DL + 全 lane、実測 1.5-2.5 分) を回さず、海外 feed fetch →
+    voice 生成 → mail 送信のみ。朝〜昼の MLB 帯を */10 scheduler で叩き、海外
+    公式の動画 clip を日本語圏クリップアカより先に引用RTできる鮮度を作る。
+    候補ゼロ便は mail を送らない (洪水防止)。signature dedup は統合便と共有する
+    ため、両便が並走しても同じ clip は二重 mail にならない。
+    """
+    now_jst = datetime.now(ZoneInfo("Asia/Tokyo"))
+    if not _mlb_watch_enabled():
+        LOG.info("mlb-only: ENABLE_X_POST_MLB_WATCH off — skip")
+        return 0
+    if not _in_mlb_watch_window(now_jst):
+        LOG.info("mlb-only: outside MLB watch window (hour=%d) — skip", now_jst.hour)
+        return 0
+    mlb_max = _mlb_watch_max_per_run()
+    if mlb_max <= 0:
+        LOG.info("mlb-only: X_POST_MLB_WATCH_MAX<=0 — skip")
+        return 0
+    if _xbg is not None:
+        # 統合便の per-fire budget と同じ機構で、MLB voice 分だけに絞る。
+        _xbg.set_llm_budget(mlb_max, reply_reserve=0)
+
+    # signature dedup は統合便と同じ GCS 台帳を共有 (並走時の二重 mail 防止)。
+    dedup_set: set[str] | None = None
+    bucket_name = os.environ.get("INSIGHT_GCS_BUCKET") or ""
+    if bucket_name and (os.environ.get("X_POST_MAIL_DEDUP_DISABLED") or "").strip() not in {"1", "true", "yes"}:
+        try:
+            _records = lane._load_recent_dedup_records(
+                bucket_name, now_jst, lookback_hours=24
+            )
+            dedup_set = {
+                str(rec.get("signature") or "")
+                for rec in _records
+                if str(rec.get("signature") or "")
+            }
+        except Exception as exc:  # noqa: BLE001 - dedup 不達でも便は止めない
+            LOG.warning("mlb-only: dedup load failed (dedup off this run): %r", exc)
+            dedup_set = None
+
+    mlb_comment_fn = None
+    _mlb_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GEMMA_BRANDING_GEMINI_API_KEY") or ""
+    if _mlb_key:
+        try:
+            from src import x_post_branding_gen as _mlb_xbg
+
+            def mlb_comment_fn(parent_text, player, _k=_mlb_key, _g=_mlb_xbg, _now=now_jst):  # noqa: E731
+                subject, note = _mlb_voice_subject_and_note(player, reply=False)
+                return _g.build_quote_rt_comment(
+                    parent_text, player, gemini_api_key=_k, now=_now,
+                    subject=subject, extra_voice_note=note,
+                )
+        except Exception as _mlb_imp_exc:  # noqa: BLE001
+            LOG.warning("mlb-only: LLM comment unavailable: %r", _mlb_imp_exc)
+            mlb_comment_fn = None
+    if mlb_comment_fn is None:
+        # voice なし候補は build 側で全 skip されるため、fetch する前に諦める。
+        LOG.warning("mlb-only: no Gemini key — voice 不能なので便ごと skip")
+        return 0
+
+    try:
+        candidates = lane.build_mlb_watch_candidates(
+            now=now_jst,
+            max_count=mlb_max,
+            ohtani_max=_resolve_int_env("X_POST_MLB_WATCH_OHTANI_MAX", 3, min_value=0),
+            extra_star_max=_resolve_int_env("X_POST_MLB_WATCH_EXTRA_STAR_MAX", 3, min_value=1),
+            per_player_max=_resolve_int_env("X_POST_MLB_WATCH_PER_PLAYER_MAX", 2, min_value=1),
+            dedup_set=dedup_set,
+            comment_fn=mlb_comment_fn,
+            max_age_hours=_mlb_watch_max_age_hours(),
+            ex_giants_max_age_hours=float(_resolve_int_env(
+                "X_POST_MLB_WATCH_EX_GIANTS_MAX_AGE_HOURS", 12, min_value=0
+            )),
+            handles=_mlb_fast_handles(),
+        )
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("mlb-only: build failed: %r", exc)
+        return 0
+    if not candidates:
+        LOG.info("mlb-only: no new MLB clips — silent skip (no mail)")
+        return 0
+
+    mail = lane.compose_mail(
+        candidates,
+        context_label="MLB動画速報 (mlb-only 便)",
+        context_note="",
+    )
+    if args.dry_run:
+        LOG.info("[dry-run mlb-only] subject=%s", mail.subject)
+        LOG.info("[dry-run mlb-only] candidate count=%d", mail.candidate_count)
+        LOG.info(
+            "[dry-run mlb-only] text body preview (first 600 chars):\n%s",
+            mail.text_body[:600],
+        )
+        return 0
+    LOG.info("mlb-only: sending mail to %s …", recipients)
+    request = mdb.MailRequest(
+        to=recipients,
+        subject=mail.subject,
+        text_body=mail.text_body,
+        html_body=mail.html_body,
+        sender=_resolve_sender(),
+        reply_to=_resolve_reply_to(),
+        metadata={"lane": "x_post_mail", "mode": "mlb-only", "candidate_count": mail.candidate_count},
+        inline_images=[
+            mdb.InlineImage(
+                content_id=ci.cid,
+                data=ci.png,
+                mime_subtype="png",
+                filename=f"{ci.cid}.png",
+            )
+            for ci in mail.candidate_images
+        ],
+    )
+    result = mdb.send(request, dry_run=False)
+    LOG.info("mlb-only: mail send result status=%s reason=%s", result.status, result.reason)
+    if result.status not in {"sent", "dry_run"}:
+        return 4
+    if dedup_set is not None and bucket_name:
+        signatures = [c.signature for c in candidates if c.signature]
+        if signatures:
+            signed = [c for c in candidates if c.signature]
+            ok = lane._record_dedup_signatures(
+                bucket_name,
+                signatures,
+                now_jst,
+                focus_players=[c.focus_player for c in signed],
+                metrics=[c.metric for c in signed],
+                period_labels=[c.period_label for c in signed],
+                media_handles=[c.media_handle for c in signed],
+            )
+            LOG.info("mlb-only: recorded %d dedup signatures (ok=%s)", len(signatures), ok)
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     _configure_logging()
     args = _parse_args(argv)
@@ -3273,6 +3432,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     # 試合日 gate (--window=game 併用) は上で通過済み。
     if getattr(args, "live_only", False):
         return _main_live_only(args, recipients)
+
+    # 2026-07-11: MLB 軽量便も統合 path (insight.db DL + 全 lane) を回さない。
+    if getattr(args, "mlb_only", False):
+        return _main_mlb_only(args, recipients)
 
     # 424: --mode 引数は廃止扱い (lag tolerance のため argparse は残置)、
     # 全 fire を統合 path で処理する。 queue 417 drain は compose_mail 直前

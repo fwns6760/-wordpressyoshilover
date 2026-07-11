@@ -328,6 +328,30 @@ def _reply_candidates_enabled() -> bool:
     return raw in {"1", "true", "yes", "on"}
 
 
+def _quota_tail_llm_cap(
+    max_calls: int, now_jst, *, env_name: str, default_cap: int
+) -> int:
+    """Gemini 無料枠の日次勘定 (前日 16:00 JST 起点) の最終盤 12:00-15:59 JST は
+    per-fire LLM 予算を絞る (2026-07-11 14:05 JST 枯渇の再発防止)。
+
+    枯渇は常に窓の尻尾 (午後) で起きる。16:00 リセット直後に始まる夜の試合帯は
+    影響を受けないので、午後を絞ることで「14時に voice 全滅の崖」を漸減に変える。
+    env cap<=0 で絞り無効 (rollback 用)。max_calls<=0 (無制限/停止) は触らない。
+    """
+    if max_calls <= 0 or not (12 <= now_jst.hour < 16):
+        return max_calls
+    cap = _resolve_int_env(env_name, default_cap, min_value=0)
+    if cap <= 0:
+        return max_calls
+    if cap < max_calls:
+        LOG.info(
+            "quota_tail_llm_cap: afternoon band (hour=%d JST) budget %d -> %d (%s)",
+            now_jst.hour, max_calls, cap, env_name,
+        )
+        return cap
+    return max_calls
+
+
 def _mlb_watch_enabled() -> bool:
     """MLB watch 引用RT候補をメールに出すか (default OFF)。"""
     raw = (os.environ.get("ENABLE_X_POST_MLB_WATCH") or "").strip().lower()
@@ -3266,6 +3290,10 @@ def _main_mlb_only(args: argparse.Namespace, recipients: list[str]) -> int:
     if mlb_max <= 0:
         LOG.info("mlb-only: X_POST_MLB_WATCH_MAX<=0 — skip")
         return 0
+    # */10 高頻度 lane のため、無料枠窓の尻尾 (午後帯) は per-fire を絞る。
+    mlb_max = _quota_tail_llm_cap(
+        mlb_max, now_jst, env_name="X_POST_MLB_AFTERNOON_MAX", default_cap=4
+    )
     if _xbg is not None:
         # 統合便の per-fire budget と同じ機構で、MLB voice 分だけに絞る。
         _xbg.set_llm_budget(mlb_max, reply_reserve=0)
@@ -3416,6 +3444,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         _reply_reserve = _resolve_int_env(
             "X_POST_MAIL_REPLY_LLM_RESERVE", 3, min_value=0
         )
+        # 無料枠窓の尻尾 (午後 12-16 JST) は per-fire を絞る (2026-07-11 枯渇対策)。
+        _raw_budget_max = _llm_budget_max
+        _llm_budget_max = _quota_tail_llm_cap(
+            _llm_budget_max,
+            datetime.now(ZoneInfo("Asia/Tokyo")),
+            env_name="X_POST_MAIL_AFTERNOON_LLM_CAP",
+            default_cap=8,
+        )
+        if _llm_budget_max < _raw_budget_max:
+            # 絞った便では reply 予約も縮小し、non-reply voice 枠を確保する。
+            _reply_reserve = min(_reply_reserve, _llm_budget_max // 4)
         _xbg.set_llm_budget(_llm_budget_max, reply_reserve=_reply_reserve)
         LOG.info(
             "per-fire LLM budget set: max=%s reply_reserve=%d",

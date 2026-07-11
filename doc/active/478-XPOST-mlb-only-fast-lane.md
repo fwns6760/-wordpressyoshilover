@@ -1,6 +1,6 @@
 # 478-XPOST-mlb-only-fast-lane
 
-- **status**: IN_FLIGHT(impl 着地、prod 反映中)
+- **status**: LIVE(2026-07-11 10:10 JST 初回自然発火で candidates=2 mail 送信 + dedup 記録成功)
 - **owner**: Claude(直接開発・deploy、2026-05-12 全権体制)
 - **created**: 2026-07-11
 - **user 指示**: 「スポーツ系だからメジャーの動画が日本人より早くほしい。動画が見れるポスト、だから海外のものが良い」(3万フォロワー計画の一部)
@@ -29,9 +29,9 @@
 
 ## acceptance
 
-- [ ] scheduler 自然発火で mlb-only 便の log が出る(candidates>0 の便で mail 到着)
-- [ ] 統合便との二重 mail が無い(dedup 共有の実地確認)
-- [ ] RSSHub 4xx/5xx が跳ねていない(Twitter 呼び出し負荷)
+- [x] scheduler 自然発火で mlb-only 便の log が出る(10:10 JST 便 candidates=2、mail 送信 + dedup 記録 ok=True)
+- [ ] 統合便との二重 mail が無い(dedup 共有の実地確認、翌朝便まで観察)
+- [ ] RSSHub 4xx/5xx が跳ねていない(Twitter 呼び出し負荷、1-2日観察)
 
 ## 不可触
 

@@ -2873,6 +2873,13 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
              "海外 feed fetch → voice → mail のみ。朝〜昼帯の高頻度 scheduler 用 "
              "(海外動画 clip を日本語圏アカより先に引用RTする鮮度勝負)。",
     )
+    parser.add_argument(
+        "--buzz-only",
+        action="store_true",
+        help="巨人系「動画SNS」引用RT候補だけの軽量便 (2026-07-11)。他 lane を全て "
+             "skip し、巨人系 X account の動画付き投稿 → 引用RT voice → mail のみ。"
+             "試合帯 scheduler 用 (リアルタイム実況は user 手書き、動画だけ LLM)。",
+    )
     return parser.parse_args(argv)
 
 
@@ -3410,6 +3417,138 @@ def _main_mlb_only(args: argparse.Namespace, recipients: list[str]) -> int:
     return 0
 
 
+def _main_buzz_only(args: argparse.Namespace, recipients: list[str]) -> int:
+    """--buzz-only: 巨人系「動画SNS」引用RT候補だけの軽量便 (2026-07-11)。
+
+    user「リアルタイムは私が書いたほうがよい。動画SNSだけLLM、あとはいらない」:
+    試合帯の統合便 (insight.db DL + 全 lane) を回さず、巨人系 X account の動画
+    付き投稿 (試合帯 dense window は DAZN/日テレ/報知等へ自動絞り込み) → 引用RT
+    voice → mail のみ。写真📷・記事📰は載せない (動画のみ、 allow_photo_and_article
+    は渡さない)。候補ゼロ便は mail を送らない (洪水防止)。signature dedup は
+    統合便と共有するため、両便が並走しても同じ clip は二重 mail にならない。
+    """
+    now_jst = datetime.now(ZoneInfo("Asia/Tokyo"))
+    if not _video_radar_enabled():
+        LOG.info("buzz-only: ENABLE_X_POST_VIDEO_RADAR off — skip")
+        return 0
+    vr_max = _video_radar_max_per_run()
+    if vr_max <= 0:
+        LOG.info("buzz-only: X_POST_VIDEO_RADAR_MAX<=0 — skip")
+        return 0
+    if _xbg is not None:
+        # 統合便の per-fire budget と同じ機構で、動画 voice 分だけに絞る。
+        _xbg.set_llm_budget(vr_max, reply_reserve=0)
+
+    # signature dedup は統合便と同じ GCS 台帳を共有 (並走時の二重 mail 防止)。
+    dedup_set: set[str] | None = None
+    bucket_name = os.environ.get("INSIGHT_GCS_BUCKET") or ""
+    if bucket_name and (os.environ.get("X_POST_MAIL_DEDUP_DISABLED") or "").strip() not in {"1", "true", "yes"}:
+        try:
+            _records = lane._load_recent_dedup_records(
+                bucket_name, now_jst, lookback_hours=24
+            )
+            dedup_set = {
+                str(rec.get("signature") or "")
+                for rec in _records
+                if str(rec.get("signature") or "")
+            }
+        except Exception as exc:  # noqa: BLE001 - dedup 不達でも便は止めない
+            LOG.warning("buzz-only: dedup load failed (dedup off this run): %r", exc)
+            dedup_set = None
+
+    vr_comment_fn = None
+    if _video_radar_llm_enabled():
+        _vr_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GEMMA_BRANDING_GEMINI_API_KEY") or ""
+        if _vr_key:
+            try:
+                from src import x_post_branding_gen as _vr_xbg
+
+                def vr_comment_fn(post_text, player, phase_hint="", *, db_fact="", _k=_vr_key, _g=_vr_xbg, _now=now_jst):  # noqa: E731
+                    # 動画SNSは通常の記事voiceと分ける。元投稿の具体場面を最優先し、
+                    # DB数字は混ぜない (統合便の vr_comment_fn と同一方針)。
+                    return _g.build_quote_rt_comment(
+                        post_text,
+                        player,
+                        phase_hint=phase_hint,
+                        gemini_api_key=_k,
+                        now=_now,
+                        subject="動画SNS",
+                    )
+            except Exception as _vr_imp_exc:  # noqa: BLE001
+                LOG.warning("buzz-only: LLM comment unavailable: %r", _vr_imp_exc)
+                vr_comment_fn = None
+
+    try:
+        # db_path=None: insight.db を DL しない軽量便。選手数字 fact は空になり、
+        # voice は動画の場面描写だけで生成される (fallback 済み設計)。
+        candidates = lane.build_video_radar_candidates(
+            None,
+            now=now_jst,
+            max_count=vr_max,
+            dedup_set=dedup_set,
+            comment_fn=vr_comment_fn,
+            min_score=2,
+        )
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("buzz-only: build failed: %r", exc)
+        return 0
+    if not candidates:
+        LOG.info("buzz-only: no new video posts — silent skip (no mail)")
+        return 0
+
+    mail = lane.compose_mail(
+        candidates,
+        context_label="巨人動画SNS引用RT (buzz-only 便)",
+        context_note="",
+    )
+    if args.dry_run:
+        LOG.info("[dry-run buzz-only] subject=%s", mail.subject)
+        LOG.info("[dry-run buzz-only] candidate count=%d", mail.candidate_count)
+        LOG.info(
+            "[dry-run buzz-only] text body preview (first 600 chars):\n%s",
+            mail.text_body[:600],
+        )
+        return 0
+    LOG.info("buzz-only: sending mail to %s …", recipients)
+    request = mdb.MailRequest(
+        to=recipients,
+        subject=mail.subject,
+        text_body=mail.text_body,
+        html_body=mail.html_body,
+        sender=_resolve_sender(),
+        reply_to=_resolve_reply_to(),
+        metadata={"lane": "x_post_mail", "mode": "buzz-only", "candidate_count": mail.candidate_count},
+        inline_images=[
+            mdb.InlineImage(
+                content_id=ci.cid,
+                data=ci.png,
+                mime_subtype="png",
+                filename=f"{ci.cid}.png",
+            )
+            for ci in mail.candidate_images
+        ],
+    )
+    result = mdb.send(request, dry_run=False)
+    LOG.info("buzz-only: mail send result status=%s reason=%s", result.status, result.reason)
+    if result.status not in {"sent", "dry_run"}:
+        return 4
+    if dedup_set is not None and bucket_name:
+        signatures = [c.signature for c in candidates if c.signature]
+        if signatures:
+            signed = [c for c in candidates if c.signature]
+            ok = lane._record_dedup_signatures(
+                bucket_name,
+                signatures,
+                now_jst,
+                focus_players=[c.focus_player for c in signed],
+                metrics=[c.metric for c in signed],
+                period_labels=[c.period_label for c in signed],
+                media_handles=[c.media_handle for c in signed],
+            )
+            LOG.info("buzz-only: recorded %d dedup signatures (ok=%s)", len(signatures), ok)
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     _configure_logging()
     args = _parse_args(argv)
@@ -3475,6 +3614,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     # 2026-07-11: MLB 軽量便も統合 path (insight.db DL + 全 lane) を回さない。
     if getattr(args, "mlb_only", False):
         return _main_mlb_only(args, recipients)
+
+    # 2026-07-11 user「リアルタイムは私が書く。動画SNSだけLLM、あとはいらない」:
+    # 試合帯は巨人動画SNS引用RTだけの軽量便に切替 (統合 path を回さない)。
+    if getattr(args, "buzz_only", False):
+        return _main_buzz_only(args, recipients)
 
     # 424: --mode 引数は廃止扱い (lag tolerance のため argparse は残置)、
     # 全 fire を統合 path で処理する。 queue 417 drain は compose_mail 直前

@@ -5156,6 +5156,53 @@ class BuildMlbWatchCandidatesTests(unittest.TestCase):
             self.assertEqual(c.media_handle, "mlbjapan")
             self.assertIn("コピペ用", c.draft_text)
 
+    def test_text_only_post_dropped_by_default(self):
+        """article_max=0 (default): テキストだけの投稿は従来通り全捨て。"""
+        from src import x_post_mail_lane as lane
+        feed = self._feed(self._item("大谷翔平が移籍後初のマルチ安打", "21", video=False, image=False))
+        cands = lane.build_mlb_watch_candidates(
+            max_count=3,
+            fetch_fn=lambda url: feed if "MLBJapan" in url else "<rss><channel></channel></rss>",
+            comment_fn=lambda pt, pl: f"{pl}、これは効く一発。",
+        )
+        self.assertEqual(cands, [])
+
+    def test_article_max_allows_text_post_with_news_mark(self):
+        """2026-07-12 user「メジャーの記事引用増やせる?」: article_max>0 で
+        テキスト投稿が 📰記事 マーカー付きで通る。動画/画像が先、記事は後。"""
+        from src import x_post_mail_lane as lane
+        feed = self._feed(
+            self._item("大谷翔平が移籍後初のマルチ安打との記事", "22", video=False, image=False),
+            self._item("岡本和真がメジャー初の猛打賞", "23"),
+            self._item("菅野智之が今季8勝目と地元紙が報道", "24", video=False, image=False),
+        )
+        cands = lane.build_mlb_watch_candidates(
+            max_count=3,
+            fetch_fn=lambda url: feed if "MLBJapan" in url else "<rss><channel></channel></rss>",
+            comment_fn=lambda pt, pl: f"{pl}、これは効く一発。",
+            article_max=1,
+        )
+        players = [c.focus_player for c in cands]
+        # 動画 (岡本) が先頭、記事枠は 1 本のみ (大谷 or 菅野のどちらか)
+        self.assertEqual(players[0], "岡本和真")
+        self.assertEqual(len(cands), 2)
+        article = cands[1]
+        self.assertIn("📰", article.title)
+        self.assertIn("📰記事", article.draft_text)
+
+    def test_article_max_not_applied_to_replies(self):
+        """as_reply はメディア gate 従来通り (記事枠なし)。"""
+        from src import x_post_mail_lane as lane
+        feed = self._feed(self._item("大谷翔平が移籍後初のマルチ安打", "25", video=False, image=False))
+        cands = lane.build_mlb_watch_candidates(
+            max_count=3,
+            fetch_fn=lambda url: feed if "MLBJapan" in url else "<rss><channel></channel></rss>",
+            comment_fn=lambda pt, pl: f"{pl}、いいですね。",
+            article_max=2,
+            as_reply=True,
+        )
+        self.assertEqual(cands, [])
+
     def test_extra_mlb_stars_included_as_non_giants_frame(self):
         """2026-07-05 user再指示: 山本由伸/鈴木誠也/村上宗隆も日本人スター枠で入れる。"""
         from src import x_post_mail_lane as lane

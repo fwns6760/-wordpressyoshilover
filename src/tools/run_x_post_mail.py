@@ -3382,6 +3382,10 @@ def _main_mlb_only(args: argparse.Namespace, recipients: list[str]) -> int:
                 "X_POST_MLB_WATCH_EX_GIANTS_MAX_AGE_HOURS", 12, min_value=0
             )),
             handles=_mlb_fast_handles(),
+            # 📰 記事枠 (2026-07-12 user、LLM枠内で少量)。default 0 = OFF。
+            article_max=_resolve_int_env(
+                "X_POST_MLB_ARTICLE_MAX", 0, min_value=0
+            ),
         )
     except Exception as exc:  # noqa: BLE001
         LOG.warning("mlb-only: build failed: %r", exc)
@@ -4415,6 +4419,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                     ex_giants_max_age_hours=float(_resolve_int_env(
                         "X_POST_MLB_WATCH_EX_GIANTS_MAX_AGE_HOURS", 12, min_value=0
                     )),
+                    # 2026-07-12 user「メジャーの記事引用増やせる?」(LLM枠内):
+                    # 📰 テキスト/記事ポストを 1 便この本数まで通す (default 0)。
+                    article_max=_resolve_int_env(
+                        "X_POST_MLB_ARTICLE_MAX", 0, min_value=0
+                    ),
                 )
             except Exception as _mlb_exc:  # noqa: BLE001
                 LOG.warning("mlb_watch build failed: %r", _mlb_exc)

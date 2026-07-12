@@ -2728,8 +2728,14 @@ def build_mlb_watch_candidates(
     extra_star_max: int = 1,
     per_player_max: int = 1,
     ex_giants_max_age_hours: float = 0.0,
+    article_max: int = 0,
 ) -> list[Candidate]:
     """元巨人MLB組 + 大谷の引用RT候補。動画付き優先。
+
+    ``article_max`` (2026-07-12 user「メジャーの記事引用増やせる?」LLM枠内):
+    テキスト/記事ポスト (メディアなし) を 📰 として 1 便この本数まで通す
+    (default 0 = 従来通り全捨て)。sort は 動画 → 画像 → 記事 の順で、
+    記事はあくまで枠が余った時の追加素材。as_reply には適用しない。
 
     - 大谷は別枠 ``ohtani_max`` (既定 1) で上限。元巨人は残り枠。
     - ``extra_star_max`` (既定 1): 日本人スター枠 (山本由伸/鈴木誠也 等) の
@@ -2786,8 +2792,10 @@ def build_mlb_watch_candidates(
                     continue
             # 2026-07-02 user 決定「ポストに動画がついてないと意味ない」
             # →「画像でもよいが、動画多め」: メディア付き (動画 or 画像) のみ
-            # 候補にし、下の sort で動画を優先する。文字だけの投稿は出さない。
-            if not (item.get("has_video") or item.get("has_image")):
+            # 候補にし、下の sort で動画を優先する。文字だけの投稿は
+            # article_max 枠 (📰、引用RT のみ) を除き出さない。
+            _has_media = bool(item.get("has_video") or item.get("has_image"))
+            if not _has_media and (as_reply or article_max <= 0):
                 continue
             seen_urls.add(url)
             posts.append({
@@ -2796,15 +2804,17 @@ def build_mlb_watch_candidates(
                 "handle": h,
                 "player": player,
                 "has_video": bool(item.get("has_video")),
+                "has_media": _has_media,
                 "published_at": published_at,
             })
     # 動画多め: 動画付きを先に。2026-07-11 user「メジャーの動画が日本人より
     # 早くほしい」: 従来は handle 定義順 (=日本語メディア先頭) がそのまま優先に
     # なっていたため、動画グループ内は鮮度順 (新しい順) に並べ替える。最速で
     # clip を出した海外公式が自然に先頭へ来る。published_at 不明は最後尾。
+    # 記事 (メディアなし) は画像の後ろ = 枠が余った時だけ入る。
     posts.sort(
         key=lambda p: (
-            not p["has_video"],
+            (0 if p["has_video"] else (1 if p["has_media"] else 2)),
             -(p["published_at"].timestamp() if p["published_at"] is not None else 0.0),
         )
     )
@@ -2814,15 +2824,18 @@ def build_mlb_watch_candidates(
     ohtani_used = 0
     ohtani_video_used = 0
     extra_star_used = 0
+    article_used = 0
     for p in posts:
         if len(out) >= max_count:
             break
+        if not p["has_media"] and article_used >= max(0, article_max):
+            continue
         player = p["player"]
-        # 媒体種別 (動画/情報) 込みの key: 同一アカでも「動画1 + 情報1」は許し、
-        # 同種の連投 (同じアカの動画2本 等) だけ止める (2026-07-07 情報系拾い)。
+        # 媒体種別 (動画/情報/記事) 込みの key: 同一アカでも「動画1 + 情報1」は
+        # 許し、同種の連投 (同じアカの動画2本 等) だけ止める (2026-07-07 情報系拾い)。
         player_handle_key = (
             f"{player}|{str(p['handle']).strip().lower()}"
-            f"|{'v' if p['has_video'] else 'i'}"
+            f"|{'v' if p['has_video'] else ('i' if p['has_media'] else 't')}"
         )
         if player_handle_key in used_player_handles:
             continue
@@ -2879,7 +2892,12 @@ def build_mlb_watch_candidates(
         src_text = _truncate_text(p["text"].replace("\n", " ").strip(), 140)
         # 2026-07-03 user「出来れば動画。米国独特のスタッツ画像も引用したい」:
         # どちらの素材か mail 上でひと目で選べるようマーカーを出す。
-        media_mark = "🎬動画" if p["has_video"] else "🖼画像"
+        if p["has_video"]:
+            media_mark = "🎬動画"
+        elif p["has_media"]:
+            media_mark = "🖼画像"
+        else:
+            media_mark = "📰記事"
         if as_reply:
             draft = "\n".join([
                 f"【MLBリプ候補: {frame}】 @{handle}",
@@ -2936,6 +2954,8 @@ def build_mlb_watch_candidates(
             ))
         used_player_handles.add(player_handle_key)
         player_counts[player] = player_counts.get(player, 0) + 1
+        if not p["has_media"]:
+            article_used += 1
         if player == "大谷翔平":
             ohtani_used += 1
             if p["has_video"]:

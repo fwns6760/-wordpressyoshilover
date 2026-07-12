@@ -2258,6 +2258,11 @@ _GAME_BUZZ_HANDLES = [
     "TokyoGiants",
     "ntv_baseball",
     "DAZNJPNBaseball",
+    # 2026-07-12 user「動画はもっとふやしていい」: 動画率の高い記者/班アカを
+    # 試合帯ソースへ追加 (どちらも _BUZZ_HANDLES で実feed検証済。試合中の
+    # 球場撮影動画が主で、buzz-only 便のリプ対象にも同時になる)。
+    "nikkan_giants",
+    "chiehochi6",
 ]
 
 _today_away_cache: dict[str, Optional[bool]] = {}

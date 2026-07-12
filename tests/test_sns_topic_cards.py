@@ -212,6 +212,36 @@ class ReplyCandidatesTests(unittest.TestCase):
         self.assertIn("竹丸和幸", seen["player"])          # 親ツイート本文 + player が渡る
         self.assertIn("プロ初完投", seen["parent"])
 
+    def test_reply_db_path_none_skips_is_giants_gate(self):
+        # 2026-07-12 buzz-only 軽量便 (insight.db なし): db_path=None は
+        # _is_giants gate を skip し、alias 検出だけで候補が成立する。
+        feed = ("<rss><channel><item><title>坂本勇人 タイムリーで追撃</title>"
+                "<link>https://x.com/DAZNJPNBaseball/status/777</link></item></channel></rss>")
+        reps = tc.build_reply_candidates(
+            None, fetch_fn=lambda u: feed, max_replies=3,
+            detect_player_fn=lambda t: "坂本勇人" if "坂本" in t else "",
+            comment_fn=lambda parent, player: "坂本のこういう一打が流れを変えるんだよな。",
+            handles=["DAZNJPNBaseball"],
+            skip_on_empty_comment=True,
+        )
+        self.assertEqual(len(reps), 1)
+        self.assertEqual(reps[0]["tweet_id"], "777")
+        self.assertIn("流れを変える", reps[0]["reply"])
+
+    def test_reply_db_path_none_empty_voice_skips_candidate(self):
+        # db_path=None + skip_on_empty_comment=True: voice 空なら db fallback に
+        # 落ちず (None を sqlite に渡さず) 候補ごと skip する。
+        feed = ("<rss><channel><item><title>坂本勇人 タイムリーで追撃</title>"
+                "<link>https://x.com/DAZNJPNBaseball/status/778</link></item></channel></rss>")
+        reps = tc.build_reply_candidates(
+            None, fetch_fn=lambda u: feed, max_replies=3,
+            detect_player_fn=lambda t: "坂本勇人" if "坂本" in t else "",
+            comment_fn=lambda parent, player: "",
+            handles=["DAZNJPNBaseball"],
+            skip_on_empty_comment=True,
+        )
+        self.assertEqual(reps, [])
+
     def test_reply_avoid_player_skips_before_voice_comment_fn(self):
         feed = ("<rss><channel><item><title>竹丸和幸 プロ初完投 8回10K</title>"
                 "<link>https://x.com/hochi_giants/status/12345</link></item></channel></rss>")

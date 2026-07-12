@@ -316,6 +316,18 @@ def _video_radar_max_per_run() -> int:
     return _resolve_int_env("X_POST_VIDEO_RADAR_MAX", 3, min_value=0)
 
 
+def _video_reply_max_per_run() -> int:
+    """--buzz-only 便に載せる試合帯リプ候補数 / fire (default 0 = OFF)。
+
+    2026-07-12 user「巨人の試合中も大手へのリプと動画SNSがあったほうがいい」:
+    試合帯は統合便が回らず buzz-only (動画引用RTのみ) に切替わるため、大手
+    (報知/日テレ/DAZN 等) の返信欄への露出が試合中に途切れていた。試合帯
+    (スタメン/試合中 window) のみ少量同乗させる。リプ文は user 指示
+    「純粋にポストの内容を返信するだけでいい」(db数字なし・empathy型)。
+    """
+    return _resolve_int_env("X_POST_VIDEO_REPLY_MAX", 0, min_value=0)
+
+
 def _quote_captions_enabled() -> bool:
     """451: 「今日の動画引用キャプション」をメールに出すか (default OFF)。"""
     raw = (os.environ.get("ENABLE_X_POST_QUOTE_CAPTIONS") or "").strip().lower()
@@ -422,6 +434,18 @@ def _mlb_reply_enabled() -> bool:
 def _mlb_reply_max_per_run() -> int:
     """MLBリプ候補数 / fire の上限。少量運用なので default 1。"""
     return _resolve_int_env("X_POST_MLB_REPLY_MAX", 1, min_value=0)
+
+
+def _mlb_fast_reply_max_per_run() -> int:
+    """--mlb-only 高速便に載せる MLBリプ候補数 / fire (default 0 = OFF)。
+
+    2026-07-12 user「フォロワーが増えない」: 青バッジのリプは早いほど返信欄
+    上位に固定され非フォロワー露出が伸びるが、リプ候補が統合便 (毎時) のみ
+    だと大アカ投稿から最大 1h 遅れる。*/10 の mlb-only 便に少量同乗させて
+    リプの速さを作る。dedup は統合便と共有するため同じ親ポストへの候補は
+    二重 mail にならない。
+    """
+    return _resolve_int_env("X_POST_MLB_FAST_REPLY_MAX", 0, min_value=0)
 
 
 # 2026-07-03 user 指定: 大谷速報系 @30R9gmaMUy3guDJ + メジャー系日本公式。
@@ -3301,9 +3325,11 @@ def _main_mlb_only(args: argparse.Namespace, recipients: list[str]) -> int:
     mlb_max = _quota_tail_llm_cap(
         mlb_max, now_jst, env_name="X_POST_MLB_AFTERNOON_MAX", default_cap=4
     )
+    fast_rep_max = _mlb_fast_reply_max_per_run() if _mlb_reply_enabled() else 0
     if _xbg is not None:
         # 統合便の per-fire budget と同じ機構で、MLB voice 分だけに絞る。
-        _xbg.set_llm_budget(mlb_max, reply_reserve=0)
+        # 高速リプ同乗時はリプ予約枠を上乗せ (quote 側の枠は mlb_max のまま)。
+        _xbg.set_llm_budget(mlb_max + fast_rep_max, reply_reserve=fast_rep_max)
 
     # signature dedup は統合便と同じ GCS 台帳を共有 (並走時の二重 mail 防止)。
     dedup_set: set[str] | None = None
@@ -3359,7 +3385,47 @@ def _main_mlb_only(args: argparse.Namespace, recipients: list[str]) -> int:
         )
     except Exception as exc:  # noqa: BLE001
         LOG.warning("mlb-only: build failed: %r", exc)
-        return 0
+        candidates = []
+
+    # 2026-07-12 user「フォロワーが増えない」: 青バッジのリプは早いほど返信欄
+    # 上位に固定される。統合便 (毎時) 任せだと大アカ投稿から最大 1h 遅れるため、
+    # */10 の本便に少量同乗させる (dedup 共有で二重 mail なし)。empathy 型 =
+    # 元投稿の内容への純粋な反応 (db数字なし、2026-07-06 user 決定を踏襲)。
+    if fast_rep_max > 0:
+        def mlb_fast_rep_comment_fn(parent_text, player, _k=_mlb_key, _now=now_jst):  # noqa: E731
+            from src import x_post_branding_gen as _fr_xbg
+            subject, note = _mlb_voice_subject_and_note(player, reply=True)
+            return _fr_xbg.build_quote_rt_comment(
+                parent_text, player, gemini_api_key=_k, now=_now,
+                subject=subject, extra_voice_note=note,
+                budget_site="reply", require_db_fact=False,
+                reply_style="empathy",
+            )
+
+        try:
+            fast_rep_raw = lane.build_mlb_watch_candidates(
+                now=now_jst,
+                max_count=fast_rep_max,
+                dedup_set=dedup_set,
+                comment_fn=mlb_fast_rep_comment_fn,
+                handles=_mlb_reply_target_handles(),
+                as_reply=True,
+                # リプは返信欄の鮮度が命なので統合便と同じ 6h に絞る
+                max_age_hours=_reply_max_age_hours() or 6.0,
+            )
+        except Exception as _fr_exc:  # noqa: BLE001
+            LOG.warning("mlb-only: fast reply build failed: %r", _fr_exc)
+            fast_rep_raw = []
+        _fast_sigs = {getattr(c, "signature", "") for c in candidates}
+        fast_rep_new = [c for c in fast_rep_raw if c.signature not in _fast_sigs]
+        if fast_rep_new:
+            candidates = candidates + fast_rep_new
+            LOG.info(
+                "mlb-only: fast reply appended rep=%d total=%d handles=%s",
+                len(fast_rep_new), len(candidates),
+                ",".join(_mlb_reply_target_handles()),
+            )
+
     if not candidates:
         LOG.info("mlb-only: no new MLB clips — silent skip (no mail)")
         return 0
@@ -3435,9 +3501,18 @@ def _main_buzz_only(args: argparse.Namespace, recipients: list[str]) -> int:
     if vr_max <= 0:
         LOG.info("buzz-only: X_POST_VIDEO_RADAR_MAX<=0 — skip")
         return 0
+    # 試合帯 (スタメン/試合中 window) のみ大手へのリプ候補を同乗させる。
+    # 平常帯の古い動画クリップへの場違いリプを防ぐ gate は統合便と同じ。
+    vr_rep_max = _video_reply_max_per_run()
+    if vr_rep_max > 0 and lane.x_impression_timing_label(now_jst) not in {
+        lane._X_IMPRESSION_TIMING_LABELS["lineup"],
+        lane._X_IMPRESSION_TIMING_LABELS["in_game_strong"],
+    }:
+        vr_rep_max = 0
     if _xbg is not None:
         # 統合便の per-fire budget と同じ機構で、動画 voice 分だけに絞る。
-        _xbg.set_llm_budget(vr_max, reply_reserve=0)
+        # リプ同乗時はリプ予約枠を上乗せ (動画側の枠は vr_max のまま)。
+        _xbg.set_llm_budget(vr_max + vr_rep_max, reply_reserve=vr_rep_max)
 
     # signature dedup は統合便と同じ GCS 台帳を共有 (並走時の二重 mail 防止)。
     dedup_set: set[str] | None = None
@@ -3491,7 +3566,105 @@ def _main_buzz_only(args: argparse.Namespace, recipients: list[str]) -> int:
         )
     except Exception as exc:  # noqa: BLE001
         LOG.warning("buzz-only: build failed: %r", exc)
-        return 0
+        candidates = []
+
+    # 2026-07-12 user「巨人の試合中も大手へのリプと動画SNSがあったほうがいい」:
+    # 試合帯は統合便が回らないため、大手 (報知/日テレ/DAZN 等 game handles) の
+    # 返信欄露出が途切れていた。リプ文は「純粋にポストの内容を返信するだけ」
+    # (db数字なし empathy 型)。劣勢時は「プラスの意見をみんなが同調するわけで
+    # ないから疑問視のリプがいい」(user) → npb スコアで判定しトーン切替。
+    # LLM 必須 (返信欄でテンプレ定型文は浮くため、voice 不能ならリプは載せない)。
+    if vr_rep_max > 0 and _video_radar_llm_enabled():
+        _rep_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GEMMA_BRANDING_GEMINI_API_KEY") or ""
+        vr_rep_fn = None
+        if _rep_key:
+            losing = False
+            try:
+                from src import live_game_watch as _lgw
+                _lg_state = _lgw.fetch_today_live_game(now_jst)
+                losing = bool(
+                    _lg_state is not None
+                    and _lg_state.status == "試合中"
+                    and _lg_state.giants_score < _lg_state.opp_score
+                )
+            except Exception as _sc_exc:  # noqa: BLE001 - スコア不明は通常トーン
+                LOG.info("buzz-only: live score lookup skipped: %r", _sc_exc)
+            if losing:
+                _rep_note = (
+                    "巨人がリードされている試合中。前向きな同調ではなく、"
+                    "ファンとしての疑問・歯がゆさを元投稿の場面に即して短く率直に書く。"
+                    "個人への攻撃・戦犯探し・断定的な非難はしない。"
+                )
+            else:
+                _rep_note = (
+                    "元投稿の場面に純粋に反応する。データや数字は足さず、"
+                    "見たままの内容への短い反応にする。"
+                )
+            try:
+                from src import x_post_branding_gen as _rep_xbg
+
+                def vr_rep_fn(parent_text, player, _k=_rep_key, _g=_rep_xbg, _now=now_jst, _n=_rep_note):  # noqa: E731
+                    return _g.build_quote_rt_comment(
+                        parent_text, player, gemini_api_key=_k, now=_now,
+                        subject="試合中の巨人動画SNS投稿",
+                        extra_voice_note=_n,
+                        budget_site="reply", require_db_fact=False,
+                        reply_style="empathy",
+                    )
+            except Exception as _rep_imp_exc:  # noqa: BLE001
+                LOG.warning("buzz-only: reply LLM unavailable: %r", _rep_imp_exc)
+                vr_rep_fn = None
+        if vr_rep_fn is not None:
+            try:
+                from src import sns_topic_cards as _tc_rep
+                # db_path=None: insight.db を DL しない軽量便 (_is_giants gate は
+                # skip され、選手検出は巨人 alias map のみで絞る)。
+                vr_reps = _tc_rep.build_reply_candidates(
+                    None,
+                    max_replies=vr_rep_max,
+                    comment_fn=vr_rep_fn,
+                    handles=lane.game_buzz_handles(now_jst),
+                    skip_on_empty_comment=True,
+                    max_age_hours=_reply_max_age_hours() or 6.0,
+                )
+            except Exception as _rep_exc:  # noqa: BLE001
+                LOG.warning("buzz-only: reply build failed: %r", _rep_exc)
+                vr_reps = []
+            vr_rep_cands = []
+            for r in vr_reps:
+                handle = str(r.get("handle") or "").strip().lstrip("@")
+                sig = f"reply_cand|{handle or 'unknown'}|{r['tweet_id']}"
+                if dedup_set is not None and sig in dedup_set:
+                    continue
+                label, why_now, source_material_type, metric, reason_tags = _reply_candidate_mail_labels(handle)
+                draft = (
+                    f"返信先({label}): {r['url']}\n"
+                    f"対象handle: @{handle or 'unknown'}\n"
+                    f"リプ文: {r['reply']}\n\n"
+                    "※ ボタンで返信画面が開く(リプ文入り)→ 投稿。"
+                    "大手の返信欄に露出=インプ近道。自動投稿はしない。"
+                )
+                vr_rep_cands.append(lane.Candidate(
+                    title=f"💬 {label}: {r['player']} {r['headline']}",
+                    metric=metric,
+                    period_label=label,
+                    draft_text=draft,
+                    char_count=len(r["reply"]),
+                    signature=sig,
+                    post_text=r["reply"],
+                    focus_player=r["player"],
+                    reply_to_id=r["tweet_id"],
+                    why_now=why_now,
+                    source_material_type=source_material_type,
+                    reason_tags=reason_tags,
+                ))
+            if vr_rep_cands:
+                candidates = candidates + vr_rep_cands
+                LOG.info(
+                    "buzz-only: reply appended rep=%d total=%d losing=%s",
+                    len(vr_rep_cands), len(candidates), losing,
+                )
+
     if not candidates:
         LOG.info("buzz-only: no new video posts — silent skip (no mail)")
         return 0

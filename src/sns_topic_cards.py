@@ -355,7 +355,7 @@ def _yoshilover_reply_fallback(db_path: str, player: str, events: list, parent_t
 
 
 def build_reply_candidates(
-    db_path: str,
+    db_path: Optional[str],
     *,
     fetch_fn: Optional[Callable[[str], str]] = None,
     max_replies: int = 5,
@@ -415,7 +415,9 @@ def build_reply_candidates(
         title = kw.get("title", "")
         if _normalize_name_for_dedupe(player) in avoid_players:
             continue
-        if player in used or not url or not _is_giants(db_path, player):
+        # db_path=None (buzz-only 軽量便、insight.db なし) は _is_giants gate を
+        # skip する (選手検出が巨人 alias map 限定のため他球団 NER 誤検出は稀)。
+        if player in used or not url or (db_path and not _is_giants(db_path, player)):
             continue
         m = _re2.search(r"/status/(\d+)", url)
         if not m:

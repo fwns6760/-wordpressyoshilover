@@ -1,6 +1,6 @@
 # 469 — X-post / SNS スケジュール & ソース効率化 + 全スケジューラ棚卸し
 
-- status: LIVE_IMAGE_UPDATED (step4b SNS 21:15 fast path + step5 early skip guard deployed 2026-06-07)
+- status: LIVE_IMAGE_UPDATED (step4b/5 deployed; 2026-07-13 RPM quality follow-up REPO_IMPL_TESTED / scheduler live / image deploy pending)
 - owner: Claude
 - created: 2026-06-03
 - 目的: Gemini 叩き(コスト)を減らしつつ、試合中はリアルタイム性を保つ。発火を「巨人のネタが動く時間 + user が起きている時間」に集約。SNS リアルタイムページは鮮度UP(Gemini不使用なのでコスト増なし)。
@@ -123,3 +123,36 @@
 - step5 ✅ **LIVE_IMAGE_UPDATED** 早期 skip guard: `run_x_post_mail.py` で 7:00 前は DB download 前に `exit 0`(`X_POST_MAIL_ALLOW_BEFORE_7AM=1` で解除可)。月曜の試合系 timing window も DB download / RSSHub / Gemini 前に `exit 0`。祝日等の月曜開催は `X_POST_MAIL_ALLOW_MONDAY_GAME_WINDOWS=1` で解除可。Cloud Build `cabf7277-35c8-4074-8f41-80c76fe6f959` SUCCESS、image `x-post-mail-lane:469-skip-ce38d111-20260607` digest `sha256:f3844ffdae151afdb9b6052746316a082948800f5becbc8fb8915e72d24b43d7`、Cloud Run Job `x-post-mail-lane` generation `162`。旧 image rollback: `x-post-mail-lane:fanreply-3465be06`。
 - step6 ⏭ giants-weekday-daytime(昼間毎時11)間引き + giants-realtime重複集約
 - step7 ⏭ publish-notice / guarded-publish 過密集約(§11、idempotency確認後)
+
+---
+
+## 7. 2026-07-13 RPM 429 ゼロ化 + 品質向上 follow-up (user GO)
+
+### 実測と原因
+
+- 2026-07-13 00:00〜13:36 JST: `x-post-mail-lane` は Gemini 211 calls / 429=10、
+  1分最大19 calls。free-tier `gemini-3.1-flash-lite` の 15 RPM を超えた。
+- `x-post-mail-flush-mlb-live` の `:00` と、mlb-morning / mlb-13h / lineup の
+  `:00` が同時起動。per-process budget は別 process の合計を制御できない。
+- RPM 429 の `retry in 56.8s` が従来上限45sを超え、`gemini-2.5-*` へ落ちて
+  品質 gate 失敗と候補欠落を起こした。日次枯渇ではない。
+
+### 対策 (新規有料 service / 有料 model / env 変更なし)
+
+1. Scheduler: `x-post-mail-flush-mlb-live` を `*/10 8-15` →
+   `10,20,30,40,50 8-15` へ変更済み。`:00` は既存統合便が MLB watch を含むため
+   候補は減らない。15時は15:05統合便がカバー。
+2. Code: `src/x_post_branding_gen.py` の全 `generate_content` を rolling 14 RPM pacer に
+   通す。core / reply / comment context / trend 等の全経路が対象。
+3. RPM 429: provider 指示が65s以内なら同じ model を1回待ち再試行。
+   RPM 由来で 2.5 系へ fallback しない。daily quota / 503 の emergency chain は維持。
+4. Quality: `X_POST_GEN_ATTEMPTS` 既定を1→2。鮮度順の上位候補が gate 失敗時のみ
+   2回目を使う。per-fire/site cap は不変なので最大コール数は増やさない。
+
+### 検証
+
+- `tests/test_x_post_branding_gen.py`: 126 passed
+- `tests/test_x_post_mail.py`: 286 passed / 4 subtests passed
+- compile / AST / deploy / 24h log 検証は後続で記録する。
+- acceptance: 429=0 / 1分最大≤14 / RPM由来2.5 fallback=0 /
+  候補生成数非悪化 / quality gate 通過率改善。

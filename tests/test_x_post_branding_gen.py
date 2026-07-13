@@ -6,6 +6,7 @@ fastmcp は 392 では使わない (391 用、 install されてなくても 392
 
 from __future__ import annotations
 
+import os
 import sys
 import types
 import unittest
@@ -36,12 +37,33 @@ if not hasattr(_google_genai, "Client"):
 import src.x_post_branding_gen as xbg  # noqa: E402
 
 
+_ORIGINAL_TEST_RPM_LIMIT = None
+
+
+def setUpModule() -> None:
+    """Mock-heavy tests must not spend wall time in the production pacer."""
+    global _ORIGINAL_TEST_RPM_LIMIT
+    _ORIGINAL_TEST_RPM_LIMIT = os.environ.get("X_POST_LLM_RPM_LIMIT")
+    os.environ["X_POST_LLM_RPM_LIMIT"] = "0"
+    xbg._LLM_REQUEST_TIMES.clear()
+
+
+def tearDownModule() -> None:
+    xbg._LLM_REQUEST_TIMES.clear()
+    if _ORIGINAL_TEST_RPM_LIMIT is None:
+        os.environ.pop("X_POST_LLM_RPM_LIMIT", None)
+    else:
+        os.environ["X_POST_LLM_RPM_LIMIT"] = _ORIGINAL_TEST_RPM_LIMIT
+
+
 class PrimeHoursTests(unittest.TestCase):
     """3.5-flash 温存窓 (X_POST_GEMINI_PRIME_HOURS_JST) の判定と model 差替え。"""
 
     def setUp(self) -> None:
         # 2026-07-08 day-quota breaker はモジュール state を持つので test 間で必ず reset
         xbg._MODEL_QUOTA_DEAD_UNTIL.clear()
+        xbg._LLM_REQUEST_TIMES.clear()
+        xbg._RPM_WAIT_RUN_BUDGET["remaining"] = 180.0
 
     def _jst(self, hour: int, minute: int = 30):
         from datetime import datetime, timezone, timedelta
@@ -191,7 +213,8 @@ class PrimeHoursTests(unittest.TestCase):
         )
         ok = MagicMock()
         client.models.generate_content.side_effect = [minute_err, ok]
-        with patch.object(xbg, "_x_post_in_prime_hours", return_value=False):
+        with patch.object(xbg, "_x_post_in_prime_hours", return_value=False), \
+             patch.object(xbg._time, "sleep"):
             result = xbg._x_post_generate_content(
                 client, model="gemini-3.5-flash", contents="p", config={}
             )
@@ -1239,11 +1262,11 @@ if __name__ == "__main__":
 
 
 class RpmShortRetryTests(unittest.TestCase):
-    """2026-07-10: RPM 429 の指示待ちが45秒以下なら同モデルで1回だけ再試行
-    (run 合計 120s cap)。18:45便実測: 9〜39s 指示を待てず品質劣化連鎖になった。"""
+    """RPM 429 waits once for the same model and never degrades to 2.5."""
 
     def setUp(self):
-        xbg._RPM_WAIT_RUN_BUDGET["remaining"] = 120.0
+        xbg._RPM_WAIT_RUN_BUDGET["remaining"] = 180.0
+        xbg._LLM_REQUEST_TIMES.clear()
 
     def test_mid_rpm_wait_retries_same_model(self):
         # 18:45 実測の「retry in 9s」パターン: 待てば同モデルで通る
@@ -1265,7 +1288,7 @@ class RpmShortRetryTests(unittest.TestCase):
         self.assertEqual(models, ["gemini-3.1-flash-lite", "gemini-3.1-flash-lite"])
 
     def test_rpm_wait_run_budget_cap(self):
-        # run 合計待ち枠を使い切ったら待たずに連鎖へ (job timeout 保護)
+        # run 合計待ち枠不足時も下位 model には落とさない。
         xbg._RPM_WAIT_RUN_BUDGET["remaining"] = 5.0
         client = MagicMock()
         rpm_err = RuntimeError(
@@ -1275,13 +1298,13 @@ class RpmShortRetryTests(unittest.TestCase):
         client.models.generate_content.side_effect = [rpm_err, ok]
         with patch.object(xbg, "_x_post_in_prime_hours", return_value=False), \
              patch.object(xbg._time, "sleep") as slp:
-            result = xbg._x_post_generate_content(
-                client, model="gemini-3.1-flash-lite", contents="p", config={}
-            )
-        self.assertIs(result, ok)
+            with self.assertRaises(RuntimeError):
+                xbg._x_post_generate_content(
+                    client, model="gemini-3.1-flash-lite", contents="p", config={}
+                )
         slp.assert_not_called()
         models = [c.kwargs["model"] for c in client.models.generate_content.call_args_list]
-        self.assertEqual(models, ["gemini-3.1-flash-lite", "gemini-2.5-flash"])
+        self.assertEqual(models, ["gemini-3.1-flash-lite"])
 
     def test_short_rpm_wait_retries_same_model(self):
         client = MagicMock()
@@ -1301,7 +1324,7 @@ class RpmShortRetryTests(unittest.TestCase):
         models = [c.kwargs["model"] for c in client.models.generate_content.call_args_list]
         self.assertEqual(models, ["gemini-3.1-flash-lite", "gemini-3.1-flash-lite"])
 
-    def test_long_rpm_wait_falls_through_chain(self):
+    def test_53s_rpm_wait_retries_same_model(self):
         client = MagicMock()
         rpm_err = RuntimeError(
             "429 GenerateRequestsPerMinutePerProjectPerModel-FreeTier Please retry in 53.0s."
@@ -1314,10 +1337,24 @@ class RpmShortRetryTests(unittest.TestCase):
                 client, model="gemini-3.1-flash-lite", contents="p", config={}
             )
         self.assertIs(result, ok)
-        slp.assert_not_called()
+        slp.assert_called_once()
         models = [c.kwargs["model"] for c in client.models.generate_content.call_args_list]
-        # 長待ちは 2.5-flash へ (3.5 には行かない)
-        self.assertEqual(models, ["gemini-3.1-flash-lite", "gemini-2.5-flash"])
+        self.assertEqual(models, ["gemini-3.1-flash-lite", "gemini-3.1-flash-lite"])
+
+    def test_second_rpm_failure_raises_without_lower_model(self):
+        client = MagicMock()
+        rpm_err = RuntimeError(
+            "429 GenerateRequestsPerMinutePerProjectPerModel-FreeTier Please retry in 1.0s."
+        )
+        client.models.generate_content.side_effect = [rpm_err, rpm_err, MagicMock()]
+        with patch.object(xbg, "_x_post_in_prime_hours", return_value=False), \
+             patch.object(xbg._time, "sleep"):
+            with self.assertRaises(RuntimeError):
+                xbg._x_post_generate_content(
+                    client, model="gemini-3.1-flash-lite", contents="p", config={}
+                )
+        models = [c.kwargs["model"] for c in client.models.generate_content.call_args_list]
+        self.assertEqual(models, ["gemini-3.1-flash-lite", "gemini-3.1-flash-lite"])
 
     def test_rpm_delay_parse(self):
         self.assertAlmostEqual(
@@ -1325,3 +1362,48 @@ class RpmShortRetryTests(unittest.TestCase):
                 "PerMinutePerProjectPerModel Please retry in 1.5s")), 1.5)
         self.assertIsNone(xbg._rpm_retry_delay_seconds(RuntimeError(
             "PerDayPerProjectPerModel Please retry in 1.5s")))
+
+
+class LlmRatePacingTests(unittest.TestCase):
+    class _Clock:
+        def __init__(self) -> None:
+            self.now = 0.0
+            self.sleeps: list[float] = []
+
+        def monotonic(self) -> float:
+            return self.now
+
+        def sleep(self, seconds: float) -> None:
+            self.sleeps.append(seconds)
+            self.now += seconds
+
+    def setUp(self) -> None:
+        xbg._LLM_REQUEST_TIMES.clear()
+
+    def tearDown(self) -> None:
+        xbg._LLM_REQUEST_TIMES.clear()
+
+    def test_fourteenth_request_is_immediate_fifteenth_waits(self):
+        clock = self._Clock()
+        with patch.dict(os.environ, {"X_POST_LLM_RPM_LIMIT": "14"}), \
+             patch.object(xbg._time, "monotonic", side_effect=clock.monotonic), \
+             patch.object(xbg._time, "sleep", side_effect=clock.sleep):
+            for _ in range(14):
+                xbg._pace_llm_request("gemini-3.1-flash-lite")
+            self.assertEqual(clock.sleeps, [])
+            xbg._pace_llm_request("gemini-3.1-flash-lite")
+        self.assertEqual(len(clock.sleeps), 1)
+        self.assertGreaterEqual(clock.sleeps[0], 60.0)
+
+    def test_config_cannot_exceed_hard_safety_limit(self):
+        with patch.dict(os.environ, {"X_POST_LLM_RPM_LIMIT": "99"}):
+            self.assertEqual(xbg._llm_rpm_limit(), 14)
+
+    def test_generate_content_reserves_rate_slot(self):
+        client = MagicMock()
+        with patch.object(xbg, "_x_post_in_prime_hours", return_value=False), \
+             patch.object(xbg, "_pace_llm_request") as pace:
+            xbg._x_post_generate_content(
+                client, model="gemini-3.1-flash-lite", contents="p", config={}
+            )
+        pace.assert_called_once_with("gemini-3.1-flash-lite")

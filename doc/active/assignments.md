@@ -1,6 +1,13 @@
 # assignments — 現場担当と次アクション
 
-最終更新: 2026-07-11 JST (478 MLB動画 mlb-only 高速便 + 3万フォロワー計画)
+最終更新: 2026-07-13 JST (469/478 Gemini RPM 429ゼロ化 + 品質向上)
+
+## 2026-07-13 — 469/478 Gemini RPM 429ゼロ化 + 品質向上 (user GO)
+
+- **原因**: 野球側は本日211 calls / 429=10 / 1分最大19 calls。MLB高速便の`:00`と統合便が重なり、15 RPMを超過。per-fire core/aux budgetは別processを制御できない。
+- **Scheduler LIVE**: `x-post-mail-flush-mlb-live` を `*/10 8-15` → `10,20,30,40,50 8-15` へ変更。`:00`は既存統合便、15時は15:05便がカバーするため候補欠落なし。
+- **REPO_IMPL_TESTED**: `src/x_post_branding_gen.py` に全経路共通rolling 14 RPM pacer、RPM 429の同一model待ち再試行(2.5系へは落とさない)、上位候補のquality retry既定1→2(per-fire cap不変)を実装。
+- **tests**: branding 126 passed / x-post mail 286 passed + 4 subtests。次 = compile/AST → clean build/deploy → 自然発火で 429=0 / max RPM≤14 / RPM由来2.5 fallback=0 / 候補数非悪化を確認。
 
 ## 2026-07-11 — 478 MLB動画 高速引用RT便 (user「メジャーの動画が日本人より早くほしい」)
 

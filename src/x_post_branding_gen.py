@@ -21,11 +21,13 @@ start 不変)。
 
 from __future__ import annotations
 
+from collections import deque as _deque
 import hashlib as _hashlib
 import json as _json
 import logging as _logging
 import os as _os
 import re as _re
+import threading as _threading
 import time as _time
 from typing import Any, Optional
 
@@ -213,13 +215,13 @@ _X_POST_GEMINI_EMERGENCY_MODELS = tuple(
     ).split(",")
     if m.strip()
 )
-# 2026-07-08 (user 決定: 無料枠枯渇対策): 品質 gate 落ち時の作り直し回数。従来 3 固定
-# → 既定 1 (作り直しなし、落ちたら relaxed fallback か skip → 次便が別候補で再挑戦)。
-# 品質が下がりすぎたら env X_POST_GEN_ATTEMPTS=2/3 で rebuild 無しで戻す。
+# 2026-07-13 user GO: 重複 Scheduler と RPM 429 で失っていた枠を、鮮度順の上位候補の
+# quality gate リトライに戻す。per-fire/site budget は据え置きなので最大コール数は
+# 増やさない。明示 env で 1/3 へ戻すことは可能。
 try:
-    _X_POST_GEN_ATTEMPTS = max(1, int(_os.environ.get("X_POST_GEN_ATTEMPTS", "1")))
+    _X_POST_GEN_ATTEMPTS = max(1, int(_os.environ.get("X_POST_GEN_ATTEMPTS", "2")))
 except ValueError:
-    _X_POST_GEN_ATTEMPTS = 1
+    _X_POST_GEN_ATTEMPTS = 2
 # 2026-06-11 (user 決定): 3.5-flash の無料枠は 20回/日(project 単位、リセット JST 16時頃)。
 # 試合時間帯(既定 JST 17:00〜22:29)だけ primary(3.5)を使い、それ以外は最初から
 # fallback(lite)を使って枠を試合中の投稿に温存する。空文字で常時 primary。跨日窓(例 22-2)対応。
@@ -337,12 +339,65 @@ def _mark_model_quota_dead(model: str, exc: Exception, now=None) -> None:
     )
 
 
-# RPM 429 の指示待ち上限 (2026-07-10 18:45便実測: flash-lite が「retry in
-# 9〜39s」を返したのに旧上限 3s で待てず 2.5-flash へ落ち、品質 gate 落ち連発で
-# live_game 候補が全滅した)。待っても無料枠は消費しない。1 run の合計待ち時間は
-# _RPM_WAIT_RUN_BUDGET で cap (job timeout 1200s 内に収める)。
-_RPM_WAIT_MAX_SECONDS = 45.0
-_RPM_WAIT_RUN_BUDGET = {"remaining": 120.0}
+# 2026-07-13 user GO: Gemini 3.1 Flash Lite の free-tier 15 RPM に対し、全 LLM 経路を
+# 14 RPM に pace する。core / reply / comment_context / trend 等の budget は候補配分用に
+# 残すが、実 API 呼び出しはすべてこの rolling window を通る。Scheduler の同時起動も
+# 解消するため、新しい有料 service や下位 model への RPM 逃げは不要。
+_LLM_RPM_HARD_MAX = 14
+_LLM_RPM_WINDOW_SECONDS = 60.0
+_LLM_REQUEST_TIMES = _deque()
+_LLM_RATE_LOCK = _threading.Lock()
+
+
+def _llm_rpm_limit() -> int:
+    """Return the process-wide X-post request pace (0 disables for tests only)."""
+    raw = (_os.environ.get("X_POST_LLM_RPM_LIMIT") or str(_LLM_RPM_HARD_MAX)).strip()
+    try:
+        value = int(raw)
+    except ValueError:
+        value = _LLM_RPM_HARD_MAX
+    if value <= 0:
+        return 0
+    return min(value, _LLM_RPM_HARD_MAX)
+
+
+def _pace_llm_request(model: str = "") -> None:
+    """Wait for a rolling-window slot, then reserve it before an API attempt.
+
+    Failed attempts are intentionally counted: Gemini evaluates quota at request time,
+    so counting only successful responses would still permit a 429 storm.
+    """
+    limit = _llm_rpm_limit()
+    if limit <= 0:
+        return
+    log = _logging.getLogger("x_post_branding_gen")
+    while True:
+        with _LLM_RATE_LOCK:
+            now = _time.monotonic()
+            cutoff = now - _LLM_RPM_WINDOW_SECONDS
+            while _LLM_REQUEST_TIMES and _LLM_REQUEST_TIMES[0] <= cutoff:
+                _LLM_REQUEST_TIMES.popleft()
+            if len(_LLM_REQUEST_TIMES) < limit:
+                _LLM_REQUEST_TIMES.append(now)
+                return
+            delay = max(
+                0.05,
+                _LLM_RPM_WINDOW_SECONDS - (now - _LLM_REQUEST_TIMES[0]) + 0.05,
+            )
+        log.info(
+            "x_post_llm_rate_wait model=%s delay=%.1fs used=%d limit=%d",
+            model or "-",
+            delay,
+            limit,
+            limit,
+        )
+        _time.sleep(delay)
+
+
+# Provider が返す PerMinute retry (JST 13:02 実測 56.8s) は同じ 3.1 model で
+# 1 回だけ待ち直す。RPM で 2.5 系へ落とすと品質を下げるため fallback しない。
+_RPM_WAIT_MAX_SECONDS = 65.0
+_RPM_WAIT_RUN_BUDGET = {"remaining": 180.0}
 
 
 def _rpm_retry_delay_seconds(exc: Exception) -> Optional[float]:
@@ -359,18 +414,22 @@ def _rpm_retry_delay_seconds(exc: Exception) -> Optional[float]:
         return None
 
 
+def _x_post_per_minute_quota_error(exc: Exception) -> bool:
+    s = f"{type(exc).__name__}: {exc}".lower()
+    return "perminute" in s or "per minute" in s
+
+
 def _x_post_generate_content(client, *, model, contents, config):
-    """X-post 用 generate_content。無料枠上限/一時不可 (429/quota/503) は fallback
-    連鎖で自動切替、それ以外の例外は即 raise。
+    """X-post 用 generate_content。14 RPM で pace し、RPM 429 は同じ model を待ち再試行。
+    日次 quota / 503 だけ fallback 連鎖で自動切替、それ以外の例外は即 raise。
     試合時間帯外は primary を使わず fallback を直接使う(3.5 の 20回/日 枠温存)。
     2026-07-08 (user GO): 緊急枠の順は 2.5-flash (品質優先) → 2.5-flash-lite。
     2026-07-10 実測修正: 13時便で flash-lite の RPM(15/分) あふれが 3.5-flash
     (20回/日) へ流れて日中に食い潰した。対策2点:
     - primary (3.5) は連鎖の最後尾 (直接要求されない限り温存。試合帯の
       quote_rt 等は model=3.5 で直接要求するので従来どおり先頭)
-    - RPM 429 は指示待ち時間 45 秒以下なら同モデルで 1 回だけ待ちリトライ
-      (run 合計 120s cap。2026-07-10 18:45 実測: 3s 上限では 9〜39s 指示を
-      待てず品質劣化連鎖になった)
+    - RPM 429 は指示待ち時間 65 秒以下なら同モデルで 1 回だけ待ちリトライ
+      (run 合計 180s cap)。RPM 由来で 2.5 系に落とさない
     無料枠はモデル別勘定なので旧世代 flash が独自の日次枠を持つ。
     日次枠 429 を検知したモデルは 16:00 JST まで dead マークして呼ばない
     (circuit breaker)。全滅なら API を呼ばず raise (caller が graceful skip)。"""
@@ -396,26 +455,45 @@ def _x_post_generate_content(client, *, model, contents, config):
                 m,
                 last_exc,
             )
-        for attempt in (0, 1):
+        rpm_retried = False
+        while True:
             try:
+                _pace_llm_request(m)
                 return client.models.generate_content(model=m, contents=contents, config=config)
             except Exception as exc:  # noqa: BLE001 - fallback handling
                 if not _x_post_model_unavailable(exc):
                     raise
-                delay = _rpm_retry_delay_seconds(exc) if attempt == 0 else None
-                if (
-                    delay is not None
-                    and delay <= _RPM_WAIT_MAX_SECONDS
-                    and _RPM_WAIT_RUN_BUDGET["remaining"] >= delay
-                ):
-                    _RPM_WAIT_RUN_BUDGET["remaining"] -= delay
-                    log.info(
-                        "x_post_llm_rpm_wait model=%s delay=%.1fs (同モデル再試行、"
-                        "run残待ち枠=%.0fs)",
-                        m, delay, _RPM_WAIT_RUN_BUDGET["remaining"],
+                if _x_post_per_minute_quota_error(exc):
+                    delay = _rpm_retry_delay_seconds(exc)
+                    if delay is None:
+                        delay = _LLM_RPM_WINDOW_SECONDS
+                    if rpm_retried:
+                        log.warning(
+                            "x_post_llm_rpm_retry_exhausted model=%s (lower modelへは落とさない)",
+                            m,
+                        )
+                        raise
+                    if (
+                        delay <= _RPM_WAIT_MAX_SECONDS
+                        and _RPM_WAIT_RUN_BUDGET["remaining"] >= delay
+                    ):
+                        rpm_retried = True
+                        _RPM_WAIT_RUN_BUDGET["remaining"] -= delay
+                        log.info(
+                            "x_post_llm_rpm_wait model=%s delay=%.1fs (同モデル再試行、"
+                            "run残待ち枠=%.0fs)",
+                            m, delay, _RPM_WAIT_RUN_BUDGET["remaining"],
+                        )
+                        _time.sleep(delay + 0.2)
+                        continue
+                    log.warning(
+                        "x_post_llm_rpm_wait_unavailable model=%s delay=%.1fs remaining=%.1fs "
+                        "(lower modelへは落とさない)",
+                        m,
+                        delay,
+                        _RPM_WAIT_RUN_BUDGET["remaining"],
                     )
-                    _time.sleep(delay + 0.2)
-                    continue
+                    raise
                 _mark_model_quota_dead(m, exc)
                 last_exc = exc
                 break

@@ -176,3 +176,168 @@ def test_render_report_marks_metrics_misses():
         posts, {}, period_start_jst="2026-06-05", period_end_jst="2026-06-11"
     )
     assert "メトリクス取得失敗 2 件" in eng.render_report_text(report)
+
+# ---------------------------------------------------------------------------
+# follower snapshot
+# ---------------------------------------------------------------------------
+
+_LEGACY_BODY = (
+    '{"data": {"user": {"result": {"legacy": '
+    '{"followers_count": 10650, "friends_count": 4409, "statuses_count": 45422}}}}}'
+)
+
+
+def test_fetch_follower_counts_happy_path():
+    def fake_graphql(url: str, headers: dict[str, str]) -> tuple[int, str]:
+        assert "UserByScreenName" in url
+        assert "yoshilover6760" in url
+        assert headers["x-csrf-token"] in headers["Cookie"]
+        return 200, _LEGACY_BODY
+
+    result = eng.fetch_follower_counts(
+        "yoshilover6760", auth_token="tok", graphql_get=fake_graphql
+    )
+    assert result == {
+        "followers_count": 10650,
+        "friends_count": 4409,
+        "statuses_count": 45422,
+        "fetched": True,
+    }
+
+
+def test_fetch_follower_counts_retries_missing_features():
+    calls: list[str] = []
+
+    def fake_graphql(url: str, headers: dict[str, str]) -> tuple[int, str]:
+        calls.append(url)
+        if len(calls) == 1:
+            return 400, (
+                '{"errors": [{"message": "The following features cannot be null: '
+                'rweb_tipjar_consumption_enabled, verified_phone_label_enabled"}]}'
+            )
+        return 200, _LEGACY_BODY
+
+    result = eng.fetch_follower_counts(
+        "yoshilover6760", auth_token="tok", graphql_get=fake_graphql
+    )
+    assert result["fetched"] is True
+    # 2 回目の request に不足 feature が false で入っている
+    assert "rweb_tipjar_consumption_enabled" in calls[1]
+    assert "verified_phone_label_enabled" in calls[1]
+
+
+def test_fetch_follower_counts_fails_soft():
+    def fake_graphql(url: str, headers: dict[str, str]) -> tuple[int, str]:
+        return 401, '{"errors": [{"message": "Could not authenticate you"}]}'
+
+    result = eng.fetch_follower_counts("x", auth_token="bad", graphql_get=fake_graphql)
+    assert result["fetched"] is False
+    assert "authenticate" in result["error"]
+
+
+class _FakeBlob:
+    def __init__(self, store: dict[str, str], name: str):
+        self._store = store
+        self.name = name
+
+    def exists(self) -> bool:
+        return self.name in self._store
+
+    def upload_from_string(self, data: str, content_type: str = "") -> None:
+        self._store[self.name] = data
+
+    def download_as_text(self) -> str:
+        return self._store[self.name]
+
+
+class _FakeBucket:
+    def __init__(self, store: dict[str, str] | None = None):
+        self.store: dict[str, str] = store or {}
+
+    def blob(self, name: str) -> _FakeBlob:
+        return _FakeBlob(self.store, name)
+
+    def list_blobs(self, prefix: str = ""):
+        return [
+            _FakeBlob(self.store, name)
+            for name in sorted(self.store)
+            if name.startswith(prefix)
+        ]
+
+
+def test_snapshot_followers_writes_once_per_jst_day(monkeypatch):
+    monkeypatch.setenv("X_ENGAGEMENT_TWITTER_AUTH_TOKEN", "auth_token=tok")
+    monkeypatch.setattr(
+        eng,
+        "fetch_follower_counts",
+        lambda handle, *, auth_token: {"followers_count": 5, "fetched": True},
+    )
+    bucket = _FakeBucket()
+    stats = eng.snapshot_followers(bucket, now_utc=_NOW)
+    assert stats["written"] == 1
+    # _NOW (03:00 UTC) = JST 6/12
+    assert "x_engagement/followers/2026-06-12.json" in bucket.store
+    again = eng.snapshot_followers(bucket, now_utc=_NOW)
+    assert again == {"written": 0, "skipped": 1, "errors": 0, "no_token": 0}
+
+
+def test_snapshot_followers_skips_without_token(monkeypatch):
+    monkeypatch.delenv("X_ENGAGEMENT_TWITTER_AUTH_TOKEN", raising=False)
+    stats = eng.snapshot_followers(_FakeBucket(), now_utc=_NOW)
+    assert stats["no_token"] == 1
+
+
+def test_snapshot_followers_no_blob_when_all_fetches_fail(monkeypatch):
+    monkeypatch.setenv("X_ENGAGEMENT_TWITTER_AUTH_TOKEN", "tok")
+    monkeypatch.setattr(
+        eng,
+        "fetch_follower_counts",
+        lambda handle, *, auth_token: {"fetched": False, "error": "boom"},
+    )
+    bucket = _FakeBucket()
+    stats = eng.snapshot_followers(bucket, now_utc=_NOW)
+    assert stats["written"] == 0
+    assert bucket.store == {}  # 次回 collect で再試行できるよう日付枠を潰さない
+
+
+def test_load_follower_trend_and_report_render():
+    import json as _json
+
+    bucket = _FakeBucket(
+        {
+            "x_engagement/followers/2026-06-08.json": _json.dumps(
+                {
+                    "date_jst": "2026-06-08",
+                    "accounts": {"yoshilover6760": {"followers_count": 100, "fetched": True}},
+                }
+            ),
+            "x_engagement/followers/2026-06-11.json": _json.dumps(
+                {
+                    "date_jst": "2026-06-11",
+                    "accounts": {"yoshilover6760": {"followers_count": 112, "fetched": True}},
+                }
+            ),
+            # 期間外は無視される
+            "x_engagement/followers/2026-06-30.json": _json.dumps(
+                {
+                    "date_jst": "2026-06-30",
+                    "accounts": {"yoshilover6760": {"followers_count": 999, "fetched": True}},
+                }
+            ),
+        }
+    )
+    trend = eng._load_follower_trend(
+        bucket, period_start_jst="2026-06-05", period_end_jst="2026-06-11"
+    )
+    assert trend["yoshilover6760"]["start"] == 100
+    assert trend["yoshilover6760"]["end"] == 112
+    assert trend["yoshilover6760"]["delta"] == 12
+    report = eng.build_weekly_report(
+        [],
+        {},
+        period_start_jst="2026-06-05",
+        period_end_jst="2026-06-11",
+        followers=trend,
+    )
+    text = eng.render_report_text(report)
+    assert "@yoshilover6760: 112 (+12 / 2026-06-08〜2026-06-11)" in text

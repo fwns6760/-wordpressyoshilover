@@ -1,6 +1,14 @@
 # assignments — 現場担当と次アクション
 
-最終更新: 2026-07-13 JST (469/478 Gemini RPM 429ゼロ化 + 品質向上)
+最終更新: 2026-07-13 JST (MLB定点9人化 + 巨人引用RT記事型除外)
+
+## 2026-07-13 — MLB定点ポスト9人化 + 巨人引用RT動画優先 (user「追加」「記事型はでてこなくていい」)
+
+- **LIVE_IMAGE_UPDATED**: image `videofirst-df2d0df8` (Cloud Build `69a44dec` SUCCESS)、Job generation **336**。2 commit を 1 build に束ね。
+- commit `b4888764`: MLB定点ポストに日本人スター組6人追加 (山本由伸/佐々木朗希/今永昇太/鈴木誠也/吉田正尚/村上宗隆、mlb_id は statsapi 実確認)。元巨人組のみ親心 framing、他はニュートラル。tests 7 passed + statsapi 実 smoke (9選手/750字)。
+- commit `df2d0df8`: 巨人引用RT (gather_buzz_posts) から記事型📰 (メディア無し) を除外。写真📷は維持、トレンドペアは 🎬+📷 のみ。MLB側 article_max 枠 (7/12 user 要望) は別経路で不変。tests 299 passed。
+- env: `X_POST_VIDEO_RADAR_MAX` 9→12 (動画型を多く、rollback は env 戻しのみ)。
+- 次 = 明朝 8-10時便で 9 選手定点ポスト mail 確認 / 引用RT便で 📰 が消え 🎬 が増えるか確認 / 429=0 継続 (LLM 予算は vr_max 連動 +3/fire、afternoon squeeze 不変)。
 
 ## 2026-07-13 — 469/478 Gemini RPM 429ゼロ化 + 品質向上 (user GO)
 

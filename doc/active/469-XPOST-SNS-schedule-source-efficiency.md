@@ -1,6 +1,6 @@
 # 469 — X-post / SNS スケジュール & ソース効率化 + 全スケジューラ棚卸し
 
-- status: LIVE_IMAGE_UPDATED (step4b/5 deployed; 2026-07-13 RPM quality follow-up REPO_IMPL_TESTED / scheduler live / image deploy pending)
+- status: LIVE_IMAGE_UPDATED (step4b/5 deployed; 2026-07-13 RPM quality follow-up deployed / first natural fire success)
 - owner: Claude
 - created: 2026-06-03
 - 目的: Gemini 叩き(コスト)を減らしつつ、試合中はリアルタイム性を保つ。発火を「巨人のネタが動く時間 + user が起きている時間」に集約。SNS リアルタイムページは鮮度UP(Gemini不使用なのでコスト増なし)。
@@ -151,8 +151,15 @@
 
 ### 検証
 
+- commit `0082428f`: `fix: pace x post gemini calls without quality fallback`
 - `tests/test_x_post_branding_gen.py`: 126 passed
 - `tests/test_x_post_mail.py`: 286 passed / 4 subtests passed
-- compile / AST / deploy / 24h log 検証は後続で記録する。
+- `compileall` / AST parse / `git diff --check`: PASS
+- Cloud Build `4c61407c-48e4-4c60-84f2-03e6ae7e2e32` SUCCESS、image
+  `x-post-mail-lane:rpm-quality-0082428f`、digest `sha256:9babc6dca0ce...`。
+- Cloud Run Job generation `335`。env / Secret / args / X live post は変更なし。
+- first natural fire `x-post-mail-lane-757ws` (14:20 JST): 新digestで Completed=True / 49.6s。
+  新規MLB素材0件のためLLM=0 / mail=0の正常silent skip。
+- high-volume 便の 429=0 / max RPM≤14 / quality gate 通過率は24h自然発火で継続観測。
 - acceptance: 429=0 / 1分最大≤14 / RPM由来2.5 fallback=0 /
   候補生成数非悪化 / quality gate 通過率改善。

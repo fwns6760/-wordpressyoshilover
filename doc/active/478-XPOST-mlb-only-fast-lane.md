@@ -39,6 +39,9 @@
 
 - [x] scheduler 自然発火で mlb-only 便の log が出る(10:10 JST 便 candidates=2、mail 送信 + dedup 記録 ok=True)
 - [x] `:00` 重複起動の解消(schedule `10,20,30,40,50` live readback)
+- [x] 変更後自然発火(2026-07-13 14:20 JST): generation 335 / digest
+  `sha256:9babc6dca0ce...` / execution `x-post-mail-lane-757ws` Completed=True / 49.6s。
+  新規clip 0のためLLM・mailなしの正常silent skip。
 - [ ] 統合便との二重 mail が無い(dedup 共有の実地確認、翌朝便まで観察)
 - [ ] RSSHub 4xx/5xx が跳ねていない(Twitter 呼び出し負荷、1-2日観察)
 

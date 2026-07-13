@@ -6,8 +6,8 @@
 
 - **原因**: 野球側は本日211 calls / 429=10 / 1分最大19 calls。MLB高速便の`:00`と統合便が重なり、15 RPMを超過。per-fire core/aux budgetは別processを制御できない。
 - **Scheduler LIVE**: `x-post-mail-flush-mlb-live` を `*/10 8-15` → `10,20,30,40,50 8-15` へ変更。`:00`は既存統合便、15時は15:05便がカバーするため候補欠落なし。
-- **REPO_IMPL_TESTED**: `src/x_post_branding_gen.py` に全経路共通rolling 14 RPM pacer、RPM 429の同一model待ち再試行(2.5系へは落とさない)、上位候補のquality retry既定1→2(per-fire cap不変)を実装。
-- **tests**: branding 126 passed / x-post mail 286 passed + 4 subtests。次 = compile/AST → clean build/deploy → 自然発火で 429=0 / max RPM≤14 / RPM由来2.5 fallback=0 / 候補数非悪化を確認。
+- **LIVE_IMAGE_UPDATED**: commit `0082428f`。`src/x_post_branding_gen.py` に全経路共通rolling 14 RPM pacer、RPM 429の同一model待ち再試行(2.5系へは落とさない)、上位候補のquality retry既定1→2(per-fire cap不変)を実装。Cloud Build `4c61407c-48e4-4c60-84f2-03e6ae7e2e32` SUCCESS、image `rpm-quality-0082428f` digest `sha256:9babc6dca0ce...`、Job generation 335。env/Secret/args/X live postは不変。
+- **tests/live**: branding 126 passed / x-post mail 286 passed + 4 subtests / compileall / AST PASS。14:20自然発火 `x-post-mail-lane-757ws` は新digestでCompleted=True(49.6s)、新規MLBclip 0のためLLM/mail 0の正常silent skip。次 = 24h自然発火で429=0 / max RPM≤14 / RPM由来2.5 fallback=0 / 候補数非悪化 / gate通過率を確認。
 
 ## 2026-07-11 — 478 MLB動画 高速引用RT便 (user「メジャーの動画が日本人より早くほしい」)
 

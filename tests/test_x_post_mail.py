@@ -5028,9 +5028,13 @@ class MultiTeamHandleGiantsGateTests(unittest.TestCase):
 
 
 class TrendPairVideoAndArticleTests(unittest.TestCase):
-    """2026-07-10 user「記事ポストもトレンドにかかわる人なら動画と記事ポストの2つ出したい」"""
+    """2026-07-10 user「記事ポストもトレンドにかかわる人なら動画と記事ポストの2つ出したい」
 
-    # 同一選手×同一媒体で 動画付き + 記事 (静止) の 2 投稿
+    2026-07-13 user「巨人の記事型引用SNSはでてこなくていい」: 記事📰は source 段階で
+    落ちるため、トレンドペアは 🎬+📷 (写真) でのみ成立する。
+    """
+
+    # 同一選手×同一媒体で 動画付き + 写真 (静止) + 記事 (テキストのみ) の 3 投稿
     _FEED = (
         "<rss><channel>"
         "<item><title>坂本勇人 サヨナラ満塁ホームラン</title>"
@@ -5038,8 +5042,12 @@ class TrendPairVideoAndArticleTests(unittest.TestCase):
         "&lt;img src=&quot;https://pbs.twimg.com/amplify_video_thumb/111/img/abc.jpg&quot;&gt;</description>"
         "<link>https://x.com/hochi_giants/status/111</link></item>"
         "<item><title>坂本勇人 復活のサヨナラ弾 一問一答</title>"
-        "<description>坂本勇人 復活のサヨナラ弾 一問一答</description>"
+        "<description>坂本勇人 復活のサヨナラ弾 一問一答 "
+        "&lt;img src=&quot;https://pbs.twimg.com/media/def.jpg&quot;&gt;</description>"
         "<link>https://x.com/hochi_giants/status/112</link></item>"
+        "<item><title>坂本勇人 ヒーローインタビュー全文 記事</title>"
+        "<description>坂本勇人 ヒーローインタビュー全文 記事リンクのみ</description>"
+        "<link>https://x.com/hochi_giants/status/113</link></item>"
         "</channel></rss>"
     )
 
@@ -5054,12 +5062,13 @@ class TrendPairVideoAndArticleTests(unittest.TestCase):
     def _comment_fn(text, player, phase_hint="", **kw):
         return f"{player}、{'この一撃は劇的' if '満塁' in str(text) else '言葉に重みがある'}。"
 
-    def test_trend_player_gets_video_and_article_pair(self):
+    def test_trend_player_gets_video_and_photo_pair_article_dropped(self):
         from src import x_post_mail_lane as lane
         with self._detect_patch(), patch.object(
             lane, "_trending_text_blob", return_value="坂本勇人 サヨナラ"
         ):
-            # max_count=1 でも、トレンド関連選手の記事側は枠外ボーナスで残る
+            # max_count=1 でも、トレンド関連選手の写真側は枠外ボーナスで残る。
+            # 記事📰 (メディア無し /113) は 2026-07-13 user 指示で候補にしない。
             cands = lane.build_video_radar_candidates(
                 db_path=None, max_count=1,
                 fetch_fn=lambda url: self._FEED,
@@ -5068,7 +5077,7 @@ class TrendPairVideoAndArticleTests(unittest.TestCase):
             )
         self.assertEqual(len(cands), 2)
         kinds = {c.title.split(")")[0] for c in cands}
-        self.assertEqual(kinds, {"(引用RT🎬", "(引用RT📰"})
+        self.assertEqual(kinds, {"(引用RT🎬", "(引用RT📷"})
         self.assertTrue(all(c.focus_player == "坂本勇人" for c in cands))
 
     def test_non_trend_player_still_one_per_player_and_media(self):

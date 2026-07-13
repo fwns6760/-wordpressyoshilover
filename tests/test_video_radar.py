@@ -199,18 +199,17 @@ class PhotoAndArticleTests(unittest.TestCase):
             buzz_players={"坂本勇人"}, min_score=2, max_age_hours=1e9, **kw,
         )
 
-    def test_flag_on_keeps_photo_and_article(self):
+    def test_flag_on_keeps_photo_but_drops_article(self):
+        # 2026-07-13 user「巨人の記事型引用SNSはでてこなくていい」:
+        # flag ON でも 記事📰 (メディア無し) は通さない。写真📷は通す。
         posts = self._gather(require_video=True, allow_photo_and_article=True)
         urls = [p["url"] for p in posts]
         self.assertIn("https://x.com/y/status/1", urls)  # 動画
         self.assertIn("https://x.com/y/status/2", urls)  # 写真
-        self.assertIn("https://x.com/y/status/3", urls)  # 記事 (テキストのみ)
+        self.assertNotIn("https://x.com/y/status/3", urls)  # 記事 (テキストのみ)
         photo = [p for p in posts if p["url"].endswith("/2")][0]
         self.assertFalse(photo["has_video"])
         self.assertTrue(photo["has_image"])
-        article = [p for p in posts if p["url"].endswith("/3")][0]
-        self.assertFalse(article["has_video"])
-        self.assertFalse(article["has_image"])
 
     def test_flag_off_keeps_video_only(self):
         posts = self._gather(require_video=True, allow_photo_and_article=False)

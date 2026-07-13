@@ -335,8 +335,11 @@ def gather_buzz_posts(
     (user 2026-06-01)。 動画判定は description の動画サムネ/動画要素マーカー (実 feed 検証済)。
 
     ``allow_photo_and_article=True`` (2026-07-10 user「記事も。報知とか公式とかの
-    記事や写真系」) のとき動画 gate を外し、 写真付き・記事見出し投稿も通す
+    記事や写真系」) のとき動画 gate を外し、 写真付き投稿も通す
     (handle は全て媒体/公式/記者アカのため、 score gate と鮮度 gate はそのまま効く)。
+    2026-07-13 user「巨人の記事型引用SNSはでてこなくていい。動画型を多く」:
+    メディア無しのテキストのみ投稿 (記事📰) は flag ON でも通さない
+    (MLB 側の 📰 article_max 枠は別経路 build_mlb_watch_candidates で不変)。
 
     ``max_age_hours`` (既定 48h) より古い投稿は除外する (user 2026-06-01「古いデータ出さない」)。
     feed には最大 1 週間前の投稿が混ざるため、 pubDate ベースで鮮度 gate する。 投稿日時不明は
@@ -361,8 +364,12 @@ def gather_buzz_posts(
             if _is_retweet_text(text):
                 continue
             has_video = bool(item.get("has_video"))
-            if require_video and not has_video and not allow_photo_and_article:
-                continue
+            if require_video and not has_video:
+                if not allow_photo_and_article:
+                    continue
+                # 2026-07-13 user: 記事型 (メディア無し) は落とす。写真📷は通す。
+                if not item.get("has_image"):
+                    continue
             published_at = item.get("published_at")
             if published_at is not None:
                 age_h = (now - published_at).total_seconds() / 3600.0

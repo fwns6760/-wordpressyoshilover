@@ -83,6 +83,34 @@ class BuildMlbMorningDigestTests(unittest.TestCase):
         )
         self.assertIsNone(again)
 
+    def test_extra_star_specs_cover_japanese_mlb_stars(self):
+        # 2026-07-13 user「追加」: 日本人スター組も定点ポスト対象 (503 欠落の均等担保)。
+        from src.mlb_morning_digest_post import _DIGEST_SPECS, _EXTRA_STAR_SPECS
+
+        names = {s["name"]: s["group"] for s in _EXTRA_STAR_SPECS}
+        self.assertEqual(
+            set(names),
+            {"山本由伸", "佐々木朗希", "今永昇太", "鈴木誠也", "吉田正尚", "村上宗隆"},
+        )
+        self.assertEqual(names["山本由伸"], "pitching")
+        self.assertEqual(names["鈴木誠也"], "hitting")
+        # 全 spec に statsapi 用 mlb_id が入っている
+        for s in _DIGEST_SPECS + _EXTRA_STAR_SPECS:
+            self.assertIsInstance(s["mlb_id"], int)
+
+    def test_star_player_appears_in_post(self):
+        data = _data()
+        data["players"].append({
+            "name": "山本由伸", "group": "pitching", "team": "ドジャース",
+            "season": {"games": 19, "wins": 10, "losses": 3, "era": "2.55", "ip": "120.1", "so": 128},
+            "last_game": {"date": "2026-07-12", "opponent": "ジャイアンツ",
+                          "ip": "7.0", "runs": 1, "so": 9, "hits": 4},
+        })
+        c = build_mlb_morning_digest_candidate(now=_now8(), data=data)
+        self.assertIsNotNone(c)
+        self.assertIn("山本由伸", c.post_text)
+        self.assertIn("10勝3敗", c.post_text)
+
 
 if __name__ == "__main__":
     unittest.main()

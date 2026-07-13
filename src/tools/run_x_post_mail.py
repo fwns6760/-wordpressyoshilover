@@ -5296,6 +5296,27 @@ def main(argv: Sequence[str] | None = None) -> int:
                 LOG.info("morning_digest appended: %s", _md_cand.title)
         except Exception as _md_exc:  # noqa: BLE001
             LOG.info("morning_digest skip: %r", _md_exc)
+    # 2026-07-13 user GO: 毎朝の「今日の大谷・元巨人組」MLB定点ポスト (1日1本、
+    # 8時台の mlb-morning 便に乗る)。既定 OFF (test hermetic)、prod job は env ON。
+    _mmd_flag = (os.environ.get("ENABLE_X_POST_MLB_MORNING_DIGEST") or "").strip().lower()
+    if _mmd_flag in {"1", "true", "yes", "on"}:
+        try:
+            from src.mlb_morning_digest_post import build_mlb_morning_digest_candidate
+
+            _mmd_cand = build_mlb_morning_digest_candidate(
+                now=now_jst,
+                gemini_api_key=(
+                    os.environ.get("GEMINI_API_KEY")
+                    or os.environ.get("GEMMA_BRANDING_GEMINI_API_KEY")
+                    or ""
+                ),
+                dedup_set=dedup_set,
+            )
+            if _mmd_cand is not None:
+                candidates.insert(0, _mmd_cand)
+                LOG.info("mlb_morning_digest appended: %s", _mmd_cand.title)
+        except Exception as _mmd_exc:  # noqa: BLE001
+            LOG.info("mlb_morning_digest skip: %r", _mmd_exc)
     # 2026-07-10 user GO (A+C、検索需要の先回り): A=予告先発予習 (朝/昼/試合前の
     # 最大3回)、C=スタメン発表の9人フルネーム列挙 (発表検知時)。既定 OFF
     # (test hermetic)、prod job は env ON。

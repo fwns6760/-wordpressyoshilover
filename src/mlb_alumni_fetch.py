@@ -363,11 +363,16 @@ def mlb_alumni_fact_line(player_name: str, data: dict) -> str:
     return ""
 
 
-def fetch_mlb_alumni_data(season: int | None = None) -> dict:
-    """全対象選手の今季成績 + 直近試合を取得する。失敗選手は除外。"""
+def fetch_mlb_alumni_data(season: int | None = None, specs: list[dict] | None = None) -> dict:
+    """全対象選手の今季成績 + 直近試合を取得する。失敗選手は除外。
+
+    ``specs`` (2026-07-13 朝のMLB定点ポスト用): 対象選手 spec list を差し替え可
+    (default は従来の MLB_ALUMNI = 記事化 policy の元巨人のみ)。X 定点ポストは
+    大谷を加えた別 list を渡す (記事側の policy は不変)。
+    """
     season = season or datetime.now(_JST).year
     players: list[dict] = []
-    for spec in MLB_ALUMNI:
+    for spec in (specs if specs is not None else MLB_ALUMNI):
         try:
             stats = _get_json(
                 f"{_API_BASE}/people/{spec['mlb_id']}/stats"

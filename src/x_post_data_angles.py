@@ -602,6 +602,10 @@ _INHERENT_NOW_METRICS = frozenset({
     "NEWS_OPINION", "PLAYER_COMMENT", "COMMENT_DB", "HOCHI_REPLY",
     "reply_candidate", "news_scrape", "mlb_watch_post", "FAN_VOICE",
     "GEMMA_BRANDING",
+    # 2026-07-14: 巨人動画引用RT (x_buzz_post) は鮮度 floor 2h の「今バズ」lane。
+    # mlb_watch_post と同じ最低限の「今」保証を与える (無いと文脈ゼロ扱いで
+    # 便あたり 2 件 cap に飲まれ、動画候補がメールへほぼ載らない)。
+    "x_buzz_post",
 })
 
 
@@ -688,7 +692,7 @@ def apply_now_context_priority(
     """文脈スコア降順の stable sort + 文脈ゼロ候補の便あたり上限。
 
     スコア = max(選手フックのスコア, metric 固有スコア)。文脈ゼロ (score 0、
-    例: 二軍練習クリップの引用RT) は先頭から ``non_context_max`` 件だけ残す。
+    例: フック無し選手のデータ角度) は先頭から ``non_context_max`` 件だけ残す。
     ただし総数が ``min_keep`` を割る場合は割らない所まで残す (メールを枯らさない)。
     文脈ありが 1 件も無い便は並び・件数とも不変 (従来挙動)。
     """

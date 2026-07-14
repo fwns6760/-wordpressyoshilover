@@ -1020,23 +1020,28 @@ def test_now_context_hooks_stale_game_ignored(tmp_path):
 def test_now_context_priority_orders_and_caps(tmp_path):
     from types import SimpleNamespace as NS
     hooks = {"好打者": ("昨日3安打", 2), "スタメン男": ("今日のスタメン", 3)}
+    # 2026-07-14: x_buzz_post (巨人動画引用RT) は inherent now 扱いへ変更 (score 1)。
+    # 文脈ゼロの cap 対象は「フック無し選手のデータ角度」等の非 inherent metric。
     cands = [
-        NS(metric="x_buzz_post", focus_player="二軍練習A", why_now=""),
-        NS(metric="x_buzz_post", focus_player="二軍練習B", why_now=""),
-        NS(metric="x_buzz_post", focus_player="二軍練習C", why_now=""),
+        NS(metric="データ角度", focus_player="フック無しA", why_now=""),
+        NS(metric="データ角度", focus_player="フック無しB", why_now=""),
+        NS(metric="データ角度", focus_player="フック無しC", why_now=""),
         NS(metric="x_buzz_post", focus_player="好打者", why_now="動画"),
         NS(metric="試合前見どころ", focus_player="", why_now="今日の試合"),
         NS(metric="NEWS_OPINION", focus_player="ニュース選手", why_now=""),
+        NS(metric="x_buzz_post", focus_player="動画男", why_now=""),
         NS(metric="x_buzz_post", focus_player="スタメン男", why_now=""),
     ]
     out = angles.apply_now_context_priority(cands, hooks, non_context_max=2, min_keep=3)
     # 文脈スコア降順 (同スコアは入力順の stable sort):
-    # 見どころ(3) → スタメン(3) → 好打者(2) → ニュース(1) → 文脈ゼロは2件まで
+    # 見どころ(3) → スタメン(3) → 好打者(2) → ニュース/動画男(1) → 文脈ゼロは2件まで
     players = [c.focus_player or c.metric for c in out]
     assert players[:2] == ["試合前見どころ", "スタメン男"]
     assert players[2] == "好打者"
-    assert len([p for p in players if p.startswith("二軍練習")]) == 2
-    assert len(out) == 6
+    # フック無しの巨人動画引用RT (動画男) は inherent now (score 1) で cap に飲まれない
+    assert "動画男" in players
+    assert len([p for p in players if p.startswith("フック無し")]) == 2
+    assert len(out) == 7
     # why_now にフックが前置される (選手フック由来のみ)
     assert out[1].why_now.startswith("⏰今日のスタメン")
     assert "⏰昨日3安打" in out[2].why_now

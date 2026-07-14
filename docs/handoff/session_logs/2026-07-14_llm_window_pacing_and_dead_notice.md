@@ -33,3 +33,9 @@
 - 11:07 JST | build 737eab8f SUCCESS → job update llmpacing-13e5492c
 - 11:20 JST | prod verify OK | 10:20便 sent + 台帳記録確認 | push済
 - next | フォロワー成長の再配分: 週次実測でワースト枠洗い出し→当たり枠(トレンド反応/MLB動画)へ。リプ増枠はしない
+
+## 追記: MLB枠「リプばかり」対策 (11:00 JST, user指摘)
+
+- 実態: 引用RT投稿は毎時の頭にまとめて出て(今朝23件)、間の*/10便はdedup済みでリプ1〜2件のみ→「リプばかり」に見えた
+- env変更のみ: `X_POST_MLB_FAST_REPLY_MAX` 2→0(リプだけmail廃止) / `X_POST_MLB_ARTICLE_MAX` 1→3(📰記事・コメント投稿の引用RT枠拡大、ハルシ防止prompt済みで安全) / `X_POST_MLB_REPLY_MAX` 6→3
+- 10:50便 verify: fast reply 0件・新clipなし→silent skip(mail送らず)。リプだけのmailが消えたことを確認

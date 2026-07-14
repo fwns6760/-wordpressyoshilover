@@ -5160,7 +5160,11 @@ class BuildMlbWatchCandidatesTests(unittest.TestCase):
         self.assertEqual(sorted(players), ["大谷翔平", "岡本和真"])
         for c in cands:
             self.assertEqual(c.metric, "mlb_watch_post")
-            self.assertTrue(c.signature.startswith("mlbwatch|"))
+            # 号数が取れるHR動画は event 基準 (mlbevt|)、それ以外は URL 基準
+            self.assertTrue(
+                c.signature.startswith("mlbwatch|")
+                or c.signature.startswith("mlbevt|")
+            )
             self.assertTrue(c.quote_url.startswith("https://x.com/MLBJapan/status/"))
             self.assertEqual(c.media_handle, "mlbjapan")
             self.assertIn("コピペ用", c.draft_text)
@@ -5487,7 +5491,8 @@ class BuildMlbWatchCandidatesTests(unittest.TestCase):
         import hashlib as _h
         url = "https://x.com/MLBJapan/status/1"
         sig = "mlbwatch|" + _h.sha1(url.encode("utf-8")).hexdigest()[:16]
-        feed = self._feed(self._item("大谷翔平が第30号ホームラン", "1"))
+        # 号数なし動画は従来通り URL signature で dedup
+        feed = self._feed(self._item("大谷翔平がマルチ安打の活躍", "1"))
         cands = lane.build_mlb_watch_candidates(
             max_count=3,
             fetch_fn=lambda url: feed if "MLBJapan" in url else "<rss><channel></channel></rss>",
@@ -5495,6 +5500,121 @@ class BuildMlbWatchCandidatesTests(unittest.TestCase):
             dedup_set={sig},
         )
         self.assertEqual(cands, [])
+
+    def test_same_hr_clip_deduped_across_handles(self):
+        """2026-07-14 user「動画の重複がある」: 同じHR (選手×号数) の clip は
+        媒体違い・URL違いでも 1 本に束ねる。別の号数は普通に通る。"""
+        from src import x_post_mail_lane as lane
+
+        def item(handle: str, title: str, status_id: str) -> str:
+            return (
+                f"<item><title>{title}</title>"
+                f"<description>{title} &lt;img src=&quot;"
+                f"https://pbs.twimg.com/amplify_video_thumb/{status_id}/img/x.jpg&quot;&gt;"
+                f"</description>"
+                f"<link>https://x.com/{handle}/status/{status_id}</link></item>"
+            )
+
+        jp_feed = self._feed(item("MLBJapan", "大谷翔平が第30号ホームラン", "31"))
+        us_feed = self._feed(
+            item("MLB", "Shohei Ohtani crushes his 30th home run", "32")
+        )
+
+        def fetch(url: str) -> str:
+            if "user/MLBJapan" in url:
+                return jp_feed
+            if "user/MLB?" in url:
+                return us_feed
+            return "<rss><channel></channel></rss>"
+
+        cands = lane.build_mlb_watch_candidates(
+            max_count=4,
+            ohtani_max=3,
+            handles=["MLBJapan", "MLB"],
+            fetch_fn=fetch,
+            comment_fn=lambda _pt, pl: f"{pl}、これは効く一発。",
+        )
+        # 同じ 30 号なので 1 本だけ。signature は event 基準。
+        self.assertEqual(len(cands), 1)
+        self.assertTrue(cands[0].signature.startswith("mlbevt|"))
+
+    def test_same_hr_clip_deduped_across_runs_via_event_signature(self):
+        """前便で送った 30 号 clip の event signature が台帳にあれば、
+        別媒体の同じ 30 号 clip も次便で落ちる。"""
+        import hashlib as _h
+        from src import x_post_mail_lane as lane
+        prev_sig = "mlbevt|" + _h.sha1("大谷翔平|hr30".encode("utf-8")).hexdigest()[:16]
+        feed = self._feed(self._item("大谷翔平 今季第30号ホームラン", "41"))
+        cands = lane.build_mlb_watch_candidates(
+            max_count=3,
+            fetch_fn=lambda url: feed if "MLBJapan" in url else "<rss><channel></channel></rss>",
+            comment_fn=lambda _pt, pl: f"{pl}、これは効く一発。",
+            dedup_set={prev_sig},
+        )
+        self.assertEqual(cands, [])
+
+    def test_hr_countdown_text_not_treated_as_event(self):
+        """「30号に王手」等の未達文を 30 号本体と誤認して event key を
+        作らない (実際の 30 号 clip が出なくなる誤ブロック防止)。"""
+        from src import x_post_mail_lane as lane
+        self.assertEqual(lane._mlb_watch_hr_event_no("大谷翔平が30号に王手"), 0)
+        self.assertEqual(lane._mlb_watch_hr_event_no("30号まであと2本の大谷翔平"), 0)
+        self.assertEqual(lane._mlb_watch_hr_event_no("大谷翔平、あと1本で40号"), 0)
+        self.assertEqual(lane._mlb_watch_hr_event_no("大谷翔平が第30号ホームラン"), 30)
+        self.assertEqual(
+            lane._mlb_watch_hr_event_no("Shohei Ohtani crushes his 30th home run"), 30
+        )
+
+    def test_same_play_window_dedupes_within_run_but_keeps_far_apart_videos(self):
+        """号数が取れない動画は、同便内で同一選手の published_at が近接
+        (45分以内) した 2 本目だけ落とす。時間が離れた別プレーは両方通る
+        (2026-07-14 user「厳しすぎて動画がでなくなるのはやめて」)。"""
+        from datetime import datetime, timedelta, timezone
+        from email.utils import format_datetime
+        from src import x_post_mail_lane as lane
+
+        now = datetime(2026, 7, 14, 10, 0, tzinfo=timezone(timedelta(hours=9)))
+
+        def item(handle: str, title: str, status_id: str, age_min: float) -> str:
+            pub = format_datetime(
+                (now - timedelta(minutes=age_min)).astimezone(timezone.utc)
+            )
+            return (
+                f"<item><title>{title}</title>"
+                f"<description>{title} &lt;img src=&quot;"
+                f"https://pbs.twimg.com/amplify_video_thumb/{status_id}/img/x.jpg&quot;&gt;"
+                f"</description>"
+                f"<link>https://x.com/{handle}/status/{status_id}</link>"
+                f"<pubDate>{pub}</pubDate></item>"
+            )
+
+        jp_feed = self._feed(item("MLBJapan", "岡本和真がタイムリーヒット", "51", 10.0))
+        us_feed = self._feed(
+            # 20分差 = 同じプレーの clip とみなして落ちる
+            item("MLB", "Kazuma Okamoto with a clutch hit", "52", 30.0),
+            # 3時間差 = 別プレーなので通る
+            item("MLB", "Kazuma Okamoto makes a diving catch", "53", 190.0),
+        )
+
+        def fetch(url: str) -> str:
+            if "user/MLBJapan" in url:
+                return jp_feed
+            if "user/MLB?" in url:
+                return us_feed
+            return "<rss><channel></channel></rss>"
+
+        cands = lane.build_mlb_watch_candidates(
+            now=now,
+            max_count=4,
+            per_player_max=3,
+            handles=["MLBJapan", "MLB"],
+            fetch_fn=fetch,
+            comment_fn=lambda _pt, pl: f"{pl}、これは効く一発。",
+        )
+        urls = sorted(c.quote_url for c in cands)
+        self.assertEqual(len(cands), 2, urls)
+        self.assertIn("https://x.com/MLBJapan/status/51", urls)
+        self.assertIn("https://x.com/MLB/status/53", urls)
 
     def test_us_team_english_feed_detected(self):
         # 2026-07-02 user「アメリカの所属チームとかか」: US 公式の英語 feed でも

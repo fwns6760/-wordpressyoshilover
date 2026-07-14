@@ -2707,6 +2707,37 @@ _MLB_EXTRA_STARS = frozenset({
 })
 
 
+# 2026-07-14 user「動画の重複がある」(同じHRのclipが媒体違いで何度も候補に載る):
+# 本文から通算/今季の本塁打「号数」を拾い、同一 (選手×号数) を同じプレーとして
+# 束ねる。号数が取れない動画は published_at の近接 (同便内のみ) で束ねる。
+# 「あと2本で30号」等のカウントダウン文は号数と誤認しないよう除外する。
+_MLB_HR_NO_JP = _re.compile(r"第?\s*(\d{1,3})\s*号")
+_MLB_HR_NO_EN = _re.compile(
+    r"\b(\d{1,3})(?:st|nd|rd|th)\s+(?:home\s*run|homer|hr)\b", _re.I
+)
+_MLB_HR_NO_EN_NO = _re.compile(r"\b(?:home\s*run|homer|hr)\s+no\.?\s*(\d{1,3})\b", _re.I)
+
+
+def _mlb_watch_hr_event_no(text: str) -> int:
+    """本文が伝える本塁打の号数 (今季/通算) を返す。取れなければ 0。"""
+    s = text or ""
+    m = _MLB_HR_NO_JP.search(s)
+    if m:
+        # 「あと N 本で 30 号」「30 号まで」「30 号に王手」等の未達文は
+        # 同一プレー key にしない (実際の 30 号 clip を誤ブロックすると
+        # 「動画が出なくなる」側に倒れるため、迷ったら key 無しに倒す)
+        tail = s[m.end():m.end() + 6]
+        head = s[max(0, m.start() - 6):m.start()]
+        if "まで" in tail or "王手" in tail or "ならず" in tail or "あと" in head:
+            return 0
+        return int(m.group(1))
+    for pat in (_MLB_HR_NO_EN, _MLB_HR_NO_EN_NO):
+        m = pat.search(s)
+        if m:
+            return int(m.group(1))
+    return 0
+
+
 def _detect_mlb_watch_player(text: str) -> str:
     for name, aliases in _MLB_WATCH_PLAYERS.items():
         if any(a in text for a in aliases):
@@ -2729,8 +2760,18 @@ def build_mlb_watch_candidates(
     per_player_max: int = 1,
     ex_giants_max_age_hours: float = 0.0,
     article_max: int = 0,
+    same_play_window_min: float = 45.0,
 ) -> list[Candidate]:
     """元巨人MLB組 + 大谷の引用RT候補。動画付き優先。
+
+    ``same_play_window_min`` (2026-07-14 user「動画の重複がある」+「厳しすぎて
+    動画がでなくなるのはやめて」): 同じプレーの clip が媒体違いで並ぶ重複だけを
+    落とす。選手単位の本数は絞らない (別プレーの動画は全部通す)。
+    - 号数が取れる本塁打は (選手×号数) を同一プレー key にし、signature を
+      event 基準 (``mlbevt|``) にする → 便をまたいでも同じHRのclipは1本。
+    - 号数が取れない動画は、同便内で同一選手の published_at がこの分数以内の
+      2本目以降だけ落とす (便をまたぐ時間窓ガードはしない = 出なくなる側に
+      倒さない)。0 で無効。
 
     ``article_max`` (2026-07-12 user「メジャーの記事引用増やせる?」LLM枠内):
     テキスト/記事ポスト (メディアなし) を 📰 として 1 便この本数まで通す
@@ -2820,6 +2861,9 @@ def build_mlb_watch_candidates(
     )
     out: list[Candidate] = []
     used_player_handles: set[str] = set()
+    used_signatures: set[str] = set()
+    # 同便内の同一プレー判定用: 採用済み動画の (player, published_at)
+    accepted_video_times: list[tuple[str, datetime]] = []
     player_counts: dict[str, int] = {}
     ohtani_used = 0
     ohtani_video_used = 0
@@ -2861,6 +2905,31 @@ def build_mlb_watch_candidates(
             tweet_id = m.group(1)
         sig_prefix = "mlbreply|" if as_reply else "mlbwatch|"
         signature = sig_prefix + _hashlib.sha1(url.encode("utf-8")).hexdigest()[:16]
+        # 同一プレー重複ガード (2026-07-14): 引用RTの動画のみ対象。
+        # 別プレーの動画は落とさない (選手単位の本数制限はしない)。
+        if not as_reply and p["has_video"]:
+            hr_no = _mlb_watch_hr_event_no(p["text"])
+            if hr_no > 0:
+                # 同じHR (選手×号数) は媒体・URL が違っても同じ signature に
+                # なる → 便をまたいだ再掲も既存の dedup 台帳で止まる。
+                signature = "mlbevt|" + _hashlib.sha1(
+                    f"{player}|hr{hr_no}".encode("utf-8")
+                ).hexdigest()[:16]
+            elif same_play_window_min > 0 and p["published_at"] is not None:
+                _near_dupe = any(
+                    pl == player
+                    and abs((p["published_at"] - ts).total_seconds())
+                    <= same_play_window_min * 60.0
+                    for pl, ts in accepted_video_times
+                )
+                if _near_dupe:
+                    LOG.info(
+                        "mlb_watch skip: same-play window player=%s handle=%s",
+                        player, p["handle"],
+                    )
+                    continue
+        if signature in used_signatures:
+            continue
         if dedup_set is not None and signature in dedup_set:
             continue
         post_text = ""
@@ -2953,6 +3022,9 @@ def build_mlb_watch_candidates(
                 media_handle=handle.strip().lower(),
             ))
         used_player_handles.add(player_handle_key)
+        used_signatures.add(signature)
+        if not as_reply and p["has_video"] and p["published_at"] is not None:
+            accepted_video_times.append((player, p["published_at"]))
         player_counts[player] = player_counts.get(player, 0) + 1
         if not p["has_media"]:
             article_used += 1

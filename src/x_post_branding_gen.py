@@ -137,6 +137,37 @@ def _llm_budget_guard(label: str = "") -> None:
         )
     _LLM_BUDGET["used"] += 1
 
+
+def get_llm_calls_made() -> int:
+    """この run で budget guard を通過した LLM 呼び出し数 (共有 + リプ + aux 合算)。
+
+    2026-07-14 user GO「残高連動の自動配分」: run 終了時に run_x_post_mail が
+    この値を GCS の窓内消費台帳へ記録し、次便の per-fire 予算計算に使う。
+    """
+    return (
+        int(_LLM_BUDGET["used"])
+        + int(_LLM_BUDGET["reply_used"])
+        + sum(_AUX_LLM_BUDGET_USED.values())
+    )
+
+
+def llm_all_models_quota_dead(now=None) -> bool:
+    """標準連鎖 (fallback + emergency + primary) の全モデルが日次枠 dead か。
+
+    True = この窓ではもう LLM が一切呼べない (2026-07-14 枯渇通知 + 以降の
+    空発火停止の判定に使う)。RPM 429 は dead 対象外なので含まれない。
+    """
+    models = [
+        m
+        for m in (
+            _X_POST_GEMINI_FALLBACK_MODEL,
+            *_X_POST_GEMINI_EMERGENCY_MODELS,
+            _X_POST_GEMINI_PRIMARY_MODEL,
+        )
+        if m
+    ]
+    return bool(models) and all(_model_quota_dead(m, now) for m in models)
+
 # X インプ向上 Phase 5 (2026-05-27): source URL → 公式 X @ handle のマッピング。
 # 投稿候補本文に「(出典 @hochi_giants)」 を末尾付与することで、 公式 / 媒体の
 # 引用 RT / リプライ流入を狙う。 X intent や手動投稿に対する attribution として機能。

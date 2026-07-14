@@ -5639,6 +5639,109 @@ class BuildMlbWatchCandidatesTests(unittest.TestCase):
         self.assertIn("/Dodgers/status/21", cands[0].quote_url)
 
 
+class LlmWindowPacingTests(unittest.TestCase):
+    """2026-07-14 user GO「残高連動の自動配分」: 窓 key と per-fire 予算計算。"""
+
+    def test_window_key_16h_jst_boundary(self):
+        from src import x_post_mail_lane as lane
+        before = datetime(2026, 7, 14, 15, 59, tzinfo=JST)
+        after = datetime(2026, 7, 14, 16, 0, tzinfo=JST)
+        self.assertEqual(lane._llm_quota_window_key(before), "2026-07-13")
+        self.assertEqual(lane._llm_quota_window_key(after), "2026-07-14")
+
+    def test_paced_budget_distributes_remaining_over_time(self):
+        from src import x_post_mail_lane as lane
+        # 10:00 JST → 窓末 16:00 まで 360 分。残 180 回、10 分便 → 180*10/360 = 5
+        now = datetime(2026, 7, 14, 10, 0, tzinfo=JST)
+        self.assertEqual(
+            lane.paced_llm_fire_budget(
+                180, now, fire_interval_min=10, static_cap=10
+            ),
+            5,
+        )
+
+    def test_paced_budget_on_track_keeps_full_static_cap(self):
+        """ガードレール型: 消費ペースが時間ペース以下なら絞らない
+        (窓の頭=夜試合帯をフル予算で走らせる、動画を減らさない)。"""
+        from src import x_post_mail_lane as lane
+        # 18:00 JST = 窓開始 2h、残り 22h (frac_left≒0.917)。
+        # 消費 30 (残 420 >= 450*0.917=412.5) → on-track → static のまま
+        now = datetime(2026, 7, 14, 18, 0, tzinfo=JST)
+        self.assertEqual(
+            lane.paced_llm_fire_budget(
+                420, now, fire_interval_min=15, static_cap=11, window_quota=450
+            ),
+            11,
+        )
+        # 消費 200 (残 250 < 412.5) → 先行しすぎ → 等配分へ squeeze
+        self.assertLess(
+            lane.paced_llm_fire_budget(
+                250, now, fire_interval_min=15, static_cap=11, window_quota=450
+            ),
+            11,
+        )
+
+    def test_paced_budget_capped_by_static_and_floored(self):
+        from src import x_post_mail_lane as lane
+        now = datetime(2026, 7, 14, 10, 0, tzinfo=JST)
+        # 残がたっぷりなら固定 cap で頭打ち
+        self.assertEqual(
+            lane.paced_llm_fire_budget(
+                5000, now, fire_interval_min=10, static_cap=10
+            ),
+            10,
+        )
+        # 残り僅少でも floor (既定2) は出す = 便を全滅させない
+        self.assertEqual(
+            lane.paced_llm_fire_budget(
+                6, now, fire_interval_min=10, static_cap=10
+            ),
+            2,
+        )
+        # 残 1 なら floor より残を優先 (枠は超えない)
+        self.assertEqual(
+            lane.paced_llm_fire_budget(
+                1, now, fire_interval_min=10, static_cap=10
+            ),
+            1,
+        )
+        # 残ゼロは 0 (LLM を呼ばない)
+        self.assertEqual(
+            lane.paced_llm_fire_budget(
+                0, now, fire_interval_min=10, static_cap=10
+            ),
+            0,
+        )
+
+    def test_llm_calls_made_counts_all_buckets(self):
+        from src import x_post_branding_gen as xbg
+        xbg.set_llm_budget(10, reply_reserve=3)
+        xbg._llm_budget_guard("quote_rt")
+        xbg._llm_budget_guard("reply")
+        xbg._llm_budget_guard("comment_context")
+        self.assertEqual(xbg.get_llm_calls_made(), 3)
+        xbg.set_llm_budget(None)  # 後続テストへの汚染防止 (リセット)
+
+    def test_all_models_quota_dead_detection(self):
+        from datetime import timedelta as _td
+        from src import x_post_branding_gen as xbg
+        now = datetime(2026, 7, 14, 14, 0, tzinfo=JST)
+        until = now + _td(hours=2)
+        models = [
+            xbg._X_POST_GEMINI_FALLBACK_MODEL,
+            *xbg._X_POST_GEMINI_EMERGENCY_MODELS,
+            xbg._X_POST_GEMINI_PRIMARY_MODEL,
+        ]
+        try:
+            for m in models[:-1]:
+                xbg._MODEL_QUOTA_DEAD_UNTIL[m] = until
+            self.assertFalse(xbg.llm_all_models_quota_dead(now))
+            xbg._MODEL_QUOTA_DEAD_UNTIL[models[-1]] = until
+            self.assertTrue(xbg.llm_all_models_quota_dead(now))
+        finally:
+            xbg._MODEL_QUOTA_DEAD_UNTIL.clear()
+
+
 class XBuzzPlayerFactTests(unittest.TestCase):
     """451: 引用RT コメントを濃くする今季実数字 (insight.db read-only)。"""
 

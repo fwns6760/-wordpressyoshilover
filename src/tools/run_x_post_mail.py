@@ -364,6 +364,98 @@ def _quota_tail_llm_cap(
     return max_calls
 
 
+# ── LLM 残高連動 pacing (2026-07-14 user GO) ──────────────────────────
+# 窓 (16:00 JST リセット) の残り枠を GCS 台帳から読み、「残り枠 ÷ 残り時間」で
+# per-fire 予算を自動計算する。固定 cap (_quota_tail_llm_cap) は上限として残す。
+# 台帳不達 / env off の時は従来の固定 cap にそのまま落ちる。
+
+
+def _llm_pacing_enabled() -> bool:
+    raw = (os.environ.get("X_POST_LLM_PACING_ENABLED") or "1").strip().lower()
+    return raw not in {"0", "false", "no", "off"}
+
+
+def _llm_window_quota() -> int:
+    """窓 (日次) の総予算。無料枠 500/日 に対し既定は保守的に 450。"""
+    return _resolve_int_env("X_POST_LLM_WINDOW_QUOTA", 450, min_value=1)
+
+
+def _apply_llm_window_pacing(
+    now_jst, *, fire_interval_min: float, static_max: int, lane_label: str
+) -> tuple[int, bool]:
+    """(この便のLLM予算, 窓dead) を返す。dead=True の便は即 skip してよい。"""
+    if static_max <= 0 or not _llm_pacing_enabled():
+        return static_max, False
+    bucket_name = os.environ.get("INSIGHT_GCS_BUCKET") or ""
+    if not bucket_name:
+        return static_max, False
+    if lane.llm_window_dead_marked(bucket_name, now_jst):
+        LOG.info(
+            "llm_pacing: window dead-marked — %s fire skipped (16:00 JST 復帰)",
+            lane_label,
+        )
+        return 0, True
+    usage = lane.load_llm_window_usage(bucket_name, now_jst)
+    if usage is None:
+        return static_max, False
+    quota = _llm_window_quota()
+    remaining = quota - usage
+    budget = lane.paced_llm_fire_budget(
+        remaining, now_jst,
+        fire_interval_min=fire_interval_min,
+        static_cap=static_max,
+        floor=_resolve_int_env("X_POST_LLM_FIRE_FLOOR", 2, min_value=0),
+        window_quota=quota,
+    )
+    if budget != static_max:
+        LOG.info(
+            "llm_pacing: %s budget %d -> %d (window used=%d remaining=%d)",
+            lane_label, static_max, budget, usage, remaining,
+        )
+    return budget, False
+
+
+def _finish_llm_window_accounting(now_jst, recipients, *, lane_label: str) -> None:
+    """run 終了時: 消費数を台帳へ記録し、全モデル日次枠切れなら 1 回だけ通知。"""
+    bucket_name = os.environ.get("INSIGHT_GCS_BUCKET") or ""
+    if not bucket_name or _xbg is None:
+        return
+    try:
+        calls = _xbg.get_llm_calls_made()
+        lane.record_llm_window_usage(bucket_name, now_jst, calls, lane_label)
+        if _xbg.llm_all_models_quota_dead(now_jst):
+            if lane.mark_llm_window_dead(
+                bucket_name, now_jst, f"all models daily-dead ({lane_label})"
+            ):
+                _send_llm_dead_notice(recipients, now_jst)
+    except Exception as exc:  # noqa: BLE001 - 台帳処理で mail 便を落とさない
+        LOG.warning("llm window accounting failed: %r", exc)
+
+
+def _send_llm_dead_notice(recipients: list[str], now_jst) -> None:
+    """枠切れを 1 通だけ知らせる (以降この窓の便は発火しても即 skip)。"""
+    if not recipients:
+        return
+    try:
+        body = (
+            f"本日の Gemini 無料枠を使い切りました ({now_jst.strftime('%H:%M')} JST)。\n"
+            "16:00 JST のリセットまで X ポスト候補メールは停止します (故障ではありません)。\n"
+            "16:00 以降の便から自動で復帰します。"
+        )
+        request = mdb.MailRequest(
+            to=list(recipients),
+            subject="【ヨシラバー】本日のLLM枠終了 (16時に自動復帰)",
+            text_body=body,
+            sender=_resolve_sender(),
+            reply_to=_resolve_reply_to(),
+            metadata={"lane": "x_post_mail", "mode": "llm-dead-notice"},
+        )
+        result = mdb.send(request, dry_run=False)
+        LOG.info("llm dead notice mail: status=%s", result.status)
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("llm dead notice mail failed: %r", exc)
+
+
 def _mlb_watch_enabled() -> bool:
     """MLB watch 引用RT候補をメールに出すか (default OFF)。"""
     raw = (os.environ.get("ENABLE_X_POST_MLB_WATCH") or "").strip().lower()
@@ -3196,6 +3288,12 @@ def _main_live_only(args: argparse.Namespace, recipients: list[str]) -> int:
         LOG.info("live-only: ENABLE_X_POST_LIVE_GAME=0 — skip")
         return 0
     live_max = _resolve_int_env("X_POST_LIVE_GAME_MAX", 4, min_value=0)
+    # 2026-07-14 残高連動 pacing (live は夜=窓の頭なので通常フル予算のまま)
+    live_max, window_dead = _apply_llm_window_pacing(
+        now_jst, fire_interval_min=5, static_max=live_max, lane_label="live-only",
+    )
+    if window_dead:
+        return 0
     if _xbg is not None:
         # 統合便の per-fire budget と同じ機構で、live voice 分だけに絞る。
         _xbg.set_llm_budget(live_max, reply_reserve=0)
@@ -3230,6 +3328,7 @@ def _main_live_only(args: argparse.Namespace, recipients: list[str]) -> int:
         return 0
     if not candidates:
         LOG.info("live-only: no new live events — silent skip (no mail)")
+        _finish_llm_window_accounting(now_jst, recipients, lane_label="live-only")
         return 0
 
     mail = lane.compose_mail(
@@ -3266,6 +3365,7 @@ def _main_live_only(args: argparse.Namespace, recipients: list[str]) -> int:
     )
     result = mdb.send(request, dry_run=False)
     LOG.info("live-only: mail send result status=%s reason=%s", result.status, result.reason)
+    _finish_llm_window_accounting(now_jst, recipients, lane_label="live-only")
     if result.status not in {"sent", "dry_run"}:
         return 4
     if dedup_set is not None and bucket_name:
@@ -3326,6 +3426,20 @@ def _main_mlb_only(args: argparse.Namespace, recipients: list[str]) -> int:
         mlb_max, now_jst, env_name="X_POST_MLB_AFTERNOON_MAX", default_cap=4
     )
     fast_rep_max = _mlb_fast_reply_max_per_run() if _mlb_reply_enabled() else 0
+    # 2026-07-14 残高連動 pacing: 窓の残り枠から per-fire 予算を自動計算。
+    total_budget, window_dead = _apply_llm_window_pacing(
+        now_jst, fire_interval_min=10,
+        static_max=mlb_max + fast_rep_max, lane_label="mlb-only",
+    )
+    if window_dead:
+        return 0
+    if total_budget <= 0:
+        LOG.info("mlb-only: llm_pacing budget=0 — skip (窓残なし)")
+        return 0
+    if total_budget < mlb_max + fast_rep_max:
+        # squeeze 時は quote / reply を比例配分 (reply 予約は 1/4 目安、従来同様)
+        fast_rep_max = min(fast_rep_max, max(0, total_budget // 4))
+        mlb_max = total_budget - fast_rep_max
     if _xbg is not None:
         # 統合便の per-fire budget と同じ機構で、MLB voice 分だけに絞る。
         # 高速リプ同乗時はリプ予約枠を上乗せ (quote 側の枠は mlb_max のまま)。
@@ -3432,6 +3546,7 @@ def _main_mlb_only(args: argparse.Namespace, recipients: list[str]) -> int:
 
     if not candidates:
         LOG.info("mlb-only: no new MLB clips — silent skip (no mail)")
+        _finish_llm_window_accounting(now_jst, recipients, lane_label="mlb-only")
         return 0
 
     mail = lane.compose_mail(
@@ -3468,6 +3583,7 @@ def _main_mlb_only(args: argparse.Namespace, recipients: list[str]) -> int:
     )
     result = mdb.send(request, dry_run=False)
     LOG.info("mlb-only: mail send result status=%s reason=%s", result.status, result.reason)
+    _finish_llm_window_accounting(now_jst, recipients, lane_label="mlb-only")
     if result.status not in {"sent", "dry_run"}:
         return 4
     if dedup_set is not None and bucket_name:
@@ -3513,6 +3629,19 @@ def _main_buzz_only(args: argparse.Namespace, recipients: list[str]) -> int:
         lane._X_IMPRESSION_TIMING_LABELS["in_game_strong"],
     }:
         vr_rep_max = 0
+    # 2026-07-14 残高連動 pacing (夜試合帯は窓の頭なので通常はフル予算のまま)
+    total_budget, window_dead = _apply_llm_window_pacing(
+        now_jst, fire_interval_min=15,
+        static_max=vr_max + vr_rep_max, lane_label="buzz-only",
+    )
+    if window_dead:
+        return 0
+    if total_budget <= 0:
+        LOG.info("buzz-only: llm_pacing budget=0 — skip (窓残なし)")
+        return 0
+    if total_budget < vr_max + vr_rep_max:
+        vr_rep_max = min(vr_rep_max, max(0, total_budget // 4))
+        vr_max = total_budget - vr_rep_max
     if _xbg is not None:
         # 統合便の per-fire budget と同じ機構で、動画 voice 分だけに絞る。
         # リプ同乗時はリプ予約枠を上乗せ (動画側の枠は vr_max のまま)。
@@ -3671,6 +3800,7 @@ def _main_buzz_only(args: argparse.Namespace, recipients: list[str]) -> int:
 
     if not candidates:
         LOG.info("buzz-only: no new video posts — silent skip (no mail)")
+        _finish_llm_window_accounting(now_jst, recipients, lane_label="buzz-only")
         return 0
 
     mail = lane.compose_mail(
@@ -3707,6 +3837,7 @@ def _main_buzz_only(args: argparse.Namespace, recipients: list[str]) -> int:
     )
     result = mdb.send(request, dry_run=False)
     LOG.info("buzz-only: mail send result status=%s reason=%s", result.status, result.reason)
+    _finish_llm_window_accounting(now_jst, recipients, lane_label="buzz-only")
     if result.status not in {"sent", "dry_run"}:
         return 4
     if dedup_set is not None and bucket_name:
@@ -3771,6 +3902,23 @@ def main(argv: Sequence[str] | None = None) -> int:
         if _llm_budget_max < _raw_budget_max:
             # 絞った便では reply 予約も縮小し、non-reply voice 枠を確保する。
             _reply_reserve = min(_reply_reserve, _llm_budget_max // 4)
+        # 2026-07-14 残高連動 pacing: 窓の残り枠からさらに自動調整 (統合便=毎時)。
+        # 軽量便 (--mlb-only 等) は各 lane 入口で自 lane の間隔で設定するため除外
+        # (GCS 台帳読みを 1 fire 1 回に抑える)。
+        _is_light_lane = any(
+            getattr(args, flag, False)
+            for flag in ("live_only", "mlb_only", "buzz_only")
+        )
+        if not _is_light_lane:
+            _paced_max, _ = _apply_llm_window_pacing(
+                datetime.now(ZoneInfo("Asia/Tokyo")),
+                fire_interval_min=60,
+                static_max=_llm_budget_max or 0,
+                lane_label="unified",
+            )
+            if _llm_budget_max and _paced_max < _llm_budget_max:
+                _llm_budget_max = _paced_max
+                _reply_reserve = min(_reply_reserve, max(0, _llm_budget_max // 4))
         _xbg.set_llm_budget(_llm_budget_max, reply_reserve=_reply_reserve)
         LOG.info(
             "per-fire LLM budget set: max=%s reply_reserve=%d",
@@ -3821,6 +3969,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             now_jst.isoformat(),
             lane.x_impression_timing_label(now_jst),
         )
+        return 0
+    # 2026-07-14: 窓の LLM 枠が全滅マーク済みなら、DB DL や feed fetch を
+    # 始める前に即終了 (枠切れ後の空発火をやめる。16:00 JST で自動復帰)。
+    if _llm_pacing_enabled() and lane.llm_window_dead_marked(
+        os.environ.get("INSIGHT_GCS_BUCKET") or "", now_jst
+    ):
+        LOG.info("x-post mail early skip: reason=llm_window_dead (16:00 JST 復帰)")
         return 0
 
     LOG.info("Downloading insight.db cache (read-only)…")
@@ -5098,6 +5253,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     if not candidates:
         LOG.warning("No candidates generated — skip send (insight.db likely sparse).")
+        _finish_llm_window_accounting(now_jst, recipients, lane_label="unified")
         return 0
 
     # 2026-06-04 user 方針: メールは「ヨシラバー風 voice」のみ。 DB ランキング表 (候補1型) /
@@ -5124,6 +5280,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "skipping send per user policy (no raw-data floor).",
                 _before_voice,
             )
+            _finish_llm_window_accounting(now_jst, recipients, lane_label="unified")
             return 0
 
     # 2026-06-11 ①話題選手連動 → 2026-07-03 「今フック」優先へ拡張
@@ -5232,6 +5389,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
     if not candidates:
         LOG.warning("X impression policy left 0 candidates — skip send.")
+        _finish_llm_window_accounting(now_jst, recipients, lane_label="unified")
         return 0
 
     # 同一選手の重複を最終段で除去 (branding+速報スクレイプ+報知リプ が同じ主役を
@@ -5239,6 +5397,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     candidates = _dedupe_candidates_by_player(candidates, log=LOG)
     if not candidates:
         LOG.warning("player_dedup left 0 candidates — skip send.")
+        _finish_llm_window_accounting(now_jst, recipients, lane_label="unified")
         return 0
 
     candidates = _rewrite_data_candidates_plain_llm(candidates)
@@ -5411,6 +5570,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     result = mdb.send(request, dry_run=False)
     LOG.info("mail send result: status=%s reason=%s refused=%s",
              result.status, result.reason, result.refused_recipients)
+    _finish_llm_window_accounting(now_jst, recipients, lane_label="unified")
     if result.status not in {"sent", "dry_run"}:
         LOG.error("mail send not sent (status=%s) — exit non-zero", result.status)
         return 4

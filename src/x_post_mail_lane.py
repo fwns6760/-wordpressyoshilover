@@ -5013,6 +5013,155 @@ def _record_dedup_signatures(
         return False
 
 
+# ── LLM 窓内消費台帳 (2026-07-14 user GO「残高連動の自動配分 + 枯渇通知」) ──
+# Gemini 無料枠の窓 (16:00 JST リセット) 内の呼び出し数を GCS に記録し、
+# 便ごとに「残り枠 ÷ 残り時間」で per-fire 予算を自動計算する。
+# 書き込みは dedup 台帳と同じ per-run 一意 blob (read-modify-write 競合なし)。
+# 台帳不達時は従来の固定 cap にそのまま落ちる (mail を止めない)。
+
+
+def _llm_quota_window_key(now: datetime) -> str:
+    """無料枠の窓 key。窓は 16:00 JST 起点なので、16 時前は前日扱い。"""
+    local = now.astimezone(JST) if now.tzinfo else now.replace(tzinfo=JST)
+    if local.hour < 16:
+        local = local - timedelta(days=1)
+    return local.strftime("%Y-%m-%d")
+
+
+def _llm_quota_blob_prefix(window_key: str) -> str:
+    return f"x_llm_quota/{window_key}/"
+
+
+def _llm_quota_minutes_left(now: datetime) -> float:
+    """窓末 (次の 16:00 JST) までの残り分。"""
+    local = now.astimezone(JST) if now.tzinfo else now.replace(tzinfo=JST)
+    reset = local.replace(hour=16, minute=0, second=0, microsecond=0)
+    if local >= reset:
+        reset += timedelta(days=1)
+    return max(1.0, (reset - local).total_seconds() / 60.0)
+
+
+def load_llm_window_usage(bucket_name: str, now: datetime) -> Optional[int]:
+    """窓内の記録済み LLM 呼び出し数合計。台帳不達は None (pacing 無効化)。"""
+    if not bucket_name:
+        return None
+    try:
+        client = _get_storage_client()
+        bucket = client.bucket(bucket_name)
+        prefix = _llm_quota_blob_prefix(_llm_quota_window_key(now))
+        total = 0
+        for blob in bucket.list_blobs(prefix=prefix):
+            if blob.name.endswith("DEAD.json"):
+                continue
+            try:
+                rec = _json.loads(blob.download_as_text())
+                total += int(rec.get("calls") or 0)
+            except Exception:  # noqa: BLE001 - 壊れた blob は読み飛ばす
+                continue
+        return total
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("load_llm_window_usage failed (pacing off this run): %r", exc)
+        return None
+
+
+def record_llm_window_usage(
+    bucket_name: str, now: datetime, calls: int, label: str
+) -> bool:
+    """run の LLM 呼び出し数を窓台帳へ記録。calls<=0 は書かない。"""
+    if not bucket_name or calls <= 0:
+        return False
+    try:
+        client = _get_storage_client()
+        bucket = client.bucket(bucket_name)
+        window_key = _llm_quota_window_key(now)
+        local = now.astimezone(JST) if now.tzinfo else now.replace(tzinfo=JST)
+        rec = {"ts": local.isoformat(), "calls": int(calls), "job": label}
+        body = _json.dumps(rec, ensure_ascii=False)
+        suffix = _hashlib.sha1(body.encode("utf-8")).hexdigest()[:8]
+        blob = bucket.blob(
+            f"{_llm_quota_blob_prefix(window_key)}"
+            f"{local.strftime('%H%M%S')}_{suffix}.json"
+        )
+        blob.upload_from_string(body, content_type="application/json")
+        return True
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("record_llm_window_usage failed: %r", exc)
+        return False
+
+
+def llm_window_dead_marked(bucket_name: str, now: datetime) -> bool:
+    """この窓で「全モデル日次枠切れ」マークが立っているか。"""
+    if not bucket_name:
+        return False
+    try:
+        client = _get_storage_client()
+        bucket = client.bucket(bucket_name)
+        blob = bucket.blob(
+            f"{_llm_quota_blob_prefix(_llm_quota_window_key(now))}DEAD.json"
+        )
+        return bool(blob.exists())
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("llm_window_dead_marked check failed: %r", exc)
+        return False
+
+
+def mark_llm_window_dead(bucket_name: str, now: datetime, reason: str) -> bool:
+    """窓の枠切れマークを書く。新規に書けた時だけ True (通知 mail は 1 回)。"""
+    if not bucket_name:
+        return False
+    try:
+        client = _get_storage_client()
+        bucket = client.bucket(bucket_name)
+        blob = bucket.blob(
+            f"{_llm_quota_blob_prefix(_llm_quota_window_key(now))}DEAD.json"
+        )
+        if blob.exists():
+            return False
+        local = now.astimezone(JST) if now.tzinfo else now.replace(tzinfo=JST)
+        blob.upload_from_string(
+            _json.dumps(
+                {"ts": local.isoformat(), "reason": reason}, ensure_ascii=False
+            ),
+            content_type="application/json",
+        )
+        return True
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("mark_llm_window_dead failed: %r", exc)
+        return False
+
+
+def paced_llm_fire_budget(
+    remaining: int,
+    now: datetime,
+    *,
+    fire_interval_min: float,
+    static_cap: int,
+    floor: int = 2,
+    window_quota: int = 0,
+) -> int:
+    """窓の残り枠から、この便の LLM 予算を返す (ガードレール型)。
+
+    - **on-track なら絞らない**: 残り枠の割合 >= 窓の残り時間の割合 の間は
+      固定 cap をそのまま返す。窓の頭 (夜試合帯) はフル予算で走る
+      (2026-07-14 user「厳しすぎて出なくなるのはやめて」)。
+    - 消費が時間より先行した時だけ、「残り枠 × (便間隔 ÷ 残り時間)」の
+      等配分へ切り替える。固定 cap が上限、``floor`` が下限
+      (枠が残る限り便を全滅させない)。
+    - remaining<=0 は 0 (この便は LLM を呼ばない)。
+    """
+    if static_cap <= 0:
+        return static_cap
+    if remaining <= 0:
+        return 0
+    minutes_left = _llm_quota_minutes_left(now)
+    if window_quota > 0:
+        frac_left = minutes_left / (24.0 * 60.0)
+        if remaining >= window_quota * frac_left:
+            return static_cap
+    share = remaining * (float(fire_interval_min) / max(minutes_left, float(fire_interval_min)))
+    return min(static_cap, max(min(floor, remaining), int(share)))
+
+
 def _format_one(
     combo: _MetricCombo,
     rows: list[dict],

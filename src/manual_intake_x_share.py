@@ -336,6 +336,12 @@ def build_share_drafts(
             LOG.warning("x_share llm draft failed: %r", exc)
     if not main_text:
         main_text, reply_body = _build_drafts_fallback(title_line, body)
+    # 2026-07-14 クリック導線: 本文の最終行で必ずリプ欄 (URLの置き場) を指す。
+    # 上限に収まらない異常系だけ誘導行を諦める (本文優先)。
+    if _REPLY_POINTER not in main_text:
+        with_pointer = f"{main_text}\n\n{_REPLY_POINTER}"
+        if x_weighted_len(with_pointer) <= _main_weighted_limit():
+            main_text = with_pointer
     reply_text = f"{reply_body}\n{link}".strip()
     return {
         "ok": True,
@@ -385,8 +391,11 @@ def _build_drafts_llm(
         "【本文 (SUMMARY)】",
         "- 200〜400字。プレミアム長文ポスト前提。**発言引用が主役** "
         "(雑誌・インタビュー記事の共有が中心のため、読者が読みたいのは本人の言葉)。",
-        "- 記事中の選手・監督・本人の発言を『』で 2〜3個、**一文丸ごと長めに**そのまま引用する"
+        "- 記事中で**一番強い発言を1個だけ**『』で**一文丸ごと長めに**そのまま引用する"
         " (語尾の改変・切り貼りで意味を変えるのは禁止。要約引用も禁止)。",
+        "- ★2個目以降の発言は本文に載せない (記事側に残す = 読者が記事を開く理由)。"
+        "残りの発言が記事にあることは、内容を明かさず存在だけ匂わせてよい"
+        " (例:「〜については本人がさらに踏み込んで語っている」)。",
         "- 地の文は引用をつなぐ最小限にする (誰が・どんな流れ・何についての発言か)。"
         "記者の地の文をコピーするのは禁止 (引用してよいのは『』の発言のみ)。",
         "- 発言が無い記事 (データ・戦評など) では引用を作らず、記事中の数字・成績・"
@@ -400,10 +409,10 @@ def _build_drafts_llm(
         "",
         "【リプ (REPLY、おりポスへの返信。末尾に記事URLが自動で付く)】",
         "- 50〜100字、1〜2文。おりポスの続きとして自然に読める文。",
-        "- 前半: 記事にしか無い残りの要素 (経緯・追加データ・本人の別の発言・"
-        "次の見どころ) を1つ、答え・結末・発言の中身そのものは書かずに具体的に"
-        "予告する (「何について語ったか」までは書き、「何と言ったか」は記事側に"
-        "残す)。読者が記事を開かないと解消しないフックにする。",
+        "- 前半: 記事にしか無い残りの要素を1つ、答え・結末・発言の中身そのものは"
+        "書かずに具体的に予告する (「何について語ったか」までは書き、「何と言ったか」"
+        "は記事側に残す)。**本文に載せなかった2個目以降の発言があるなら、それを"
+        "最優先で予告する**。読者が記事を開かないと解消しないフックにする。",
         "- 後半: その続き・詳細が下の記事に載っていることが伝わる一言で自然に締める"
         " (例:「〜までの一部始終は記事で」「〜の中身も記事にまとめた」。"
         "毎回同じ言い回しは避けて記事の中身に合わせて変える)。",
@@ -502,16 +511,25 @@ def _trim_to_budget_sentences(text: str, budget: int) -> str:
     return ""
 
 
+# 2026-07-14 user「おりポスとリプにして明らかにクリック減った。工夫できない」:
+# URL はリプ欄にあるのに、本文からリプ欄への誘導が無く、リプを開かない読者には
+# 導線ゼロだった。本文の最終行で必ずリプ欄を指す (URL は本文に書かない = リーチ維持)。
+_REPLY_POINTER = "続きはリプ欄の記事から"
+
+
 def _assemble_main(title_line: str, hook: str, summary: str) -> str:
     """フック → タイトル行 → 本文。超過時は本文を文単位で切り詰めてから間引く。
 
     上限は _main_weighted_limit() (Premium 長文、default 900 weighted)。
+    リプ誘導行 (_REPLY_POINTER) の分は build_share_drafts が後段で足すため、
+    ここでその weighted 分を先に予約して切り詰める。
     """
     limit = _main_weighted_limit()
     if hook and summary:
         head = f"{hook}\n\n{title_line}\n\n"
         trimmed = _trim_to_budget_sentences(
-            summary, limit - x_weighted_len(head)
+            summary,
+            limit - x_weighted_len(head) - x_weighted_len(f"\n\n{_REPLY_POINTER}"),
         )
         if trimmed != summary:
             LOG.info("x_share assemble summary_trimmed to fit weighted limit")

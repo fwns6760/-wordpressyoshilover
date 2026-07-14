@@ -778,7 +778,7 @@ _HTML_FORM = """<!DOCTYPE html>
   </section>
   <section class=\"tab-panel\" data-tab=\"xshare\" id=\"tab-panel-xshare\" hidden>
     <h2 style=\"font-size:16px;margin:6px 0 8px;\">🔗 記事をXで共有 (おりポス+リプ)</h2>
-    <p class=\"insight-meta\" style=\"margin:0 0 10px;\">おりポス=記事の核を出し切る本文+画像 (URLなし)、リプ=記事の続き+URL。ボタン1回で連続投稿。</p>
+    <p class=\"insight-meta\" style=\"margin:0 0 10px;\">おりポス=最強の発言1個で引き込む本文+画像 (URLなし・末尾にリプ誘導行)、リプ=残りのチラ見せ+URL。ボタン1回で連続投稿。</p>
     <button type=\"button\" id=\"xshare-thread-btn\" class=\"primary\" style=\"width:100%;padding:12px;font-size:15px;margin-bottom:8px;\">🧵 今日の試合スレ案を作る (結果→データ→記事)</button>
     <button type=\"button\" id=\"xshare-refresh\" class=\"secondary\" style=\"width:100%;padding:12px;font-size:15px;\">🔄 最近の公開記事を読み込む</button>
     <div style=\"display:flex;gap:8px;margin-top:8px;\">

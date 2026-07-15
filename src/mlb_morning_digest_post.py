@@ -69,12 +69,18 @@ def build_mlb_morning_digest_candidate(
 
     ``data`` は test 注入用 (fetch_mlb_alumni_data の返り値形)。None なら実 fetch。
     """
-    # 8-10 時 JST のみ (米国の試合が出揃う朝帯。7時台は西海岸ナイターが試合中)。
-    if not (8 <= now.hour <= 10):
+    # 2026-07-15 user「17時の日本人メジャーリーガー定点観測🐰もつくれる？」:
+    # 朝版 (8-10時、昨日までの数字) に加えて夕方版 (17-19時、当日の米国試合が
+    # 全て終わった後の完全版) を追加。edition は hour から自動判定、別 signature
+    # で 1 日各 1 本。
+    if 8 <= now.hour <= 10:
+        edition = "am"
+    elif 17 <= now.hour <= 19:
+        edition = "pm"
+    else:
         return None
-    signature = "mlbdigest|" + hashlib.sha1(
-        now.strftime("%Y%m%d").encode("utf-8")
-    ).hexdigest()[:16]
+    sig_key = now.strftime("%Y%m%d") + ("-pm" if edition == "pm" else "")
+    signature = "mlbdigest|" + hashlib.sha1(sig_key.encode("utf-8")).hexdigest()[:16]
     if dedup_set is not None and signature in dedup_set:
         return None
 
@@ -98,7 +104,11 @@ def build_mlb_morning_digest_candidate(
         return None
 
     date_label = f"{now.month}/{now.day}({_WEEKDAYS_JA[now.weekday()]})"
-    header = f"おはようございます。{date_label} 今朝のMLB定点観測🐰"
+    header = (
+        f"{date_label} 17時の日本人メジャーリーガー定点観測🐰"
+        if edition == "pm"
+        else f"おはようございます。{date_label} 今朝のMLB定点観測🐰"
+    )
     blocks: list[str] = []
     for p in players:
         # 直近試合が古い選手は season 行のみ (fact line から直近行を落とす)。
@@ -112,11 +122,16 @@ def build_mlb_morning_digest_candidate(
         return None
 
     fact = f"{date_label}時点のMLB成績:\n" + "\n".join(blocks)
-    comment = _build_digest_comment(fact, gemini_api_key, hour=now.hour)
+    comment = _build_digest_comment(
+        fact, gemini_api_key, hour=now.hour, edition=edition
+    )
     if not comment:
         lead = fresh_players[0].get("name") or "大谷翔平"
         comment = (
-            f"数字は毎朝ここで定点で見ていきます。今日も{lead}の試合から"
+            f"今日の日本人メジャーの結果は以上です。明日も17時にここで。"
+            f"{lead}、お見事でした。"
+            if edition == "pm"
+            else f"数字は毎朝ここで定点で見ていきます。今日も{lead}の試合から"
             "目が離せません。"
         )
 
@@ -125,18 +140,19 @@ def build_mlb_morning_digest_candidate(
     from src.x_post_mail_lane import Candidate
 
     draft = "\n".join([
-        f"毎朝のMLB定点ポスト ({date_label})。",
+        f"{'17時' if edition == 'pm' else '毎朝'}のMLB定点ポスト ({date_label})。",
         "数字 = MLB公式 Stats API (statsapi.mlb.com) の literal のみ。",
-        "対象: 大谷翔平 + 元巨人組 (岡本和真/菅野智之) + 日本人スター組。1日1本。",
+        "対象: 大谷翔平 + 元巨人組 (岡本和真/菅野智之) + 日本人スター組。各版1日1本。",
     ])
     LOG.info(
-        "mlb_morning_digest built players=%d fresh=%d",
-        len(blocks), len(fresh_players),
+        "mlb_morning_digest built edition=%s players=%d fresh=%d",
+        edition, len(blocks), len(fresh_players),
     )
+    _t_prefix = "⚾️17時のMLB定点" if edition == "pm" else "⚾️今朝のMLB定点"
     return Candidate(
-        title=f"⚾️今朝のMLB定点｜日本人メジャー組｜{fresh_players[0].get('name', '')}",
+        title=f"{_t_prefix}｜日本人メジャー組｜{fresh_players[0].get('name', '')}",
         metric="MLB_MORNING_DIGEST",
-        period_label="毎朝MLB定点",
+        period_label="17時MLB定点" if edition == "pm" else "毎朝MLB定点",
         draft_text=draft,
         char_count=len(post_text),
         signature=signature,
@@ -146,32 +162,63 @@ def build_mlb_morning_digest_candidate(
     )
 
 
-def _build_digest_comment(fact: str, gemini_api_key: str, hour: int = 0) -> str:
+def _build_digest_comment(
+    fact: str, gemini_api_key: str, hour: int = 0, edition: str = "am"
+) -> str:
     """締めの 1〜2 文 (LLM)。失敗は "" (caller が deterministic 締めに落とす)。"""
     if not gemini_api_key:
         return ""
     try:
         from src.x_post_branding_gen import build_quote_rt_comment
 
-        return (
+        out = (
             build_quote_rt_comment(
                 fact, "", "",
                 gemini_api_key=gemini_api_key,
-                subject="今朝のMLB定点観測 (日本人メジャー組)",
+                subject=(
+                    "17時の日本人メジャーリーガー定点観測"
+                    if edition == "pm"
+                    else "今朝のMLB定点観測 (日本人メジャー組)"
+                ),
                 db_fact="", require_db_fact=False,
                 budget_site="morning_digest",
                 extra_voice_note=(
-                    "毎朝のMLB成績定点ポストの締め。岡本和真・菅野智之だけは"
+                    (
+                        "17時のMLB成績定点ポストの締め (当日の米国試合が全て"
+                        "終わった夕方版)。上の数字から今日の主役を 1 文で読み解き、"
+                        "「明日もここで」系の連載締めを 1 文、合計 60〜120 字。"
+                    )
+                    if edition == "pm"
+                    else (
+                        "毎朝のMLB成績定点ポストの締め。"
+                        "上の数字の読み解き 1 文 + 今日への期待 1 文、合計 60〜120 字。"
+                    )
+                ) + (
+                    "岡本和真・菅野智之だけは"
                     "巨人から送り出した側の親心・誇りの視点でよい。それ以外"
                     "(大谷翔平・山本由伸・佐々木朗希・今永昇太・鈴木誠也・"
                     "吉田正尚・村上宗隆) は巨人と無関係の別枠なので巨人ファン"
                     "視点や巨人との比較はせず、純粋に野球ファンとして読み解く。"
-                    "上の数字の読み解き 1 文 + 今日への期待 1 文、合計 60〜120 字。"
                     "数字・選手名は fact にあるものだけ使い、新しい数字は作らない。"
-                    "文体は です・ます調。"
+                    "選手の役割 (先発/登板予定等) や試合結果・順位の未来予測を"
+                    "断定形で書かない。文体は です・ます調。"
                 ),
             ) or ""
         ).strip()
+        # 2026-07-15 決定的 hallucination gate (巨人定点と共用、user「メジャーも」)。
+        from src.morning_digest_post import find_digest_hallucination
+
+        bad = find_digest_hallucination(out, fact)
+        if not bad:
+            for spec in _DIGEST_SPECS + _EXTRA_STAR_SPECS:
+                nm = str(spec.get("name") or "")
+                if nm and nm in out and nm not in fact:
+                    bad = f"fabricated_name:{nm}"
+                    break
+        if bad:
+            LOG.warning("mlb_morning_digest comment gate drop: %s", bad)
+            return ""
+        return out
     except Exception as exc:  # noqa: BLE001
         LOG.info("mlb_morning_digest comment skip: %r", exc)
         return ""

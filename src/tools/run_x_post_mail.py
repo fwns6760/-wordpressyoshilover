@@ -2990,6 +2990,12 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
              "(海外動画 clip を日本語圏アカより先に引用RTする鮮度勝負)。",
     )
     parser.add_argument(
+        "--mlb-digest-only",
+        action="store_true",
+        help="MLB定点ポスト (朝8時台/夕17時台) だけの軽量便 (2026-07-15)。"
+             "他 lane を全て skip し、statsapi → 定点候補 → mail のみ。",
+    )
+    parser.add_argument(
         "--buzz-only",
         action="store_true",
         help="巨人系「動画SNS」引用RT候補だけの軽量便 (2026-07-11)。他 lane を全て "
@@ -3603,6 +3609,106 @@ def _main_mlb_only(args: argparse.Namespace, recipients: list[str]) -> int:
     return 0
 
 
+def _main_mlb_digest_only(args: argparse.Namespace, recipients: list[str]) -> int:
+    """--mlb-digest-only: MLB定点ポスト (朝/夕) だけの軽量便 (2026-07-15)。
+
+    統合便を回さず、statsapi fetch → 定点候補 build → mail のみ (LLM は締めの
+    1 call だけ)。edition は builder 側が hour から自動判定 (8-10=朝 / 17-19=夕)。
+    dedup 台帳共有で 1 日各 1 本。候補なし (時間外 / dedup 済 / fresh 選手なし)
+    は mail を送らない。
+    """
+    now_jst = datetime.now(ZoneInfo("Asia/Tokyo"))
+    _flag = (os.environ.get("ENABLE_X_POST_MLB_MORNING_DIGEST") or "").strip().lower()
+    if _flag not in {"1", "true", "yes", "on"}:
+        LOG.info("mlb-digest: ENABLE_X_POST_MLB_MORNING_DIGEST off — skip")
+        return 0
+
+    dedup_set: set[str] | None = None
+    bucket_name = os.environ.get("INSIGHT_GCS_BUCKET") or ""
+    if bucket_name and (os.environ.get("X_POST_MAIL_DEDUP_DISABLED") or "").strip() not in {"1", "true", "yes"}:
+        try:
+            _records = lane._load_recent_dedup_records(
+                bucket_name, now_jst, lookback_hours=24
+            )
+            dedup_set = {
+                str(rec.get("signature") or "")
+                for rec in _records
+                if str(rec.get("signature") or "")
+            }
+        except Exception as exc:  # noqa: BLE001 - dedup 不達でも便は止めない
+            LOG.warning("mlb-digest: dedup load failed (dedup off this run): %r", exc)
+            dedup_set = None
+
+    try:
+        from src.mlb_morning_digest_post import build_mlb_morning_digest_candidate
+
+        cand = build_mlb_morning_digest_candidate(
+            now=now_jst,
+            gemini_api_key=(
+                os.environ.get("GEMINI_API_KEY")
+                or os.environ.get("GEMMA_BRANDING_GEMINI_API_KEY")
+                or ""
+            ),
+            dedup_set=dedup_set,
+        )
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("mlb-digest: build failed: %r", exc)
+        cand = None
+    if cand is None:
+        LOG.info("mlb-digest: no candidate (時間外/dedup済/fresh無) — silent skip")
+        _finish_llm_window_accounting(now_jst, recipients, lane_label="mlb-digest")
+        return 0
+
+    mail = lane.compose_mail(
+        [cand],
+        context_label="MLB定点観測 (digest便)",
+        context_note="",
+    )
+    if args.dry_run:
+        LOG.info("[dry-run mlb-digest] subject=%s", mail.subject)
+        LOG.info(
+            "[dry-run mlb-digest] text body preview (first 600 chars):\n%s",
+            mail.text_body[:600],
+        )
+        return 0
+    LOG.info("mlb-digest: sending mail to %s …", recipients)
+    request = mdb.MailRequest(
+        to=recipients,
+        subject=mail.subject,
+        text_body=mail.text_body,
+        html_body=mail.html_body,
+        sender=_resolve_sender(),
+        reply_to=_resolve_reply_to(),
+        metadata={"lane": "x_post_mail", "mode": "mlb-digest", "candidate_count": mail.candidate_count},
+        inline_images=[
+            mdb.InlineImage(
+                content_id=ci.cid,
+                data=ci.png,
+                mime_subtype="png",
+                filename=f"{ci.cid}.png",
+            )
+            for ci in mail.candidate_images
+        ],
+    )
+    result = mdb.send(request, dry_run=False)
+    LOG.info("mlb-digest: mail send result status=%s reason=%s", result.status, result.reason)
+    _finish_llm_window_accounting(now_jst, recipients, lane_label="mlb-digest")
+    if result.status not in {"sent", "dry_run"}:
+        return 4
+    if dedup_set is not None and bucket_name and cand.signature:
+        ok = lane._record_dedup_signatures(
+            bucket_name,
+            [cand.signature],
+            now_jst,
+            focus_players=[cand.focus_player],
+            metrics=[cand.metric],
+            period_labels=[cand.period_label],
+            media_handles=[cand.media_handle],
+        )
+        LOG.info("mlb-digest: recorded dedup signature (ok=%s)", ok)
+    return 0
+
+
 def _main_buzz_only(args: argparse.Namespace, recipients: list[str]) -> int:
     """--buzz-only: 巨人系「動画SNS」引用RT候補だけの軽量便 (2026-07-11)。
 
@@ -3944,6 +4050,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     # 試合帯は巨人動画SNS引用RTだけの軽量便に切替 (統合 path を回さない)。
     if getattr(args, "buzz_only", False):
         return _main_buzz_only(args, recipients)
+
+    # 2026-07-15 user「17時の日本人メジャーリーガー定点観測🐰もつくれる？」:
+    # MLB定点 (朝/夕) 専用の軽量便。統合便の 8-11 時廃止で乗り物を失った
+    # 朝版の恒久修復も兼ねる (scheduler `5 8,17 * * *`)。
+    if getattr(args, "mlb_digest_only", False):
+        return _main_mlb_digest_only(args, recipients)
 
     # 424: --mode 引数は廃止扱い (lag tolerance のため argparse は残置)、
     # 全 fire を統合 path で処理する。 queue 417 drain は compose_mail 直前

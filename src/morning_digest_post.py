@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import re
 from datetime import datetime
 from typing import Any, Optional
 
@@ -195,6 +196,52 @@ _DIGEST_CLOSING_STYLES = (
 )
 
 
+# 2026-07-15 user「今夜は先発の戸郷翔征が快投し、次のランキングで1位になります。
+# 先発が違う」: prompt 指示だけでは LLM が (a) fact に無い役割 (先発/スタメン) を
+# 断定し (b) 未来の成績・順位変動を確定形で書く事故が起きた。出力を決定的に
+# 検証する gate。巨人・MLB 両定点で共用 (mlb_morning_digest_post が import)。
+_FUTURE_ASSERT_RE = re.compile(
+    r"(?:\d+位|首位|トップ)にな(?:り|る)|(?:快投|好投|活躍|爆発)(?:し(?:ます|て)|する)"
+)
+_ROLE_CLAIM_WORDS = (
+    "先発", "スタメン", "登板予定", "快投", "好投", "完封", "完投",
+    "サヨナラ", "逆転", "優勝", "マジック",
+)
+
+
+def find_digest_hallucination(comment: str, fact: str) -> str:
+    """定点締めコメントの捏造検知。問題なければ ""、あれば理由 slug。
+
+    - 未来断定 (「1位になります」「快投します」等) は fact の有無に関わらず破棄
+      (定点は現在の数字を語る場。未来の成績・順位変動を確定形で書かない)
+    - 役割・場面 claim 語 (先発/スタメン/完封等) は fact に literal で無ければ破棄
+    """
+    text = (comment or "").strip()
+    if not text:
+        return ""
+    if _FUTURE_ASSERT_RE.search(text):
+        return "future_assertion"
+    src = fact or ""
+    for w in _ROLE_CLAIM_WORDS:
+        if w in text and w not in src:
+            return f"unsupported_claim:{w}"
+    return ""
+
+
+def _giants_name_hallucination(comment: str, fact: str) -> str:
+    """roster 実名が fact に無いのに comment に出たら理由 slug (取得失敗は "")。"""
+    try:
+        from src.giants_roster_loader import load_active_roster
+
+        for e in load_active_roster() or []:
+            nm = str(e.get("name") or "").replace(" ", "")
+            if len(nm) >= 3 and nm in comment and nm not in (fact or ""):
+                return f"fabricated_name:{nm}"
+    except Exception:  # noqa: BLE001 - roster 不達は gate skip (fail-open)
+        return ""
+    return ""
+
+
 def _build_digest_comment(fact: str, gemini_api_key: str, hour: int = 0) -> str:
     """解説+締めの 2〜3 文 (LLM)。失敗は ""。締めはエンゲ3型を時刻ローテ。"""
     if not gemini_api_key:
@@ -203,7 +250,7 @@ def _build_digest_comment(fact: str, gemini_api_key: str, hour: int = 0) -> str:
     try:
         from src.x_post_branding_gen import build_quote_rt_comment
 
-        return (
+        out = (
             build_quote_rt_comment(
                 fact, "", "",
                 gemini_api_key=gemini_api_key,
@@ -219,9 +266,19 @@ def _build_digest_comment(fact: str, gemini_api_key: str, hour: int = 0) -> str:
                     "あるものだけ使い、新しい数字・選手名は作らない。"
                     "文体は必ず です・ます調 (丁寧語) で統一する "
                     "(「〜だよな」等のカジュアル語尾は禁止)。"
+                    "選手の役割 (先発/スタメン等) や試合結果・順位の未来予測を"
+                    "断定形で書かない (fact に無いことは一切書かない)。"
                 ),
             ) or ""
         ).strip()
+        # 2026-07-15 決定的 hallucination gate (prompt 指示だけでは再発するため)
+        bad = find_digest_hallucination(out, fact) or _giants_name_hallucination(
+            out, fact
+        )
+        if bad:
+            LOG.warning("morning_digest comment gate drop: %s", bad)
+            return ""
+        return out
     except Exception as exc:  # noqa: BLE001
         LOG.info("morning_digest comment skip: %r", exc)
         return ""

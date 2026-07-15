@@ -3987,7 +3987,11 @@ def phase_freshness_max_age_hours(now: datetime) -> float:
         return 6.0   # 試合直後
     if label in (L["lineup"], L["pregame_db"]):
         return 12.0  # 試合前 = その日
-    return 24.0      # 朝 / 昼 / 午後 / 通常 = 当日
+    # 2026-07-15 user「昨晩の記事が14時に飛んできた」: 24h だと前夜の試合後
+    # 記事が翌日の昼便まで「新鮮」扱いで残る。通常帯も 12h に締めて
+    # 「その日のもの」だけを速報として扱う (朝 7 時便は前夜 19 時以降の
+    # 試合後記事を一度だけ拾い、昼便以降には持ち越さない)。
+    return 12.0      # 朝 / 昼 / 午後 / 通常 = 当日
 
 
 def _video_comment_phase_hint(now: datetime) -> tuple[str, str]:

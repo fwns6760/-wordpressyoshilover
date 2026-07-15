@@ -4119,12 +4119,19 @@ def main(argv: Sequence[str] | None = None) -> int:
                     )
                 # 2026-07-02 user 決定: 動画SNS は (選手×媒体) で recent 判定。
                 # 同一選手でも媒体が違う動画は 12h 内でも候補に残す。
+                # 2026-07-15 user「鮮度が要件」: 同一媒体が同じ試合で複数クリップを
+                # 出すため、動画だけ短い窓に分離する (reply 群の 4096 行と同型)。
+                video_cooldown_hours = _resolve_int_env(
+                    "X_POST_MAIL_VIDEO_RECENT_COOLDOWN_HOURS",
+                    recent_show_cooldown_hours,
+                    min_value=0,
+                )
                 recent_video_media = lane._video_player_media_within_cooldown(
-                    dedup_records, now_jst, recent_show_cooldown_hours
+                    dedup_records, now_jst, video_cooldown_hours
                 )
                 LOG.info(
                     "Video (player×media) cooldown (%dh): %d keys",
-                    recent_show_cooldown_hours,
+                    video_cooldown_hours,
                     len(recent_video_media),
                 )
         except Exception as exc:  # noqa: BLE001

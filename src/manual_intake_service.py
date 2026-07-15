@@ -1878,13 +1878,47 @@ button{font-size:1rem;padding:10px 16px;border:0;border-radius:8px;cursor:pointe
 <button id="gen-short" onclick="gen('short')" style="background:#f57f17;color:#fff;flex:1;font-weight:bold">⚡ 短文をつくる</button>
 <button id="gen-long" onclick="gen('long')" style="background:#e65100;color:#fff;flex:1;font-weight:bold">📜 長文をつくる</button>
 </div>
+<div class="row" style="margin-top:8px">
+<button onclick="pickPlays()" style="background:#efebe9;flex:1">📡 今の場面を拾う</button>
+<button onclick="recap()" style="background:#fff8e1;flex:1">🐰 今日のまとめ</button>
+</div>
+<div id="chips" style="margin-top:8px"></div>
 <div id="status"></div>
 <div id="out"></div>
 <p class="note">※ 入力した事実だけが使われます (入力に無い展開語・打席経過の創作は自動破棄)。投稿前に一読を。</p>
 <script>
+function makeCard(d, regenFn){
+  const div=document.createElement('div'); div.className='card';
+  div.innerHTML='<div class="style">'+d.style+' (編集して投稿できます)</div>'+
+    '<textarea class="txt" style="margin-top:6px"></textarea>'+
+    '<div class="cnt"></div>'+
+    '<div class="row"><button class="post">Xに投稿</button><button class="regen" style="background:#fff3e0">🔄 再作成</button><button class="copy">コピー</button></div>';
+  const ta=div.querySelector('.txt'), cnt=div.querySelector('.cnt');
+  ta.value=d.text;
+  const fit=()=>{cnt.textContent=ta.value.length+'字'; ta.style.height='auto'; ta.style.height=(ta.scrollHeight+4)+'px';};
+  ta.oninput=fit;
+  div.querySelector('.copy').onclick=()=>{navigator.clipboard.writeText(ta.value);div.querySelector('.copy').textContent='コピー済';};
+  div.querySelector('.regen').onclick=()=>{regenFn(div);};
+  div.querySelector('.post').onclick=async(ev)=>{
+    const text=ta.value.trim();
+    if(!text) return;
+    if(!confirm('この内容でXに投稿します:\\n\\n'+text.slice(0,120)+(text.length>120?'…':'')+'\\n\\nよい？')) return;
+    ev.target.disabled=true; ev.target.textContent='投稿中…';
+    const pr=await fetch('/x-post-direct',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:text})});
+    const pj=await pr.json();
+    ev.target.textContent=pj.ok?'投稿済✔':'失敗: '+(pj.reason||'');
+    if(!pj.ok) ev.target.disabled=false;
+  };
+  setTimeout(fit, 0);
+  return div;
+}
+function showCard(div, replaceCard){
+  const out=document.getElementById('out');
+  if(replaceCard){ out.replaceChild(div, replaceCard); } else { out.prepend(div); }
+}
 async function gen(style, replaceCard){
   const q = document.getElementById('scene').value.trim();
-  if(!q){ document.getElementById('status').textContent='場面を入力してください'; return; }
+  if(!q){ document.getElementById('status').textContent='場面を入力してください (📡で拾えます)'; return; }
   const p = document.getElementById('player').value.trim();
   document.getElementById('status').textContent='生成中… (数秒)';
   try{
@@ -1892,31 +1926,36 @@ async function gen(style, replaceCard){
     const j = await r.json();
     if(!j.ok){ document.getElementById('status').textContent='生成できず (もう一度押してください): '+(j.reason||''); return; }
     document.getElementById('status').textContent = j.live_context ? ('📡 現況を反映: '+j.live_context) : '';
-    const d = j.drafts[0];
-    const div=document.createElement('div'); div.className='card';
-    div.innerHTML='<div class="style">'+d.style+' (編集して投稿できます)</div>'+
-      '<textarea class="txt" style="margin-top:6px"></textarea>'+
-      '<div class="cnt"></div>'+
-      '<div class="row"><button class="post">Xに投稿</button><button class="regen" style="background:#fff3e0">🔄 再作成</button><button class="copy">コピー</button></div>';
-    const ta=div.querySelector('.txt'), cnt=div.querySelector('.cnt');
-    ta.value=d.text;
-    const fit=()=>{cnt.textContent=ta.value.length+'字'; ta.style.height='auto'; ta.style.height=(ta.scrollHeight+4)+'px';};
-    ta.oninput=fit;
-    div.querySelector('.copy').onclick=()=>{navigator.clipboard.writeText(ta.value);div.querySelector('.copy').textContent='コピー済';};
-    div.querySelector('.regen').onclick=()=>{gen(style, div);};
-    div.querySelector('.post').onclick=async(ev)=>{
-      const text=ta.value.trim();
-      if(!text) return;
-      if(!confirm('この内容でXに投稿します:\\n\\n'+text.slice(0,120)+(text.length>120?'…':'')+'\\n\\nよい？')) return;
-      ev.target.disabled=true; ev.target.textContent='投稿中…';
-      const pr=await fetch('/x-post-direct',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:text})});
-      const pj=await pr.json();
-      ev.target.textContent=pj.ok?'投稿済✔':'失敗: '+(pj.reason||'');
-      if(!pj.ok) ev.target.disabled=false;
-    };
-    const out=document.getElementById('out');
-    if(replaceCard){ out.replaceChild(div, replaceCard); } else { out.prepend(div); }
-    fit();
+    showCard(makeCard(j.drafts[0], (card)=>gen(style, card)), replaceCard);
+  }catch(e){ document.getElementById('status').textContent='エラー: '+e; }
+}
+async function pickPlays(){
+  document.getElementById('status').textContent='一球速報から取得中…';
+  try{
+    const r = await fetch('/live-plays');
+    const j = await r.json();
+    const chips=document.getElementById('chips'); chips.innerHTML='';
+    if(!j.ok || !j.plays || !j.plays.length){ document.getElementById('status').textContent='直近プレーが取れませんでした (試合前/中断中？)'; return; }
+    document.getElementById('status').textContent='タップで入力欄へ:';
+    for(const pl of j.plays){
+      const b=document.createElement('button');
+      b.textContent=pl; b.style.cssText='display:block;width:100%;text-align:left;background:#fff;border:1px solid #ddd;margin-top:4px;font-size:.9rem';
+      b.onclick=()=>{ document.getElementById('scene').value=pl; document.getElementById('status').textContent='場面をセット。⚡短文か📜長文を押してください'; };
+      chips.appendChild(b);
+    }
+  }catch(e){ document.getElementById('status').textContent='エラー: '+e; }
+}
+async function recap(replaceCard){
+  document.getElementById('status').textContent='今日のまとめを生成中… (数秒)';
+  try{
+    const r = await fetch('/live-recap');
+    const j = await r.json();
+    if(!j.ok){
+      document.getElementById('status').textContent = (j.reason==='game_not_finished') ? '試合終了後に使えます' : ('生成できず: '+(j.reason||''));
+      return;
+    }
+    document.getElementById('status').textContent = j.live_context ? ('📡 '+j.live_context) : '';
+    showCard(makeCard(j.drafts[0], (card)=>recap(card)), replaceCard);
   }catch(e){ document.getElementById('status').textContent='エラー: '+e; }
 }
 </script></body></html>"""
@@ -2476,6 +2515,148 @@ def build_handler(
                 except Exception as exc:  # noqa: BLE001
                     bound_logger.exception("live_fuga_failed")
                     _json_response(self, 500, {"ok": False, "reason": f"live_fuga_error:{exc!r}"})
+                return
+            if path == "/live-plays":
+                # 2026-07-15 user「リアルタイム拾えない？」: 一球速報の直近プレーを
+                # タップ可能な候補として返す (typing 不要化)。LLM は使わない (¥0)。
+                expected_token = _require_token()
+                if expected_token:
+                    cookie_token = ""
+                    raw_cookie = self.headers.get("Cookie") or ""
+                    for part in raw_cookie.split(";"):
+                        kv = part.strip().split("=", 1)
+                        if len(kv) == 2 and kv[0].strip() == "manual_intake_session":
+                            cookie_token = kv[1].strip()
+                            break
+                    query_token = ""
+                    qtok = parse_qs(parsed.query, keep_blank_values=False).get("token") or []
+                    if qtok:
+                        query_token = (qtok[0] or "").strip()
+                    if cookie_token != expected_token and query_token != expected_token:
+                        _json_response(self, 403, {"ok": False, "reason": "forbidden"})
+                        return
+                try:
+                    from src import live_game_watch as _lgw
+
+                    plays = _lgw.apply_fullname_map(
+                        _lgw.fetch_today_plays(), _lgw.giants_fullname_map()
+                    )
+                    items: list[str] = []
+                    for p in plays[-10:]:
+                        oc = (p.get("outcome") or "").strip()
+                        if not oc:
+                            continue
+                        if p.get("giants_batting"):
+                            label = f"{p['inning']}回{p['half']} {p.get('batter', '')} {oc}"
+                        else:
+                            pit = (p.get("pitcher") or "").strip()
+                            who = (p.get("batter") or "").strip()
+                            label = (
+                                f"{p['inning']}回{p['half']} {pit}、{who}を{oc}"
+                                if pit
+                                else f"{p['inning']}回{p['half']} {who} {oc}"
+                            )
+                        items.append(label.strip())
+                    items.reverse()  # 新しいプレーを先頭に
+                    _json_response(self, 200, {"ok": True, "plays": items})
+                except Exception as exc:  # noqa: BLE001
+                    bound_logger.exception("live_plays_failed")
+                    _json_response(self, 500, {"ok": False, "reason": f"live_plays_error:{exc!r}"})
+                return
+            if path == "/live-recap":
+                # 2026-07-15 user「今日活躍した選手でうさほーやグータッチのポスト」:
+                # 試合終了後、一球速報から活躍選手を実名で束ねた recap を on-demand 生成。
+                # 自動観戦便の game_end recap と同じ材料 (build_recap_fact + claim語gate)。
+                expected_token = _require_token()
+                if expected_token:
+                    cookie_token = ""
+                    raw_cookie = self.headers.get("Cookie") or ""
+                    for part in raw_cookie.split(";"):
+                        kv = part.strip().split("=", 1)
+                        if len(kv) == 2 and kv[0].strip() == "manual_intake_session":
+                            cookie_token = kv[1].strip()
+                            break
+                    query_token = ""
+                    qtok = parse_qs(parsed.query, keep_blank_values=False).get("token") or []
+                    if qtok:
+                        query_token = (qtok[0] or "").strip()
+                    if cookie_token != expected_token and query_token != expected_token:
+                        _json_response(self, 403, {"ok": False, "reason": "forbidden"})
+                        return
+                api_key = (
+                    os.environ.get("GEMINI_API_KEY")
+                    or os.environ.get("GEMMA_BRANDING_GEMINI_API_KEY")
+                    or ""
+                ).strip()
+                if not api_key:
+                    _json_response(self, 500, {"ok": False, "reason": "gemini_key_missing"})
+                    return
+                try:
+                    from src import live_game_watch as _lgw
+                    from src import x_post_branding_gen as _bgen
+
+                    st = _lgw.fetch_today_live_game()
+                    if st is None or st.status != "試合終了":
+                        _json_response(
+                            self,
+                            200,
+                            {"ok": False, "reason": "game_not_finished"},
+                        )
+                        return
+                    plays = _lgw.apply_fullname_map(
+                        _lgw.fetch_today_plays(), _lgw.giants_fullname_map()
+                    )
+                    fact = _lgw.build_recap_fact(
+                        plays, st.giants_score, st.opp_score, st.opp_name
+                    )
+                    txt = ""
+                    for _attempt in range(2):
+                        try:
+                            txt = (
+                                _bgen.build_quote_rt_comment(
+                                    fact,
+                                    "",
+                                    gemini_api_key=api_key,
+                                    subject="観戦recap手動",
+                                    budget_site="quote_rt",
+                                    require_db_fact=False,
+                                    force_long=True,
+                                )
+                                or ""
+                            ).strip()
+                        except Exception:  # noqa: BLE001
+                            bound_logger.exception("live_recap_gen_failed")
+                            txt = ""
+                        if not txt:
+                            break
+                        bad = _lgw.find_unsupported_claim(txt, fact)
+                        if not bad:
+                            break
+                        bound_logger.info(
+                            "live_recap_claim_gate_drop word=%s attempt=%d",
+                            bad,
+                            _attempt + 1,
+                        )
+                        txt = ""
+                    if not txt:
+                        _json_response(self, 200, {"ok": False, "reason": "generation_empty"})
+                        return
+                    if st.giants_score > st.opp_score:
+                        txt = "うさほー🐰👊 グータッチ！\n\n" + txt
+                    elif st.giants_score < st.opp_score:
+                        txt = "まけほー🐰\n\n" + txt
+                    _json_response(
+                        self,
+                        200,
+                        {
+                            "ok": True,
+                            "live_context": fact,
+                            "drafts": [{"style": "🐰 試合後recap", "text": txt}],
+                        },
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    bound_logger.exception("live_recap_failed")
+                    _json_response(self, 500, {"ok": False, "reason": f"live_recap_error:{exc!r}"})
                 return
             if path == "/live":
                 _text_response(

@@ -1844,6 +1844,80 @@ _MANIFEST = {
 }
 
 
+def _render_live_page() -> str:
+    """2026-07-15 user「キーワード入れたらポストが出てくる手動アプリ」観戦モード。
+
+    場面の一言 → /live-fuga (Gemini 2案 + claim語gate) → 直接投稿 or コピー。
+    auth は cookie (manual_intake_session) 前提。同一 origin fetch で自動送信。
+    """
+    return """<!doctype html>
+<html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>観戦モード｜ヨシラバー</title>
+<style>
+body{font-family:sans-serif;background:#fafafa;margin:0;padding:12px;max-width:640px;margin:auto}
+h1{font-size:1.1rem;color:#f57f17}
+textarea{width:100%;box-sizing:border-box;font-size:1.05rem;padding:10px;border:1px solid #ccc;border-radius:8px;min-height:64px}
+input[type=text]{width:100%;box-sizing:border-box;font-size:1rem;padding:8px;border:1px solid #ccc;border-radius:8px}
+button{font-size:1rem;padding:10px 16px;border:0;border-radius:8px;cursor:pointer}
+#gen{background:#f57f17;color:#fff;width:100%;margin-top:10px;font-weight:bold}
+.card{background:#fff;border:1px solid #ddd;border-radius:10px;padding:12px;margin-top:12px;white-space:pre-wrap}
+.card .style{font-size:.8rem;color:#888}
+.card .cnt{font-size:.75rem;color:#aaa}
+.row{display:flex;gap:8px;margin-top:8px}
+.post{background:#1d9bf0;color:#fff;flex:1}
+.copy{background:#eee;flex:1}
+#status{margin-top:10px;font-size:.9rem;color:#666}
+.note{font-size:.75rem;color:#999;margin-top:6px}
+</style></head><body>
+<h1>⚾ 観戦モード — 一言→ヨシラバー文体</h1>
+<textarea id="scene" placeholder="例: 岡本 逆方向に2ラン 5-3"></textarea>
+<input type="text" id="player" placeholder="主役の選手名 (任意)。複数選手は場面欄にそのまま書けば全員使われます" style="margin-top:8px">
+<button id="gen" onclick="gen()">文案をつくる</button>
+<div id="status"></div>
+<div id="out"></div>
+<p class="note">※ 入力した事実だけが使われます (入力に無い展開語が混ざった案は自動破棄)。投稿前に一読を。</p>
+<script>
+async function gen(){
+  const q = document.getElementById('scene').value.trim();
+  if(!q){ document.getElementById('status').textContent='場面を入力してください'; return; }
+  const p = document.getElementById('player').value.trim();
+  document.getElementById('status').textContent='生成中… (数秒)';
+  document.getElementById('out').innerHTML='';
+  try{
+    const r = await fetch('/live-fuga?q='+encodeURIComponent(q)+'&player='+encodeURIComponent(p));
+    const j = await r.json();
+    if(!j.ok){ document.getElementById('status').textContent='生成できず: '+(j.reason||''); return; }
+    document.getElementById('status').textContent='';
+    for(const d of j.drafts){
+      const div=document.createElement('div'); div.className='card';
+      div.innerHTML='<div class="style">'+d.style+' (編集して投稿できます)</div>'+
+        '<textarea class="txt" style="margin-top:6px"></textarea>'+
+        '<div class="cnt"></div>'+
+        '<div class="row"><button class="post">Xに投稿</button><button class="copy">コピー</button></div>';
+      const ta=div.querySelector('.txt'), cnt=div.querySelector('.cnt');
+      ta.value=d.text;
+      const fit=()=>{cnt.textContent=ta.value.length+'字'; ta.style.height='auto'; ta.style.height=(ta.scrollHeight+4)+'px';};
+      ta.oninput=fit;
+      div.querySelector('.copy').onclick=()=>{navigator.clipboard.writeText(ta.value);div.querySelector('.copy').textContent='コピー済';};
+      div.querySelector('.post').onclick=async(ev)=>{
+        const text=ta.value.trim();
+        if(!text) return;
+        if(!confirm('この内容でXに投稿します:\\n\\n'+text.slice(0,120)+(text.length>120?'…':'')+'\\n\\nよい？')) return;
+        ev.target.disabled=true; ev.target.textContent='投稿中…';
+        const pr=await fetch('/x-post-direct',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:text})});
+        const pj=await pr.json();
+        ev.target.textContent=pj.ok?'投稿済✔':'失敗: '+(pj.reason||'');
+        if(!pj.ok) ev.target.disabled=false;
+      };
+      document.getElementById('out').appendChild(div);
+      fit();
+    }
+  }catch(e){ document.getElementById('status').textContent='エラー: '+e; }
+}
+</script></body></html>"""
+
+
 def _render_form() -> str:
     options: list[str] = []
     for value in mi.ARTICLE_TYPE_CHOICES:
@@ -2250,6 +2324,105 @@ def build_handler(
                         500,
                         {"ok": False, "reason": f"x_post_draft_error:{exc!r}"},
                     )
+                return
+            if path == "/live-fuga":
+                # 2026-07-15 user「キーワード入れたらポストが出てくる手動アプリ」:
+                # 観戦中の場面キーワード (q) → ヨシラバー voice 2案 (試合中帯は
+                # ライブ短文 + フーガ長文)。Gemini は打鍵時のみ消費 (scheduler 無し)。
+                # auth は /x-post-draft と同じ cookie / query token。
+                expected_token = _require_token()
+                if expected_token:
+                    cookie_token = ""
+                    raw_cookie = self.headers.get("Cookie") or ""
+                    for part in raw_cookie.split(";"):
+                        kv = part.strip().split("=", 1)
+                        if len(kv) == 2 and kv[0].strip() == "manual_intake_session":
+                            cookie_token = kv[1].strip()
+                            break
+                    query_token = ""
+                    qtok = parse_qs(parsed.query, keep_blank_values=False).get("token") or []
+                    if qtok:
+                        query_token = (qtok[0] or "").strip()
+                    if cookie_token != expected_token and query_token != expected_token:
+                        _json_response(self, 403, {"ok": False, "reason": "forbidden"})
+                        return
+                params = parse_qs(parsed.query, keep_blank_values=False)
+                scene = ((params.get("q") or [""])[0] or "").strip()
+                player = ((params.get("player") or [""])[0] or "").strip()
+                if not scene:
+                    _json_response(self, 400, {"ok": False, "reason": "empty_scene"})
+                    return
+                api_key = (
+                    os.environ.get("GEMINI_API_KEY")
+                    or os.environ.get("GEMMA_BRANDING_GEMINI_API_KEY")
+                    or ""
+                ).strip()
+                if not api_key:
+                    _json_response(self, 500, {"ok": False, "reason": "gemini_key_missing"})
+                    return
+                try:
+                    from src import x_post_branding_gen as _bgen
+                    from src.live_game_watch import find_unsupported_claim as _claim_gate
+
+                    # 2026-07-15 フーガ直近30本の再分析 (観戦LIVE場面の実測クセ):
+                    # 瞬間は実名+感嘆連打の絶叫型 / 口語ツッコミ・自問 / 祈り形の願い /
+                    # 複数選手の実名束ね / 負け場面は「全て明日だ」系の切り替え締め。
+                    # 本体 prompt は変えず、この手動観戦 endpoint だけに上乗せする。
+                    _live_note = (
+                        "観戦LIVE手動モード: 入力は投稿者が今まさに見た場面のメモ。"
+                        "①入力に選手が複数いれば全員フルネームで使ってよい (束ね列挙OK)。"
+                        "②決定的な場面 (本塁打/同点/勝ち越し等が入力にある時) は"
+                        "『実名＋感嘆連打の絶叫型』の超短文でよい (例: 俺たちの坂本勇人！！！ 一振りで決めた！！)。"
+                        "③口語のツッコミ・自問 (「魔改造か」「どういうこと？」) や"
+                        "祈り形の願い (「頼む」「この調子で頼む」) はフーガ節としてOK。"
+                        "④劣勢場面の締めは説教ではなく切り替え (「全て明日だ」「切り替えだ」)。"
+                        "⑤入力に無い展開・スコア・数字は一切足さない。"
+                    )
+                    drafts: list[dict[str, str]] = []
+                    for _force_long, _style in ((False, "ライブ短文"), (True, "フーガ長文")):
+                        try:
+                            txt = (
+                                _bgen.build_quote_rt_comment(
+                                    scene,
+                                    player,
+                                    gemini_api_key=api_key,
+                                    subject="観戦LIVE手動",
+                                    budget_site="quote_rt",
+                                    require_db_fact=False,
+                                    force_long=_force_long,
+                                    extra_voice_note=_live_note,
+                                )
+                                or ""
+                            ).strip()
+                        except Exception:  # noqa: BLE001
+                            bound_logger.exception("live_fuga_variant_failed")
+                            txt = ""
+                        # 7/10 観戦便と同じ hallucination gate: user 入力 (scene) に
+                        # 無い試合展開語 (逆転/サヨナラ/満塁/球種 等) が出力に混ざったら
+                        # その案は破棄 (事実誤認は致命的 NG)。
+                        if txt:
+                            bad_word = _claim_gate(txt, scene)
+                            if bad_word:
+                                bound_logger.info(
+                                    "live_fuga_claim_gate_drop style=%s word=%s",
+                                    _style,
+                                    bad_word,
+                                )
+                                txt = ""
+                        if txt and all(txt != d["text"] for d in drafts):
+                            drafts.append({"style": _style, "text": txt})
+                    if not drafts:
+                        _json_response(self, 200, {"ok": False, "reason": "generation_empty"})
+                        return
+                    _json_response(self, 200, {"ok": True, "scene": scene, "drafts": drafts})
+                except Exception as exc:  # noqa: BLE001
+                    bound_logger.exception("live_fuga_failed")
+                    _json_response(self, 500, {"ok": False, "reason": f"live_fuga_error:{exc!r}"})
+                return
+            if path == "/live":
+                _text_response(
+                    self, 200, _render_live_page(), content_type="text/html; charset=utf-8"
+                )
                 return
             if path in ("/x-share-recent", "/x-share-draft", "/x-thread-draft"):
                 # 2026-07-06 user GO「Xまで共有でおりポスとリプまでつくって」:

@@ -2377,7 +2377,9 @@ def build_handler(
                         "③口語のツッコミ・自問 (「魔改造か」「どういうこと？」) や"
                         "祈り形の願い (「頼む」「この調子で頼む」) はフーガ節としてOK。"
                         "④劣勢場面の締めは説教ではなく切り替え (「全て明日だ」「切り替えだ」)。"
-                        "⑤入力に無い展開・スコア・数字は一切足さない。"
+                        "⑤【最重要】入力に無い場面の細部を創作しない: 打席経過 (初球/追い込まれて/"
+                        "フルカウント等)・カウント・球種・打球方向・スコア・ベンチや表情の描写・"
+                        "確信歩き等の仕草。入力に無い細部が欲しくても、打った事実と感情だけで書く。"
                     )
                     drafts: list[dict[str, str]] = []
                     for _force_long, _style in ((False, "ライブ短文"), (True, "フーガ長文")):
@@ -2401,8 +2403,17 @@ def build_handler(
                         # 7/10 観戦便と同じ hallucination gate: user 入力 (scene) に
                         # 無い試合展開語 (逆転/サヨナラ/満塁/球種 等) が出力に混ざったら
                         # その案は破棄 (事実誤認は致命的 NG)。
+                        # + 手動観戦特有の創作细部 (打席経過/仕草/ベンチ描写) も同基準で破棄
+                        # (2026-07-15 実演で「初球から」「追い込まれてから」の矛盾創作を実測)。
+                        _local_claim_words = (
+                            "初球", "追い込まれ", "フルカウント", "確信歩き",
+                            "ベンチ", "表情", "スタンドへ確信",
+                        )
                         if txt:
-                            bad_word = _claim_gate(txt, scene)
+                            bad_word = _claim_gate(txt, scene) or next(
+                                (w for w in _local_claim_words if w in txt and w not in scene),
+                                "",
+                            )
                             if bad_word:
                                 bound_logger.info(
                                     "live_fuga_claim_gate_drop style=%s word=%s",

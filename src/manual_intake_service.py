@@ -30,6 +30,7 @@ import html
 import json
 import logging
 import os
+import re
 import sys
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -1943,6 +1944,85 @@ def _recent_giants_pitching_change(plays: list) -> tuple[str, str]:
     return order[-2], cur
 
 
+# ── リプ返し (2026-07-15 user「リプが来た人・良い関係リストを作って私がリプを作る」) ──
+_TWEET_URL_ID_RE = re.compile(r"(?:x|twitter)\.com/[^/]+/status/(\d+)")
+
+
+def _extract_tweet_id(url: str) -> str:
+    m = _TWEET_URL_ID_RE.search(url or "")
+    return m.group(1) if m else ""
+
+
+def _fetch_tweet_syndication(tweet_id: str) -> dict[str, str]:
+    """公開 tweet の本文/作者を X syndication API から取る (認証不要・読み取り¥0)。
+    失敗時は空 dict (caller で fail-open)。"""
+    try:
+        req = urlrequest.Request(
+            f"https://cdn.syndication.twimg.com/tweet-result?id={tweet_id}&token=a",
+            headers={"User-Agent": "Mozilla/5.0 (yoshilover-live-reply)"},
+        )
+        with urlrequest.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8", errors="replace"))
+        user = data.get("user") or {}
+        return {
+            "text": (data.get("text") or "").strip(),
+            "handle": (user.get("screen_name") or "").strip(),
+            "name": (user.get("name") or "").strip(),
+        }
+    except Exception:  # noqa: BLE001
+        logging.getLogger("manual_intake_service").info(
+            "tweet_syndication_fetch_failed id=%s", tweet_id
+        )
+        return {}
+
+
+def _friends_blob():
+    bucket_name = (os.environ.get("INSIGHT_GCS_BUCKET") or "").strip()
+    if not bucket_name:
+        return None
+    from google.cloud import storage
+
+    return storage.Client().bucket(bucket_name).blob("live_reply/friends.json")
+
+
+def _load_friends() -> dict[str, dict[str, Any]]:
+    """常連リスト (handle → {count, name, last})。読めない時は空 (fail-open)。"""
+    try:
+        blob = _friends_blob()
+        if blob is None or not blob.exists():
+            return {}
+        return json.loads(blob.download_as_bytes().decode("utf-8")) or {}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _bump_friend(handle: str, name: str) -> int:
+    """リプ返し投稿の成功時に常連カウントを +1。返り値=更新後 count (失敗 0)。"""
+    handle = (handle or "").lstrip("@").strip()
+    if not handle:
+        return 0
+    try:
+        blob = _friends_blob()
+        friends = _load_friends()
+        ent = friends.get(handle) or {"count": 0, "name": name}
+        ent["count"] = int(ent.get("count") or 0) + 1
+        if name:
+            ent["name"] = name
+        ent["last"] = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        friends[handle] = ent
+        if blob is not None:
+            blob.upload_from_string(
+                json.dumps(friends, ensure_ascii=False),
+                content_type="application/json",
+            )
+        return int(ent["count"])
+    except Exception:  # noqa: BLE001
+        logging.getLogger("manual_intake_service").info(
+            "friend_bump_failed handle=%s", handle
+        )
+        return 0
+
+
 def _render_live_page() -> str:
     """2026-07-15 user「キーワード入れたらポストが出てくる手動アプリ」観戦モード。
 
@@ -1987,12 +2067,19 @@ button{font-size:1rem;padding:10px 16px;border:0;border-radius:8px;cursor:pointe
 <button onclick="neta('makeso')" style="background:#fbe9e7;font-size:.85rem;flex:1;min-width:30%">😤 劣勢</button>
 <button onclick="neta('kuji')" style="background:#fffde7;font-size:.85rem;flex:1;min-width:30%">🎰 くじ</button>
 </div>
+<div style="margin-top:14px;border-top:1px dashed #ccc;padding-top:10px">
+<input type="text" id="rurl" placeholder="💬 リプ返し: 相手リプのURLを貼る (X共有→リンクをコピー)">
+<div class="row" style="margin-top:6px">
+<button onclick="replyDraft()" style="background:#e0f2f1;flex:2">💬 リプ返し案をつくる</button>
+<button onclick="friends()" style="background:#ede7f6;flex:1">👥 常連</button>
+</div>
+</div>
 <div id="chips" style="margin-top:8px"></div>
 <div id="status"></div>
 <div id="out"></div>
 <p class="note">※ 入力した事実だけが使われます (入力に無い展開語・打席経過の創作は自動破棄)。投稿前に一読を。</p>
 <script>
-function makeCard(d, regenFn){
+function makeCard(d, regenFn, postExtra){
   const div=document.createElement('div'); div.className='card';
   div.innerHTML='<div class="style">'+d.style+' (編集して投稿できます)</div>'+
     '<textarea class="txt" style="margin-top:6px"></textarea>'+
@@ -2009,9 +2096,9 @@ function makeCard(d, regenFn){
     if(!text) return;
     if(!confirm('この内容でXに投稿します:\\n\\n'+text.slice(0,120)+(text.length>120?'…':'')+'\\n\\nよい？')) return;
     ev.target.disabled=true; ev.target.textContent='投稿中…';
-    const pr=await fetch('/x-post-direct',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:text})});
+    const pr=await fetch('/x-post-direct',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({text:text}, postExtra||{}))});
     const pj=await pr.json();
-    ev.target.textContent=pj.ok?'投稿済✔':'失敗: '+(pj.reason||'');
+    ev.target.textContent=pj.ok?(pj.friend_count>1?'投稿済✔ 常連'+pj.friend_count+'回目':'投稿済✔'):'失敗: '+(pj.reason||'');
     if(!pj.ok) ev.target.disabled=false;
   };
   setTimeout(fit, 0);
@@ -2047,6 +2134,39 @@ async function pickPlays(){
       b.textContent=pl; b.style.cssText='display:block;width:100%;text-align:left;background:#fff;border:1px solid #ddd;margin-top:4px;font-size:.9rem';
       b.onclick=()=>{ document.getElementById('scene').value=pl; document.getElementById('status').textContent='場面をセット。⚡短文か📜長文を押してください'; };
       chips.appendChild(b);
+    }
+  }catch(e){ document.getElementById('status').textContent='エラー: '+e; }
+}
+async function replyDraft(replaceCard){
+  const u = document.getElementById('rurl').value.trim();
+  if(!u){ document.getElementById('status').textContent='相手リプのURLを貼ってください'; return; }
+  document.getElementById('status').textContent='相手の文面を取得して生成中… (数秒)';
+  try{
+    const r = await fetch('/live-reply-draft?url='+encodeURIComponent(u));
+    const j = await r.json();
+    if(!j.ok){
+      const msgs={bad_tweet_url:'URLが読めません (x.com/…/status/… の形式で)', tweet_fetch_failed:'相手の文面を取得できませんでした (鍵アカ？)', generation_empty:'生成できず。もう一度どうぞ'};
+      document.getElementById('status').textContent = msgs[j.reason] || ('生成できず: '+(j.reason||''));
+      return;
+    }
+    const who = j.name+' @'+j.handle+(j.friend_count>0?' (常連'+(j.friend_count+1)+'回目)':' (初)');
+    document.getElementById('status').textContent = '💬 '+who+': 「'+j.their_text.slice(0,80)+'」';
+    showCard(makeCard(j.drafts[0], (card)=>replyDraft(card), {in_reply_to:j.reply_to_id, reply_to_handle:j.handle, reply_to_name:j.name}), replaceCard);
+  }catch(e){ document.getElementById('status').textContent='エラー: '+e; }
+}
+async function friends(){
+  document.getElementById('status').textContent='常連リストを取得中…';
+  try{
+    const r = await fetch('/live-friends');
+    const j = await r.json();
+    const chips=document.getElementById('chips'); chips.innerHTML='';
+    if(!j.ok || !j.friends || !j.friends.length){ document.getElementById('status').textContent='常連はまだいません (リプ返しすると育ちます)'; return; }
+    document.getElementById('status').textContent='👥 リプ返しした相手 (回数順):';
+    for(const f of j.friends){
+      const div=document.createElement('div');
+      div.style.cssText='background:#fff;border:1px solid #ddd;border-radius:8px;padding:6px 10px;margin-top:4px;font-size:.9rem';
+      div.textContent=(f.name||'')+' @'+f.handle+' — '+f.count+'回 (最終 '+(f.last||'?')+')';
+      chips.appendChild(div);
     }
   }catch(e){ document.getElementById('status').textContent='エラー: '+e; }
 }
@@ -2652,6 +2772,155 @@ def build_handler(
                     bound_logger.exception("live_plays_failed")
                     _json_response(self, 500, {"ok": False, "reason": f"live_plays_error:{exc!r}"})
                 return
+            if path == "/live-friends":
+                # 常連リスト閲覧 (read-only、LLM/課金なし)
+                expected_token = _require_token()
+                if expected_token:
+                    cookie_token = ""
+                    raw_cookie = self.headers.get("Cookie") or ""
+                    for part in raw_cookie.split(";"):
+                        kv = part.strip().split("=", 1)
+                        if len(kv) == 2 and kv[0].strip() == "manual_intake_session":
+                            cookie_token = kv[1].strip()
+                            break
+                    query_token = ""
+                    qtok = parse_qs(parsed.query, keep_blank_values=False).get("token") or []
+                    if qtok:
+                        query_token = (qtok[0] or "").strip()
+                    if cookie_token != expected_token and query_token != expected_token:
+                        _json_response(self, 403, {"ok": False, "reason": "forbidden"})
+                        return
+                friends = _load_friends()
+                ranked = sorted(
+                    (
+                        {"handle": h, **(v or {})}
+                        for h, v in friends.items()
+                    ),
+                    key=lambda x: -int(x.get("count") or 0),
+                )[:30]
+                _json_response(self, 200, {"ok": True, "friends": ranked})
+                return
+            if path == "/live-reply-draft":
+                # 2026-07-15 user「リプが来た人に私がリプを作る。特に試合中」:
+                # 相手リプの URL を貼る → syndication で本文/作者取得 (¥0) →
+                # 共感型リプ返し文案を生成 → /x-post-direct (in_reply_to) で返信投稿。
+                expected_token = _require_token()
+                if expected_token:
+                    cookie_token = ""
+                    raw_cookie = self.headers.get("Cookie") or ""
+                    for part in raw_cookie.split(";"):
+                        kv = part.strip().split("=", 1)
+                        if len(kv) == 2 and kv[0].strip() == "manual_intake_session":
+                            cookie_token = kv[1].strip()
+                            break
+                    query_token = ""
+                    qtok = parse_qs(parsed.query, keep_blank_values=False).get("token") or []
+                    if qtok:
+                        query_token = (qtok[0] or "").strip()
+                    if cookie_token != expected_token and query_token != expected_token:
+                        _json_response(self, 403, {"ok": False, "reason": "forbidden"})
+                        return
+                params = parse_qs(parsed.query, keep_blank_values=False)
+                turl = ((params.get("url") or [""])[0] or "").strip()
+                tweet_id = _extract_tweet_id(turl)
+                if not tweet_id:
+                    _json_response(self, 400, {"ok": False, "reason": "bad_tweet_url"})
+                    return
+                tw = _fetch_tweet_syndication(tweet_id)
+                if not tw.get("text"):
+                    _json_response(self, 200, {"ok": False, "reason": "tweet_fetch_failed"})
+                    return
+                api_key = (
+                    os.environ.get("GEMINI_API_KEY")
+                    or os.environ.get("GEMMA_BRANDING_GEMINI_API_KEY")
+                    or ""
+                ).strip()
+                if not api_key:
+                    _json_response(self, 500, {"ok": False, "reason": "gemini_key_missing"})
+                    return
+                try:
+                    from src import x_post_branding_gen as _bgen
+                    from src.live_game_watch import find_unsupported_claim as _cg
+
+                    # 試合中なら現況を混ぜる (検証済み事実のみ)
+                    live_ctx = ""
+                    try:
+                        from src import live_game_watch as _lgw
+
+                        _st = _lgw.fetch_today_live_game()
+                        if _st is not None and _st.status in ("試合中", "試合終了"):
+                            _inn = f" {_st.inning_label}" if _st.inning_label else ""
+                            live_ctx = (
+                                f"{_st.status}{_inn} 巨人{_st.giants_score}-"
+                                f"{_st.opp_score}{_st.opp_name}"
+                            )
+                    except Exception:  # noqa: BLE001
+                        live_ctx = ""
+                    src_text = tw["text"]
+                    fact_for_gate = (
+                        f"{src_text}\n【現況】{live_ctx}" if live_ctx else src_text
+                    )
+                    _reply_note = (
+                        "型=リプ返し (返礼)。相手はこちらのポストに反応してくれた巨人ファン。"
+                        "共感と感謝ベースで短く (15〜45字・1文)、相手の文面の具体に必ず触れる。"
+                        "上から目線・講釈・訂正・データ披露は禁止。仲間との野球談義のノリで、"
+                        "絵文字は多くて1個。締めは相手がもう一言返しやすい軽い問いかけか同意。"
+                    )
+                    txt = ""
+                    for _attempt in range(2):
+                        try:
+                            txt = (
+                                _bgen.build_quote_rt_comment(
+                                    fact_for_gate,
+                                    "",
+                                    gemini_api_key=api_key,
+                                    subject="リプ返し手動",
+                                    budget_site="reply",
+                                    reply_style="empathy",
+                                    require_db_fact=False,
+                                    extra_voice_note=_reply_note,
+                                )
+                                or ""
+                            ).strip()
+                        except Exception:  # noqa: BLE001
+                            bound_logger.exception("live_reply_gen_failed")
+                            txt = ""
+                        if not txt:
+                            break
+                        bad_word = _cg(txt, fact_for_gate)
+                        if not bad_word:
+                            break
+                        bound_logger.info(
+                            "live_reply_claim_gate_drop word=%s attempt=%d",
+                            bad_word,
+                            _attempt + 1,
+                        )
+                        txt = ""
+                    if not txt:
+                        _json_response(self, 200, {"ok": False, "reason": "generation_empty"})
+                        return
+                    friends = _load_friends()
+                    fc = int((friends.get(tw["handle"]) or {}).get("count") or 0)
+                    _json_response(
+                        self,
+                        200,
+                        {
+                            "ok": True,
+                            "reply_to_id": tweet_id,
+                            "handle": tw["handle"],
+                            "name": tw["name"],
+                            "their_text": src_text,
+                            "friend_count": fc,
+                            "live_context": live_ctx,
+                            "drafts": [{"style": "💬 リプ返し", "text": txt}],
+                        },
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    bound_logger.exception("live_reply_draft_failed")
+                    _json_response(
+                        self, 500, {"ok": False, "reason": f"live_reply_error:{exc!r}"}
+                    )
+                return
             if path == "/live-neta":
                 # 2026-07-15 user GO「良いね。リアルタイムで拾って」: ネタボタン便。
                 # 一球速報のリアルタイム状態 (スコア/回/直近プレー/継投) を事実行に組み、
@@ -3024,11 +3293,22 @@ def build_handler(
                         {"ok": False, "reason": "text_too_long", "char_count": len(text)},
                     )
                     return
+                # 2026-07-15 リプ返し: in_reply_to (tweet id) があれば返信として投稿。
+                # 投稿成功時に常連リスト (GCS) を +1 する (reply_to_handle 必須)。
+                in_reply_to = str(payload.get("in_reply_to") or "").strip()
+                if in_reply_to and not in_reply_to.isdigit():
+                    _json_response(self, 400, {"ok": False, "reason": "bad_in_reply_to"})
+                    return
                 try:
                     from src import x_api_client as _xc
 
                     client = _xc.get_client()
-                    resp = client.create_tweet(text=text)
+                    if in_reply_to:
+                        resp = client.create_tweet(
+                            text=text, in_reply_to_tweet_id=in_reply_to
+                        )
+                    else:
+                        resp = client.create_tweet(text=text)
                 except KeyError as exc:
                     bound_logger.exception("x_post_direct_env_missing")
                     _json_response(
@@ -3052,6 +3332,12 @@ def build_handler(
                         tweet_id = data.get("id")
                 except Exception:  # noqa: BLE001
                     tweet_id = None
+                friend_count = 0
+                if in_reply_to:
+                    friend_count = _bump_friend(
+                        str(payload.get("reply_to_handle") or ""),
+                        str(payload.get("reply_to_name") or ""),
+                    )
                 _json_response(
                     self,
                     200,
@@ -3059,6 +3345,7 @@ def build_handler(
                         "ok": True,
                         "tweet_id": tweet_id,
                         "char_count": len(text),
+                        "friend_count": friend_count,
                     },
                 )
                 return

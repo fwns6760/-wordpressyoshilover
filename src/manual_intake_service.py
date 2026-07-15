@@ -1845,6 +1845,104 @@ _MANIFEST = {
 }
 
 
+# 2026-07-15 観戦モード共通: フーガ直近30本の再分析を反映した voice 上乗せ。
+# 本体 prompt (x_post_branding_gen) は変えず、手動観戦系 endpoint のみに適用。
+_LIVE_VOICE_NOTE = (
+    "観戦LIVE手動モード: 入力は投稿者が今まさに見た場面のメモ。"
+    "①入力に選手が複数いれば全員フルネームで使ってよい (束ね列挙OK)。"
+    "②決定的な場面 (本塁打/同点/勝ち越し等が入力にある時) は"
+    "『実名＋感嘆連打の絶叫型』の超短文でよい (例: 俺たちの坂本勇人！！！ 一振りで決めた！！)。"
+    "③口語のツッコミ・自問 (「魔改造か」「どういうこと？」) や"
+    "祈り形の願い (「頼む」「この調子で頼む」) はフーガ節としてOK。"
+    "④劣勢場面の締めは説教ではなく切り替え (「全て明日だ」「切り替えだ」)。"
+    "⑤【最重要】入力に無い場面の細部を創作しない: 打席経過 (初球/追い込まれて/"
+    "フルカウント等)・カウント・球種・打球方向・スコア・ベンチや表情の描写・"
+    "確信歩き等の仕草。入力に無い細部が欲しくても、打った事実と感情だけで書く。"
+    "⑥締めは読者がリプで答えたくなる短い問いかけにする"
+    " (「どう見た？」「〜と思わんか？」「〜に期待でいいよな？」)。"
+    "断定の「だよな。」で閉じるより、読者が一言返せる形を優先する。"
+)
+
+# 観戦手動系で追加破棄する創作細部語 (claim語gate の局所補強)
+_LIVE_LOCAL_CLAIM_WORDS = (
+    "初球", "追い込まれ", "フルカウント", "確信歩き",
+    "ベンチ", "表情", "スタンドへ確信",
+)
+
+# ネタボタン (2026-07-15 user「アプリに入れると面白いネタ」「リアルタイムで拾って」)
+_LIVE_NETA_KINDS: dict[str, dict[str, str]] = {
+    "next": {
+        "label": "🎯 次に期待",
+        "note": "型=次の一打・次の展開への期待。事実行の流れを受けて「ここで一本欲しい」"
+                "「この展開はもう◯◯しかないやろ」の先回り期待型で短く。"
+                "次の打者名は事実行に無ければ書かない (勝手に打順を推測しない)。",
+    },
+    "saihai": {
+        "label": "🧠 采配ひとこと",
+        "note": "型=采配への問いかけ。事実行の継投/起用の事実だけを受けて"
+                "「ここで交代か」「引っ張るのか」と読者に賛否を問う。"
+                "監督個人への攻撃・無能呼ばわりは絶対禁止、あくまで議論の提起。",
+    },
+    "keika": {
+        "label": "📊 中間経過",
+        "note": "型=定点の中間経過。スコアと回を必ず本文に入れ、ここまでの試合の"
+                "空気を一言添え、締めは「ここからどう見る？」系の問いかけ。",
+    },
+    "makeso": {
+        "label": "😤 劣勢の歯がゆさ",
+        "note": "型=劣勢の歯がゆさ・疑問視。悔しさは同じファン目線で吐き出すが、"
+                "個人攻撃・戦犯探し・「使えない」系は絶対禁止。"
+                "締めは「切り替えだ」「まだ分からんぞ」系の粘り。",
+    },
+    "kuji": {
+        "label": "🎰 くじ型ユーモア",
+        "note": "型=ユーモアの飛び道具 (フーガの「ドリームサマーリチャードくじ」風)。"
+                "事実行にいる選手だけを使い、「ここで当てなかったらどこで当てるんや」"
+                "のような笑える願掛けを1本。ふざけすぎず野球ファンの愛嬌の範囲で。",
+    },
+}
+
+
+def _fmt_live_play(p: dict) -> str:
+    """一球速報 play dict を 1 行の日本語事実行に (live-plays / ネタ便共用)。"""
+    oc = (p.get("outcome") or "").strip()
+    if not oc:
+        return ""
+    if p.get("giants_batting"):
+        return f"{p['inning']}回{p['half']} {p.get('batter', '')} {oc}".strip()
+    pit = (p.get("pitcher") or "").strip()
+    who = (p.get("batter") or "").strip()
+    if pit:
+        return f"{p['inning']}回{p['half']} {pit}、{who}を{oc}".strip()
+    return f"{p['inning']}回{p['half']} {who} {oc}".strip()
+
+
+def _recent_giants_pitching_change(plays: list) -> tuple[str, str]:
+    """巨人側投手の直近交代 (prev, cur) を返す。交代なし/古い交代は ("", "")。
+
+    「古い」= 現投手が既に 9 打者以上投げている (≒交代から3イニング相当)。"""
+    seq = [
+        (p.get("pitcher") or "").strip()
+        for p in plays
+        if not p.get("giants_batting") and (p.get("pitcher") or "").strip()
+    ]
+    order: list[str] = []
+    for name in seq:
+        if not order or order[-1] != name:
+            order.append(name)
+    if len(order) < 2:
+        return "", ""
+    cur = order[-1]
+    cur_batters = 0
+    for name in reversed(seq):
+        if name != cur:
+            break
+        cur_batters += 1
+    if cur_batters > 9:
+        return "", ""
+    return order[-2], cur
+
+
 def _render_live_page() -> str:
     """2026-07-15 user「キーワード入れたらポストが出てくる手動アプリ」観戦モード。
 
@@ -1881,6 +1979,13 @@ button{font-size:1rem;padding:10px 16px;border:0;border-radius:8px;cursor:pointe
 <div class="row" style="margin-top:8px">
 <button onclick="pickPlays()" style="background:#efebe9;flex:1">📡 今の場面を拾う</button>
 <button onclick="recap()" style="background:#fff8e1;flex:1">🐰 今日のまとめ</button>
+</div>
+<div class="row" style="margin-top:8px;flex-wrap:wrap">
+<button onclick="neta('next')" style="background:#e8f5e9;font-size:.85rem;flex:1;min-width:30%">🎯 次に期待</button>
+<button onclick="neta('saihai')" style="background:#e3f2fd;font-size:.85rem;flex:1;min-width:30%">🧠 采配</button>
+<button onclick="neta('keika')" style="background:#f3e5f5;font-size:.85rem;flex:1;min-width:30%">📊 経過</button>
+<button onclick="neta('makeso')" style="background:#fbe9e7;font-size:.85rem;flex:1;min-width:30%">😤 劣勢</button>
+<button onclick="neta('kuji')" style="background:#fffde7;font-size:.85rem;flex:1;min-width:30%">🎰 くじ</button>
 </div>
 <div id="chips" style="margin-top:8px"></div>
 <div id="status"></div>
@@ -1943,6 +2048,20 @@ async function pickPlays(){
       b.onclick=()=>{ document.getElementById('scene').value=pl; document.getElementById('status').textContent='場面をセット。⚡短文か📜長文を押してください'; };
       chips.appendChild(b);
     }
+  }catch(e){ document.getElementById('status').textContent='エラー: '+e; }
+}
+async function neta(kind, replaceCard){
+  document.getElementById('status').textContent='一球速報を拾って生成中… (数秒)';
+  try{
+    const r = await fetch('/live-neta?kind='+kind);
+    const j = await r.json();
+    if(!j.ok){
+      const msgs={no_live_game:'今日は試合がない/試合前です', no_recent_change:'直近の継投がありません', not_losing:'いま劣勢ではないです(良いこと)', generation_empty:'生成できず。もう一度どうぞ'};
+      document.getElementById('status').textContent = msgs[j.reason] || ('生成できず: '+(j.reason||''));
+      return;
+    }
+    document.getElementById('status').textContent = j.live_context ? ('📡 '+j.live_context) : '';
+    showCard(makeCard(j.drafts[0], (card)=>neta(kind, card)), replaceCard);
   }catch(e){ document.getElementById('status').textContent='エラー: '+e; }
 }
 async function recap(replaceCard){
@@ -2407,25 +2526,9 @@ def build_handler(
                     from src import x_post_branding_gen as _bgen
                     from src.live_game_watch import find_unsupported_claim as _claim_gate
 
-                    # 2026-07-15 フーガ直近30本の再分析 (観戦LIVE場面の実測クセ):
-                    # 瞬間は実名+感嘆連打の絶叫型 / 口語ツッコミ・自問 / 祈り形の願い /
-                    # 複数選手の実名束ね / 負け場面は「全て明日だ」系の切り替え締め。
-                    # 本体 prompt は変えず、この手動観戦 endpoint だけに上乗せする。
-                    _live_note = (
-                        "観戦LIVE手動モード: 入力は投稿者が今まさに見た場面のメモ。"
-                        "①入力に選手が複数いれば全員フルネームで使ってよい (束ね列挙OK)。"
-                        "②決定的な場面 (本塁打/同点/勝ち越し等が入力にある時) は"
-                        "『実名＋感嘆連打の絶叫型』の超短文でよい (例: 俺たちの坂本勇人！！！ 一振りで決めた！！)。"
-                        "③口語のツッコミ・自問 (「魔改造か」「どういうこと？」) や"
-                        "祈り形の願い (「頼む」「この調子で頼む」) はフーガ節としてOK。"
-                        "④劣勢場面の締めは説教ではなく切り替え (「全て明日だ」「切り替えだ」)。"
-                        "⑤【最重要】入力に無い場面の細部を創作しない: 打席経過 (初球/追い込まれて/"
-                        "フルカウント等)・カウント・球種・打球方向・スコア・ベンチや表情の描写・"
-                        "確信歩き等の仕草。入力に無い細部が欲しくても、打った事実と感情だけで書く。"
-                        "⑥締めは読者がリプで答えたくなる短い問いかけにする"
-                        " (「どう見た？」「〜と思わんか？」「〜に期待でいいよな？」)。"
-                        "断定の「だよな。」で閉じるより、読者が一言返せる形を優先する。"
-                    )
+                    # voice 上乗せと局所claim語は module-level 共通定義を使う
+                    # (_LIVE_VOICE_NOTE / _LIVE_LOCAL_CLAIM_WORDS、ネタ便と共用)。
+                    _live_note = _LIVE_VOICE_NOTE
                     # 2026-07-15 user「ひとつでよくないか？再作成が良いのでは。短文と長文で」:
                     # 1押し = 1案 (style param で短文/長文を選択、LLM 1call)。気に入らなければ
                     # UI の再作成ボタンで同 style をもう 1 call。2案同時生成は廃止 (LLM半減)。
@@ -2457,10 +2560,7 @@ def build_handler(
                     )
                     # hallucination gate (7/10 観戦便の claim語gate + 手動観戦特有の創作細部)。
                     # 2026-07-15 実演で「初球から」「追い込まれてから」の矛盾創作を実測。
-                    _local_claim_words = (
-                        "初球", "追い込まれ", "フルカウント", "確信歩き",
-                        "ベンチ", "表情", "スタンドへ確信",
-                    )
+                    _local_claim_words = _LIVE_LOCAL_CLAIM_WORDS
                     txt = ""
                     for _attempt in range(2):  # gate落ち時のみ 1 回だけ作り直し
                         try:
@@ -2541,27 +2641,142 @@ def build_handler(
                     plays = _lgw.apply_fullname_map(
                         _lgw.fetch_today_plays(), _lgw.giants_fullname_map()
                     )
-                    items: list[str] = []
-                    for p in plays[-10:]:
-                        oc = (p.get("outcome") or "").strip()
-                        if not oc:
-                            continue
-                        if p.get("giants_batting"):
-                            label = f"{p['inning']}回{p['half']} {p.get('batter', '')} {oc}"
-                        else:
-                            pit = (p.get("pitcher") or "").strip()
-                            who = (p.get("batter") or "").strip()
-                            label = (
-                                f"{p['inning']}回{p['half']} {pit}、{who}を{oc}"
-                                if pit
-                                else f"{p['inning']}回{p['half']} {who} {oc}"
-                            )
-                        items.append(label.strip())
+                    items = [
+                        line
+                        for line in (_fmt_live_play(p) for p in plays[-10:])
+                        if line
+                    ]
                     items.reverse()  # 新しいプレーを先頭に
                     _json_response(self, 200, {"ok": True, "plays": items})
                 except Exception as exc:  # noqa: BLE001
                     bound_logger.exception("live_plays_failed")
                     _json_response(self, 500, {"ok": False, "reason": f"live_plays_error:{exc!r}"})
+                return
+            if path == "/live-neta":
+                # 2026-07-15 user GO「良いね。リアルタイムで拾って」: ネタボタン便。
+                # 一球速報のリアルタイム状態 (スコア/回/直近プレー/継投) を事実行に組み、
+                # kind 別の型 (期待/采配/経過/劣勢/くじ) で 1 案生成。捏造 gate は共通。
+                expected_token = _require_token()
+                if expected_token:
+                    cookie_token = ""
+                    raw_cookie = self.headers.get("Cookie") or ""
+                    for part in raw_cookie.split(";"):
+                        kv = part.strip().split("=", 1)
+                        if len(kv) == 2 and kv[0].strip() == "manual_intake_session":
+                            cookie_token = kv[1].strip()
+                            break
+                    query_token = ""
+                    qtok = parse_qs(parsed.query, keep_blank_values=False).get("token") or []
+                    if qtok:
+                        query_token = (qtok[0] or "").strip()
+                    if cookie_token != expected_token and query_token != expected_token:
+                        _json_response(self, 403, {"ok": False, "reason": "forbidden"})
+                        return
+                params = parse_qs(parsed.query, keep_blank_values=False)
+                kind = ((params.get("kind") or [""])[0] or "").strip()
+                spec = _LIVE_NETA_KINDS.get(kind)
+                if spec is None:
+                    _json_response(self, 400, {"ok": False, "reason": "unknown_kind"})
+                    return
+                api_key = (
+                    os.environ.get("GEMINI_API_KEY")
+                    or os.environ.get("GEMMA_BRANDING_GEMINI_API_KEY")
+                    or ""
+                ).strip()
+                if not api_key:
+                    _json_response(self, 500, {"ok": False, "reason": "gemini_key_missing"})
+                    return
+                try:
+                    from src import live_game_watch as _lgw
+                    from src import x_post_branding_gen as _bgen
+
+                    st = _lgw.fetch_today_live_game()
+                    if st is None or st.status == "試合前":
+                        _json_response(self, 200, {"ok": False, "reason": "no_live_game"})
+                        return
+                    plays = _lgw.apply_fullname_map(
+                        _lgw.fetch_today_plays(), _lgw.giants_fullname_map()
+                    )
+                    _inn = f" {st.inning_label}" if st.inning_label else ""
+                    fact_parts = [
+                        f"{st.status}{_inn} 巨人{st.giants_score}-{st.opp_score}{st.opp_name}"
+                    ]
+                    recent = [
+                        line
+                        for line in (_fmt_live_play(p) for p in plays[-3:])
+                        if line
+                    ]
+                    if recent:
+                        fact_parts.append("直近: " + " / ".join(recent))
+                    if kind == "saihai":
+                        prev_p, cur_p = _recent_giants_pitching_change(plays)
+                        if not cur_p:
+                            _json_response(
+                                self, 200, {"ok": False, "reason": "no_recent_change"}
+                            )
+                            return
+                        fact_parts.append(f"巨人の継投: {prev_p}から{cur_p}へ交代")
+                    if kind == "makeso" and st.giants_score >= st.opp_score:
+                        _json_response(self, 200, {"ok": False, "reason": "not_losing"})
+                        return
+                    if kind == "keika" and st.homer_lines:
+                        fact_parts.append("ここまでの本塁打: " + " / ".join(st.homer_lines[:4]))
+                    fact = "。".join(fact_parts)
+                    txt = ""
+                    for _attempt in range(2):
+                        try:
+                            txt = (
+                                _bgen.build_quote_rt_comment(
+                                    fact,
+                                    "",
+                                    gemini_api_key=api_key,
+                                    subject="観戦LIVE手動",
+                                    budget_site="quote_rt",
+                                    require_db_fact=False,
+                                    force_long=False,
+                                    extra_voice_note=_LIVE_VOICE_NOTE + spec["note"],
+                                )
+                                or ""
+                            ).strip()
+                        except Exception:  # noqa: BLE001
+                            bound_logger.exception("live_neta_gen_failed")
+                            txt = ""
+                        if not txt:
+                            break
+                        from src.live_game_watch import find_unsupported_claim as _cg
+
+                        bad_word = _cg(txt, fact) or next(
+                            (
+                                w
+                                for w in _LIVE_LOCAL_CLAIM_WORDS
+                                if w in txt and w not in fact
+                            ),
+                            "",
+                        )
+                        if not bad_word:
+                            break
+                        bound_logger.info(
+                            "live_neta_claim_gate_drop kind=%s word=%s attempt=%d",
+                            kind,
+                            bad_word,
+                            _attempt + 1,
+                        )
+                        txt = ""
+                    if not txt:
+                        _json_response(self, 200, {"ok": False, "reason": "generation_empty"})
+                        return
+                    _json_response(
+                        self,
+                        200,
+                        {
+                            "ok": True,
+                            "live_context": fact,
+                            "drafts": [{"style": spec["label"], "text": txt}],
+                        },
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    bound_logger.exception("live_neta_failed")
+                    _json_response(self, 500, {"ok": False, "reason": f"live_neta_error:{exc!r}"})
                 return
             if path == "/live-recap":
                 # 2026-07-15 user「今日活躍した選手でうさほーやグータッチのポスト」:

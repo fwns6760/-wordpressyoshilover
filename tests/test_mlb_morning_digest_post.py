@@ -50,7 +50,7 @@ class BuildMlbMorningDigestTests(unittest.TestCase):
         self.assertIsNotNone(c)
         self.assertTrue(c.signature.startswith("mlbdigest|"))
         self.assertEqual(c.metric, "MLB_MORNING_DIGEST")
-        self.assertIn("今朝のMLB定点観測", c.post_text)
+        self.assertIn("8時の日本人メジャーリーガー定点観測", c.post_text)
         self.assertIn("大谷翔平", c.post_text)
         self.assertIn("岡本和真", c.post_text)
         # 数字は statsapi literal がそのまま入る

@@ -2552,10 +2552,22 @@ def build_video_radar_candidates(
         # 投稿できない (短くすると動画が付く)。 引用RT/動画候補のコメントを短く固定する。
         post_text = _cap_sentence(post_text, _video_post_char_cap())
         _text_key = (post_text.replace(player, "") if player else post_text).strip()
+        _dup_comment_note = False
         if _text_key in used_post_texts:
-            LOG.info("x_buzz skip: duplicate post text player=%s", player or "(none)")
-            continue
-        used_post_texts.add(_text_key)
+            # 2026-07-15 user「巨人動画SNSが一番インプ取れる。候補は欲しい、コメントは
+            # LLM で(時間削減)」: コメント文の重複を理由に候補ごと捨てない。動画は
+            # 元投稿 (URL) が違えば別の場面なので、コメント要アレンジの注記付きで残す。
+            # LLM voice が付いた候補の重複は従来通り skip (同文連投の防止)。
+            if not _is_video:
+                LOG.info("x_buzz skip: duplicate post text player=%s", player or "(none)")
+                continue
+            LOG.info(
+                "x_buzz keep: duplicate comment (video, needs edit) player=%s",
+                player or "(none)",
+            )
+            _dup_comment_note = True
+        else:
+            used_post_texts.add(_text_key)
         # 2026-06-03: ブランディング投稿に「おしゃれ系」ヨシラバー画像を1枚添付 (style B、
         # 選手写真+ブランドパネル、 データなし、 ¥0=PILローカル合成)。 user 確定。
         # env X_POST_BRAND_IMAGE_ENABLED=0 で無効化可。 失敗時は画像なしで続行 (graceful)。
@@ -2587,6 +2599,10 @@ def build_video_radar_candidates(
             ),
             post_text,
             "── ここまで貼る ──",
+            (
+                "⚠ このコメントは他候補と同文気味。投稿するなら一言アレンジ推奨。"
+                if _dup_comment_note else ""
+            ),
             "",
             f"参考 (今季・本文には入れない): {fact}" if fact else "",
             (
@@ -4034,6 +4050,11 @@ def _candidate_post_text_hash(candidate: Candidate) -> str:
     normalized = _normalize_candidate_post_text(_candidate_post_text(candidate))
     if not normalized:
         return ""
+    # 2026-07-15 user「巨人動画SNSが一番インプ。候補は同文コメントでも欲しい」:
+    # 引用RT系は元投稿 (quote_url) が違えば別場面なので、同文コメントを理由に
+    # 同メール内で落とさない。URL を hash に混ぜて別物として扱う。
+    if candidate.metric == _VIDEO_RADAR_METRIC and (candidate.quote_url or "").strip():
+        normalized = f"{normalized}|{candidate.quote_url.strip()}"
     return _hashlib.sha1(normalized.encode("utf-8")).hexdigest()
 
 

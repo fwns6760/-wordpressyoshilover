@@ -2010,6 +2010,27 @@ def _looks_like_yaji(text: str) -> bool:
     return any(w.lower() in t for w in _YAJI_WORDS)
 
 
+def _remove_friend(handle: str) -> bool:
+    """常連リストから完全削除 (2026-07-15 user「消すこともできるんでしょ？」)。"""
+    handle = (handle or "").lstrip("@").strip()
+    if not handle:
+        return False
+    try:
+        blob = _friends_blob()
+        friends = _load_friends()
+        if handle not in friends:
+            return True
+        del friends[handle]
+        if blob is not None:
+            blob.upload_from_string(
+                json.dumps(friends, ensure_ascii=False),
+                content_type="application/json",
+            )
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _flag_friend_yaji(handle: str) -> bool:
     """handle をヤジ認定 (常連リストから恒久除外)。成功 True。"""
     handle = (handle or "").lstrip("@").strip()
@@ -2228,8 +2249,19 @@ async function friends(){
     document.getElementById('status').textContent='👥 リプ返しした相手 (回数順):';
     for(const f of j.friends){
       const div=document.createElement('div');
-      div.style.cssText='background:#fff;border:1px solid #ddd;border-radius:8px;padding:6px 10px;margin-top:4px;font-size:.9rem';
-      div.textContent=(f.name||'')+' @'+f.handle+' — '+f.count+'回 (最終 '+(f.last||'?')+')';
+      div.style.cssText='background:#fff;border:1px solid #ddd;border-radius:8px;padding:6px 10px;margin-top:4px;font-size:.9rem;display:flex;align-items:center;gap:6px';
+      const label=document.createElement('span');
+      label.style.flex='1';
+      label.textContent=(f.name||'')+' @'+f.handle+' — '+f.count+'回 (最終 '+(f.last||'?')+')';
+      const del=document.createElement('button');
+      del.textContent='✕'; del.title='リストから削除';
+      del.style.cssText='background:#eee;padding:4px 10px;font-size:.85rem';
+      del.onclick=async()=>{ if(!confirm('@'+f.handle+' をリストから削除する？')) return; await fetch('/live-friend-flag?mode=remove&handle='+encodeURIComponent(f.handle)); div.remove(); };
+      const ng=document.createElement('button');
+      ng.textContent='🚫'; ng.title='ヤジ登録 (恒久除外)';
+      ng.style.cssText='background:#ffebee;padding:4px 10px;font-size:.85rem';
+      ng.onclick=async()=>{ if(!confirm('@'+f.handle+' をヤジ登録 (恒久除外) する？')) return; await fetch('/live-friend-flag?handle='+encodeURIComponent(f.handle)); div.remove(); };
+      div.appendChild(label); div.appendChild(del); div.appendChild(ng);
       chips.appendChild(div);
     }
   }catch(e){ document.getElementById('status').textContent='エラー: '+e; }
@@ -2936,7 +2968,12 @@ def build_handler(
                         return
                 params = parse_qs(parsed.query, keep_blank_values=False)
                 handle = ((params.get("handle") or [""])[0] or "").strip()
-                ok = _flag_friend_yaji(handle)
+                mode = ((params.get("mode") or ["yaji"])[0] or "yaji").strip()
+                ok = (
+                    _remove_friend(handle)
+                    if mode == "remove"
+                    else _flag_friend_yaji(handle)
+                )
                 _json_response(
                     self, 200 if ok else 400, {"ok": ok, "handle": handle.lstrip("@")}
                 )

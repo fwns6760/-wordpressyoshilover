@@ -1874,46 +1874,49 @@ button{font-size:1rem;padding:10px 16px;border:0;border-radius:8px;cursor:pointe
 <h1>⚾ 観戦モード — 一言→ヨシラバー文体 <a href="/" style="font-size:.8rem;float:right;color:#888">← 戻る</a></h1>
 <textarea id="scene" placeholder="例: 岡本 逆方向に2ラン 5-3"></textarea>
 <input type="text" id="player" placeholder="主役の選手名 (任意)。複数選手は場面欄にそのまま書けば全員使われます" style="margin-top:8px">
-<button id="gen" onclick="gen()">文案をつくる</button>
+<div class="row" style="margin-top:10px">
+<button id="gen-short" onclick="gen('short')" style="background:#f57f17;color:#fff;flex:1;font-weight:bold">⚡ 短文をつくる</button>
+<button id="gen-long" onclick="gen('long')" style="background:#e65100;color:#fff;flex:1;font-weight:bold">📜 長文をつくる</button>
+</div>
 <div id="status"></div>
 <div id="out"></div>
-<p class="note">※ 入力した事実だけが使われます (入力に無い展開語が混ざった案は自動破棄)。投稿前に一読を。</p>
+<p class="note">※ 入力した事実だけが使われます (入力に無い展開語・打席経過の創作は自動破棄)。投稿前に一読を。</p>
 <script>
-async function gen(){
+async function gen(style, replaceCard){
   const q = document.getElementById('scene').value.trim();
   if(!q){ document.getElementById('status').textContent='場面を入力してください'; return; }
   const p = document.getElementById('player').value.trim();
   document.getElementById('status').textContent='生成中… (数秒)';
-  document.getElementById('out').innerHTML='';
   try{
-    const r = await fetch('/live-fuga?q='+encodeURIComponent(q)+'&player='+encodeURIComponent(p));
+    const r = await fetch('/live-fuga?q='+encodeURIComponent(q)+'&player='+encodeURIComponent(p)+'&style='+style);
     const j = await r.json();
-    if(!j.ok){ document.getElementById('status').textContent='生成できず: '+(j.reason||''); return; }
+    if(!j.ok){ document.getElementById('status').textContent='生成できず (もう一度押してください): '+(j.reason||''); return; }
     document.getElementById('status').textContent='';
-    for(const d of j.drafts){
-      const div=document.createElement('div'); div.className='card';
-      div.innerHTML='<div class="style">'+d.style+' (編集して投稿できます)</div>'+
-        '<textarea class="txt" style="margin-top:6px"></textarea>'+
-        '<div class="cnt"></div>'+
-        '<div class="row"><button class="post">Xに投稿</button><button class="copy">コピー</button></div>';
-      const ta=div.querySelector('.txt'), cnt=div.querySelector('.cnt');
-      ta.value=d.text;
-      const fit=()=>{cnt.textContent=ta.value.length+'字'; ta.style.height='auto'; ta.style.height=(ta.scrollHeight+4)+'px';};
-      ta.oninput=fit;
-      div.querySelector('.copy').onclick=()=>{navigator.clipboard.writeText(ta.value);div.querySelector('.copy').textContent='コピー済';};
-      div.querySelector('.post').onclick=async(ev)=>{
-        const text=ta.value.trim();
-        if(!text) return;
-        if(!confirm('この内容でXに投稿します:\\n\\n'+text.slice(0,120)+(text.length>120?'…':'')+'\\n\\nよい？')) return;
-        ev.target.disabled=true; ev.target.textContent='投稿中…';
-        const pr=await fetch('/x-post-direct',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:text})});
-        const pj=await pr.json();
-        ev.target.textContent=pj.ok?'投稿済✔':'失敗: '+(pj.reason||'');
-        if(!pj.ok) ev.target.disabled=false;
-      };
-      document.getElementById('out').appendChild(div);
-      fit();
-    }
+    const d = j.drafts[0];
+    const div=document.createElement('div'); div.className='card';
+    div.innerHTML='<div class="style">'+d.style+' (編集して投稿できます)</div>'+
+      '<textarea class="txt" style="margin-top:6px"></textarea>'+
+      '<div class="cnt"></div>'+
+      '<div class="row"><button class="post">Xに投稿</button><button class="regen" style="background:#fff3e0">🔄 再作成</button><button class="copy">コピー</button></div>';
+    const ta=div.querySelector('.txt'), cnt=div.querySelector('.cnt');
+    ta.value=d.text;
+    const fit=()=>{cnt.textContent=ta.value.length+'字'; ta.style.height='auto'; ta.style.height=(ta.scrollHeight+4)+'px';};
+    ta.oninput=fit;
+    div.querySelector('.copy').onclick=()=>{navigator.clipboard.writeText(ta.value);div.querySelector('.copy').textContent='コピー済';};
+    div.querySelector('.regen').onclick=()=>{gen(style, div);};
+    div.querySelector('.post').onclick=async(ev)=>{
+      const text=ta.value.trim();
+      if(!text) return;
+      if(!confirm('この内容でXに投稿します:\\n\\n'+text.slice(0,120)+(text.length>120?'…':'')+'\\n\\nよい？')) return;
+      ev.target.disabled=true; ev.target.textContent='投稿中…';
+      const pr=await fetch('/x-post-direct',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:text})});
+      const pj=await pr.json();
+      ev.target.textContent=pj.ok?'投稿済✔':'失敗: '+(pj.reason||'');
+      if(!pj.ok) ev.target.disabled=false;
+    };
+    const out=document.getElementById('out');
+    if(replaceCard){ out.replaceChild(div, replaceCard); } else { out.prepend(div); }
+    fit();
   }catch(e){ document.getElementById('status').textContent='エラー: '+e; }
 }
 </script></body></html>"""
@@ -2380,9 +2383,24 @@ def build_handler(
                         "⑤【最重要】入力に無い場面の細部を創作しない: 打席経過 (初球/追い込まれて/"
                         "フルカウント等)・カウント・球種・打球方向・スコア・ベンチや表情の描写・"
                         "確信歩き等の仕草。入力に無い細部が欲しくても、打った事実と感情だけで書く。"
+                        "⑥締めは読者がリプで答えたくなる短い問いかけにする"
+                        " (「どう見た？」「〜と思わんか？」「〜に期待でいいよな？」)。"
+                        "断定の「だよな。」で閉じるより、読者が一言返せる形を優先する。"
                     )
-                    drafts: list[dict[str, str]] = []
-                    for _force_long, _style in ((False, "ライブ短文"), (True, "フーガ長文")):
+                    # 2026-07-15 user「ひとつでよくないか？再作成が良いのでは。短文と長文で」:
+                    # 1押し = 1案 (style param で短文/長文を選択、LLM 1call)。気に入らなければ
+                    # UI の再作成ボタンで同 style をもう 1 call。2案同時生成は廃止 (LLM半減)。
+                    style_param = ((params.get("style") or ["short"])[0] or "short").strip()
+                    _force_long = style_param == "long"
+                    _style = "フーガ長文" if _force_long else "ライブ短文"
+                    # hallucination gate (7/10 観戦便の claim語gate + 手動観戦特有の創作細部)。
+                    # 2026-07-15 実演で「初球から」「追い込まれてから」の矛盾創作を実測。
+                    _local_claim_words = (
+                        "初球", "追い込まれ", "フルカウント", "確信歩き",
+                        "ベンチ", "表情", "スタンドへ確信",
+                    )
+                    txt = ""
+                    for _attempt in range(2):  # gate落ち時のみ 1 回だけ作り直し
                         try:
                             txt = (
                                 _bgen.build_quote_rt_comment(
@@ -2400,33 +2418,33 @@ def build_handler(
                         except Exception:  # noqa: BLE001
                             bound_logger.exception("live_fuga_variant_failed")
                             txt = ""
-                        # 7/10 観戦便と同じ hallucination gate: user 入力 (scene) に
-                        # 無い試合展開語 (逆転/サヨナラ/満塁/球種 等) が出力に混ざったら
-                        # その案は破棄 (事実誤認は致命的 NG)。
-                        # + 手動観戦特有の創作细部 (打席経過/仕草/ベンチ描写) も同基準で破棄
-                        # (2026-07-15 実演で「初球から」「追い込まれてから」の矛盾創作を実測)。
-                        _local_claim_words = (
-                            "初球", "追い込まれ", "フルカウント", "確信歩き",
-                            "ベンチ", "表情", "スタンドへ確信",
+                        if not txt:
+                            break
+                        bad_word = _claim_gate(txt, scene) or next(
+                            (w for w in _local_claim_words if w in txt and w not in scene),
+                            "",
                         )
-                        if txt:
-                            bad_word = _claim_gate(txt, scene) or next(
-                                (w for w in _local_claim_words if w in txt and w not in scene),
-                                "",
-                            )
-                            if bad_word:
-                                bound_logger.info(
-                                    "live_fuga_claim_gate_drop style=%s word=%s",
-                                    _style,
-                                    bad_word,
-                                )
-                                txt = ""
-                        if txt and all(txt != d["text"] for d in drafts):
-                            drafts.append({"style": _style, "text": txt})
-                    if not drafts:
+                        if not bad_word:
+                            break
+                        bound_logger.info(
+                            "live_fuga_claim_gate_drop style=%s word=%s attempt=%d",
+                            _style,
+                            bad_word,
+                            _attempt + 1,
+                        )
+                        txt = ""
+                    if not txt:
                         _json_response(self, 200, {"ok": False, "reason": "generation_empty"})
                         return
-                    _json_response(self, 200, {"ok": True, "scene": scene, "drafts": drafts})
+                    _json_response(
+                        self,
+                        200,
+                        {
+                            "ok": True,
+                            "scene": scene,
+                            "drafts": [{"style": _style, "text": txt}],
+                        },
+                    )
                 except Exception as exc:  # noqa: BLE001
                     bound_logger.exception("live_fuga_failed")
                     _json_response(self, 500, {"ok": False, "reason": f"live_fuga_error:{exc!r}"})

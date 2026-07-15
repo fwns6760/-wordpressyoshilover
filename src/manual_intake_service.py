@@ -1891,7 +1891,7 @@ async function gen(style, replaceCard){
     const r = await fetch('/live-fuga?q='+encodeURIComponent(q)+'&player='+encodeURIComponent(p)+'&style='+style);
     const j = await r.json();
     if(!j.ok){ document.getElementById('status').textContent='生成できず (もう一度押してください): '+(j.reason||''); return; }
-    document.getElementById('status').textContent='';
+    document.getElementById('status').textContent = j.live_context ? ('📡 現況を反映: '+j.live_context) : '';
     const d = j.drafts[0];
     const div=document.createElement('div'); div.className='card';
     div.innerHTML='<div class="style">'+d.style+' (編集して投稿できます)</div>'+
@@ -2393,6 +2393,29 @@ def build_handler(
                     style_param = ((params.get("style") or ["short"])[0] or "short").strip()
                     _force_long = style_param == "long"
                     _style = "フーガ長文" if _force_long else "ライブ短文"
+                    # 2026-07-15 user「ミックスがよいのでは」: user の一言 (現場の真実) に
+                    # 一球速報の検証済み現況 (スコア/回/相手) を混ぜる。LLM の記憶ではなく
+                    # source 裏付きの事実だけを注入するので hallucination 対策と両立する。
+                    # 取得失敗 / 試合前 / 試合なし → 従来どおり入力のみ (fail-open)。
+                    live_ctx = ""
+                    try:
+                        from src import live_game_watch as _lgw
+
+                        _st = _lgw.fetch_today_live_game()
+                        if _st is not None and _st.status in ("試合中", "試合終了"):
+                            _inn = f" {_st.inning_label}" if _st.inning_label else ""
+                            live_ctx = (
+                                f"{_st.status}{_inn} 巨人{_st.giants_score}-"
+                                f"{_st.opp_score}{_st.opp_name}"
+                            )
+                    except Exception:  # noqa: BLE001
+                        bound_logger.exception("live_fuga_live_state_failed")
+                        live_ctx = ""
+                    scene_for_gen = (
+                        f"{scene}\n【現況・一球速報より検証済み】{live_ctx}"
+                        if live_ctx
+                        else scene
+                    )
                     # hallucination gate (7/10 観戦便の claim語gate + 手動観戦特有の創作細部)。
                     # 2026-07-15 実演で「初球から」「追い込まれてから」の矛盾創作を実測。
                     _local_claim_words = (
@@ -2404,7 +2427,7 @@ def build_handler(
                         try:
                             txt = (
                                 _bgen.build_quote_rt_comment(
-                                    scene,
+                                    scene_for_gen,
                                     player,
                                     gemini_api_key=api_key,
                                     subject="観戦LIVE手動",
@@ -2420,8 +2443,12 @@ def build_handler(
                             txt = ""
                         if not txt:
                             break
-                        bad_word = _claim_gate(txt, scene) or next(
-                            (w for w in _local_claim_words if w in txt and w not in scene),
+                        bad_word = _claim_gate(txt, scene_for_gen) or next(
+                            (
+                                w
+                                for w in _local_claim_words
+                                if w in txt and w not in scene_for_gen
+                            ),
                             "",
                         )
                         if not bad_word:
@@ -2442,6 +2469,7 @@ def build_handler(
                         {
                             "ok": True,
                             "scene": scene,
+                            "live_context": live_ctx,
                             "drafts": [{"style": _style, "text": txt}],
                         },
                     )

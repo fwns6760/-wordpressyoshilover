@@ -513,6 +513,7 @@ _HTML_FORM = """<!DOCTYPE html>
     <button type=\"button\" class=\"tab-btn\" data-tab=\"sources\" id=\"tab-btn-sources\">📰 ソース候補</button>
     <button type=\"button\" class=\"tab-btn\" data-tab=\"insight\" id=\"tab-btn-insight\">🐦 X 投稿 (データ)</button>
     <button type=\"button\" class=\"tab-btn\" data-tab=\"xshare\" id=\"tab-btn-xshare\">🔗 記事共有</button>
+    <a class=\"tab-btn\" href=\"/live\" style=\"text-decoration:none;display:inline-block\">⚾ 観戦</a>
   </nav>
   <section class=\"tab-panel\" data-tab=\"intake\" id=\"tab-panel-intake\">
   <form id=\"intake\">
@@ -1870,7 +1871,7 @@ button{font-size:1rem;padding:10px 16px;border:0;border-radius:8px;cursor:pointe
 #status{margin-top:10px;font-size:.9rem;color:#666}
 .note{font-size:.75rem;color:#999;margin-top:6px}
 </style></head><body>
-<h1>⚾ 観戦モード — 一言→ヨシラバー文体</h1>
+<h1>⚾ 観戦モード — 一言→ヨシラバー文体 <a href="/" style="font-size:.8rem;float:right;color:#888">← 戻る</a></h1>
 <textarea id="scene" placeholder="例: 岡本 逆方向に2ラン 5-3"></textarea>
 <input type="text" id="player" placeholder="主役の選手名 (任意)。複数選手は場面欄にそのまま書けば全員使われます" style="margin-top:8px">
 <button id="gen" onclick="gen()">文案をつくる</button>

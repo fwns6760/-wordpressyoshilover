@@ -2208,11 +2208,13 @@ async function friendAdd(){
     const r = await fetch('/live-friend-add?who='+encodeURIComponent(u));
     const j = await r.json();
     if(!j.ok){
-      const msgs={bad_who:'URLか @ハンドル名の形式で入れてください', yaji_flagged:'🚫 この人はヤジ登録済みです'};
+      const msgs={bad_who:'@ハンドル名かURLで入れてください (複数は空白区切り)'};
       document.getElementById('status').textContent = msgs[j.reason] || ('登録できず: '+(j.reason||''));
       return;
     }
-    document.getElementById('status').textContent='➕ 登録: '+(j.name||'')+' @'+j.handle+' ('+j.count+'回目)。続けて次を貼れます';
+    const names = j.added.map(a=>'@'+a.handle).join(' ');
+    const skip = (j.skipped&&j.skipped.length) ? (' / 読めず・除外: '+j.skipped.join(' ')) : '';
+    document.getElementById('status').textContent='➕ '+j.added.length+'人登録: '+names+skip;
     document.getElementById('rurl').value='';
   }catch(e){ document.getElementById('status').textContent='エラー: '+e; }
 }
@@ -2883,28 +2885,35 @@ def build_handler(
                         _json_response(self, 403, {"ok": False, "reason": "forbidden"})
                         return
                 params = parse_qs(parsed.query, keep_blank_values=False)
-                who = ((params.get("who") or [""])[0] or "").strip()
-                handle, name = "", ""
-                tweet_id = _extract_tweet_id(who)
-                if tweet_id:
-                    tw = _fetch_tweet_syndication(tweet_id)
-                    handle, name = tw.get("handle", ""), tw.get("name", "")
-                elif re.fullmatch(r"@?\w{1,15}", who):
-                    handle = who.lstrip("@")
-                if not handle:
-                    _json_response(self, 400, {"ok": False, "reason": "bad_who"})
-                    return
+                who_raw = ((params.get("who") or [""])[0] or "").strip()
+                # 2026-07-15 user「1件ずつはきつい」: 空白/カンマ/改行区切りの
+                # まとめ貼り対応 (@handle と URL 混在可、最大20件)。
+                tokens = [t for t in re.split(r"[\s,、]+", who_raw) if t][:20]
                 friends = _load_friends()
-                if (friends.get(handle) or {}).get("yaji"):
+                added: list[dict[str, Any]] = []
+                skipped: list[str] = []
+                for tok in tokens:
+                    handle, name = "", ""
+                    tweet_id = _extract_tweet_id(tok)
+                    if tweet_id:
+                        tw = _fetch_tweet_syndication(tweet_id)
+                        handle, name = tw.get("handle", ""), tw.get("name", "")
+                    elif re.fullmatch(r"@?\w{1,15}", tok):
+                        handle = tok.lstrip("@")
+                    if not handle or (friends.get(handle) or {}).get("yaji"):
+                        skipped.append(tok)
+                        continue
+                    count = _bump_friend(handle, name)
+                    added.append({"handle": handle, "name": name, "count": count})
+                if not added:
                     _json_response(
-                        self, 200, {"ok": False, "reason": "yaji_flagged", "handle": handle}
+                        self, 400, {"ok": False, "reason": "bad_who", "skipped": skipped}
                     )
                     return
-                count = _bump_friend(handle, name)
                 _json_response(
                     self,
                     200,
-                    {"ok": True, "handle": handle, "name": name, "count": count},
+                    {"ok": True, "added": added, "skipped": skipped},
                 )
                 return
             if path == "/live-friend-flag":

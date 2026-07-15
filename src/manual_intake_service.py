@@ -1996,6 +1996,41 @@ def _load_friends() -> dict[str, dict[str, Any]]:
         return {}
 
 
+# ヤジ判定 (2026-07-15 user「ただのヤジは消す機能」): 侮辱・煽り語の決定的 check。
+# 該当リプには文案を作らず (LLM節約 + 燃え防止)、🚫登録を促す。
+_YAJI_WORDS = (
+    "使えない", "戦犯", "クビ", "最悪", "酷い", "ひどすぎ", "論外", "引退しろ",
+    "辞めろ", "やめろ", "無能", "ゴミ", "カス", "ザコ", "雑魚", "バカ", "馬鹿",
+    "アホ", "死ね", "消えろ", "give up", "才能ない", "金返せ", "解任",
+)
+
+
+def _looks_like_yaji(text: str) -> bool:
+    t = (text or "").lower()
+    return any(w.lower() in t for w in _YAJI_WORDS)
+
+
+def _flag_friend_yaji(handle: str) -> bool:
+    """handle をヤジ認定 (常連リストから恒久除外)。成功 True。"""
+    handle = (handle or "").lstrip("@").strip()
+    if not handle:
+        return False
+    try:
+        blob = _friends_blob()
+        friends = _load_friends()
+        ent = friends.get(handle) or {"count": 0, "name": ""}
+        ent["yaji"] = True
+        friends[handle] = ent
+        if blob is not None:
+            blob.upload_from_string(
+                json.dumps(friends, ensure_ascii=False),
+                content_type="application/json",
+            )
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _bump_friend(handle: str, name: str) -> int:
     """リプ返し投稿の成功時に常連カウントを +1。返り値=更新後 count (失敗 0)。"""
     handle = (handle or "").lstrip("@").strip()
@@ -2068,9 +2103,10 @@ button{font-size:1rem;padding:10px 16px;border:0;border-radius:8px;cursor:pointe
 <button onclick="neta('kuji')" style="background:#fffde7;font-size:.85rem;flex:1;min-width:30%">🎰 くじ</button>
 </div>
 <div style="margin-top:14px;border-top:1px dashed #ccc;padding-top:10px">
-<input type="text" id="rurl" placeholder="💬 リプ返し: 相手リプのURLを貼る (X共有→リンクをコピー)">
+<input type="text" id="rurl" placeholder="💬 相手リプのURL または @ハンドル名を貼る">
 <div class="row" style="margin-top:6px">
 <button onclick="replyDraft()" style="background:#e0f2f1;flex:2">💬 リプ返し案をつくる</button>
+<button onclick="friendAdd()" style="background:#e8eaf6;flex:1">➕ 常連に追加</button>
 <button onclick="friends()" style="background:#ede7f6;flex:1">👥 常連</button>
 </div>
 </div>
@@ -2145,13 +2181,39 @@ async function replyDraft(replaceCard){
     const r = await fetch('/live-reply-draft?url='+encodeURIComponent(u));
     const j = await r.json();
     if(!j.ok){
-      const msgs={bad_tweet_url:'URLが読めません (x.com/…/status/… の形式で)', tweet_fetch_failed:'相手の文面を取得できませんでした (鍵アカ？)', generation_empty:'生成できず。もう一度どうぞ'};
+      if(j.reason==='yaji_suspected'){
+        document.getElementById('status').textContent='⚠ ヤジっぽい内容です。返信すると燃えやすいので無視推奨: 「'+(j.their_text||'').slice(0,60)+'」';
+        const chips=document.getElementById('chips'); chips.innerHTML='';
+        const b=document.createElement('button');
+        b.textContent='🚫 '+(j.name||'')+' @'+j.handle+' をヤジ登録する (常連対象外に)';
+        b.style.cssText='display:block;width:100%;background:#ffebee;border:1px solid #ef9a9a;margin-top:4px';
+        b.onclick=async()=>{ await fetch('/live-friend-flag?handle='+encodeURIComponent(j.handle)); b.textContent='🚫 登録済み'; b.disabled=true; };
+        chips.appendChild(b);
+        return;
+      }
+      const msgs={bad_tweet_url:'URLが読めません (x.com/…/status/… の形式で)', tweet_fetch_failed:'相手の文面を取得できませんでした (鍵アカ？)', generation_empty:'生成できず。もう一度どうぞ', yaji_flagged:'🚫 この人はヤジ登録済みです。無視が最善'};
       document.getElementById('status').textContent = msgs[j.reason] || ('生成できず: '+(j.reason||''));
       return;
     }
     const who = j.name+' @'+j.handle+(j.friend_count>0?' (常連'+(j.friend_count+1)+'回目)':' (初)');
     document.getElementById('status').textContent = '💬 '+who+': 「'+j.their_text.slice(0,80)+'」';
     showCard(makeCard(j.drafts[0], (card)=>replyDraft(card), {in_reply_to:j.reply_to_id, reply_to_handle:j.handle, reply_to_name:j.name}), replaceCard);
+  }catch(e){ document.getElementById('status').textContent='エラー: '+e; }
+}
+async function friendAdd(){
+  const u = document.getElementById('rurl').value.trim();
+  if(!u){ document.getElementById('status').textContent='過去リプのURLか @ハンドル名を貼ってください'; return; }
+  document.getElementById('status').textContent='登録中…';
+  try{
+    const r = await fetch('/live-friend-add?who='+encodeURIComponent(u));
+    const j = await r.json();
+    if(!j.ok){
+      const msgs={bad_who:'URLか @ハンドル名の形式で入れてください', yaji_flagged:'🚫 この人はヤジ登録済みです'};
+      document.getElementById('status').textContent = msgs[j.reason] || ('登録できず: '+(j.reason||''));
+      return;
+    }
+    document.getElementById('status').textContent='➕ 登録: '+(j.name||'')+' @'+j.handle+' ('+j.count+'回目)。続けて次を貼れます';
+    document.getElementById('rurl').value='';
   }catch(e){ document.getElementById('status').textContent='エラー: '+e; }
 }
 async function friends(){
@@ -2795,10 +2857,80 @@ def build_handler(
                     (
                         {"handle": h, **(v or {})}
                         for h, v in friends.items()
+                        if not (v or {}).get("yaji")  # ヤジ認定は一覧から恒久除外
                     ),
                     key=lambda x: -int(x.get("count") or 0),
                 )[:30]
                 _json_response(self, 200, {"ok": True, "friends": ranked})
+                return
+            if path == "/live-friend-add":
+                # 2026-07-15 user「既にリプくれた人は入れたい」: 過去リプの URL または
+                # @handle を貼るだけで常連リストへ登録 (投稿なし・LLMなし・¥0)。
+                expected_token = _require_token()
+                if expected_token:
+                    cookie_token = ""
+                    raw_cookie = self.headers.get("Cookie") or ""
+                    for part in raw_cookie.split(";"):
+                        kv = part.strip().split("=", 1)
+                        if len(kv) == 2 and kv[0].strip() == "manual_intake_session":
+                            cookie_token = kv[1].strip()
+                            break
+                    query_token = ""
+                    qtok = parse_qs(parsed.query, keep_blank_values=False).get("token") or []
+                    if qtok:
+                        query_token = (qtok[0] or "").strip()
+                    if cookie_token != expected_token and query_token != expected_token:
+                        _json_response(self, 403, {"ok": False, "reason": "forbidden"})
+                        return
+                params = parse_qs(parsed.query, keep_blank_values=False)
+                who = ((params.get("who") or [""])[0] or "").strip()
+                handle, name = "", ""
+                tweet_id = _extract_tweet_id(who)
+                if tweet_id:
+                    tw = _fetch_tweet_syndication(tweet_id)
+                    handle, name = tw.get("handle", ""), tw.get("name", "")
+                elif re.fullmatch(r"@?\w{1,15}", who):
+                    handle = who.lstrip("@")
+                if not handle:
+                    _json_response(self, 400, {"ok": False, "reason": "bad_who"})
+                    return
+                friends = _load_friends()
+                if (friends.get(handle) or {}).get("yaji"):
+                    _json_response(
+                        self, 200, {"ok": False, "reason": "yaji_flagged", "handle": handle}
+                    )
+                    return
+                count = _bump_friend(handle, name)
+                _json_response(
+                    self,
+                    200,
+                    {"ok": True, "handle": handle, "name": name, "count": count},
+                )
+                return
+            if path == "/live-friend-flag":
+                # 🚫ヤジ登録 (常連対象外へ恒久マーク)
+                expected_token = _require_token()
+                if expected_token:
+                    cookie_token = ""
+                    raw_cookie = self.headers.get("Cookie") or ""
+                    for part in raw_cookie.split(";"):
+                        kv = part.strip().split("=", 1)
+                        if len(kv) == 2 and kv[0].strip() == "manual_intake_session":
+                            cookie_token = kv[1].strip()
+                            break
+                    query_token = ""
+                    qtok = parse_qs(parsed.query, keep_blank_values=False).get("token") or []
+                    if qtok:
+                        query_token = (qtok[0] or "").strip()
+                    if cookie_token != expected_token and query_token != expected_token:
+                        _json_response(self, 403, {"ok": False, "reason": "forbidden"})
+                        return
+                params = parse_qs(parsed.query, keep_blank_values=False)
+                handle = ((params.get("handle") or [""])[0] or "").strip()
+                ok = _flag_friend_yaji(handle)
+                _json_response(
+                    self, 200 if ok else 400, {"ok": ok, "handle": handle.lstrip("@")}
+                )
                 return
             if path == "/live-reply-draft":
                 # 2026-07-15 user「リプが来た人に私がリプを作る。特に試合中」:
@@ -2829,6 +2961,32 @@ def build_handler(
                 tw = _fetch_tweet_syndication(tweet_id)
                 if not tw.get("text"):
                     _json_response(self, 200, {"ok": False, "reason": "tweet_fetch_failed"})
+                    return
+                # ヤジ gate: 認定済み or 侮辱・煽り語入りは文案を作らない (返すと燃える)
+                if (_load_friends().get(tw.get("handle", "")) or {}).get("yaji"):
+                    _json_response(
+                        self,
+                        200,
+                        {
+                            "ok": False,
+                            "reason": "yaji_flagged",
+                            "handle": tw.get("handle", ""),
+                            "name": tw.get("name", ""),
+                        },
+                    )
+                    return
+                if _looks_like_yaji(tw["text"]):
+                    _json_response(
+                        self,
+                        200,
+                        {
+                            "ok": False,
+                            "reason": "yaji_suspected",
+                            "handle": tw.get("handle", ""),
+                            "name": tw.get("name", ""),
+                            "their_text": tw["text"],
+                        },
+                    )
                     return
                 api_key = (
                     os.environ.get("GEMINI_API_KEY")

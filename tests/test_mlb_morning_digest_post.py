@@ -70,10 +70,15 @@ class BuildMlbMorningDigestTests(unittest.TestCase):
         c = build_mlb_morning_digest_candidate(now=_now8(), data=stale)
         self.assertIsNone(c)
 
-    def test_skips_outside_morning_window(self):
+    def test_skips_outside_hourly_window(self):
+        # 2026-07-15 毎時化 (8-17時=巨人戦の試合前まで)。18時以降と早朝は出さない。
+        evening = datetime(2026, 7, 13, 18, 0, tzinfo=JST)
+        self.assertIsNone(build_mlb_morning_digest_candidate(now=evening, data=_data()))
+        early = datetime(2026, 7, 13, 7, 0, tzinfo=JST)
+        self.assertIsNone(build_mlb_morning_digest_candidate(now=early, data=_data()))
+        # 12時 (毎時窓内) は出す
         noon = datetime(2026, 7, 13, 12, 0, tzinfo=JST)
-        c = build_mlb_morning_digest_candidate(now=noon, data=_data())
-        self.assertIsNone(c)
+        self.assertIsNotNone(build_mlb_morning_digest_candidate(now=noon, data=_data()))
 
     def test_dedup_by_date_signature(self):
         first = build_mlb_morning_digest_candidate(now=_now8(), data=_data())

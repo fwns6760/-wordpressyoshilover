@@ -6,3 +6,4 @@
 - 09:25 JST | security | MANUAL_INTAKE_TOKEN が prod 未設定で全endpoint認証素通し(/x-post-direct 含む)を発見 → Secret Manager `manual-intake-token` 新設、seo-web-runtime に secretAccessor 付与、rev 00136-hs4 で有効化。verify: no-token=403 / with-token=200
 - 09:27 JST | handoff | ログインURL(token付き)は chat に出さず SMTP で fwns6760@gmail.com へ送付。各端末で一度タップ→90日cookie
 - 常連の登録経路(仕様): ①アプリからリプ返し投稿成功で自動+1 ②手動追加のみ。受信リプでは入らない
+- 09:38 JST | impl+deploy | トップnavに👥常連リンク+タブ折返し(スマホ) | build ca3c560b → rev 00137-b7n

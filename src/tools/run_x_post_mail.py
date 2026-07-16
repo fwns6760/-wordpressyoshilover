@@ -3658,7 +3658,7 @@ def _main_mlb_digest_only(args: argparse.Namespace, recipients: list[str]) -> in
         # 2026-07-16 user「mail に MLB トレンドは毎時。プロ野球始まるまで」:
         # 試合なし (オールスター休み等) で定点が空の時間は MLB トレンド反応で
         # 埋める。scheduler は 5 8-17 (毎時、NPB 夜試合前まで) のまま。
-        # dedup は日粒度 (同じ語+見出しは1日1回) にして毎時の同ネタ連打を防ぐ。
+        # dedup は時間粒度 (同じ語でも毎時、文面は都度生成) = 毎時必ず届く要件。
         try:
             from src import search_trend_note as stn
             from src.manual_intake_service import _news_lookup_for_keyword
@@ -3687,7 +3687,7 @@ def _main_mlb_digest_only(args: argparse.Namespace, recipients: list[str]) -> in
                         or ""
                     ),
                     dedup_set=dedup_set,
-                    now_date=now_jst.strftime("%Y%m%d"),
+                    now_date=now_jst.strftime("%Y%m%d-%H"),
                     allowed_categories=("mlb",),
                 )
                 if cand is not None:

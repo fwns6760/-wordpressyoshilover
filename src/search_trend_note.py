@@ -668,6 +668,7 @@ def build_trend_reaction_candidate(
     now_date: str = "",
     allowed_categories: tuple[str, ...] = ("giants", "mlb"),
     budget_site: str = "trend_weave",
+    force_long: bool = True,
 ) -> Any:
     """急上昇トレンド + そのニュース見出しから独立の反応ポスト候補を 1 本作る。
 
@@ -731,7 +732,9 @@ def build_trend_reaction_candidate(
                     # mail便=専用小枠 trend_weave (1便3回)。手動アプリは常駐
                     # プロセスのため quote_rt を渡す (2026-07-16 aux枠枯渇事故)
                     budget_site=budget_site,
-                    force_long=True,
+                    # mail便=プレミアム長文既定。手動アプリは投稿枠に収める短文
+                    # (2026-07-16 user「枠に収まってないよ」) — force_long param
+                    force_long=force_long,
                     extra_voice_note=(
                         f"いま検索で急上昇中の話題への反応ポスト (試合後の振り返り"
                         f"ではない)。トレンド語「{kw}」を本文に必ず1回そのまま入れる。"

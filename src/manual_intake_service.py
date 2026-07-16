@@ -4420,6 +4420,8 @@ def build_handler(
                             # 常駐プロセスでは trend_weave 小枠 (3回/プロセス) が
                             # 枯渇して恒久失敗する。観戦と同じ quote_rt を使う
                             budget_site="quote_rt",
+                            # 投稿枠に収まる短文 (2026-07-16 user「枠に収まってない」)
+                            force_long=False,
                         )
                         if cand is not None and getattr(cand, "post_text", ""):
                             break

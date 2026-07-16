@@ -324,3 +324,66 @@ class PlaceholderCreatedAtTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RetiredRecordTests(unittest.TestCase):
+    """2026-07-16 原語録再選定: retired=true は配信skip、第N回番号は保存。"""
+
+    def test_retired_records_skipped(self) -> None:
+        records = _make_records()
+        records[1]["retired"] = True
+        cands = lane.pick_candidates(records, sent_ids=set(), n=10)
+        self.assertNotIn("200", [c.tweet_id for c in cands])
+
+    def test_numbering_preserved_when_middle_retired(self) -> None:
+        records = _make_records()
+        records[1]["retired"] = True
+        cands = lane.pick_candidates(records, sent_ids=set(), n=10)
+        by_id = {c.tweet_id: c.archive_number for c in cands}
+        # retired を挟んでも chronological position は変わらない
+        self.assertEqual(by_id[cands[0].tweet_id], 1)
+        self.assertEqual(by_id[cands[-1].tweet_id], 3)
+
+
+class EmbedPermalinkGateTests(unittest.TestCase):
+    """2026-07-16: 記事URL の OGP カード (汎用ロゴ/リンク切れ) を X 本文へ
+    付けない。x.com / twitter.com の実ポスト URL のみ embed 用に通す。"""
+
+    def _cand(self, permalink: str, has_media: bool = True) -> "lane.MeigenCandidate":
+        return lane.MeigenCandidate(
+            tweet_id="t1", text="x", created_at="2026-07-01T00:00:00+00:00",
+            like_count=0, retweet_count=0, has_media=has_media, media=[],
+            permalink=permalink,
+        )
+
+    def test_twitter_permalink_passes(self) -> None:
+        self.assertEqual(
+            lane._embed_permalink_or_empty(
+                self._cand("https://twitter.com/kobayashi/status/1")
+            ),
+            "https://twitter.com/kobayashi/status/1",
+        )
+
+    def test_x_com_permalink_passes(self) -> None:
+        self.assertEqual(
+            lane._embed_permalink_or_empty(
+                self._cand("https://x.com/TokyoGiants/status/2")
+            ),
+            "https://x.com/TokyoGiants/status/2",
+        )
+
+    def test_article_url_blocked(self) -> None:
+        self.assertEqual(
+            lane._embed_permalink_or_empty(
+                self._cand("https://news.jsports.co.jp/baseball/article1")
+            ),
+            "",
+        )
+
+    def test_no_media_blocked(self) -> None:
+        self.assertEqual(
+            lane._embed_permalink_or_empty(
+                self._cand("https://x.com/TokyoGiants/status/3", has_media=False)
+            ),
+            "",
+        )

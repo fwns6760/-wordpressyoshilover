@@ -25,6 +25,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 from urllib.parse import quote as _url_quote
 from urllib.parse import urlencode as _urlencode
+from urllib.parse import urlparse as _urlparse
 from zoneinfo import ZoneInfo
 
 LOG = logging.getLogger(__name__)
@@ -228,6 +229,26 @@ def _permalink(
 # X 280-char hard limit on Web Intent URL pre-fill (longer text is silently
 # dropped by X). Keep a few char margin for the ellipsis.
 _X_POST_CHAR_LIMIT = 270
+
+
+def _embed_permalink_or_empty(candidate: "MeigenCandidate") -> str:
+    """X 埋め込みが効く permalink だけ返す (それ以外は "")。
+
+    2026-07-16: 原/吉川の permalink は記事 URL で、OGP カードが媒体の汎用ロゴ
+    (jsports ogp-image.png 等) やリンク切れ (Yahoo News) になり逆効果だった。
+    x.com / twitter.com の実ポスト URL (写真・動画 embed が出る) のみ本文へ
+    付け、記事 URL は付けない (出典 credit 行は従来通り残る)。
+    """
+    if not candidate.has_media:
+        return ""
+    url = (candidate.permalink or "").strip()
+    try:
+        host = _urlparse(url).netloc.lower()
+    except Exception:  # noqa: BLE001
+        return ""
+    if host in {"x.com", "www.x.com", "twitter.com", "www.twitter.com"}:
+        return url
+    return ""
 
 
 def _compose_x_post_body(
@@ -438,7 +459,13 @@ def pick_candidates(
     position_map: dict[str, int] = {
         str(r["tweet_id"]): i + 1 for i, r in enumerate(chronological)
     }
-    unsent = [r for r in chronological if str(r.get("tweet_id")) not in sent_ids]
+    # retired=true は配信対象から外す (2026-07-16 原語録の再選定: ビジネス論・
+    # 組織論を retire、生き方・勝負哲学のみ配信)。position_map には残すので
+    # 既送分の「第N回」番号は変わらない。
+    unsent = [
+        r for r in chronological
+        if str(r.get("tweet_id")) not in sent_ids and not r.get("retired")
+    ]
     return [
         _record_to_candidate(
             r,
@@ -495,7 +522,7 @@ def _compose_text_body(
                 disp,
                 archive_number=c.archive_number,
                 config=config,
-                source_url=c.permalink if c.has_media else "",
+                source_url=_embed_permalink_or_empty(c),
                 source_credit=(
                     _format_source_credit(c.created_at, c.source_name)
                     if c.source_name else ""
@@ -594,7 +621,7 @@ def _compose_html_body(
             disp,
             c.archive_number,
             config=config,
-            source_url=c.permalink if c.has_media else "",
+            source_url=_embed_permalink_or_empty(c),
             source_credit=(
                 _format_source_credit(c.created_at, c.source_name)
                 if c.source_name else ""

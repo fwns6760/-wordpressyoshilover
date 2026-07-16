@@ -11,3 +11,4 @@
 - 10:00 JST | impl+deploy | 観戦モード: live-fuga(短文/長文)に一球速報の直近2プレー自動注入、recap force_long解除で短文長へ | rev 00139-tcw
 - 10:25 JST | impl+deploy | 🔥トレンド反応 即応アプリ /trend (急上昇chips→trend_react共用生成→X直接投稿、トップnavに追加) | build 5c8ce416 → rev 00141-pcw | prod smoke: words 4語取得OK (1回目buildはGCP INTERNAL_ERROR、再buildで解消)
 - 10:45 JST | impl+deploy | 🎯フォロー開拓アプリ /scout (Yahooリアルタイムで公式リプ主収集、GCS follow_scout/seen.json台帳、✔followed/✕skip、トップnav追加) | rev 00142-dzd | prod smoke: 候補28人 | 後段queue: 固定ポスト生成(転換側)
+- 11:00 JST | impl+deploy | 開拓候補=直近30分リプ主のみ(経過分数表示・新しい順・時刻不明除外) | rev 00143-gf9 | prod smoke: 10人(0-12分前)

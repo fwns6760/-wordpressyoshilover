@@ -26,6 +26,7 @@ Hard constraints (mirror the CLI):
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import base64
 import html
 import json
 import logging
@@ -2422,6 +2423,51 @@ def _collect_reply_candidates() -> int:
         return 0
 
 
+# 2026-07-16 スマホ usability: /live を「ホーム画面に追加」で standalone アプリ化
+# するための manifest + アイコン。standalone 表示だと X へ飛んでも in-app ブラウザ
+# で開き、閉じるだけで観戦モードへ戻れる。
+_LIVE_MANIFEST_JSON = json.dumps(
+    {
+        "name": "ヨシラバー観戦",
+        "short_name": "観戦",
+        "start_url": "/live",
+        "scope": "/",
+        "display": "standalone",
+        "background_color": "#fafafa",
+        "theme_color": "#f57f17",
+        "icons": [{"src": "/live-icon.png", "sizes": "180x180", "type": "image/png"}],
+    },
+    ensure_ascii=False,
+)
+
+_LIVE_ICON_PNG_B64 = (
+    "iVBORw0KGgoAAAANSUhEUgAAALQAAAC0CAIAAACyr5FlAAAE/ElEQVR42u3dMVLjQBSEYTFF5AtA"
+    "TEzgmGP4AFyFu3AAHYPYATExF4B4A29NuWxZSPZI0/3m72iDrV1p6lO/kTDW3c/bQ0fIUBJLQMBB"
+    "wEHAQcBBwEHAQcBBwEHAQcBBCDgIOAg4CDgIOAg4CDgIOAg4CDgIAQcBBwEHAQcBBwEHAQcBBwEH"
+    "AQch982e+ffrx/S//Pj+0uAS3TXy5S2zKMClCRwjJp6enqb/O19fXw0qiYlj0MQsDVdYiackFI5z"
+    "EwVBTIcSRkkQHCcsVjDxp5IAROxxHLOoYmJciTURYxyCLIIRscQhziIMET8cWYY4i0EiXj6ccBgV"
+    "RowKscHhWBjuFZKQsWby8Rd/nN9ic4Rh4VghCRlUiB+O79eP390upIxjH7+7nawP0bGSZRzyvN/H"
+    "w/G53eY/b/pecL4kfRkn6xhPhmx/JH0Z8XxcOhc1H0lNxhVrGkPG4ZKQ8pEEZTzv9yE3GSM5PmUd"
+    "H0lNRr43GfThXh6Dx5/PVO3+VmusnNy1BvMxLmNwBcDx/0KZvi6OPqYf82EdFMojicuIvfm4dHYi"
+    "PpKCjCtW0Ks8pgwUwZtbibHy50Cx9nGdDIXNR6peG1F/dFLqmqlYHqmujBvHs355XD1QFIZLUrg4"
+    "bty+xdiECg6XOjgKDhTl8ihybBWHSwp82XH8fjiK70M1y6PgUdUqj8TFx5Gr4Fjo9lWtPIofT5Xy"
+    "SFyCHLMEDp56eZVHnG8T1JksYT7R6IrDq6VNN9Hr4WCm2E2WUF9Sq9DnkT4lb4zDpat9H8yshIOZ"
+    "4jhZ+O5z0gyOuiM/2K9troFjuQ7UH+fLHeEKk2W95mDDYbeS7DkIOAg4CDjGdny1bhnO/1/3DzUu"
+    "joPHX8vtSZe+YWGsEHAQcBBwEHAQcBBwEHAQcBBwEHAQAg4CDgIOYo3j8AKi47eqkttzWM+lX+5k"
+    "3xw6H7HR+dgROAg4CDhI0zjYk9qt5Bo4lttUm373ufiqhh0rdX8bINirg9hzkNo4eBRWdsOxzrvN"
+    "jZvD+k1NNEeLIz/StmM9HEwWr5li3BwB3g5Jc7TY52Emy6o4mCxGM8W1OWK/rrzdsbJQeag1efHj"
+    "Wb82LJvD97GB3ZFXwFG8PDQ3gAWPqkpt+DWH+wfvvI6/Do6C5aF831jk2GrVRv3mmOUjxjeLzzqL"
+    "urf91XDMvRQG19T0u8/nKq9SG5Wbg2disgNFaEP6pw/T2rilPBSumco4plwW1jJuHC4Va0OiOcaH"
+    "S7DX20w8u+oDRWiszN18xH5duYiMTu0h2ImPAANl7nCR2p6r4MgXSl6dYDKm+MjnrlAbWs2RV+Rz"
+    "u4291Rj0kU9ZRIbcWBlflxifsLp0Fpu+l5LRCf7g7fH95bBMIWWMn4uUjE7zp7LnPoL9muH5GW36"
+    "Xk1GJ/sj++xj0/fxZGQf+RwFZXRdd/fz9iC7fPk1VSHfAqZ2b2LTHJfub5FBc0SuEAsWBs0Rr0KM"
+    "ZNg0x0l/OFbIMWsLGWY4fEeMV2EY4/CqEMfC8MZhQcSahT0OWSIBWATBcU6klpKTOylrFqFwDBJZ"
+    "R8n53XUAFgFxjCgpC2XwcUsYE8FxjCu5wsrIw7d4JlrBMUXJdQlsojkcN3JpgQI4yIzw3ecEHAQc"
+    "BBwEHAQcBBwEHAQcBBwEHISAg4CDgIOAg4CDgIOAg4CDgIOAgxBwEHAQcBBwEHAQcBBwEHAQcJB2"
+    "8g+Y8YLRfcyh1QAAAABJRU5ErkJggg=="
+)
+
+
 def _render_live_page() -> str:
     """2026-07-15 user「キーワード入れたらポストが出てくる手動アプリ」観戦モード。
 
@@ -2431,6 +2477,13 @@ def _render_live_page() -> str:
     return """<!doctype html>
 <html lang="ja"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#f57f17">
+<link rel="manifest" href="/live-manifest.webmanifest">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="観戦">
+<link rel="apple-touch-icon" href="/live-icon.png">
 <title>観戦モード｜ヨシラバー</title>
 <style>
 body{font-family:sans-serif;background:#fafafa;margin:0;padding:12px;max-width:640px;margin:auto}
@@ -2479,8 +2532,53 @@ button{font-size:1rem;padding:10px 16px;border:0;border-radius:8px;cursor:pointe
 <div id="out"></div>
 <p class="note">※ 入力した事実だけが使われます (入力に無い展開語・打席経過の創作は自動破棄)。投稿前に一読を。</p>
 <script>
-function makeCard(d, regenFn, postExtra){
+// 2026-07-16 スマホ対策: 画面を閉じてタブが破棄されても復元できるよう、
+// 入力欄と生成カードを localStorage に保存する (12h expiry)。
+const LSK='yl_live_v1';
+function saveState(){
+  try{
+    const cards=[...document.getElementById('out').children].slice(0,10).map(c=>{
+      const st=JSON.parse(c.dataset.state||'{}');
+      st.text=c.querySelector('.txt').value;
+      const pb=c.querySelector('.post');
+      st.posted=pb.disabled?pb.textContent:'';
+      return st;
+    });
+    localStorage.setItem(LSK, JSON.stringify({t:Date.now(),
+      scene:document.getElementById('scene').value,
+      player:document.getElementById('player').value,
+      rurl:document.getElementById('rurl').value,
+      cards:cards}));
+  }catch(e){}
+}
+function restoreState(){
+  try{
+    const s=JSON.parse(localStorage.getItem(LSK)||'null');
+    if(!s) return;
+    if(Date.now()-s.t > 12*3600*1000){ localStorage.removeItem(LSK); return; }
+    document.getElementById('scene').value=s.scene||'';
+    document.getElementById('player').value=s.player||'';
+    document.getElementById('rurl').value=s.rurl||'';
+    const out=document.getElementById('out');
+    for(const c of (s.cards||[])){
+      const div=makeCard({style:c.style,text:c.text}, c.origin, c.extra||undefined);
+      if(c.posted){ const pb=div.querySelector('.post'); pb.disabled=true; pb.textContent=c.posted; }
+      out.appendChild(div);
+    }
+    if((s.cards||[]).length) document.getElementById('status').textContent='📂 前回の続きを復元しました';
+  }catch(e){}
+}
+// 再作成は復元後も効くよう、closure ではなく serializable な origin で分岐する
+function regenBy(o, card){
+  if(!o) return;
+  if(o.k==='gen') gen(o.a, card);
+  else if(o.k==='neta') neta(o.a, card);
+  else if(o.k==='recap') recap(card);
+  else if(o.k==='reply') replyDraft(card);
+}
+function makeCard(d, origin, postExtra){
   const div=document.createElement('div'); div.className='card';
+  div.dataset.state=JSON.stringify({style:d.style, origin:origin||null, extra:postExtra||null});
   div.innerHTML='<div class="style">'+d.style+' (編集して投稿できます)</div>'+
     '<textarea class="txt" style="margin-top:6px"></textarea>'+
     '<div class="cnt"></div>'+
@@ -2488,9 +2586,9 @@ function makeCard(d, regenFn, postExtra){
   const ta=div.querySelector('.txt'), cnt=div.querySelector('.cnt');
   ta.value=d.text;
   const fit=()=>{cnt.textContent=ta.value.length+'字'; ta.style.height='auto'; ta.style.height=(ta.scrollHeight+4)+'px';};
-  ta.oninput=fit;
+  ta.oninput=()=>{fit(); saveState();};
   div.querySelector('.copy').onclick=()=>{navigator.clipboard.writeText(ta.value);div.querySelector('.copy').textContent='コピー済';};
-  div.querySelector('.regen').onclick=()=>{regenFn(div);};
+  div.querySelector('.regen').onclick=()=>{regenBy(origin, div);};
   div.querySelector('.post').onclick=async(ev)=>{
     const text=ta.value.trim();
     if(!text) return;
@@ -2500,11 +2598,17 @@ function makeCard(d, regenFn, postExtra){
     const pj=await pr.json();
     ev.target.textContent=pj.ok?(pj.friend_count>1?'投稿済✔ 常連'+pj.friend_count+'回目':'投稿済✔'):'失敗: '+(pj.reason||'');
     if(!pj.ok) ev.target.disabled=false;
+    saveState();
     if(pj.ok && pj.tweet_id && !(postExtra&&postExtra.in_reply_to)){
       try{
         const lr=await fetch('/x-link-reply?tweet_id='+pj.tweet_id+'&ctx='+encodeURIComponent(text));
         const lj=await lr.json();
-        if(lj.ok) document.getElementById('status').textContent='🔗 データページをリプで添付: '+lj.url;
+        if(lj.ok){
+          const st=document.getElementById('status');
+          st.textContent='🔗 データページをリプで添付: ';
+          const a=document.createElement('a'); a.href=lj.url; a.target='_blank'; a.rel='noopener'; a.textContent=lj.url;
+          st.appendChild(a);
+        }
       }catch(e){}
     }
   };
@@ -2514,6 +2618,7 @@ function makeCard(d, regenFn, postExtra){
 function showCard(div, replaceCard){
   const out=document.getElementById('out');
   if(replaceCard){ out.replaceChild(div, replaceCard); } else { out.prepend(div); }
+  saveState();
 }
 async function gen(style, replaceCard){
   const q = document.getElementById('scene').value.trim();
@@ -2525,7 +2630,7 @@ async function gen(style, replaceCard){
     const j = await r.json();
     if(!j.ok){ document.getElementById('status').textContent='生成できず (もう一度押してください): '+(j.reason||''); return; }
     document.getElementById('status').textContent = j.live_context ? ('📡 現況を反映: '+j.live_context) : '';
-    showCard(makeCard(j.drafts[0], (card)=>gen(style, card)), replaceCard);
+    showCard(makeCard(j.drafts[0], {k:'gen',a:style}), replaceCard);
   }catch(e){ document.getElementById('status').textContent='エラー: '+e; }
 }
 async function pickPlays(){
@@ -2539,7 +2644,7 @@ async function pickPlays(){
     for(const pl of j.plays){
       const b=document.createElement('button');
       b.textContent=pl; b.style.cssText='display:block;width:100%;text-align:left;background:#fff;border:1px solid #ddd;margin-top:4px;font-size:.9rem';
-      b.onclick=()=>{ document.getElementById('scene').value=pl; document.getElementById('status').textContent='場面をセット。⚡短文か📜長文を押してください'; };
+      b.onclick=()=>{ document.getElementById('scene').value=pl; document.getElementById('status').textContent='場面をセット。⚡短文か📜長文を押してください'; saveState(); };
       chips.appendChild(b);
     }
   }catch(e){ document.getElementById('status').textContent='エラー: '+e; }
@@ -2568,7 +2673,7 @@ async function replyDraft(replaceCard){
     }
     const who = j.name+' @'+j.handle+(j.friend_count>0?' (常連'+(j.friend_count+1)+'回目)':' (初)');
     document.getElementById('status').textContent = '💬 '+who+': 「'+j.their_text.slice(0,80)+'」';
-    showCard(makeCard(j.drafts[0], (card)=>replyDraft(card), {in_reply_to:j.reply_to_id, reply_to_handle:j.handle, reply_to_name:j.name}), replaceCard);
+    showCard(makeCard(j.drafts[0], {k:'reply'}, {in_reply_to:j.reply_to_id, reply_to_handle:j.handle, reply_to_name:j.name}), replaceCard);
   }catch(e){ document.getElementById('status').textContent='エラー: '+e; }
 }
 async function friendAdd(){
@@ -2587,6 +2692,7 @@ async function friendAdd(){
     const skip = (j.skipped&&j.skipped.length) ? (' / 読めず・除外: '+j.skipped.join(' ')) : '';
     document.getElementById('status').textContent='➕ '+j.added.length+'人登録: '+names+skip;
     document.getElementById('rurl').value='';
+    saveState();
   }catch(e){ document.getElementById('status').textContent='エラー: '+e; }
 }
 async function neta(kind, replaceCard){
@@ -2600,7 +2706,7 @@ async function neta(kind, replaceCard){
       return;
     }
     document.getElementById('status').textContent = j.live_context ? ('📡 '+j.live_context) : '';
-    showCard(makeCard(j.drafts[0], (card)=>neta(kind, card)), replaceCard);
+    showCard(makeCard(j.drafts[0], {k:'neta',a:kind}), replaceCard);
   }catch(e){ document.getElementById('status').textContent='エラー: '+e; }
 }
 async function recap(replaceCard){
@@ -2613,9 +2719,11 @@ async function recap(replaceCard){
       return;
     }
     document.getElementById('status').textContent = j.live_context ? ('📡 '+j.live_context) : '';
-    showCard(makeCard(j.drafts[0], (card)=>recap(card)), replaceCard);
+    showCard(makeCard(j.drafts[0], {k:'recap'}), replaceCard);
   }catch(e){ document.getElementById('status').textContent='エラー: '+e; }
 }
+for(const id of ['scene','player','rurl']) document.getElementById(id).addEventListener('input', saveState);
+restoreState();
 </script></body></html>"""
 
 
@@ -2667,7 +2775,7 @@ function candRow(f){
     '<div class="meta"></div></span>';
   div.querySelector('.name').textContent=(f.yaji_hint?'⚠ ':'')+(f.name||'(名前未取得)');
   const a=div.querySelector('.handle a');
-  a.textContent='@'+f.handle; a.href=f.url||('https://x.com/'+encodeURIComponent(f.handle));
+  a.textContent='@'+f.handle; a.href=f.url||('https://x.com/'+encodeURIComponent(f.handle)); a.target='_blank'; a.rel='noopener';
   div.querySelector('.meta').textContent='「'+(f.text||'')+'」'+(f.yaji_hint?' ← ヤジっぽい語あり':'');
   const keep=document.createElement('button');
   keep.textContent='✔'; keep.title='常連にする'; keep.style.background='#e8f5e9';
@@ -2712,7 +2820,7 @@ async function load(){
         '<span class="badge"></span>';
       div.querySelector('.name').textContent=f.name||'(名前未取得)';
       const a=div.querySelector('.handle a');
-      a.textContent='@'+f.handle; a.href='https://x.com/'+encodeURIComponent(f.handle);
+      a.textContent='@'+f.handle; a.href='https://x.com/'+encodeURIComponent(f.handle); a.target='_blank'; a.rel='noopener';
       div.querySelector('.meta').textContent='最終リプ返し: '+(f.last||'?');
       div.querySelector('.badge').textContent=(f.count||0)+'回';
       const del=document.createElement('button');
@@ -3091,7 +3199,7 @@ async function load(){
       div.innerHTML='<span class="who"><span class="handle"><a target="_blank" rel="noopener"></a></span>'+
         ' <span class="origin"></span><div class="meta"></div></span>';
       const a=div.querySelector('.handle a');
-      a.textContent='@'+c.handle; a.href='https://x.com/'+encodeURIComponent(c.handle);
+      a.textContent='@'+c.handle; a.href='https://x.com/'+encodeURIComponent(c.handle); a.target='_blank'; a.rel='noopener';
       const age = (c.age_min>=0) ? (c.age_min<60 ? c.age_min+'分前' : Math.floor(c.age_min/60)+'時間前') : '';
       div.querySelector('.origin').textContent=(c.origin||'')+(age?(' ・'+age):'');
       div.querySelector('.meta').textContent='「'+(c.text||'')+'」';
@@ -4231,6 +4339,24 @@ def build_handler(
                 _text_response(
                     self, 200, _render_live_page(), content_type="text/html; charset=utf-8"
                 )
+                return
+            if path == "/live-manifest.webmanifest":
+                # PWA manifest (公開情報のみ、auth 不要)
+                _text_response(
+                    self,
+                    200,
+                    _LIVE_MANIFEST_JSON,
+                    content_type="application/manifest+json; charset=utf-8",
+                )
+                return
+            if path == "/live-icon.png":
+                icon = base64.b64decode(_LIVE_ICON_PNG_B64)
+                self.send_response(200)
+                self.send_header("Content-Type", "image/png")
+                self.send_header("Cache-Control", "public, max-age=86400")
+                self.send_header("Content-Length", str(len(icon)))
+                self.end_headers()
+                self.wfile.write(icon)
                 return
             if path == "/friends":
                 _text_response(

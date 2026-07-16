@@ -2160,17 +2160,23 @@ def _load_scout_seen() -> dict[str, dict[str, Any]]:
 
 
 def _mark_scout(handle: str, status: str, name: str = "") -> bool:
+    """開拓台帳の更新。status: followed / skip / undo (=記録取り消し)。"""
     handle = (handle or "").lstrip("@").strip()
-    if not handle or status not in ("followed", "skip"):
+    if not handle or status not in ("followed", "skip", "undo"):
         return False
     try:
         blob = _scout_blob()
         seen = _load_scout_seen()
-        seen[handle] = {
-            "status": status,
-            "name": name,
-            "date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
-        }
+        if status == "undo":
+            if handle not in seen:
+                return True
+            del seen[handle]
+        else:
+            seen[handle] = {
+                "status": status,
+                "name": name,
+                "date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+            }
         if blob is not None:
             blob.upload_from_string(
                 json.dumps(seen, ensure_ascii=False),
@@ -2790,7 +2796,7 @@ button{font-size:1rem;padding:10px 14px;border:0;border-radius:8px;cursor:pointe
 .stats{font-size:.85rem;color:#00695c;margin-top:8px;font-weight:bold}
 </style></head><body>
 <h1>🎯 フォロー開拓 <a href="/" style="font-size:.8rem;float:right;color:#888">← 戻る</a></h1>
-<p class="note"><b>直近30分以内</b>に公式アカへリプした<b>活発なファン</b> = 今Xを開いていてフォロバが期待できる層です。@名をタップ → プロフィールが開く → フォローする → 戻って ✔ を押す。✕は以後表示しない。1日10〜20人ペースが安全圏 (一気にやりすぎると制限を踏みます)。</p>
+<p class="note"><b>直近30分以内</b>に公式アカへリプした<b>活発なファン</b> = 今Xを開いていてフォロバが期待できる層です。<b>@名をタップ → プロフィールが開き、その場でフォロー済みとして消えます</b> (フォローしなかったら「戻す」)。✕は以後表示しない。1日10〜20人ペースが安全圏 (一気にやりすぎると制限を踏みます)。</p>
 <div style="display:flex;gap:8px;margin-top:8px">
 <button onclick="load()" style="background:#e0f2f1;flex:1">🔄 候補を取得</button>
 </div>
@@ -2798,6 +2804,25 @@ button{font-size:1rem;padding:10px 14px;border:0;border-radius:8px;cursor:pointe
 <div id="status"></div>
 <div id="list"></div>
 <script>
+function bumpStats(d){
+  const s=document.getElementById('stats');
+  const n=Math.max(0, parseInt((s.textContent.match(/\\d+/)||[0])[0])+d);
+  s.textContent='✔フォロー済 累計 '+n+'人';
+}
+async function markFollowed(handle, div){
+  await fetch('/scout-mark?mode=followed&handle='+encodeURIComponent(handle));
+  bumpStats(1);
+  const undo=document.createElement('div');
+  undo.style.cssText='background:#f1f8e9;border:1px dashed #aed581;border-radius:10px;padding:8px 12px;margin-top:8px;font-size:.85rem;color:#558b2f;display:flex;align-items:center;gap:8px';
+  const label=document.createElement('span');
+  label.style.flex='1'; label.textContent='✔ @'+handle+' をフォロー済みに記録しました';
+  const back=document.createElement('button');
+  back.textContent='戻す'; back.style.cssText='background:#eee;padding:4px 12px;font-size:.85rem';
+  back.onclick=async()=>{ await fetch('/scout-mark?mode=undo&handle='+encodeURIComponent(handle)); bumpStats(-1); undo.replaceWith(div); };
+  undo.appendChild(label); undo.appendChild(back);
+  div.replaceWith(undo);
+  setTimeout(()=>{ if(undo.parentNode) undo.remove(); }, 20000);
+}
 async function load(){
   document.getElementById('status').textContent='公式アカへの最近のリプ主を収集中… (数秒)';
   try{
@@ -2817,13 +2842,12 @@ async function load(){
       const age = (c.age_min>=0) ? (c.age_min<60 ? c.age_min+'分前' : Math.floor(c.age_min/60)+'時間前') : '';
       div.querySelector('.origin').textContent=(c.origin||'')+(age?(' ・'+age):'');
       div.querySelector('.meta').textContent='「'+(c.text||'')+'」';
-      const ok=document.createElement('button');
-      ok.textContent='✔'; ok.title='フォローした'; ok.style.background='#e8f5e9';
-      ok.onclick=async()=>{ await fetch('/scout-mark?mode=followed&handle='+encodeURIComponent(c.handle)); div.remove(); const s=document.getElementById('stats'); const n=parseInt((s.textContent.match(/\\d+/)||[0])[0])+1; s.textContent='✔フォロー済 累計 '+n+'人'; };
+      // タップ = プロフィールを開く + フォロー済み記録 (行は「戻す」に変わる)
+      a.onclick=()=>{ markFollowed(c.handle, div); };
       const ng=document.createElement('button');
       ng.textContent='✕'; ng.title='スキップ (以後表示しない)'; ng.style.background='#eee';
       ng.onclick=async()=>{ await fetch('/scout-mark?mode=skip&handle='+encodeURIComponent(c.handle)); div.remove(); };
-      div.appendChild(ok); div.appendChild(ng);
+      div.appendChild(ng);
       list.appendChild(div);
     }
   }catch(e){ document.getElementById('status').textContent='エラー: '+e; }
@@ -3992,7 +4016,7 @@ def build_handler(
                     params = parse_qs(parsed.query, keep_blank_values=False)
                     handle = ((params.get("handle") or [""])[0] or "").strip()
                     mode = ((params.get("mode") or [""])[0] or "").strip()
-                    ok = _mark_scout(handle, mode)
+                    ok = _mark_scout(handle, mode)  # followed / skip / undo
                     _json_response(
                         self, 200 if ok else 400, {"ok": ok, "handle": handle.lstrip("@")}
                     )

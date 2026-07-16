@@ -17,3 +17,4 @@
 - 11:45 JST | impl+deploy | 固定ポスト生成prompt=前半フォロー価値/後半サイト誘導型に統合 (user現行固定を評価→統合案提示) | rev 00146-sq2
 - 11:55 JST | impl+deploy | 固定ポスト生成にyoshilover.com/data/直書き (bio文案リンク入りも提示) | rev確認済
 - 12:20 JST | fix+deploy | トレンド反応: news無し巨人/MLB語をBing News検索で接地(押せないチップ解消)・npb→その他野球表記 | rev 00148-jzb → 00149-z7z | INCIDENT: 09:30の--set-secretsが既存secret紐付け全消し(X投稿/Gemini約2.5h断)→全復旧・memory化 | prod E2E: 村上宗隆タップ→生成OK
+- 12:40 JST | fix+deploy | trend-draft gate落ち3回自動リトライ (userの大谷タップ失敗の真因=坂本捏造→ungrounded 1発死) | token rotate v2 (v1がClaude調査ログ経由でchat流出)・新ログインmail送付・旧token 403確認 | rev 00150-8rg

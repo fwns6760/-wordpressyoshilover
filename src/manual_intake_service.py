@@ -2140,6 +2140,12 @@ def _fetch_trend_items() -> list[dict[str, str]]:
                 logging.getLogger("manual_intake_service").exception(
                     "trend_giants_buzz_fill_failed"
                 )
+        if not any(t.get("category") == "giants" for t in relevant):
+            # 話題取得も空 (RSSHub cold 等) なら主力で埋める。巨人枠は空にしない
+            for name in ("岡本和真", "戸郷翔征", "坂本勇人", "吉川尚輝", "山﨑伊織"):
+                relevant.append(
+                    {"keyword": name, "category": "giants", "traffic": "主力"}
+                )
         _TREND_CACHE["items"] = relevant
         _TREND_CACHE["ts"] = now_ts
         return relevant
@@ -4373,12 +4379,10 @@ def build_handler(
                     (t for t in _fetch_trend_items() if (t.get("keyword") or "") == kw),
                     None,
                 )
-                if item is None:
-                    _json_response(self, 400, {"ok": False, "reason": "unknown_kw"})
-                    return
-                if item.get("category") not in ("giants", "mlb", "npb"):
-                    _json_response(self, 400, {"ok": False, "reason": "unknown_kw"})
-                    return
+                if item is None or item.get("category") not in ("giants", "mlb", "npb"):
+                    # cache 更新でチップが入れ替わっても、押された語はそのまま
+                    # 記事検索へ (unknown_kw で死なせない、2026-07-16)
+                    item = {"keyword": kw, "category": "giants"}
                 if not item.get("news_title"):
                     # news 無し語 (MLB言及数由来等) はタップ時に記事を探して接地
                     found = _news_lookup_for_keyword(item.get("keyword") or "")

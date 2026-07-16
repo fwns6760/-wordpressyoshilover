@@ -2142,7 +2142,8 @@ def _fetch_trend_items() -> list[dict[str, str]]:
                 )
         if not any(t.get("category") == "giants" for t in relevant):
             # 話題取得も空 (RSSHub cold 等) なら主力で埋める。巨人枠は空にしない
-            for name in ("岡本和真", "戸郷翔征", "坂本勇人", "吉川尚輝", "山﨑伊織"):
+            # (岡本和真は2026にMLB移籍済みのため入れない — user指摘)
+            for name in ("戸郷翔征", "坂本勇人", "吉川尚輝", "山﨑伊織", "大城卓三"):
                 relevant.append(
                     {"keyword": name, "category": "giants", "traffic": "主力"}
                 )

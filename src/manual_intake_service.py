@@ -518,6 +518,7 @@ _HTML_FORM = """<!DOCTYPE html>
     <a class=\"tab-btn\" href=\"/friends\" style=\"text-decoration:none;display:inline-block\">👥 常連</a>
     <a class=\"tab-btn\" href=\"/trend\" style=\"text-decoration:none;display:inline-block\">🔥 トレンド</a>
     <a class=\"tab-btn\" href=\"/scout\" style=\"text-decoration:none;display:inline-block\">🎯 開拓</a>
+    <a class=\"tab-btn\" href=\"/profile\" style=\"text-decoration:none;display:inline-block\">📌 固定</a>
   </nav>
   <section class=\"tab-panel\" data-tab=\"intake\" id=\"tab-panel-intake\">
   <form id=\"intake\">
@@ -2770,6 +2771,131 @@ loadWords();
 </script></body></html>"""
 
 
+_ENGAGEMENT_BUCKET_DEFAULT = "baseballsite-yoshilover-state"
+
+
+def _load_latest_engagement_report() -> dict[str, Any] | None:
+    """x-engagement 週次レポート (GCS) の最新 1 本。無ければ None。"""
+    try:
+        from google.cloud import storage
+
+        bucket_name = (
+            os.environ.get("X_ENGAGEMENT_BUCKET") or _ENGAGEMENT_BUCKET_DEFAULT
+        ).strip()
+        bucket = storage.Client().bucket(bucket_name)
+        blobs = sorted(
+            bucket.list_blobs(prefix="x_engagement/reports/"), key=lambda b: b.name
+        )
+        if not blobs:
+            return None
+        return json.loads(blobs[-1].download_as_bytes().decode("utf-8"))
+    except Exception:  # noqa: BLE001
+        logging.getLogger("manual_intake_service").exception("engagement_report_failed")
+        return None
+
+
+def _engagement_best_rows(report: dict[str, Any], limit: int = 5) -> list[dict[str, Any]]:
+    rows = [
+        r
+        for r in (report.get("rows") or [])
+        if not r.get("is_reply") and r.get("metrics_fetched")
+    ]
+    rows.sort(key=lambda r: -int(r.get("favorite_count") or 0))
+    return rows[:limit]
+
+
+def _render_profile_page() -> str:
+    """2026-07-16 user「両方」の転換側: 固定ポスト生成。
+
+    週間ベストポスト (実測 fav) を見せつつ、自己紹介+実績+フォロー CTA の
+    固定ポスト案を LLM で作る。投稿後の「プロフィールに固定」は X アプリ側で
+    1 タップ (API Free では固定操作不可)。
+    """
+    return """<!doctype html>
+<html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>固定ポスト｜ヨシラバー</title>
+<style>
+body{font-family:sans-serif;background:#fafafa;margin:0;padding:12px;max-width:640px;margin:auto}
+h1{font-size:1.1rem;color:#6a1b9a}
+button{font-size:1rem;padding:10px 16px;border:0;border-radius:8px;cursor:pointer}
+.best{background:#fff;border:1px solid #ddd;border-radius:10px;padding:8px 12px;margin-top:6px;font-size:.85rem;color:#444}
+.best .fav{color:#e91e63;font-weight:bold;margin-right:6px}
+.card{background:#fff;border:1px solid #ddd;border-radius:10px;padding:12px;margin-top:12px;white-space:pre-wrap}
+.card .style{font-size:.8rem;color:#888}
+.card .cnt{font-size:.75rem;color:#aaa}
+.row{display:flex;gap:8px;margin-top:8px}
+.post{background:#1d9bf0;color:#fff;flex:1}
+.copy{background:#eee;flex:1}
+#status{margin-top:10px;font-size:.9rem;color:#666}
+.note{font-size:.78rem;color:#999;margin-top:6px;line-height:1.5}
+textarea{width:100%;box-sizing:border-box;font-size:1.05rem;padding:10px;border:1px solid #ccc;border-radius:8px}
+.grp{margin-top:12px;font-size:.85rem;color:#888;font-weight:bold}
+</style></head><body>
+<h1>📌 固定ポスト <a href="/" style="font-size:.8rem;float:right;color:#888">← 戻る</a></h1>
+<p class="note">開拓やトレンドで来た人がプロフィールを見た瞬間に「フォローする価値がある」と分かるための固定ポストを作ります。投稿したら X アプリで「…」→<b>プロフィールに固定</b>を押してください (そこだけ手動)。週1回、数字を更新して作り直すのがおすすめ。</p>
+<div class="row">
+<button onclick="gen()" style="background:#6a1b9a;color:#fff;flex:1;font-weight:bold">📌 固定ポスト案をつくる</button>
+</div>
+<div class="grp" id="best-head"></div>
+<div id="best"></div>
+<div id="status"></div>
+<div id="out"></div>
+<script>
+async function loadBest(){
+  try{
+    const r = await fetch('/profile-best');
+    if(r.status===403){ document.getElementById('status').textContent='認証切れです。トップ ( / ) を token 付きで開き直してください'; return; }
+    const j = await r.json();
+    if(!j.ok){ document.getElementById('best-head').textContent='週間データがまだありません'; return; }
+    document.getElementById('best-head').textContent='📊 先週の実績 ('+j.period+'): '+j.total_posts+'ポスト / fav合計 '+j.total_favorites;
+    const box=document.getElementById('best'); box.innerHTML='';
+    for(const b of j.best){
+      const div=document.createElement('div'); div.className='best';
+      div.innerHTML='<span class="fav"></span><span class="txt"></span>';
+      div.querySelector('.fav').textContent='♥'+b.favorite_count;
+      div.querySelector('.txt').textContent=b.text_head;
+      box.appendChild(div);
+    }
+  }catch(e){ document.getElementById('status').textContent='エラー: '+e; }
+}
+async function gen(replaceCard){
+  document.getElementById('status').textContent='実績データから固定ポスト案を生成中… (数秒)';
+  try{
+    const r = await fetch('/profile-draft');
+    const j = await r.json();
+    if(!j.ok){ document.getElementById('status').textContent='生成できず: '+(j.reason||'')+' (もう一度どうぞ)'; return; }
+    document.getElementById('status').textContent='投稿後、Xアプリで「プロフィールに固定」を忘れずに:';
+    const div=document.createElement('div'); div.className='card';
+    div.innerHTML='<div class="style">📌 固定ポスト案 (編集して投稿できます)</div>'+
+      '<textarea class="txt" style="margin-top:6px"></textarea>'+
+      '<div class="cnt"></div>'+
+      '<div class="row"><button class="post">Xに投稿</button><button class="regen" style="background:#fff3e0">🔄 再作成</button><button class="copy">コピー</button></div>';
+    const ta=div.querySelector('.txt'), cnt=div.querySelector('.cnt');
+    ta.value=j.drafts[0].text;
+    const fit=()=>{cnt.textContent=ta.value.length+'字'; ta.style.height='auto'; ta.style.height=(ta.scrollHeight+4)+'px';};
+    ta.oninput=fit;
+    div.querySelector('.copy').onclick=()=>{navigator.clipboard.writeText(ta.value);div.querySelector('.copy').textContent='コピー済';};
+    div.querySelector('.regen').onclick=()=>{gen(div);};
+    div.querySelector('.post').onclick=async(ev)=>{
+      const text=ta.value.trim();
+      if(!text) return;
+      if(!confirm('この内容でXに投稿します:\\n\\n'+text.slice(0,120)+(text.length>120?'…':'')+'\\n\\nよい？')) return;
+      ev.target.disabled=true; ev.target.textContent='投稿中…';
+      const pr=await fetch('/x-post-direct',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:text})});
+      const pj=await pr.json();
+      ev.target.textContent=pj.ok?'投稿済✔ → Xアプリで固定を':'失敗: '+(pj.reason||'');
+      if(!pj.ok) ev.target.disabled=false;
+    };
+    const out=document.getElementById('out');
+    if(replaceCard){ out.replaceChild(div, replaceCard); } else { out.prepend(div); }
+    setTimeout(fit,0);
+  }catch(e){ document.getElementById('status').textContent='エラー: '+e; }
+}
+loadBest();
+</script></body></html>"""
+
+
 def _render_scout_page() -> str:
     """2026-07-16 user「フォロワーを増やしたいアプリ」(開拓+転換の両方 GO)。
 
@@ -3993,6 +4119,109 @@ def build_handler(
                 _text_response(
                     self, 200, _render_scout_page(), content_type="text/html; charset=utf-8"
                 )
+                return
+            if path == "/profile":
+                _text_response(
+                    self, 200, _render_profile_page(), content_type="text/html; charset=utf-8"
+                )
+                return
+            if path in ("/profile-best", "/profile-draft"):
+                # 📌固定ポスト (2026-07-16)。best=¥0、draft=LLM 1call
+                expected_token = _require_token()
+                if expected_token:
+                    cookie_token = ""
+                    raw_cookie = self.headers.get("Cookie") or ""
+                    for part in raw_cookie.split(";"):
+                        kv = part.strip().split("=", 1)
+                        if len(kv) == 2 and kv[0].strip() == "manual_intake_session":
+                            cookie_token = kv[1].strip()
+                            break
+                    query_token = ""
+                    qtok = parse_qs(parsed.query, keep_blank_values=False).get("token") or []
+                    if qtok:
+                        query_token = (qtok[0] or "").strip()
+                    if cookie_token != expected_token and query_token != expected_token:
+                        _json_response(self, 403, {"ok": False, "reason": "forbidden"})
+                        return
+                report = _load_latest_engagement_report()
+                if report is None:
+                    _json_response(self, 200, {"ok": False, "reason": "no_report"})
+                    return
+                best = _engagement_best_rows(report)
+                if path == "/profile-best":
+                    _json_response(
+                        self,
+                        200,
+                        {
+                            "ok": True,
+                            "period": f"{report.get('period_start_jst')}〜{report.get('period_end_jst')}",
+                            "total_posts": report.get("total_posts") or 0,
+                            "total_favorites": report.get("total_favorites") or 0,
+                            "best": [
+                                {
+                                    "favorite_count": b.get("favorite_count") or 0,
+                                    "text_head": (b.get("text_head") or "")[:80],
+                                }
+                                for b in best
+                            ],
+                        },
+                    )
+                    return
+                api_key = (
+                    os.environ.get("GEMINI_API_KEY")
+                    or os.environ.get("GEMMA_BRANDING_GEMINI_API_KEY")
+                    or ""
+                ).strip()
+                if not api_key:
+                    _json_response(self, 500, {"ok": False, "reason": "gemini_key_missing"})
+                    return
+                try:
+                    from src import x_post_branding_gen as _bgen
+
+                    best_lines = "\n".join(
+                        f"- ♥{b.get('favorite_count')}: {(b.get('text_head') or '')[:70]}"
+                        for b in best[:3]
+                    )
+                    fact = (
+                        "ヨシラバー (@yoshilover6760) の先週実績: "
+                        f"{report.get('total_posts')}ポスト / fav合計 {report.get('total_favorites')}。\n"
+                        f"先週特に反響が大きかったポスト:\n{best_lines}"
+                    )
+                    txt = (
+                        _bgen.build_quote_rt_comment(
+                            fact,
+                            "",
+                            gemini_api_key=api_key,
+                            subject="プロフィール固定ポスト",
+                            budget_site="quote_rt",
+                            require_db_fact=False,
+                            force_long=False,
+                            extra_voice_note=(
+                                "X プロフィールの固定ポストを書く。目的 = プロフィール"
+                                "に来た人にフォローさせること。構成: ①このアカウントを"
+                                "フォローすると何が流れてくるか (巨人の試合実況・毎時の"
+                                "話題選手ランキング・データで見る辛口分析・MLB速報) を"
+                                "具体的に ②実績数字を1つだけ自然に入れる ③最後に軽い"
+                                "フォロー誘導 1 文。自己紹介の定型文っぽさ・絵文字の"
+                                "乱用は避ける。ハッシュタグは付けない。事実は与えた"
+                                "実績データの範囲のみ。文体は です・ます調。"
+                            ),
+                        )
+                        or ""
+                    ).strip()
+                    if not txt:
+                        _json_response(self, 200, {"ok": False, "reason": "generation_empty"})
+                        return
+                    _json_response(
+                        self,
+                        200,
+                        {"ok": True, "drafts": [{"style": "📌 固定ポスト", "text": txt}]},
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    bound_logger.exception("profile_draft_failed")
+                    _json_response(
+                        self, 500, {"ok": False, "reason": f"profile_draft_error:{exc!r}"}
+                    )
                 return
             if path in ("/scout-candidates", "/scout-mark"):
                 # 🎯フォロー開拓 (2026-07-16)。収集¥0・LLMなし

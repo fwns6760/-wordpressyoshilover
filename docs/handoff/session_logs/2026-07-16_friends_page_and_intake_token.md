@@ -20,3 +20,4 @@
 - 12:40 JST | fix+deploy | trend-draft gate落ち3回自動リトライ (userの大谷タップ失敗の真因=坂本捏造→ungrounded 1発死) | token rotate v2 (v1がClaude調査ログ経由でchat流出)・新ログインmail送付・旧token 403確認 | rev 00150-8rg
 - 13:00 JST | fix+deploy | Bing lookup=本文の読める記事まで3本試行 (山本由伸no_article全滅の真因対策) | rev 00151-b2m | prod E2E: 山本由伸 生成OK
 - 13:20 JST | impl+deploy | トレンド: 巨人枠=X話題選手で常時補充・npb(高校野球)もアプリ生成可(allowed_categories追加、mail便不変)・レジェンドgate+共感文体(00152) | rev 00153系 | 巨人5chips確認
+- 13:45 JST | fix+deploy | trend安定化3連: quote_rt枠切替(trend_weave=3回/プロセス枯渇)・巨人枠主力fallback+unknown_kw廃止・人名禁止prompt強化 | rev 00154→00156 | E2E: ダルベック/岡本和真 生成OK・共感文体確認

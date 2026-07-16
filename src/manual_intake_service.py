@@ -4366,12 +4366,20 @@ def build_handler(
 
                     from src import search_trend_note as stn
 
-                    cand = stn.build_trend_reaction_candidate(
-                        [dict(item)],
-                        gemini_api_key=api_key,
-                        dedup_set=None,
-                        now_date=datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y%m%d-%H"),
-                    )
+                    # gate 落ち (捏造名等) は 1 回で諦めず作り直す (2026-07-16
+                    # 実測: 大谷翔平タップ→「坂本」捏造→ungrounded で即失敗)
+                    cand = None
+                    for _attempt in range(3):
+                        cand = stn.build_trend_reaction_candidate(
+                            [dict(item)],
+                            gemini_api_key=api_key,
+                            dedup_set=None,
+                            now_date=datetime.now(ZoneInfo("Asia/Tokyo")).strftime(
+                                "%Y%m%d-%H"
+                            ),
+                        )
+                        if cand is not None and getattr(cand, "post_text", ""):
+                            break
                     if cand is None or not getattr(cand, "post_text", ""):
                         _json_response(self, 200, {"ok": False, "reason": "generation_empty"})
                         return

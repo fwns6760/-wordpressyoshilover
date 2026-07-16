@@ -662,6 +662,7 @@ def build_trend_reaction_candidate(
     dedup_set: set[str] | None = None,
     now_date: str = "",
     allowed_categories: tuple[str, ...] = ("giants", "mlb"),
+    budget_site: str = "trend_weave",
 ) -> Any:
     """急上昇トレンド + そのニュース見出しから独立の反応ポスト候補を 1 本作る。
 
@@ -722,7 +723,9 @@ def build_trend_reaction_candidate(
                     gemini_api_key=gemini_api_key,
                     subject="検索で急上昇中の野球トピック",
                     db_fact="", require_db_fact=False,
-                    budget_site="trend_weave",
+                    # mail便=専用小枠 trend_weave (1便3回)。手動アプリは常駐
+                    # プロセスのため quote_rt を渡す (2026-07-16 aux枠枯渇事故)
+                    budget_site=budget_site,
                     force_long=True,
                     extra_voice_note=(
                         f"いま検索で急上昇中の話題への反応ポスト (試合後の振り返り"

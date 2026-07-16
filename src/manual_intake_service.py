@@ -4412,6 +4412,9 @@ def build_handler(
                             ),
                             # 手動アプリは高校野球等も可 (2026-07-16 user)
                             allowed_categories=("giants", "mlb", "npb"),
+                            # 常駐プロセスでは trend_weave 小枠 (3回/プロセス) が
+                            # 枯渇して恒久失敗する。観戦と同じ quote_rt を使う
+                            budget_site="quote_rt",
                         )
                         if cand is not None and getattr(cand, "post_text", ""):
                             break

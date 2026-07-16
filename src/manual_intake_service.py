@@ -517,6 +517,7 @@ _HTML_FORM = """<!DOCTYPE html>
     <a class=\"tab-btn\" href=\"/live\" style=\"text-decoration:none;display:inline-block\">⚾ 観戦</a>
     <a class=\"tab-btn\" href=\"/friends\" style=\"text-decoration:none;display:inline-block\">👥 常連</a>
     <a class=\"tab-btn\" href=\"/trend\" style=\"text-decoration:none;display:inline-block\">🔥 トレンド</a>
+    <a class=\"tab-btn\" href=\"/scout\" style=\"text-decoration:none;display:inline-block\">🎯 開拓</a>
   </nav>
   <section class=\"tab-panel\" data-tab=\"intake\" id=\"tab-panel-intake\">
   <form id=\"intake\">
@@ -2121,6 +2122,111 @@ _MAIN_X_HANDLE = "yoshilover6760"
 _OUR_X_HANDLES = {_MAIN_X_HANDLE, "yoshilover_naka"}
 _CANDIDATE_SYNDICATION_CAP = 10
 
+# フォロー開拓 (2026-07-16 user「フォロワーを増やしたいアプリ」):
+# 公式/媒体アカはフォロー対象にしない (フォロバが無い)
+_SCOUT_MEDIA_HANDLES = {
+    "tokyogiants", "hochi_giants", "hochi_baseball", "sportshochi",
+    "sanspo_giants", "sanspo", "nikkansports", "ntv_sports_jp",
+    "sponichiyakyu", "mlbjapan", "mlb", "npb", "yomiuri_online",
+    "asahi_koshien", "dailysportsbb", "tospo_prores", "yakyu_kozo",
+}
+# 開拓の検索クエリ: 公式/MLB公式へリプしている人 = 活発なファンでフォロバ期待層
+_SCOUT_QUERIES = (
+    ("@TokyoGiants", "巨人公式にリプ"),
+    ("@hochi_giants", "報知巨人にリプ"),
+    ("@MLBJapan", "MLB公式にリプ"),
+)
+
+
+def _scout_blob():
+    bucket_name = (os.environ.get("INSIGHT_GCS_BUCKET") or "").strip()
+    if not bucket_name:
+        return None
+    from google.cloud import storage
+
+    return storage.Client().bucket(bucket_name).blob("follow_scout/seen.json")
+
+
+def _load_scout_seen() -> dict[str, dict[str, Any]]:
+    """開拓済み台帳 (handle → {status: followed|skip, date, name})。失敗は空。"""
+    try:
+        blob = _scout_blob()
+        if blob is None or not blob.exists():
+            return {}
+        return json.loads(blob.download_as_bytes().decode("utf-8")) or {}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _mark_scout(handle: str, status: str, name: str = "") -> bool:
+    handle = (handle or "").lstrip("@").strip()
+    if not handle or status not in ("followed", "skip"):
+        return False
+    try:
+        blob = _scout_blob()
+        seen = _load_scout_seen()
+        seen[handle] = {
+            "status": status,
+            "name": name,
+            "date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+        }
+        if blob is not None:
+            blob.upload_from_string(
+                json.dumps(seen, ensure_ascii=False),
+                content_type="application/json",
+            )
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _collect_scout_candidates() -> list[dict[str, Any]]:
+    """活発なファン (公式アカへの最近のリプ主) を Yahoo リアルタイム検索で収集。
+
+    フォロー済み/スキップ済み/媒体/自アカ/既知の常連・ヤジは除外。¥0・LLMなし。
+    """
+    try:
+        from src.rss_fetcher import fetch_yahoo_realtime_entries
+    except Exception:  # noqa: BLE001
+        return []
+    seen = _load_scout_seen()
+    friends = _load_friends()
+    excluded = (
+        {h.lower() for h in seen}
+        | {h.lower() for h in friends}
+        | _SCOUT_MEDIA_HANDLES
+        | _OUR_X_HANDLES
+    )
+    out: list[dict[str, Any]] = []
+    got: set[str] = set()
+    for query, origin in _SCOUT_QUERIES:
+        try:
+            entries = fetch_yahoo_realtime_entries(query) or []
+        except Exception:  # noqa: BLE001
+            continue
+        for e in entries:
+            url = str(e.get("link") or "")
+            m = re.search(r"(?:x|twitter)\.com/(\w{1,15})/status/\d+", url)
+            if not m:
+                continue
+            handle = m.group(1)
+            hl = handle.lower()
+            if hl in excluded or hl in got or "公式" in handle:
+                continue
+            text = str(e.get("title") or e.get("summary") or "").strip()
+            if _looks_like_yaji(text):
+                continue
+            got.add(hl)
+            out.append(
+                {
+                    "handle": handle,
+                    "text": text[:120],
+                    "origin": origin,
+                    "url": url.split("?")[0],
+                }
+            )
+    return out[:30]
+
 
 def _set_friend_flags(handle: str, *, mode: str) -> bool:
     """常連 entry の状態変更。mode: dismiss=候補を非表示 / keep=常連へ昇格。"""
@@ -2641,6 +2747,73 @@ async function loadWords(){
   }catch(e){ document.getElementById('status').textContent='エラー: '+e; }
 }
 loadWords();
+</script></body></html>"""
+
+
+def _render_scout_page() -> str:
+    """2026-07-16 user「フォロワーを増やしたいアプリ」(開拓+転換の両方 GO)。
+
+    公式アカに今リプしている活発なファン = フォロバ期待層 を自動リストアップ。
+    行をタップ → X プロフィールが開く → フォローボタンを押すだけ。
+    ✔フォローした / ✕スキップ で台帳に記録し、同じ人は二度出ない。
+    """
+    return """<!doctype html>
+<html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>フォロー開拓｜ヨシラバー</title>
+<style>
+body{font-family:sans-serif;background:#fafafa;margin:0;padding:12px;max-width:640px;margin:auto}
+h1{font-size:1.1rem;color:#00695c}
+button{font-size:1rem;padding:10px 14px;border:0;border-radius:8px;cursor:pointer}
+#status{margin-top:10px;font-size:.9rem;color:#666}
+.note{font-size:.78rem;color:#999;margin-top:6px;line-height:1.5}
+.cand{background:#fff;border:1px solid #ddd;border-radius:10px;padding:10px 12px;margin-top:8px;display:flex;align-items:center;gap:10px}
+.cand .who{flex:1;min-width:0}
+.cand .handle a{color:#1d9bf0;text-decoration:none;font-weight:bold}
+.cand .origin{font-size:.72rem;color:#00695c;background:#e0f2f1;border-radius:8px;padding:1px 8px}
+.cand .meta{font-size:.8rem;color:#888;margin-top:3px;overflow:hidden}
+.cand button{padding:6px 10px;font-size:.85rem}
+.stats{font-size:.85rem;color:#00695c;margin-top:8px;font-weight:bold}
+</style></head><body>
+<h1>🎯 フォロー開拓 <a href="/" style="font-size:.8rem;float:right;color:#888">← 戻る</a></h1>
+<p class="note">いま公式アカにリプしている<b>活発なファン</b> = フォロバが期待できる層です。@名をタップ → プロフィールが開く → フォローする → 戻って ✔ を押す。✕は以後表示しない。1日10〜20人ペースが安全圏 (一気にやりすぎると制限を踏みます)。</p>
+<div style="display:flex;gap:8px;margin-top:8px">
+<button onclick="load()" style="background:#e0f2f1;flex:1">🔄 候補を取得</button>
+</div>
+<div class="stats" id="stats"></div>
+<div id="status"></div>
+<div id="list"></div>
+<script>
+async function load(){
+  document.getElementById('status').textContent='公式アカへの最近のリプ主を収集中… (数秒)';
+  try{
+    const r = await fetch('/scout-candidates');
+    if(r.status===403){ document.getElementById('status').textContent='認証切れです。トップ ( / ) を token 付きで開き直してください'; return; }
+    const j = await r.json();
+    const list=document.getElementById('list'); list.innerHTML='';
+    document.getElementById('stats').textContent = '✔フォロー済 累計 '+(j.followed_total||0)+'人';
+    if(!j.ok || !j.candidates || !j.candidates.length){ document.getElementById('status').textContent='新しい候補がいません (時間をおいてもう一度)'; return; }
+    document.getElementById('status').textContent='候補 '+j.candidates.length+'人:';
+    for(const c of j.candidates){
+      const div=document.createElement('div'); div.className='cand';
+      div.innerHTML='<span class="who"><span class="handle"><a target="_blank" rel="noopener"></a></span>'+
+        ' <span class="origin"></span><div class="meta"></div></span>';
+      const a=div.querySelector('.handle a');
+      a.textContent='@'+c.handle; a.href='https://x.com/'+encodeURIComponent(c.handle);
+      div.querySelector('.origin').textContent=c.origin||'';
+      div.querySelector('.meta').textContent='「'+(c.text||'')+'」';
+      const ok=document.createElement('button');
+      ok.textContent='✔'; ok.title='フォローした'; ok.style.background='#e8f5e9';
+      ok.onclick=async()=>{ await fetch('/scout-mark?mode=followed&handle='+encodeURIComponent(c.handle)); div.remove(); const s=document.getElementById('stats'); const n=parseInt((s.textContent.match(/\\d+/)||[0])[0])+1; s.textContent='✔フォロー済 累計 '+n+'人'; };
+      const ng=document.createElement('button');
+      ng.textContent='✕'; ng.title='スキップ (以後表示しない)'; ng.style.background='#eee';
+      ng.onclick=async()=>{ await fetch('/scout-mark?mode=skip&handle='+encodeURIComponent(c.handle)); div.remove(); };
+      div.appendChild(ok); div.appendChild(ng);
+      list.appendChild(div);
+    }
+  }catch(e){ document.getElementById('status').textContent='エラー: '+e; }
+}
+load();
 </script></body></html>"""
 
 
@@ -3775,6 +3948,53 @@ def build_handler(
             if path == "/trend":
                 _text_response(
                     self, 200, _render_trend_page(), content_type="text/html; charset=utf-8"
+                )
+                return
+            if path == "/scout":
+                _text_response(
+                    self, 200, _render_scout_page(), content_type="text/html; charset=utf-8"
+                )
+                return
+            if path in ("/scout-candidates", "/scout-mark"):
+                # 🎯フォロー開拓 (2026-07-16)。収集¥0・LLMなし
+                expected_token = _require_token()
+                if expected_token:
+                    cookie_token = ""
+                    raw_cookie = self.headers.get("Cookie") or ""
+                    for part in raw_cookie.split(";"):
+                        kv = part.strip().split("=", 1)
+                        if len(kv) == 2 and kv[0].strip() == "manual_intake_session":
+                            cookie_token = kv[1].strip()
+                            break
+                    query_token = ""
+                    qtok = parse_qs(parsed.query, keep_blank_values=False).get("token") or []
+                    if qtok:
+                        query_token = (qtok[0] or "").strip()
+                    if cookie_token != expected_token and query_token != expected_token:
+                        _json_response(self, 403, {"ok": False, "reason": "forbidden"})
+                        return
+                if path == "/scout-mark":
+                    params = parse_qs(parsed.query, keep_blank_values=False)
+                    handle = ((params.get("handle") or [""])[0] or "").strip()
+                    mode = ((params.get("mode") or [""])[0] or "").strip()
+                    ok = _mark_scout(handle, mode)
+                    _json_response(
+                        self, 200 if ok else 400, {"ok": ok, "handle": handle.lstrip("@")}
+                    )
+                    return
+                candidates = _collect_scout_candidates()
+                seen = _load_scout_seen()
+                followed_total = sum(
+                    1 for v in seen.values() if (v or {}).get("status") == "followed"
+                )
+                _json_response(
+                    self,
+                    200,
+                    {
+                        "ok": True,
+                        "candidates": candidates,
+                        "followed_total": followed_total,
+                    },
                 )
                 return
             if path in ("/trend-words", "/trend-draft"):

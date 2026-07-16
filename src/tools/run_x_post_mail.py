@@ -3655,6 +3655,47 @@ def _main_mlb_digest_only(args: argparse.Namespace, recipients: list[str]) -> in
         LOG.warning("mlb-digest: build failed: %r", exc)
         cand = None
     if cand is None:
+        # 2026-07-16 user「mail に MLB トレンドは毎時。プロ野球始まるまで」:
+        # 試合なし (オールスター休み等) で定点が空の時間は MLB トレンド反応で
+        # 埋める。scheduler は 5 8-17 (毎時、NPB 夜試合前まで) のまま。
+        # dedup は日粒度 (同じ語+見出しは1日1回) にして毎時の同ネタ連打を防ぐ。
+        try:
+            from src import search_trend_note as stn
+            from src.manual_intake_service import _news_lookup_for_keyword
+
+            roster = stn._giants_name_tokens()
+            relevant: list[dict] = []
+            for t in stn.fetch_jp_trends():
+                kw = t.get("keyword") or ""
+                cat = stn.categorize_trend_keyword(kw, roster)
+                if cat:
+                    relevant.append({**t, "category": cat})
+            stn.merge_yahoo_topics_into_relevant(relevant, roster)
+            stn.fill_mlb_from_mentions(relevant)
+            mlb_items = [t for t in relevant if t.get("category") == "mlb"]
+            for t in mlb_items:
+                if not t.get("news_title"):
+                    found = _news_lookup_for_keyword(t.get("keyword") or "")
+                    if found:
+                        t.update(found)
+            if mlb_items:
+                cand = stn.build_trend_reaction_candidate(
+                    mlb_items,
+                    gemini_api_key=(
+                        os.environ.get("GEMINI_API_KEY")
+                        or os.environ.get("GEMMA_BRANDING_GEMINI_API_KEY")
+                        or ""
+                    ),
+                    dedup_set=dedup_set,
+                    now_date=now_jst.strftime("%Y%m%d"),
+                    allowed_categories=("mlb",),
+                )
+                if cand is not None:
+                    LOG.info("mlb-digest: trend fallback built kw candidate")
+        except Exception as exc:  # noqa: BLE001
+            LOG.warning("mlb-digest: trend fallback failed: %r", exc)
+            cand = None
+    if cand is None:
         LOG.info("mlb-digest: no candidate (時間外/dedup済/fresh無) — silent skip")
         _finish_llm_window_accounting(now_jst, recipients, lane_label="mlb-digest")
         return 0

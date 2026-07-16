@@ -15,3 +15,4 @@
 - 11:10 JST | impl+deploy | 開拓: プロフィールタップ=followed記録+行が消える(20秒undo「戻す」、mode=undo追加、✔ボタン廃止) | rev 00144-bwf
 - 11:30 JST | impl+deploy | 📌固定ポストページ /profile (週間実績+ベスト5→固定ポスト案生成、state bucket read権限をseo-web-runtimeに付与) | rev 00145-kz7 | prod smoke: best5 OK
 - 11:45 JST | impl+deploy | 固定ポスト生成prompt=前半フォロー価値/後半サイト誘導型に統合 (user現行固定を評価→統合案提示) | rev 00146-sq2
+- 11:55 JST | impl+deploy | 固定ポスト生成にyoshilover.com/data/直書き (bio文案リンク入りも提示) | rev確認済

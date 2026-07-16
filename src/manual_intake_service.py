@@ -2136,6 +2136,7 @@ _SCOUT_QUERIES = (
     ("@hochi_giants", "報知巨人にリプ"),
     ("@MLBJapan", "MLB公式にリプ"),
 )
+_SCOUT_MAX_AGE_MINUTES = 30
 
 
 def _scout_blob():
@@ -2216,6 +2217,17 @@ def _collect_scout_candidates() -> list[dict[str, Any]]:
             text = str(e.get("title") or e.get("summary") or "").strip()
             if _looks_like_yaji(text):
                 continue
+            # 鮮度 (2026-07-16 user「短くないと」): 今まさに X を開いている人が
+            # フォロバ率最高なので、60分以内のリプ主のみ。時刻不明も除外。
+            age_min = -1
+            try:
+                created = float(e.get("created_at") or 0)
+                if created > 0:
+                    age_min = max(0, int((time.time() - created) / 60))
+            except Exception:  # noqa: BLE001
+                age_min = -1
+            if age_min < 0 or age_min > _SCOUT_MAX_AGE_MINUTES:
+                continue
             got.add(hl)
             out.append(
                 {
@@ -2223,8 +2235,10 @@ def _collect_scout_candidates() -> list[dict[str, Any]]:
                     "text": text[:120],
                     "origin": origin,
                     "url": url.split("?")[0],
+                    "age_min": age_min,
                 }
             )
+    out.sort(key=lambda c: c["age_min"] if c["age_min"] >= 0 else 10**6)
     return out[:30]
 
 
@@ -2776,7 +2790,7 @@ button{font-size:1rem;padding:10px 14px;border:0;border-radius:8px;cursor:pointe
 .stats{font-size:.85rem;color:#00695c;margin-top:8px;font-weight:bold}
 </style></head><body>
 <h1>🎯 フォロー開拓 <a href="/" style="font-size:.8rem;float:right;color:#888">← 戻る</a></h1>
-<p class="note">いま公式アカにリプしている<b>活発なファン</b> = フォロバが期待できる層です。@名をタップ → プロフィールが開く → フォローする → 戻って ✔ を押す。✕は以後表示しない。1日10〜20人ペースが安全圏 (一気にやりすぎると制限を踏みます)。</p>
+<p class="note"><b>直近30分以内</b>に公式アカへリプした<b>活発なファン</b> = 今Xを開いていてフォロバが期待できる層です。@名をタップ → プロフィールが開く → フォローする → 戻って ✔ を押す。✕は以後表示しない。1日10〜20人ペースが安全圏 (一気にやりすぎると制限を踏みます)。</p>
 <div style="display:flex;gap:8px;margin-top:8px">
 <button onclick="load()" style="background:#e0f2f1;flex:1">🔄 候補を取得</button>
 </div>
@@ -2792,7 +2806,7 @@ async function load(){
     const j = await r.json();
     const list=document.getElementById('list'); list.innerHTML='';
     document.getElementById('stats').textContent = '✔フォロー済 累計 '+(j.followed_total||0)+'人';
-    if(!j.ok || !j.candidates || !j.candidates.length){ document.getElementById('status').textContent='新しい候補がいません (時間をおいてもう一度)'; return; }
+    if(!j.ok || !j.candidates || !j.candidates.length){ document.getElementById('status').textContent='直近30分のリプ主がいません (試合中・試合後に開くとよく取れます)'; return; }
     document.getElementById('status').textContent='候補 '+j.candidates.length+'人:';
     for(const c of j.candidates){
       const div=document.createElement('div'); div.className='cand';
@@ -2800,7 +2814,8 @@ async function load(){
         ' <span class="origin"></span><div class="meta"></div></span>';
       const a=div.querySelector('.handle a');
       a.textContent='@'+c.handle; a.href='https://x.com/'+encodeURIComponent(c.handle);
-      div.querySelector('.origin').textContent=c.origin||'';
+      const age = (c.age_min>=0) ? (c.age_min<60 ? c.age_min+'分前' : Math.floor(c.age_min/60)+'時間前') : '';
+      div.querySelector('.origin').textContent=(c.origin||'')+(age?(' ・'+age):'');
       div.querySelector('.meta').textContent='「'+(c.text||'')+'」';
       const ok=document.createElement('button');
       ok.textContent='✔'; ok.title='フォローした'; ok.style.background='#e8f5e9';

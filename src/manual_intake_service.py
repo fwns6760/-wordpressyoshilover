@@ -2128,7 +2128,7 @@ button{font-size:1rem;padding:10px 16px;border:0;border-radius:8px;cursor:pointe
 <div class="row" style="margin-top:6px">
 <button onclick="replyDraft()" style="background:#e0f2f1;flex:2">💬 リプ返し案をつくる</button>
 <button onclick="friendAdd()" style="background:#e8eaf6;flex:1">➕ 常連に追加</button>
-<button onclick="friends()" style="background:#ede7f6;flex:1">👥 常連</button>
+<button onclick="location.href='/friends'" style="background:#ede7f6;flex:1">👥 常連</button>
 </div>
 </div>
 <div id="chips" style="margin-top:8px"></div>
@@ -2239,33 +2239,6 @@ async function friendAdd(){
     document.getElementById('rurl').value='';
   }catch(e){ document.getElementById('status').textContent='エラー: '+e; }
 }
-async function friends(){
-  document.getElementById('status').textContent='常連リストを取得中…';
-  try{
-    const r = await fetch('/live-friends');
-    const j = await r.json();
-    const chips=document.getElementById('chips'); chips.innerHTML='';
-    if(!j.ok || !j.friends || !j.friends.length){ document.getElementById('status').textContent='常連はまだいません (リプ返しすると育ちます)'; return; }
-    document.getElementById('status').textContent='👥 リプ返しした相手 (回数順):';
-    for(const f of j.friends){
-      const div=document.createElement('div');
-      div.style.cssText='background:#fff;border:1px solid #ddd;border-radius:8px;padding:6px 10px;margin-top:4px;font-size:.9rem;display:flex;align-items:center;gap:6px';
-      const label=document.createElement('span');
-      label.style.flex='1';
-      label.textContent=(f.name||'')+' @'+f.handle+' — '+f.count+'回 (最終 '+(f.last||'?')+')';
-      const del=document.createElement('button');
-      del.textContent='✕'; del.title='リストから削除';
-      del.style.cssText='background:#eee;padding:4px 10px;font-size:.85rem';
-      del.onclick=async()=>{ if(!confirm('@'+f.handle+' をリストから削除する？')) return; await fetch('/live-friend-flag?mode=remove&handle='+encodeURIComponent(f.handle)); div.remove(); };
-      const ng=document.createElement('button');
-      ng.textContent='🚫'; ng.title='ヤジ登録 (恒久除外)';
-      ng.style.cssText='background:#ffebee;padding:4px 10px;font-size:.85rem';
-      ng.onclick=async()=>{ if(!confirm('@'+f.handle+' をヤジ登録 (恒久除外) する？')) return; await fetch('/live-friend-flag?handle='+encodeURIComponent(f.handle)); div.remove(); };
-      div.appendChild(label); div.appendChild(del); div.appendChild(ng);
-      chips.appendChild(div);
-    }
-  }catch(e){ document.getElementById('status').textContent='エラー: '+e; }
-}
 async function neta(kind, replaceCard){
   document.getElementById('status').textContent='一球速報を拾って生成中… (数秒)';
   try{
@@ -2293,6 +2266,96 @@ async function recap(replaceCard){
     showCard(makeCard(j.drafts[0], (card)=>recap(card)), replaceCard);
   }catch(e){ document.getElementById('status').textContent='エラー: '+e; }
 }
+</script></body></html>"""
+
+
+def _render_friends_page() -> str:
+    """2026-07-16 user「常連だけのページを作って分かりやすくして」。
+
+    入るのは ①アプリからリプ返しを投稿した相手 (自動+1) ②手動追加 のみ。
+    受信リプだけでは入らない。data は /live-friends (cookie auth) から取得。
+    """
+    return """<!doctype html>
+<html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>常連さん｜ヨシラバー</title>
+<style>
+body{font-family:sans-serif;background:#fafafa;margin:0;padding:12px;max-width:640px;margin:auto}
+h1{font-size:1.1rem;color:#5e35b1}
+input[type=text]{width:100%;box-sizing:border-box;font-size:1rem;padding:8px;border:1px solid #ccc;border-radius:8px}
+button{font-size:1rem;padding:10px 16px;border:0;border-radius:8px;cursor:pointer}
+.row{display:flex;gap:8px;margin-top:8px}
+#status{margin-top:10px;font-size:.9rem;color:#666}
+.note{font-size:.78rem;color:#999;margin-top:6px;line-height:1.5}
+.friend{background:#fff;border:1px solid #ddd;border-radius:10px;padding:10px 12px;margin-top:8px;display:flex;align-items:center;gap:10px}
+.friend .rank{font-size:.85rem;color:#aaa;min-width:1.6em;text-align:right}
+.friend .who{flex:1;min-width:0}
+.friend .name{font-weight:bold;font-size:.95rem}
+.friend .handle{font-size:.85rem}
+.friend .handle a{color:#1d9bf0;text-decoration:none}
+.friend .meta{font-size:.78rem;color:#888;margin-top:2px}
+.badge{background:#ede7f6;color:#5e35b1;border-radius:12px;padding:2px 10px;font-size:.85rem;font-weight:bold;white-space:nowrap}
+.friend button{padding:6px 10px;font-size:.85rem}
+</style></head><body>
+<h1>👥 常連さん <a href="/live" style="font-size:.8rem;float:right;color:#888">← 観戦モード</a></h1>
+<p class="note">ここに入るのは <b>①アプリからリプ返しを投稿した相手 (自動で回数+1)</b> と <b>②下の欄で手動追加した人</b> だけです。相手からリプが来ただけでは入りません。🚫はヤジ登録 (恒久除外・リプ案も作らなくなる)、✕はリストから削除だけ。</p>
+<input type="text" id="who" placeholder="➕ 追加: 過去リプのURL または @ハンドル名 (空白区切りで複数可)">
+<div class="row">
+<button onclick="addFriend()" style="background:#e8eaf6;flex:1">➕ 常連に追加</button>
+<button onclick="load()" style="background:#eee;flex:1">🔄 更新</button>
+</div>
+<div id="status"></div>
+<div id="list"></div>
+<script>
+async function load(){
+  document.getElementById('status').textContent='常連リストを取得中…';
+  try{
+    const r = await fetch('/live-friends?limit=200');
+    if(r.status===403){ document.getElementById('status').textContent='認証切れです。トップページ ( / ) を token 付きで開き直してから戻ってきてください'; return; }
+    const j = await r.json();
+    const list=document.getElementById('list'); list.innerHTML='';
+    if(!j.ok || !j.friends || !j.friends.length){ document.getElementById('status').textContent='常連はまだいません (リプ返しすると育ちます)'; return; }
+    document.getElementById('status').textContent='👥 '+j.friends.length+'人 (リプ返し回数順)';
+    j.friends.forEach((f, i)=>{
+      const div=document.createElement('div'); div.className='friend';
+      div.innerHTML='<span class="rank">'+(i+1)+'</span>'+
+        '<span class="who"><span class="name"></span>'+
+        '<span class="handle"> <a target="_blank" rel="noopener"></a></span>'+
+        '<div class="meta"></div></span>'+
+        '<span class="badge"></span>';
+      div.querySelector('.name').textContent=f.name||'(名前未取得)';
+      const a=div.querySelector('.handle a');
+      a.textContent='@'+f.handle; a.href='https://x.com/'+encodeURIComponent(f.handle);
+      div.querySelector('.meta').textContent='最終リプ返し: '+(f.last||'?');
+      div.querySelector('.badge').textContent=(f.count||0)+'回';
+      const del=document.createElement('button');
+      del.textContent='✕'; del.title='リストから削除'; del.style.background='#eee';
+      del.onclick=async()=>{ if(!confirm('@'+f.handle+' をリストから削除する？')) return; await fetch('/live-friend-flag?mode=remove&handle='+encodeURIComponent(f.handle)); div.remove(); };
+      const ng=document.createElement('button');
+      ng.textContent='🚫'; ng.title='ヤジ登録 (恒久除外)'; ng.style.background='#ffebee';
+      ng.onclick=async()=>{ if(!confirm('@'+f.handle+' をヤジ登録 (恒久除外) する？')) return; await fetch('/live-friend-flag?handle='+encodeURIComponent(f.handle)); div.remove(); };
+      div.appendChild(del); div.appendChild(ng);
+      list.appendChild(div);
+    });
+  }catch(e){ document.getElementById('status').textContent='エラー: '+e; }
+}
+async function addFriend(){
+  const u = document.getElementById('who').value.trim();
+  if(!u){ document.getElementById('status').textContent='過去リプのURLか @ハンドル名を貼ってください'; return; }
+  document.getElementById('status').textContent='登録中…';
+  try{
+    const r = await fetch('/live-friend-add?who='+encodeURIComponent(u));
+    const j = await r.json();
+    if(!j.ok){
+      const msgs={bad_who:'@ハンドル名かURLで入れてください (複数は空白区切り)'};
+      document.getElementById('status').textContent = msgs[j.reason] || ('登録できず: '+(j.reason||''));
+      return;
+    }
+    document.getElementById('who').value='';
+    load();
+  }catch(e){ document.getElementById('status').textContent='エラー: '+e; }
+}
+load();
 </script></body></html>"""
 
 
@@ -2886,6 +2949,12 @@ def build_handler(
                     if cookie_token != expected_token and query_token != expected_token:
                         _json_response(self, 403, {"ok": False, "reason": "forbidden"})
                         return
+                params = parse_qs(parsed.query, keep_blank_values=False)
+                try:
+                    limit = int((params.get("limit") or ["30"])[0])
+                except ValueError:
+                    limit = 30
+                limit = max(1, min(limit, 200))
                 friends = _load_friends()
                 ranked = sorted(
                     (
@@ -2894,7 +2963,7 @@ def build_handler(
                         if not (v or {}).get("yaji")  # ヤジ認定は一覧から恒久除外
                     ),
                     key=lambda x: -int(x.get("count") or 0),
-                )[:30]
+                )[:limit]
                 _json_response(self, 200, {"ok": True, "friends": ranked})
                 return
             if path == "/live-friend-add":
@@ -3349,6 +3418,11 @@ def build_handler(
             if path == "/live":
                 _text_response(
                     self, 200, _render_live_page(), content_type="text/html; charset=utf-8"
+                )
+                return
+            if path == "/friends":
+                _text_response(
+                    self, 200, _render_friends_page(), content_type="text/html; charset=utf-8"
                 )
                 return
             if path in ("/x-share-recent", "/x-share-draft", "/x-thread-draft"):

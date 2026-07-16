@@ -108,3 +108,43 @@ class RankingCardKillSwitchTests(unittest.TestCase):
             self.assertEqual(
                 lane._generate_candidate_image_png(cand), b"png-bytes"
             )
+
+
+class ToneGateTests(unittest.TestCase):
+    """2026-07-16 persona 合致: 定点締めの です・ます調を決定的に破棄する gate。"""
+
+    def test_polite_desu_ne_rejected(self):
+        self.assertEqual(
+            mdp.find_digest_tone_violation("関心が集中していますね。"), "polite_tone"
+        )
+
+    def test_polite_desu_rejected(self):
+        self.assertEqual(
+            mdp.find_digest_tone_violation("今日は岡本和真から目が離せません。数字で見ていきます。"),
+            "polite_tone",
+        )
+
+    def test_polite_deshou_rejected(self):
+        self.assertEqual(
+            mdp.find_digest_tone_violation("今夜は投手戦になるでしょう"), "polite_tone"
+        )
+
+    def test_casual_tone_passes(self):
+        self.assertEqual(
+            mdp.find_digest_tone_violation(
+                "浦田俊輔がこの位置に入ってくるのが今の面白さだよな。"
+                "吉川尚輝との併用がどっちに転ぶか、次の定点で答え合わせだわ。"
+            ),
+            "",
+        )
+
+    def test_empty_passes(self):
+        self.assertEqual(mdp.find_digest_tone_violation(""), "")
+
+    def test_deterministic_fallback_is_casual(self):
+        """LLM 不達時の deterministic 締め自体が tone gate を通ること。"""
+        c = mdp.build_morning_digest_candidate(
+            now=_NOW, buzz_counts=dict(_BUZZ), trend_keywords=list(_TRENDS),
+            dedup_set=set(), gemini_api_key="",
+        )
+        self.assertEqual(mdp.find_digest_tone_violation(c.post_text.splitlines()[-1]), "")

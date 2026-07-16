@@ -123,13 +123,14 @@ def build_mlb_morning_digest_candidate(
         fact, gemini_api_key, hour=now.hour, edition=edition
     )
     if not comment:
+        # (2026-07-16 persona 合致: です・ます締め → カジュアル語尾へ)
         lead = fresh_players[0].get("name") or "大谷翔平"
         comment = (
-            f"今日の日本人メジャーの結果は以上です。明日もここで。"
-            f"{lead}、お見事でした。"
+            f"今日の日本人メジャーの結果は以上。{lead}、見事だったな。"
+            "明日もここで。"
             if edition == "pm"
-            else f"数字は毎時ここで定点で見ていきます。今日も{lead}の試合から"
-            "目が離せません。"
+            else f"数字は毎時ここで定点で追っていく。今日も{lead}の試合が"
+            "楽しみだわ。"
         )
 
     post_text = "\n".join([header, "", *blocks, "", comment])
@@ -194,14 +195,21 @@ def _build_digest_comment(
                     "視点や巨人との比較はせず、純粋に野球ファンとして読み解く。"
                     "数字・選手名は fact にあるものだけ使い、新しい数字は作らない。"
                     "選手の役割 (先発/登板予定等) や試合結果・順位の未来予測を"
-                    "断定形で書かない。文体は です・ます調。"
+                    "断定形で書かない。"
+                    "文体はヨシラバーのカジュアル語尾 (「〜だよな」「〜な気がする」"
+                    "「〜だわ」)。です・ます調 (丁寧語) は禁止 "
+                    "(2026-07-16 persona 統一: 巨人定点と同じ一人称で書く)。"
                 ),
             ) or ""
         ).strip()
         # 2026-07-15 決定的 hallucination gate (巨人定点と共用、user「メジャーも」)。
-        from src.morning_digest_post import find_digest_hallucination
+        # 2026-07-16 tone gate 追加 (persona 合致、です・ます検出で破棄)。
+        from src.morning_digest_post import (
+            find_digest_hallucination,
+            find_digest_tone_violation,
+        )
 
-        bad = find_digest_hallucination(out, fact)
+        bad = find_digest_hallucination(out, fact) or find_digest_tone_violation(out)
         if not bad:
             for spec in _DIGEST_SPECS + _EXTRA_STAR_SPECS:
                 nm = str(spec.get("name") or "")

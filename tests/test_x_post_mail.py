@@ -6792,3 +6792,28 @@ class PlayerDedupTests(unittest.TestCase):
         self.assertIn("山﨑伊織『6回以降も低めに投げられた』", contexts[id(main)])
         self.assertNotIn("ブルペン調整", contexts[id(main)])
         self.assertNotIn("戸郷翔征", contexts[id(main)])
+
+
+class PlayerNameLeadSpaceInsensitiveTests(unittest.TestCase):
+    """2026-07-16: roster 表記「李 健熙」(空白入り) と LLM 文頭「李健熙」の
+    空白差で名前が二重 prefix された実投稿事故 (「李 健熙、李健熙は…」) の再発防止。"""
+
+    def test_spaced_roster_name_not_double_prefixed(self):
+        from src import x_post_mail_lane as lane
+
+        out = lane._ensure_player_name_leads_post_text(
+            "李健熙はジャイアンツ球場で挨拶した。", "李 健熙"
+        )
+        self.assertEqual(out, "李健熙はジャイアンツ球場で挨拶した。")
+
+    def test_missing_name_still_prefixed(self):
+        from src import x_post_mail_lane as lane
+
+        out = lane._ensure_player_name_leads_post_text("初回から飛ばしていく。", "戸郷翔征")
+        self.assertTrue(out.startswith("戸郷翔征、"))
+
+    def test_plain_leading_name_unchanged(self):
+        from src import x_post_mail_lane as lane
+
+        out = lane._ensure_player_name_leads_post_text("戸郷翔征はギアが違った。", "戸郷翔征")
+        self.assertEqual(out, "戸郷翔征はギアが違った。")

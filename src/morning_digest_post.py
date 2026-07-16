@@ -98,10 +98,11 @@ def build_morning_digest_candidate(
     comment = _build_digest_comment(fact, gemini_api_key, hour=now.hour)
     if not comment:
         # LLM 不達でも定点データ自体に価値があるので deterministic 締めで成立させる
+        # (2026-07-16 persona 合致: 優等生調「目が離せません」→ カジュアル語尾へ)
         top_name = ranked[0][0]
         comment = (
-            f"言及が集まる場所は、ファンの目線が集まる場所です。今日は{top_name}"
-            "から目が離せません。"
+            f"言及数トップは{top_name}。この顔ぶれが次の定点でどう入れ替わるか、"
+            "答え合わせが楽しみだわ。"
         )
 
     body_parts = [header, "", section, *plain_lines]
@@ -209,6 +210,24 @@ _ROLE_CLAIM_WORDS = (
 )
 
 
+# 2026-07-16 persona 合致 (user GO): 定点締めの です・ます調は 2026-07-10 実装時
+# 選択だったが、ペルソナ正本 (_SYSTEM_PROMPT_YOSHILOVER) のカジュアル語尾と
+# 乖離しアカウント内で人格が割れるため廃止。prompt 指示を LLM が無視した場合の
+# 決定的 gate (巨人・MLB 両定点で共用)。
+_POLITE_TONE_RE = re.compile(r"(?:です|ます)[よね]?[。！!？?]|でしょう")
+
+
+def find_digest_tone_violation(comment: str) -> str:
+    """定点締めの文体違反検知。問題なければ ""、あれば理由 slug。
+
+    です・ます調 (「〜ですね。」「〜します。」等) を検出したら破棄し、
+    caller は deterministic 締めへ落とす。
+    """
+    if _POLITE_TONE_RE.search((comment or "").strip()):
+        return "polite_tone"
+    return ""
+
+
 def find_digest_hallucination(comment: str, fact: str) -> str:
     """定点締めコメントの捏造検知。問題なければ ""、あれば理由 slug。
 
@@ -258,22 +277,28 @@ def _build_digest_comment(fact: str, gemini_api_key: str, hour: int = 0) -> str:
                 db_fact="", require_db_fact=False,
                 budget_site="morning_digest",
                 extra_voice_note=(
-                    "毎時の定点データポストの締め。上のランキングの読み解き"
-                    " (どこに関心が集まっているか、なぜか) を1〜2文 + ヨシラバー"
-                    "の立場 (データは辛口・巨人愛は本物) の一言で締める。"
+                    "毎時の定点データポストの締め。ランキング全体を講評しない "
+                    "(「〜に関心が集まっていますね」型のアナウンサー総括は禁止)。"
+                    "fact の中から選手を1人だけ拾い、なぜ今この名前が挙がるかの"
+                    "自分の読みを1つ書く。fact に同じポジション・役割で競合する"
+                    "選手が並ぶ時は、その争いに自分の立場を1つ置く争点型を最優先 "
+                    "(どっち派かを置き、読者が反対側に立てる余白を残す)。"
                     f"締め方は今回この型で: {closing}。"
                     "2〜3文、80〜140字。ランキングの数字・選手名は fact に"
                     "あるものだけ使い、新しい数字・選手名は作らない。"
-                    "文体は必ず です・ます調 (丁寧語) で統一する "
-                    "(「〜だよな」等のカジュアル語尾は禁止)。"
+                    "文体はヨシラバーのカジュアル語尾 (「〜だよな」「〜な気がする」"
+                    "「〜だわ」)。です・ます調 (丁寧語) は禁止。"
                     "選手の役割 (先発/スタメン等) や試合結果・順位の未来予測を"
                     "断定形で書かない (fact に無いことは一切書かない)。"
                 ),
             ) or ""
         ).strip()
         # 2026-07-15 決定的 hallucination gate (prompt 指示だけでは再発するため)
-        bad = find_digest_hallucination(out, fact) or _giants_name_hallucination(
-            out, fact
+        # 2026-07-16 tone gate 追加 (persona 合致、です・ます検出で破棄)
+        bad = (
+            find_digest_hallucination(out, fact)
+            or _giants_name_hallucination(out, fact)
+            or find_digest_tone_violation(out)
         )
         if bad:
             LOG.warning("morning_digest comment gate drop: %s", bad)

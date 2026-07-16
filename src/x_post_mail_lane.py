@@ -1252,15 +1252,21 @@ def _truncate_text(value: object, max_chars: int) -> str:
 
 
 def _ensure_player_name_leads_post_text(value: object, player: str) -> str:
-    """Keep the target player visible at the start of the first line."""
+    """Keep the target player visible at the start of the first line.
+
+    名前照合は空白無視で行う (2026-07-16): roster 表記「李 健熙」と LLM 文頭
+    「李健熙は…」が空白差で不一致になり、「李 健熙、李健熙は…」と二重に
+    名前が付く実投稿事故が出たため。
+    """
     text = str(value or "").strip()
     name = str(player or "").strip()
     if not text or not name:
         return text
     first_line = text.splitlines()[0].lstrip()
-    lead_window = first_line[: max(len(name) + 3, 14)]
+    name_key = name.replace(" ", "").replace("　", "")
+    lead_window = first_line[: max(len(name) + 3, 14)].replace(" ", "").replace("　", "")
     if (
-        name in lead_window
+        name_key in lead_window
         or first_line.startswith(f"【{name}】")
         or first_line.startswith(f"{name}：")
     ):

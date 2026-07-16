@@ -1407,3 +1407,36 @@ class LlmRatePacingTests(unittest.TestCase):
                 client, model="gemini-3.1-flash-lite", contents="p", config={}
             )
         pace.assert_called_once_with("gemini-3.1-flash-lite")
+
+
+class RelaxedThinGateTests(unittest.TestCase):
+    """2026-07-16: 考察系 (非live/非リプ) の 50 字未満スカスカを relaxed fallback
+    でも致命的NG 扱いにする (「李健熙は…あいさつを終えたか。」型の実投稿事故対応)。"""
+
+    def _call(self, llm_text: str) -> str:
+        from datetime import datetime, timedelta, timezone
+
+        now_daytime = datetime(2026, 7, 16, 13, 0, tzinfo=timezone(timedelta(hours=9)))
+        resp = MagicMock()
+        resp.text = llm_text
+        with patch.object(xbg, "_x_post_generate_content", return_value=resp), \
+             patch.object(xbg, "_llm_budget_guard"), \
+             patch.object(xbg, "_gemini_branding_safety_check", return_value=True):
+            return xbg.build_quote_rt_comment(
+                "ジャイアンツ球場で3軍ミーティング",
+                "李 健熙",
+                gemini_api_key="k",
+                now=now_daytime,
+            )
+
+    def test_thin_one_liner_is_dropped_even_on_final_attempt(self):
+        out = self._call("李健熙はジャイアンツ球場での3軍ミーティングであいさつを終えたか。")
+        self.assertEqual(out, "")
+
+    def test_substantial_text_still_returned(self):
+        good = (
+            "昨日の打線は流石に物足りなかった。\n"
+            "ただ連投明けの中継ぎ事情を考えれば、今日は先発が長く投げるしかない展開だったわけで。\n"
+            "竹丸は終盤も球が落ちないか、そこ見たい。"
+        )
+        self.assertEqual(self._call(good), good)

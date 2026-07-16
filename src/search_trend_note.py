@@ -661,6 +661,7 @@ def build_trend_reaction_candidate(
     gemini_api_key: str,
     dedup_set: set[str] | None = None,
     now_date: str = "",
+    allowed_categories: tuple[str, ...] = ("giants", "mlb"),
 ) -> Any:
     """急上昇トレンド + そのニュース見出しから独立の反応ポスト候補を 1 本作る。
 
@@ -677,10 +678,10 @@ def build_trend_reaction_candidate(
     from src.x_post_branding_gen import build_quote_rt_comment
 
     for t in relevant:
-        # 反応ポストの主役は 巨人/MLB のみ (2026-07-10 user「他球団なら意味ない」):
-        # 他球団トレンドで長文反応しても検索インプが他球団クラスタに流れるだけ。
-        # npb カテゴリは note 行・🔥ブースト・織り込み (対戦相手言及等) には残す。
-        if t.get("category") not in ("giants", "mlb"):
+        # 反応ポストの主役は既定で 巨人/MLB のみ (2026-07-10 user「他球団なら
+        # 意味ない」)。2026-07-16 手動アプリのみ allowed_categories で npb
+        # (高校野球等) も解放 (mail 便の既定は不変)。
+        if t.get("category") not in allowed_categories:
             continue
         kw = t.get("keyword") or ""
         news_title = t.get("news_title") or ""

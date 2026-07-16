@@ -2111,6 +2111,35 @@ def _fetch_trend_items() -> list[dict[str, str]]:
                 relevant.append({**t, "category": cat})
         stn.merge_yahoo_topics_into_relevant(relevant, roster)
         stn.fill_mlb_from_mentions(relevant)
+        # 2026-07-16 user「巨人の枠がない」: Google Trends に巨人が出ない時間帯は
+        # X で今言及の多い巨人選手を chips として補充 (記事はタップ時 Bing 接地)。
+        if not any(t.get("category") == "giants" for t in relevant):
+            try:
+                from src import video_radar as vr
+                from src.x_post_mail_lane import (
+                    _load_giants_member_aliases,
+                    _load_giants_player_aliases,
+                    detect_giants_player_name,
+                )
+
+                alias_map = {
+                    **_load_giants_player_aliases(),
+                    **_load_giants_member_aliases(),
+                }
+                counts = vr.fetch_buzzing_players(
+                    detect_player_fn=lambda t: detect_giants_player_name(
+                        t, alias_map=alias_map
+                    ),
+                    top_n=5,
+                )
+                for name, cnt in counts.items():
+                    relevant.append(
+                        {"keyword": name, "category": "giants", "traffic": f"言及{cnt}"}
+                    )
+            except Exception:  # noqa: BLE001
+                logging.getLogger("manual_intake_service").exception(
+                    "trend_giants_buzz_fill_failed"
+                )
         _TREND_CACHE["items"] = relevant
         _TREND_CACHE["ts"] = now_ts
         return relevant
@@ -2786,7 +2815,7 @@ async function loadWords(){
     const box=document.getElementById('words'); box.innerHTML='';
     if(!j.ok || !j.words || !j.words.length){ document.getElementById('status').textContent='いま野球系の急上昇ワードがありません (時間をおいてもう一度)'; return; }
     document.getElementById('status').textContent='タップで反応ポストを生成:';
-    const groups=[['giants','🔥 巨人'],['mlb','🌍 MLB'],['npb','⚾ その他野球 (参考・生成対象外)']];
+    const groups=[['giants','🔥 巨人'],['mlb','🌍 MLB'],['npb','⚾ その他野球']];
     for(const [cat,label] of groups){
       const ws=j.words.filter(w=>w.category===cat);
       if(!ws.length) continue;
@@ -2798,8 +2827,7 @@ async function loadWords(){
         b.innerHTML='';
         b.textContent=w.keyword+(w.traffic?' ':'');
         if(w.traffic){ const s=document.createElement('small'); s.textContent=w.traffic; b.appendChild(s); }
-        if(cat==='npb'){ b.style.opacity=.45; b.onclick=()=>{document.getElementById('status').textContent='巨人/MLB以外のトレンドは生成対象外です (検索インプが他所に流れるだけ)';}; }
-        else { b.onclick=()=>draft(w.keyword); }
+        b.onclick=()=>draft(w.keyword);
         box.appendChild(b);
       }
     }
@@ -4348,8 +4376,8 @@ def build_handler(
                 if item is None:
                     _json_response(self, 400, {"ok": False, "reason": "unknown_kw"})
                     return
-                if item.get("category") not in ("giants", "mlb"):
-                    _json_response(self, 200, {"ok": False, "reason": "no_article"})
+                if item.get("category") not in ("giants", "mlb", "npb"):
+                    _json_response(self, 400, {"ok": False, "reason": "unknown_kw"})
                     return
                 if not item.get("news_title"):
                     # news 無し語 (MLB言及数由来等) はタップ時に記事を探して接地
@@ -4382,6 +4410,8 @@ def build_handler(
                             now_date=datetime.now(ZoneInfo("Asia/Tokyo")).strftime(
                                 "%Y%m%d-%H"
                             ),
+                            # 手動アプリは高校野球等も可 (2026-07-16 user)
+                            allowed_categories=("giants", "mlb", "npb"),
                         )
                         if cand is not None and getattr(cand, "post_text", ""):
                             break

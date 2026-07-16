@@ -2119,6 +2119,39 @@ def _fetch_trend_items() -> list[dict[str, str]]:
         return _TREND_CACHE["items"] or []
 
 
+def _news_lookup_for_keyword(kw: str) -> dict[str, str]:
+    """Bing News RSS 検索で keyword の最新記事 1 本 (title/url/source)。
+
+    2026-07-16 user「巨人/MLBの語が全部押せない」: 急上昇語の多く (言及数由来の
+    MLB 語等) は news 情報を持たない。タップ時にここで記事を探して接地する。
+    Google News RSS はリダイレクト interstitial で本文が読めないため Bing。
+    見つからなければ {} (生成は no_article で止まる、捏造はしない)。
+    """
+    import urllib.parse
+    import urllib.request
+    from xml.etree import ElementTree
+
+    try:
+        q = urllib.parse.quote(f"{kw} 野球")
+        url = f"https://www.bing.com/news/search?q={q}&format=rss&setmkt=ja-JP"
+        req = urllib.request.Request(
+            url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+        )
+        with urllib.request.urlopen(req, timeout=10) as r:
+            xml_text = r.read()
+        root = ElementTree.fromstring(xml_text)
+        item = root.find("./channel/item")
+        if item is None:
+            return {}
+        title = (item.findtext("title") or "").strip()
+        link = (item.findtext("link") or "").strip()
+        if not title or not link:
+            return {}
+        return {"news_title": title, "news_url": link, "news_source": "Bing News"}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
 _MAIN_X_HANDLE = "yoshilover6760"
 _OUR_X_HANDLES = {_MAIN_X_HANDLE, "yoshilover_naka"}
 _CANDIDATE_SYNDICATION_CAP = 10
@@ -2748,7 +2781,7 @@ async function loadWords(){
     const box=document.getElementById('words'); box.innerHTML='';
     if(!j.ok || !j.words || !j.words.length){ document.getElementById('status').textContent='いま野球系の急上昇ワードがありません (時間をおいてもう一度)'; return; }
     document.getElementById('status').textContent='タップで反応ポストを生成:';
-    const groups=[['giants','🔥 巨人'],['mlb','🌍 MLB'],['npb','⚾ プロ野球 (参考・生成対象外)']];
+    const groups=[['giants','🔥 巨人'],['mlb','🌍 MLB'],['npb','⚾ その他野球 (参考・生成対象外)']];
     for(const [cat,label] of groups){
       const ws=j.words.filter(w=>w.category===cat);
       if(!ws.length) continue;
@@ -2760,7 +2793,7 @@ async function loadWords(){
         b.innerHTML='';
         b.textContent=w.keyword+(w.traffic?' ':'');
         if(w.traffic){ const s=document.createElement('small'); s.textContent=w.traffic; b.appendChild(s); }
-        if(cat==='npb' || !w.has_news){ b.style.opacity=.45; b.onclick=()=>{document.getElementById('status').textContent=(cat==='npb'?'他球団トレンドは生成対象外です (検索インプが他球団に流れるだけ)':'この語は記事ソースが無く生成できません');}; }
+        if(cat==='npb'){ b.style.opacity=.45; b.onclick=()=>{document.getElementById('status').textContent='巨人/MLB以外のトレンドは生成対象外です (検索インプが他所に流れるだけ)';}; }
         else { b.onclick=()=>draft(w.keyword); }
         box.appendChild(b);
       }
@@ -4310,9 +4343,16 @@ def build_handler(
                 if item is None:
                     _json_response(self, 400, {"ok": False, "reason": "unknown_kw"})
                     return
-                if item.get("category") not in ("giants", "mlb") or not item.get("news_title"):
+                if item.get("category") not in ("giants", "mlb"):
                     _json_response(self, 200, {"ok": False, "reason": "no_article"})
                     return
+                if not item.get("news_title"):
+                    # news 無し語 (MLB言及数由来等) はタップ時に記事を探して接地
+                    found = _news_lookup_for_keyword(item.get("keyword") or "")
+                    if not found:
+                        _json_response(self, 200, {"ok": False, "reason": "no_article"})
+                        return
+                    item.update(found)  # cache 内 dict も更新され次タップで再利用
                 api_key = (
                     os.environ.get("GEMINI_API_KEY")
                     or os.environ.get("GEMMA_BRANDING_GEMINI_API_KEY")

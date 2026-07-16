@@ -77,3 +77,13 @@ fav実測: 小林12〜57 / 原1 (2026-07-13週次)。memory: project_meigen_lane
 - 備考: manual-intake の traffic に 00103 (tag: x-share) が残るのは意図的 pin、不変更
 - 16:0x JST | 第2便 commit | meigen persona合致 | 59de65d0 | build eeb90840
 - 16:1x JST | 第2便 deploy | meigen-mail-lane job → golden-59de65d0 | 次dispatch=17:00 JST で反映確認
+
+## 第3便: 長文戦略の実測棄却 (同日、user「長文は伸びなかったから短文に」)
+
+- 検証: 7/13週次 rows(fav) × posts snapshot(全文len) を tweet_id join (105本)
+- 結果: 260字以上 fav中央値1/max3、100-180字 中央値10/max294、上位10本は全て60-123字
+- 2026-07-10「プレミアム長文」仮説を user 確認の上で棄却 (memory: project_long_form_posts_rejected_2026_07_16)
+- 実装 (4efe4e61): build_trend_reaction_candidate force_long既定False (mail便短文/135字cap)、
+  build_quote_rt_comment 考察既定 150-220→120-180字。手動アプリ長文ボタンは残存
+- deploy: x-post-mail-lane job更新 / manual-intake-service rev 00164-hw9 100%
+- 16:00 JST 定点は新voiceで正常生成確認済み (gate drop無し、morning_digest built)

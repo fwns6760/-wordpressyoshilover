@@ -22,3 +22,4 @@
 - 13:20 JST | impl+deploy | トレンド: 巨人枠=X話題選手で常時補充・npb(高校野球)もアプリ生成可(allowed_categories追加、mail便不変)・レジェンドgate+共感文体(00152) | rev 00153系 | 巨人5chips確認
 - 13:45 JST | fix+deploy | trend安定化3連: quote_rt枠切替(trend_weave=3回/プロセス枯渇)・巨人枠主力fallback+unknown_kw廃止・人名禁止prompt強化 | rev 00154→00156 | E2E: ダルベック/岡本和真 生成OK・共感文体確認
 - 14:00 JST | fix+deploy | gate姓救済(橋上誤爆)+fallback岡本→大城(MLB移籍) | rev 00157→00158 | ダルベック再E2E
+- 14:15 JST | fix+deploy | アプリのトレンド生成=短文化(force_long param+全角135字指示+weighted280超は再生成) | rev 00159→00160 | E2E: ダルベック141字で枠内

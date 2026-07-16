@@ -2066,6 +2066,9 @@ def _bump_friend(handle: str, name: str) -> int:
         if name:
             ent["name"] = name
         ent["last"] = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        # リプ返しした = 常連認定 (候補/非表示から自動昇格)
+        ent.pop("candidate", None)
+        ent.pop("dismissed", None)
         friends[handle] = ent
         if blob is not None:
             blob.upload_from_string(
@@ -2077,6 +2080,104 @@ def _bump_friend(handle: str, name: str) -> int:
         logging.getLogger("manual_intake_service").info(
             "friend_bump_failed handle=%s", handle
         )
+        return 0
+
+
+_MAIN_X_HANDLE = "yoshilover6760"
+_OUR_X_HANDLES = {_MAIN_X_HANDLE, "yoshilover_naka"}
+_CANDIDATE_SYNDICATION_CAP = 10
+
+
+def _set_friend_flags(handle: str, *, mode: str) -> bool:
+    """常連 entry の状態変更。mode: dismiss=候補を非表示 / keep=常連へ昇格。"""
+    handle = (handle or "").lstrip("@").strip()
+    if not handle:
+        return False
+    try:
+        blob = _friends_blob()
+        friends = _load_friends()
+        ent = friends.get(handle)
+        if ent is None:
+            return False
+        if mode == "dismiss":
+            ent["dismissed"] = True
+            ent.pop("candidate", None)
+        elif mode == "keep":
+            ent.pop("candidate", None)
+            ent.pop("dismissed", None)
+            ent.pop("yaji_hint", None)
+        else:
+            return False
+        friends[handle] = ent
+        if blob is not None:
+            blob.upload_from_string(
+                json.dumps(friends, ensure_ascii=False),
+                content_type="application/json",
+            )
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _collect_reply_candidates() -> int:
+    """2026-07-16 user「自動化で入れないと手間」: 自分宛リプを Yahoo リアルタイム
+    検索 (¥0) で拾い、未知の相手を常連「候補」として friends.json へ追記する。
+
+    - 既に friends.json にいる handle (常連/候補/dismissed/ヤジ) は再追加しない
+    - 自アカは除外。ヤジ語入りは yaji_hint を立てて候補に出す (自動ヤジ認定はしない)
+    - 返り値 = 新規追加数。取得失敗は 0 (fail-open、ページ表示は止めない)
+    """
+    try:
+        from src.rss_fetcher import fetch_yahoo_realtime_entries
+
+        entries = fetch_yahoo_realtime_entries("@" + _MAIN_X_HANDLE) or []
+    except Exception:  # noqa: BLE001
+        return 0
+    if not entries:
+        return 0
+    try:
+        friends = _load_friends()
+        known = {h.lower() for h in friends}
+        added = 0
+        synd_used = 0
+        for e in entries:
+            url = str(e.get("link") or "")
+            m = re.search(r"(?:x|twitter)\.com/(\w{1,15})/status/(\d+)", url)
+            if not m:
+                continue
+            handle, tweet_id = m.group(1), m.group(2)
+            if handle.lower() in _OUR_X_HANDLES or handle.lower() in known:
+                continue
+            text = str(e.get("title") or e.get("summary") or "").strip()
+            name = ""
+            if synd_used < _CANDIDATE_SYNDICATION_CAP:
+                synd_used += 1
+                try:
+                    name = _fetch_tweet_syndication(tweet_id).get("name", "")
+                except Exception:  # noqa: BLE001
+                    name = ""
+            ent: dict[str, Any] = {
+                "count": 0,
+                "name": name,
+                "last": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+                "candidate": True,
+                "text": text[:120],
+                "url": url.split("?")[0],
+            }
+            if _looks_like_yaji(text):
+                ent["yaji_hint"] = True
+            friends[handle] = ent
+            known.add(handle.lower())
+            added += 1
+        if added:
+            blob = _friends_blob()
+            if blob is not None:
+                blob.upload_from_string(
+                    json.dumps(friends, ensure_ascii=False),
+                    content_type="application/json",
+                )
+        return added
+    except Exception:  # noqa: BLE001
         return 0
 
 
@@ -2299,8 +2400,10 @@ button{font-size:1rem;padding:10px 16px;border:0;border-radius:8px;cursor:pointe
 .friend button{padding:6px 10px;font-size:.85rem}
 </style></head><body>
 <h1>👥 常連さん <a href="/live" style="font-size:.8rem;float:right;color:#888">← 観戦モード</a></h1>
-<p class="note">ここに入るのは <b>①アプリからリプ返しを投稿した相手 (自動で回数+1)</b> と <b>②下の欄で手動追加した人</b> だけです。相手からリプが来ただけでは入りません。🚫はヤジ登録 (恒久除外・リプ案も作らなくなる)、✕はリストから削除だけ。</p>
-<input type="text" id="who" placeholder="➕ 追加: 過去リプのURL または @ハンドル名 (空白区切りで複数可)">
+<p class="note">リプをくれた人は自動でこの下の<b>候補</b>に入ります (ページを開くたび新着を取得)。✔で常連へ、✕は消す (もう出ない)、🚫はヤジ登録 (恒久除外・リプ案も作らない)。リプ返しを投稿した相手は自動で常連になります。</p>
+<div id="cand-head" style="margin-top:10px;font-size:.9rem;color:#5e35b1;font-weight:bold"></div>
+<div id="cands"></div>
+<input type="text" id="who" placeholder="➕ 手動追加: 過去リプのURL または @ハンドル名 (空白区切りで複数可)" style="margin-top:12px">
 <div class="row">
 <button onclick="addFriend()" style="background:#e8eaf6;flex:1">➕ 常連に追加</button>
 <button onclick="load()" style="background:#eee;flex:1">🔄 更新</button>
@@ -2308,6 +2411,41 @@ button{font-size:1rem;padding:10px 16px;border:0;border-radius:8px;cursor:pointe
 <div id="status"></div>
 <div id="list"></div>
 <script>
+function candRow(f){
+  const div=document.createElement('div'); div.className='friend';
+  div.style.borderColor='#b39ddb';
+  div.innerHTML='<span class="who"><span class="name"></span>'+
+    '<span class="handle"> <a target="_blank" rel="noopener"></a></span>'+
+    '<div class="meta"></div></span>';
+  div.querySelector('.name').textContent=(f.yaji_hint?'⚠ ':'')+(f.name||'(名前未取得)');
+  const a=div.querySelector('.handle a');
+  a.textContent='@'+f.handle; a.href=f.url||('https://x.com/'+encodeURIComponent(f.handle));
+  div.querySelector('.meta').textContent='「'+(f.text||'')+'」'+(f.yaji_hint?' ← ヤジっぽい語あり':'');
+  const keep=document.createElement('button');
+  keep.textContent='✔'; keep.title='常連にする'; keep.style.background='#e8f5e9';
+  keep.onclick=async()=>{ await fetch('/live-friend-flag?mode=keep&handle='+encodeURIComponent(f.handle)); div.remove(); load(); };
+  const del=document.createElement('button');
+  del.textContent='✕'; del.title='消す (もう表示しない)'; del.style.background='#eee';
+  del.onclick=async()=>{ await fetch('/live-friend-flag?mode=dismiss&handle='+encodeURIComponent(f.handle)); div.remove(); };
+  const ng=document.createElement('button');
+  ng.textContent='🚫'; ng.title='ヤジ登録 (恒久除外)'; ng.style.background='#ffebee';
+  ng.onclick=async()=>{ if(!confirm('@'+f.handle+' をヤジ登録 (恒久除外) する？')) return; await fetch('/live-friend-flag?handle='+encodeURIComponent(f.handle)); div.remove(); };
+  div.appendChild(keep); div.appendChild(del); div.appendChild(ng);
+  return div;
+}
+async function loadCands(){
+  const head=document.getElementById('cand-head');
+  head.textContent='📥 新着リプを確認中…';
+  try{
+    const r = await fetch('/live-friend-candidates');
+    if(r.status===403){ head.textContent=''; return; }
+    const j = await r.json();
+    const box=document.getElementById('cands'); box.innerHTML='';
+    if(!j.ok || !j.candidates || !j.candidates.length){ head.textContent='📥 新しいリプ相手はいません'; return; }
+    head.textContent='📥 リプをくれた人 (候補 '+j.candidates.length+'人'+(j.new?'・新着'+j.new:'')+')';
+    for(const f of j.candidates){ box.appendChild(candRow(f)); }
+  }catch(e){ head.textContent='候補取得エラー: '+e; }
+}
 async function load(){
   document.getElementById('status').textContent='常連リストを取得中…';
   try{
@@ -2357,6 +2495,7 @@ async function addFriend(){
   }catch(e){ document.getElementById('status').textContent='エラー: '+e; }
 }
 load();
+loadCands();
 </script></body></html>"""
 
 
@@ -2961,11 +3100,51 @@ def build_handler(
                     (
                         {"handle": h, **(v or {})}
                         for h, v in friends.items()
-                        if not (v or {}).get("yaji")  # ヤジ認定は一覧から恒久除外
+                        # ヤジ=恒久除外 / candidate=候補欄 / dismissed=非表示
+                        if not (v or {}).get("yaji")
+                        and not (v or {}).get("candidate")
+                        and not (v or {}).get("dismissed")
                     ),
                     key=lambda x: -int(x.get("count") or 0),
                 )[:limit]
                 _json_response(self, 200, {"ok": True, "friends": ranked})
+                return
+            if path == "/live-friend-candidates":
+                # 2026-07-16: 自分宛リプの自動取り込み + 候補一覧 (LLMなし・¥0)
+                expected_token = _require_token()
+                if expected_token:
+                    cookie_token = ""
+                    raw_cookie = self.headers.get("Cookie") or ""
+                    for part in raw_cookie.split(";"):
+                        kv = part.strip().split("=", 1)
+                        if len(kv) == 2 and kv[0].strip() == "manual_intake_session":
+                            cookie_token = kv[1].strip()
+                            break
+                    query_token = ""
+                    qtok = parse_qs(parsed.query, keep_blank_values=False).get("token") or []
+                    if qtok:
+                        query_token = (qtok[0] or "").strip()
+                    if cookie_token != expected_token and query_token != expected_token:
+                        _json_response(self, 403, {"ok": False, "reason": "forbidden"})
+                        return
+                new_count = _collect_reply_candidates()
+                friends = _load_friends()
+                candidates = sorted(
+                    (
+                        {"handle": h, **(v or {})}
+                        for h, v in friends.items()
+                        if (v or {}).get("candidate")
+                        and not (v or {}).get("yaji")
+                        and not (v or {}).get("dismissed")
+                    ),
+                    key=lambda x: str(x.get("last") or ""),
+                    reverse=True,
+                )[:50]
+                _json_response(
+                    self,
+                    200,
+                    {"ok": True, "new": new_count, "candidates": candidates},
+                )
                 return
             if path == "/live-friend-add":
                 # 2026-07-15 user「既にリプくれた人は入れたい」: 過去リプの URL または
@@ -3039,11 +3218,12 @@ def build_handler(
                 params = parse_qs(parsed.query, keep_blank_values=False)
                 handle = ((params.get("handle") or [""])[0] or "").strip()
                 mode = ((params.get("mode") or ["yaji"])[0] or "yaji").strip()
-                ok = (
-                    _remove_friend(handle)
-                    if mode == "remove"
-                    else _flag_friend_yaji(handle)
-                )
+                if mode == "remove":
+                    ok = _remove_friend(handle)
+                elif mode in ("dismiss", "keep"):
+                    ok = _set_friend_flags(handle, mode=mode)
+                else:
+                    ok = _flag_friend_yaji(handle)
                 _json_response(
                     self, 200 if ok else 400, {"ok": ok, "handle": handle.lstrip("@")}
                 )

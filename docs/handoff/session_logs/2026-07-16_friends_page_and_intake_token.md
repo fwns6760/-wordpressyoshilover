@@ -9,3 +9,4 @@
 - 09:38 JST | impl+deploy | トップnavに👥常連リンク+タブ折返し(スマホ) | build ca3c560b → rev 00137-b7n
 - 09:50 JST | impl+deploy | 自分宛リプ→常連候補 自動取り込み (Yahooリアルタイム@メンション検索¥0、/live-friend-candidates、✔keep/✕dismiss/🚫yaji、bump時自動昇格) | build 25386e9a → rev 00138-9tv | prod smoke: 候補6人取り込み確認
 - 10:00 JST | impl+deploy | 観戦モード: live-fuga(短文/長文)に一球速報の直近2プレー自動注入、recap force_long解除で短文長へ | rev 00139-tcw
+- 10:25 JST | impl+deploy | 🔥トレンド反応 即応アプリ /trend (急上昇chips→trend_react共用生成→X直接投稿、トップnavに追加) | build 5c8ce416 → rev 00141-pcw | prod smoke: words 4語取得OK (1回目buildはGCP INTERNAL_ERROR、再buildで解消)

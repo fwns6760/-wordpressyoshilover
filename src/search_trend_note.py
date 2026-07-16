@@ -594,6 +594,11 @@ def _reaction_grounding_ok(post_text: str, source_text: str) -> bool:
     guard_names = set(_MLB_JP_NAME_TOKENS) | set(_LEGEND_NAME_TOKENS) | _giants_name_tokens()
     for name in guard_names:
         if len(name) >= 2 and name in post_text and name not in source_text:
+            # フルネーム展開の救済 (2026-07-16 実誤爆: 見出し「橋上監督代行」を
+            # LLM がフルネーム規則で「橋上秀樹」と書き、完全一致照合で全滅)。
+            # 姓 (先頭2字) が事実源にあれば同一人物の言及とみなして通す。
+            if len(name) >= 4 and name[:2] in source_text:
+                continue
             LOG.info("trend_react gate: ungrounded name %r", name)
             return False
     return True

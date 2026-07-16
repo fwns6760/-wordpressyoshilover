@@ -14,3 +14,4 @@
 - 11:00 JST | impl+deploy | 開拓候補=直近30分リプ主のみ(経過分数表示・新しい順・時刻不明除外) | rev 00143-gf9 | prod smoke: 10人(0-12分前)
 - 11:10 JST | impl+deploy | 開拓: プロフィールタップ=followed記録+行が消える(20秒undo「戻す」、mode=undo追加、✔ボタン廃止) | rev 00144-bwf
 - 11:30 JST | impl+deploy | 📌固定ポストページ /profile (週間実績+ベスト5→固定ポスト案生成、state bucket read権限をseo-web-runtimeに付与) | rev 00145-kz7 | prod smoke: best5 OK
+- 11:45 JST | impl+deploy | 固定ポスト生成prompt=前半フォロー価値/後半サイト誘導型に統合 (user現行固定を評価→統合案提示) | rev 00146-sq2

@@ -49,4 +49,6 @@ user「今のポスト内容とペルソナへの内容をもっと合致した�
 ## timeline
 
 - 15:12 JST | commit | persona voice alignment | a7202678 | build fire
-- 15:2x JST | build fire | x-post-mail d62d90f9 / manual-intake 56186c23 | update待ち
+- 15:14 JST | build fire | x-post-mail d62d90f9 / manual-intake 56186c23 | 両SUCCESS
+- 15:2x JST | deploy 反映 | jobs update x-post-mail-lane (image push 15:17) / services update manual-intake-service → rev 00163-s5j 100% | 次の毎時定点で tone 確認
+- 備考: manual-intake の traffic に 00103 (tag: x-share) が残るのは意図的 pin、不変更

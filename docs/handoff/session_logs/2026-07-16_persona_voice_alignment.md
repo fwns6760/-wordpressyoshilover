@@ -46,9 +46,34 @@ user「今のポスト内容とペルソナへの内容をもっと合致した�
 - 名言集/語録 lane は user 判断待ち (フォーマット企画として persona 対象外の推奨を提示済み)
 - 次の毎時定点ポストで tone 反映を確認 (優等生調が出たら gate log `morning_digest comment gate drop: polite_tone` を見る)
 
+## 第2便: 名言集lane改善 (同日、user方向指示→GO)
+
+**user指示**: 読者ペルソナ=10〜30代。小林/坂本は良い(特に小林)、原/吉川は悪い。
+原=ビジネス論が外れる、「今の巨人に足りないもの」に繋がる生き方の言葉なら響く。
+吉川=記事の写真に合った実Xポストがあれば響く。画像がうまく取れていない。
+
+**診断**: 小林の伸び=感情引用の中身(画像添付ではない、has_media 131/836)。
+吉川のog:imageは媒体汎用ロゴ(jsports使い回し)でOGPカード死、原はYahoo URLリンク切れ。
+fav実測: 小林12〜57 / 原1 (2026-07-13週次)。memory: project_meigen_lane_audience_fit_2026_07_16
+
+**実装 (commit 59de65d0)**:
+- lane: retired skip (番号保存) + X本文source_urlはx.com/twitter.com実ポストのみ
+- 吉川feeder: 写真付き実Xポスト紐付け(RSSHub、新規記事のみマッチ可) + 汎用ロゴ除去
+- GCS archive反映: 原14件retire→live39件 / 吉川16件ロゴ除去。
+  backup = ops_manual_backups/meigen_20260716/
+- **注記**: `src/tools/archive_yoshikawa_meigen.py` は前セッションの未commit WIP
+  (git履歴なし、prod archiveを作った正本feeder)。本commitで初めて履歴化 (+515行の内訳
+  ≈ 既存375 + 今回140)
+
+**残**: 原の新規収集feederは repo に無い (archiveがどう作られたか不明)。次回収集時は
+「生き方・勝負哲学・今の巨人に足りないもの」基準で。吉川backlogは実Xポスト遡及不可の
+ためtext-only配信 (新規分から写真マッチ)。
+
 ## timeline
 
 - 15:12 JST | commit | persona voice alignment | a7202678 | build fire
 - 15:14 JST | build fire | x-post-mail d62d90f9 / manual-intake 56186c23 | 両SUCCESS
 - 15:2x JST | deploy 反映 | jobs update x-post-mail-lane (image push 15:17) / services update manual-intake-service → rev 00163-s5j 100% | 次の毎時定点で tone 確認
 - 備考: manual-intake の traffic に 00103 (tag: x-share) が残るのは意図的 pin、不変更
+- 16:0x JST | 第2便 commit | meigen persona合致 | 59de65d0 | build eeb90840
+- 16:1x JST | 第2便 deploy | meigen-mail-lane job → golden-59de65d0 | 次dispatch=17:00 JST で反映確認

@@ -569,6 +569,18 @@ _MLB_JP_NAME_TOKENS = (
     "吉田正尚", "岡本和真", "岡本",
 )
 
+# 2026-07-16 実事故: 大谷の記事への反応で LLM が「松井秀喜の自己管理」物語を
+# 創作 (記事に不在)。現役名簿に無い OB/レジェンドはすり抜けるため、LLM が
+# 対比に持ち出しがちな有名どころをフルネームで監視する (姓のみは現役との
+# 誤爆があるため入れない)。
+_LEGEND_NAME_TOKENS = (
+    "松井秀喜", "長嶋茂雄", "王貞治", "清原和博", "桑田真澄", "高橋由伸",
+    "上原浩治", "江川卓", "堀内恒夫", "中畑清", "篠塚和典", "川相昌弘",
+    "槙原寛己", "斎藤雅樹", "村田修一", "内海哲也", "亀井善行",
+    "野村克也", "落合博満", "星野仙一", "野茂英雄", "イチロー",
+    "松坂大輔", "松井稼頭央", "黒田博樹", "古田敦也", "新庄剛志",
+)
+
 
 def _reaction_grounding_ok(post_text: str, source_text: str) -> bool:
     """トレンド反応の生成文が事実源 (見出し+記事lead) に接地しているか。
@@ -579,7 +591,7 @@ def _reaction_grounding_ok(post_text: str, source_text: str) -> bool:
         if w in post_text and w not in source_text:
             LOG.info("trend_react gate: ungrounded claim word %r", w)
             return False
-    guard_names = set(_MLB_JP_NAME_TOKENS) | _giants_name_tokens()
+    guard_names = set(_MLB_JP_NAME_TOKENS) | set(_LEGEND_NAME_TOKENS) | _giants_name_tokens()
     for name in guard_names:
         if len(name) >= 2 and name in post_text and name not in source_text:
             LOG.info("trend_react gate: ungrounded name %r", name)
@@ -714,6 +726,12 @@ def build_trend_reaction_candidate(
                     extra_voice_note=(
                         f"いま検索で急上昇中の話題への反応ポスト (試合後の振り返り"
                         f"ではない)。トレンド語「{kw}」を本文に必ず1回そのまま入れる。"
+                        "書き出しは評論ではなく、ファンとしての感情から入る "
+                        "(驚き・嬉しさ・不安・ワクワク — 読んだ人が「わかる」と"
+                        "頷ける一言)。評論家・解説者の俯瞰口調 (「〜が問われます」"
+                        "「〜に注目です」「重なる部分があります」「体現した」等) は"
+                        "禁止。ファン同士の会話のように自分の気持ちを主語にして、"
+                        "過去の別選手を持ち出した比較・教訓語りをしない。"
                         "見出しと『記事より』にある事実だけで書き、そこに無い"
                         "経歴・移籍・所属 (メジャー行き等)・数字・結果・選手名は"
                         "絶対に作らない。見出しに日付 (「11日」等) や「あす」が"

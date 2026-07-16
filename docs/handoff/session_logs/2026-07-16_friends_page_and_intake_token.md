@@ -24,3 +24,4 @@
 - 14:00 JST | fix+deploy | gate姓救済(橋上誤爆)+fallback岡本→大城(MLB移籍) | rev 00157→00158 | ダルベック再E2E
 - 14:15 JST | fix+deploy | アプリのトレンド生成=短文化(force_long param+全角135字指示+weighted280超は再生成) | rev 00159→00160 | E2E: ダルベック141字で枠内
 - 14:40 JST | fix+deploy | 固定ポスト導線=/data/notable/(坂本eyecatch)に修正、/data/はマスコット絵と判明 | rev 00161系
+- 14:55 JST | feat+deploy | mlb-digest便にMLBトレンドfallback (毎時8-17、時間粒度dedup) GO | x-post-mail-lane image更新 | 初回発火=15:05 JST便で確認

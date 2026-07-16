@@ -463,8 +463,8 @@ _HTML_FORM = """<!DOCTYPE html>
   .setup-banner code { background: rgba(0,0,0,0.08); padding: 1px 4px; border-radius: 3px; font-family: ui-monospace, Menlo, Consolas, monospace; }
   button:disabled { opacity: 0.45; cursor: not-allowed; }
   /* INSIGHT-006: tab navigation */
-  .tab-nav { display: flex; gap: 6px; margin-bottom: 14px; }
-  .tab-btn { flex: 1; padding: 10px 6px; border: 1px solid #ccc; border-radius: 8px; background: #fff; color: #555; font-size: 14px; cursor: pointer; }
+  .tab-nav { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+  .tab-btn { flex: 1 1 30%; padding: 10px 6px; border: 1px solid #ccc; border-radius: 8px; background: #fff; color: #555; font-size: 14px; cursor: pointer; text-align: center; box-sizing: border-box; }
   .tab-btn.active { background: #f57f17; color: #fff; border-color: #f57f17; font-weight: 600; }
   .tab-panel[hidden] { display: none; }
   table.result-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px; }
@@ -515,6 +515,7 @@ _HTML_FORM = """<!DOCTYPE html>
     <button type=\"button\" class=\"tab-btn\" data-tab=\"insight\" id=\"tab-btn-insight\">🐦 X 投稿 (データ)</button>
     <button type=\"button\" class=\"tab-btn\" data-tab=\"xshare\" id=\"tab-btn-xshare\">🔗 記事共有</button>
     <a class=\"tab-btn\" href=\"/live\" style=\"text-decoration:none;display:inline-block\">⚾ 観戦</a>
+    <a class=\"tab-btn\" href=\"/friends\" style=\"text-decoration:none;display:inline-block\">👥 常連</a>
   </nav>
   <section class=\"tab-panel\" data-tab=\"intake\" id=\"tab-panel-intake\">
   <form id=\"intake\">

@@ -26,3 +26,4 @@
 - 14:40 JST | fix+deploy | 固定ポスト導線=/data/notable/(坂本eyecatch)に修正、/data/はマスコット絵と判明 | rev 00161系
 - 14:55 JST | feat+deploy | mlb-digest便にMLBトレンドfallback (毎時8-17、時間粒度dedup) GO | x-post-mail-lane image更新 | 初回発火=15:05 JST便で確認
 - 14:06 JST | verify | MLBトレンドfallback初回発火OK (14:05 digest便→trend fallback built→mail sent→dedup記録)
+- 15:00頃 JST | feat+deploy | ①リンク自己リプ実装 (トレンド/観戦→投稿成功後/x-link-replyで選手data page or notableを自動リプ、リプ返しには付けない) | ②引用は個人に嫌がられるためuser判断で見送り

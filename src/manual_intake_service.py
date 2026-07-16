@@ -4423,8 +4423,23 @@ def build_handler(
                             # 投稿枠に収まる短文 (2026-07-16 user「枠に収まってない」)
                             force_long=False,
                         )
-                        if cand is not None and getattr(cand, "post_text", ""):
+                        txt_ok = bool(cand is not None and getattr(cand, "post_text", ""))
+                        if txt_ok:
+                            # X標準枠 (weighted 280 = 全角約140字) 超えは作り直し
+                            try:
+                                from src.x_post_mail_lane import x_weighted_len
+
+                                if x_weighted_len(cand.post_text) > 280:
+                                    bound_logger.info(
+                                        "trend_draft retry: over_length %d",
+                                        len(cand.post_text),
+                                    )
+                                    txt_ok = False
+                            except Exception:  # noqa: BLE001
+                                pass
+                        if txt_ok:
                             break
+                        cand = None
                     if cand is None or not getattr(cand, "post_text", ""):
                         _json_response(self, 200, {"ok": False, "reason": "generation_empty"})
                         return

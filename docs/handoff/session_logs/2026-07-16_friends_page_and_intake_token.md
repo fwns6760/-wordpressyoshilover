@@ -13,3 +13,4 @@
 - 10:45 JST | impl+deploy | 🎯フォロー開拓アプリ /scout (Yahooリアルタイムで公式リプ主収集、GCS follow_scout/seen.json台帳、✔followed/✕skip、トップnav追加) | rev 00142-dzd | prod smoke: 候補28人 | 後段queue: 固定ポスト生成(転換側)
 - 11:00 JST | impl+deploy | 開拓候補=直近30分リプ主のみ(経過分数表示・新しい順・時刻不明除外) | rev 00143-gf9 | prod smoke: 10人(0-12分前)
 - 11:10 JST | impl+deploy | 開拓: プロフィールタップ=followed記録+行が消える(20秒undo「戻す」、mode=undo追加、✔ボタン廃止) | rev 00144-bwf
+- 11:30 JST | impl+deploy | 📌固定ポストページ /profile (週間実績+ベスト5→固定ポスト案生成、state bucket read権限をseo-web-runtimeに付与) | rev 00145-kz7 | prod smoke: best5 OK

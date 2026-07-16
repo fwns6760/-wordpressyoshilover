@@ -2969,6 +2969,25 @@ def build_handler(
                                 f"{_st.status}{_inn} 巨人{_st.giants_score}-"
                                 f"{_st.opp_score}{_st.opp_name}"
                             )
+                            # 2026-07-16 user「リアルタイムが欲しい」: スコアだけでなく
+                            # 一球速報の直近プレーも検証済み事実として注入する
+                            # (短文/長文とも)。取れなければスコアのみ (fail-open)。
+                            try:
+                                _plays = _lgw.apply_fullname_map(
+                                    _lgw.fetch_today_plays(),
+                                    _lgw.giants_fullname_map(),
+                                )
+                                _recent = [
+                                    ln
+                                    for ln in (
+                                        _fmt_live_play(p) for p in _plays[-2:]
+                                    )
+                                    if ln
+                                ]
+                                if _recent:
+                                    live_ctx += " / 直近プレー: " + "、".join(_recent)
+                            except Exception:  # noqa: BLE001
+                                bound_logger.exception("live_fuga_recent_plays_failed")
                     except Exception:  # noqa: BLE001
                         bound_logger.exception("live_fuga_live_state_failed")
                         live_ctx = ""
@@ -3551,6 +3570,8 @@ def build_handler(
                     for _attempt in range(2):
                         try:
                             txt = (
+                                # 2026-07-16 user「まとめも他と同じくらいの長さでいい」:
+                                # force_long を外し、ライブ短文と同じ長さ帯にする。
                                 _bgen.build_quote_rt_comment(
                                     fact,
                                     "",
@@ -3558,7 +3579,7 @@ def build_handler(
                                     subject="観戦recap手動",
                                     budget_site="quote_rt",
                                     require_db_fact=False,
-                                    force_long=True,
+                                    force_long=False,
                                 )
                                 or ""
                             ).strip()

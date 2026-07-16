@@ -668,7 +668,11 @@ def build_trend_reaction_candidate(
     now_date: str = "",
     allowed_categories: tuple[str, ...] = ("giants", "mlb"),
     budget_site: str = "trend_weave",
-    force_long: bool = True,
+    # 2026-07-16 user「長文の試合終了後は伸びなかったから短文に」: fav実測
+    # (7/13週次×全文join) で 260字以上は fav中央値1・max3、100-180字帯は
+    # 中央値10・max294。「プレミアム長文」(2026-07-10) 仮説を実測で棄却し、
+    # mail便も短文既定へ。手動アプリの長文ボタン (force_long=True明示) は残る。
+    force_long: bool = False,
 ) -> Any:
     """急上昇トレンド + そのニュース見出しから独立の反応ポスト候補を 1 本作る。
 

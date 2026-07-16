@@ -411,3 +411,28 @@ class MlbMentionFillTests(unittest.TestCase):
         relevant = [{"keyword": "大谷翔平", "traffic": "", "category": "mlb"}]
         stn.fill_mlb_from_mentions(relevant, keywords=["山本由伸"])
         self.assertEqual(len(relevant), 1)
+
+
+class TrendReactionShortDefaultTests(unittest.TestCase):
+    """2026-07-16 user「長文は伸びなかったから短文に」: fav実測 (260字以上=中央値1、
+    100-180字=中央値10) で mail便トレンド反応の既定を短文 (force_long=False) へ。"""
+
+    _REL = [{
+        "keyword": "岡本和真", "category": "giants",
+        "news_title": "岡本和真がサヨナラ打", "news_url": "https://ex.com/a",
+        "news_source": "報知",
+    }]
+
+    def test_default_is_short_form(self):
+        with patch(
+            "src.x_post_branding_gen.build_quote_rt_comment",
+            return_value="岡本和真、これは効くわ。",
+        ) as m, patch.object(
+            stn, "_fetch_article_excerpt", return_value="記事本文の抜粋テキスト。",
+        ):
+            stn.build_trend_reaction_candidate(
+                self._REL, gemini_api_key="k", dedup_set=set(), now_date="20260716"
+            )
+        self.assertFalse(m.call_args.kwargs.get("force_long"))
+        # 短文モードは 135字 cap 指示が extra_voice_note に入る
+        self.assertIn("135字以内", m.call_args.kwargs.get("extra_voice_note", ""))

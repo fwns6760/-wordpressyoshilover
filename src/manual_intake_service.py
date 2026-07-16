@@ -516,6 +516,7 @@ _HTML_FORM = """<!DOCTYPE html>
     <button type=\"button\" class=\"tab-btn\" data-tab=\"xshare\" id=\"tab-btn-xshare\">🔗 記事共有</button>
     <a class=\"tab-btn\" href=\"/live\" style=\"text-decoration:none;display:inline-block\">⚾ 観戦</a>
     <a class=\"tab-btn\" href=\"/friends\" style=\"text-decoration:none;display:inline-block\">👥 常連</a>
+    <a class=\"tab-btn\" href=\"/trend\" style=\"text-decoration:none;display:inline-block\">🔥 トレンド</a>
   </nav>
   <section class=\"tab-panel\" data-tab=\"intake\" id=\"tab-panel-intake\">
   <form id=\"intake\">
@@ -2083,6 +2084,39 @@ def _bump_friend(handle: str, name: str) -> int:
         return 0
 
 
+_TREND_CACHE: dict[str, Any] = {"ts": 0.0, "items": []}
+_TREND_CACHE_TTL_SECONDS = 600
+
+
+def _fetch_trend_items() -> list[dict[str, str]]:
+    """急上昇ワード (news 情報つき full dict) を 10 分 cache で返す。
+
+    2026-07-16 user「フォロワーを増やすのに何かアプリ作れない？」: 実測の当たり枠
+    = トレンド反応を、mail 便を待たず即応で打つための素材。失敗は空 (fail-open)。
+    """
+    now_ts = time.time()
+    if _TREND_CACHE["items"] and now_ts - _TREND_CACHE["ts"] < _TREND_CACHE_TTL_SECONDS:
+        return _TREND_CACHE["items"]
+    try:
+        from src import search_trend_note as stn
+
+        roster = stn._giants_name_tokens()
+        relevant: list[dict] = []
+        for t in stn.fetch_jp_trends():
+            kw = t.get("keyword") or ""
+            cat = stn.categorize_trend_keyword(kw, roster)
+            if cat:
+                relevant.append({**t, "category": cat})
+        stn.merge_yahoo_topics_into_relevant(relevant, roster)
+        stn.fill_mlb_from_mentions(relevant)
+        _TREND_CACHE["items"] = relevant
+        _TREND_CACHE["ts"] = now_ts
+        return relevant
+    except Exception:  # noqa: BLE001
+        logging.getLogger("manual_intake_service").exception("trend_items_failed")
+        return _TREND_CACHE["items"] or []
+
+
 _MAIN_X_HANDLE = "yoshilover6760"
 _OUR_X_HANDLES = {_MAIN_X_HANDLE, "yoshilover_naka"}
 _CANDIDATE_SYNDICATION_CAP = 10
@@ -2496,6 +2530,117 @@ async function addFriend(){
 }
 load();
 loadCands();
+</script></body></html>"""
+
+
+def _render_trend_page() -> str:
+    """2026-07-16 user「フォロワーを増やすのに何かアプリ作れない？」。
+
+    実測の当たり枠 = トレンド反応を、毎時 mail を待たずに即応で打つページ。
+    急上昇ワード chips (巨人/MLB) → タップ → 記事接地つき反応ポスト生成 →
+    その場で X 投稿。素材・gate は mail 便の trend_react と完全共用。
+    """
+    return """<!doctype html>
+<html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>トレンド反応｜ヨシラバー</title>
+<style>
+body{font-family:sans-serif;background:#fafafa;margin:0;padding:12px;max-width:640px;margin:auto}
+h1{font-size:1.1rem;color:#d84315}
+button{font-size:1rem;padding:10px 16px;border:0;border-radius:8px;cursor:pointer}
+.chip{display:inline-block;background:#fff;border:1px solid #ffab91;color:#d84315;border-radius:16px;padding:8px 14px;margin:4px 4px 0 0;font-size:.95rem}
+.chip.mlb{border-color:#90caf9;color:#1565c0}
+.chip small{color:#999;font-size:.7rem}
+.grp{margin-top:12px;font-size:.85rem;color:#888;font-weight:bold}
+.card{background:#fff;border:1px solid #ddd;border-radius:10px;padding:12px;margin-top:12px;white-space:pre-wrap}
+.card .style{font-size:.8rem;color:#888}
+.card .cnt{font-size:.75rem;color:#aaa}
+.row{display:flex;gap:8px;margin-top:8px}
+.post{background:#1d9bf0;color:#fff;flex:1}
+.copy{background:#eee;flex:1}
+#status{margin-top:10px;font-size:.9rem;color:#666}
+.note{font-size:.75rem;color:#999;margin-top:6px}
+textarea{width:100%;box-sizing:border-box;font-size:1.05rem;padding:10px;border:1px solid #ccc;border-radius:8px}
+</style></head><body>
+<h1>🔥 トレンド反応 — 急上昇に即乗る <a href="/" style="font-size:.8rem;float:right;color:#888">← 戻る</a></h1>
+<p class="note">いま検索で急上昇中の野球ワード。タップすると記事を読んで反応ポストを作ります (事実は見出し+記事内のみ、捏造gateあり)。伸びてる語に早く乗るほどインプ・フォロワーに効きます。</p>
+<div class="row">
+<button onclick="loadWords()" style="background:#fbe9e7;flex:1">🔄 いまの急上昇を取得</button>
+</div>
+<div id="words"></div>
+<div id="status"></div>
+<div id="out"></div>
+<script>
+function makeCard(d, kw){
+  const div=document.createElement('div'); div.className='card';
+  div.innerHTML='<div class="style">'+d.style+' (編集して投稿できます)</div>'+
+    '<textarea class="txt" style="margin-top:6px"></textarea>'+
+    '<div class="cnt"></div>'+
+    '<div class="row"><button class="post">Xに投稿</button><button class="regen" style="background:#fff3e0">🔄 再作成</button><button class="copy">コピー</button></div>';
+  const ta=div.querySelector('.txt'), cnt=div.querySelector('.cnt');
+  ta.value=d.text;
+  const fit=()=>{cnt.textContent=ta.value.length+'字'; ta.style.height='auto'; ta.style.height=(ta.scrollHeight+4)+'px';};
+  ta.oninput=fit;
+  div.querySelector('.copy').onclick=()=>{navigator.clipboard.writeText(ta.value);div.querySelector('.copy').textContent='コピー済';};
+  div.querySelector('.regen').onclick=()=>{draft(kw, div);};
+  div.querySelector('.post').onclick=async(ev)=>{
+    const text=ta.value.trim();
+    if(!text) return;
+    if(!confirm('この内容でXに投稿します:\\n\\n'+text.slice(0,120)+(text.length>120?'…':'')+'\\n\\nよい？')) return;
+    ev.target.disabled=true; ev.target.textContent='投稿中…';
+    const pr=await fetch('/x-post-direct',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:text})});
+    const pj=await pr.json();
+    ev.target.textContent=pj.ok?'投稿済✔':'失敗: '+(pj.reason||'');
+    if(!pj.ok) ev.target.disabled=false;
+  };
+  setTimeout(fit,0);
+  return div;
+}
+async function draft(kw, replaceCard){
+  document.getElementById('status').textContent='「'+kw+'」の記事を読んで生成中… (数秒〜10秒)';
+  try{
+    const r = await fetch('/trend-draft?kw='+encodeURIComponent(kw));
+    const j = await r.json();
+    if(!j.ok){
+      const msgs={no_article:'この語はニュース記事ソースが無く、安全に書けません (捏造防止)。別の語でどうぞ', unknown_kw:'一覧を更新してから選び直してください', generation_empty:'生成できず (gate落ち)。もう一度押すか別の語で'};
+      document.getElementById('status').textContent = msgs[j.reason] || ('生成できず: '+(j.reason||''));
+      return;
+    }
+    document.getElementById('status').textContent = j.news_title ? ('📰 '+j.news_title) : '';
+    const card = makeCard(j.drafts[0], kw);
+    const out=document.getElementById('out');
+    if(replaceCard){ out.replaceChild(card, replaceCard); } else { out.prepend(card); }
+  }catch(e){ document.getElementById('status').textContent='エラー: '+e; }
+}
+async function loadWords(){
+  document.getElementById('status').textContent='急上昇ワードを取得中…';
+  try{
+    const r = await fetch('/trend-words');
+    if(r.status===403){ document.getElementById('status').textContent='認証切れです。トップ ( / ) を token 付きで開き直してください'; return; }
+    const j = await r.json();
+    const box=document.getElementById('words'); box.innerHTML='';
+    if(!j.ok || !j.words || !j.words.length){ document.getElementById('status').textContent='いま野球系の急上昇ワードがありません (時間をおいてもう一度)'; return; }
+    document.getElementById('status').textContent='タップで反応ポストを生成:';
+    const groups=[['giants','🔥 巨人'],['mlb','🌍 MLB'],['npb','⚾ プロ野球 (参考・生成対象外)']];
+    for(const [cat,label] of groups){
+      const ws=j.words.filter(w=>w.category===cat);
+      if(!ws.length) continue;
+      const g=document.createElement('div'); g.className='grp'; g.textContent=label;
+      box.appendChild(g);
+      for(const w of ws){
+        const b=document.createElement('button');
+        b.className='chip'+(cat==='mlb'?' mlb':'');
+        b.innerHTML='';
+        b.textContent=w.keyword+(w.traffic?' ':'');
+        if(w.traffic){ const s=document.createElement('small'); s.textContent=w.traffic; b.appendChild(s); }
+        if(cat==='npb' || !w.has_news){ b.style.opacity=.45; b.onclick=()=>{document.getElementById('status').textContent=(cat==='npb'?'他球団トレンドは生成対象外です (検索インプが他球団に流れるだけ)':'この語は記事ソースが無く生成できません');}; }
+        else { b.onclick=()=>draft(w.keyword); }
+        box.appendChild(b);
+      }
+    }
+  }catch(e){ document.getElementById('status').textContent='エラー: '+e; }
+}
+loadWords();
 </script></body></html>"""
 
 
@@ -3626,6 +3771,92 @@ def build_handler(
                 _text_response(
                     self, 200, _render_friends_page(), content_type="text/html; charset=utf-8"
                 )
+                return
+            if path == "/trend":
+                _text_response(
+                    self, 200, _render_trend_page(), content_type="text/html; charset=utf-8"
+                )
+                return
+            if path in ("/trend-words", "/trend-draft"):
+                # 🔥トレンド反応 即応アプリ (2026-07-16)。words=¥0、draft=LLM 1call
+                expected_token = _require_token()
+                if expected_token:
+                    cookie_token = ""
+                    raw_cookie = self.headers.get("Cookie") or ""
+                    for part in raw_cookie.split(";"):
+                        kv = part.strip().split("=", 1)
+                        if len(kv) == 2 and kv[0].strip() == "manual_intake_session":
+                            cookie_token = kv[1].strip()
+                            break
+                    query_token = ""
+                    qtok = parse_qs(parsed.query, keep_blank_values=False).get("token") or []
+                    if qtok:
+                        query_token = (qtok[0] or "").strip()
+                    if cookie_token != expected_token and query_token != expected_token:
+                        _json_response(self, 403, {"ok": False, "reason": "forbidden"})
+                        return
+                if path == "/trend-words":
+                    items = _fetch_trend_items()
+                    words = [
+                        {
+                            "keyword": t.get("keyword") or "",
+                            "category": t.get("category") or "",
+                            "traffic": t.get("traffic") or "",
+                            "has_news": bool(t.get("news_title")),
+                        }
+                        for t in items
+                        if t.get("keyword")
+                    ]
+                    _json_response(self, 200, {"ok": True, "words": words})
+                    return
+                params = parse_qs(parsed.query, keep_blank_values=False)
+                kw = ((params.get("kw") or [""])[0] or "").strip()
+                item = next(
+                    (t for t in _fetch_trend_items() if (t.get("keyword") or "") == kw),
+                    None,
+                )
+                if item is None:
+                    _json_response(self, 400, {"ok": False, "reason": "unknown_kw"})
+                    return
+                if item.get("category") not in ("giants", "mlb") or not item.get("news_title"):
+                    _json_response(self, 200, {"ok": False, "reason": "no_article"})
+                    return
+                api_key = (
+                    os.environ.get("GEMINI_API_KEY")
+                    or os.environ.get("GEMMA_BRANDING_GEMINI_API_KEY")
+                    or ""
+                ).strip()
+                if not api_key:
+                    _json_response(self, 500, {"ok": False, "reason": "gemini_key_missing"})
+                    return
+                try:
+                    from zoneinfo import ZoneInfo
+
+                    from src import search_trend_note as stn
+
+                    cand = stn.build_trend_reaction_candidate(
+                        [dict(item)],
+                        gemini_api_key=api_key,
+                        dedup_set=None,
+                        now_date=datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y%m%d-%H"),
+                    )
+                    if cand is None or not getattr(cand, "post_text", ""):
+                        _json_response(self, 200, {"ok": False, "reason": "generation_empty"})
+                        return
+                    _json_response(
+                        self,
+                        200,
+                        {
+                            "ok": True,
+                            "news_title": item.get("news_title") or "",
+                            "drafts": [
+                                {"style": "🔥 トレンド反応", "text": cand.post_text}
+                            ],
+                        },
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    bound_logger.exception("trend_draft_failed")
+                    _json_response(self, 500, {"ok": False, "reason": f"trend_draft_error:{exc!r}"})
                 return
             if path in ("/x-share-recent", "/x-share-draft", "/x-thread-draft"):
                 # 2026-07-06 user GO「Xまで共有でおりポスとリプまでつくって」:

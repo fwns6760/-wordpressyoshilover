@@ -2140,14 +2140,19 @@ def _news_lookup_for_keyword(kw: str) -> dict[str, str]:
         with urllib.request.urlopen(req, timeout=10) as r:
             xml_text = r.read()
         root = ElementTree.fromstring(xml_text)
-        item = root.find("./channel/item")
-        if item is None:
-            return {}
-        title = (item.findtext("title") or "").strip()
-        link = (item.findtext("link") or "").strip()
-        if not title or not link:
-            return {}
-        return {"news_title": title, "news_url": link, "news_source": "Bing News"}
+        from src.search_trend_note import _fetch_article_excerpt
+
+        # 2026-07-16 実測 (山本由伸): 1本目の記事サイトが本文を返さず全滅した。
+        # 本文が実際に読める記事に当たるまで上位3本を試す。
+        for item in root.findall("./channel/item")[:3]:
+            title = (item.findtext("title") or "").strip()
+            link = (item.findtext("link") or "").strip()
+            if not title or not link:
+                continue
+            if not _fetch_article_excerpt(link):
+                continue
+            return {"news_title": title, "news_url": link, "news_source": "Bing News"}
+        return {}
     except Exception:  # noqa: BLE001
         return {}
 

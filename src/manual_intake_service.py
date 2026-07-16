@@ -2494,6 +2494,13 @@ function makeCard(d, regenFn, postExtra){
     const pj=await pr.json();
     ev.target.textContent=pj.ok?(pj.friend_count>1?'投稿済✔ 常連'+pj.friend_count+'回目':'投稿済✔'):'失敗: '+(pj.reason||'');
     if(!pj.ok) ev.target.disabled=false;
+    if(pj.ok && pj.tweet_id && !(postExtra&&postExtra.in_reply_to)){
+      try{
+        const lr=await fetch('/x-link-reply?tweet_id='+pj.tweet_id+'&ctx='+encodeURIComponent(text));
+        const lj=await lr.json();
+        if(lj.ok) document.getElementById('status').textContent='🔗 データページをリプで添付: '+lj.url;
+      }catch(e){}
+    }
   };
   setTimeout(fit, 0);
   return div;
@@ -2734,6 +2741,40 @@ loadCands();
 </script></body></html>"""
 
 
+def _pick_link_reply_target(ctx_text: str) -> tuple[str, str]:
+    """ポスト本文から自己リプに付けるデータページを選ぶ (url, 説明ラベル)。
+
+    2026-07-16 user ① GO: 本文はリンクなしでリーチ維持、リンクは自己リプで
+    アドセンス導線にする。選手名が取れてページが実在すればその選手ページ、
+    それ以外は /data/notable/ (「巨人の今」、坂本 eyecatch)。
+    """
+    url = "https://yoshilover.com/data/notable/"
+    label = "巨人の「今」を数字で1ページに"
+    try:
+        from src.data_site_slug import player_slug
+        from src.x_post_mail_lane import (
+            _load_giants_player_aliases,
+            detect_giants_player_name,
+        )
+
+        name = detect_giants_player_name(
+            ctx_text, alias_map=_load_giants_player_aliases()
+        )
+        if name:
+            slug = player_slug(name)
+            if slug:
+                cand = f"https://yoshilover.com/data/{slug}/"
+                import urllib.request
+
+                req = urllib.request.Request(cand, method="HEAD")
+                with urllib.request.urlopen(req, timeout=6) as r:
+                    if r.status == 200:
+                        return cand, f"{name}の今季成績・記録はこちら"
+    except Exception:  # noqa: BLE001
+        pass
+    return url, label
+
+
 def _render_trend_page() -> str:
     """2026-07-16 user「フォロワーを増やすのに何かアプリ作れない？」。
 
@@ -2793,6 +2834,13 @@ function makeCard(d, kw){
     const pj=await pr.json();
     ev.target.textContent=pj.ok?'投稿済✔':'失敗: '+(pj.reason||'');
     if(!pj.ok) ev.target.disabled=false;
+    if(pj.ok && pj.tweet_id){
+      try{
+        const lr=await fetch('/x-link-reply?tweet_id='+pj.tweet_id+'&ctx='+encodeURIComponent(text));
+        const lj=await lr.json();
+        if(lj.ok) document.getElementById('status').textContent='🔗 データページをリプで添付: '+lj.url;
+      }catch(e){}
+    }
   };
   setTimeout(fit,0);
   return div;
@@ -4341,6 +4389,45 @@ def build_handler(
                         "followed_total": followed_total,
                     },
                 )
+                return
+            if path == "/x-link-reply":
+                # ① リンク自己リプ (2026-07-16 user GO): 投稿直後に data page の
+                # リンクを自分のポストへのリプとして自動投稿 (LLMなし)
+                expected_token = _require_token()
+                if expected_token:
+                    cookie_token = ""
+                    raw_cookie = self.headers.get("Cookie") or ""
+                    for part in raw_cookie.split(";"):
+                        kv = part.strip().split("=", 1)
+                        if len(kv) == 2 and kv[0].strip() == "manual_intake_session":
+                            cookie_token = kv[1].strip()
+                            break
+                    query_token = ""
+                    qtok = parse_qs(parsed.query, keep_blank_values=False).get("token") or []
+                    if qtok:
+                        query_token = (qtok[0] or "").strip()
+                    if cookie_token != expected_token and query_token != expected_token:
+                        _json_response(self, 403, {"ok": False, "reason": "forbidden"})
+                        return
+                params = parse_qs(parsed.query, keep_blank_values=False)
+                tweet_id = ((params.get("tweet_id") or [""])[0] or "").strip()
+                ctx = ((params.get("ctx") or [""])[0] or "").strip()
+                if not tweet_id.isdigit():
+                    _json_response(self, 400, {"ok": False, "reason": "bad_tweet_id"})
+                    return
+                url, label = _pick_link_reply_target(ctx)
+                try:
+                    from src import x_api_client as _xc
+
+                    _xc.get_client().create_tweet(
+                        text=f"📊 {label}\n{url}",
+                        in_reply_to_tweet_id=tweet_id,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    bound_logger.exception("x_link_reply_failed")
+                    _json_response(self, 502, {"ok": False, "reason": f"x_api_error:{exc!r}"})
+                    return
+                _json_response(self, 200, {"ok": True, "url": url})
                 return
             if path in ("/trend-words", "/trend-draft"):
                 # 🔥トレンド反応 即応アプリ (2026-07-16)。words=¥0、draft=LLM 1call

@@ -1757,6 +1757,7 @@ def build_quote_rt_comment(
     require_db_fact: bool = True,
     reply_style: str = "supplement",
     force_long: bool = False,
+    quote_style: str = "",
 ) -> str:
     """451: X バズ投稿への引用RTコメントを Gemini で生成。
 
@@ -1766,6 +1767,11 @@ def build_quote_rt_comment(
     ``extra_voice_note`` (2026-07-02): 視点の上書き指示を 1 行 prompt に
     追加する。 例: MLB 大谷別枠は「巨人ファン視点ではなく純粋に野球ファン
     として」(user 決定)。 空なら従来 prompt と完全一致。
+
+    ``quote_style`` (2026-07-18 user「ヨシラバーと色をかえてもいいかな、メジャーは」):
+    "ss_news" を渡すと、 引用RT をヨシラバーvoice でなく SS型中立速報
+    (【ＳＳ】大谷速報 の型 = 日本語見出し + 英語元投稿の訳 + 元投稿内の数字、
+    感想なし) で書く。 MLB watch lane 専用。 リプ (budget_site="reply") には効かない。
 
     ``reply_style`` (2026-07-06 user 決定「交流がメイン。数字だとダメ」):
     リプ lane (budget_site="reply") の型を切り替える。
@@ -1804,6 +1810,14 @@ def build_quote_rt_comment(
     # 例外: MLB リプ (NPB DB に数字が無い) は require_db_fact=False で呼び、
     # 元投稿内の具体場面を核にした短い補足に切り替える。
     is_reply = budget_site == "reply"
+    # SS型中立速報 (quote_style="ss_news")。 ヨシラバー persona を使わず、 事実と
+    # 数字だけの速報 voice に差し替える。 リプは従来 (empathy/supplement) のまま。
+    is_ss_news = quote_style == "ss_news" and not is_reply
+    if is_ss_news:
+        base_voice = (
+            "あなたは日本語のMLB速報アカウントの中の人。 ファンキャラや応援視点は出さず、 "
+            "事実と数字を最速で分かりやすく伝える中立の速報だけを書く。"
+        )
     # 2026-07-06 user「ファンリプは交流がメイン。数字だとダメ」: ファンアカ向けは
     # empathy 型 (共感主・数字従) に切り替え、 db_fact 必須 gate を外す。
     is_empathy = is_reply and reply_style == "empathy"
@@ -1877,6 +1891,21 @@ def build_quote_rt_comment(
             "『〜すべき』『〜してほしい』『どう見ますか』で締めない。 "
             "URL / ハッシュタグ / 媒体名は禁止。 絵文字は多くても1個。 "
             "元投稿に無い数字・事実は足さない。"
+        )
+    elif is_ss_news:
+        # 2026-07-18 SS型の分解 (実feed 20件): ①1行目=日本語見出し+絵文字1個
+        # ②数字をそのまま羅列 ③英語一次ソースの日本語訳が最大の価値 ④感想語なし。
+        len_rule = (
+            "速報型。 60〜160字、 改行で2〜4行に分ける。 "
+            "1行目は『選手名、 何をした！』の日本語見出しで言い切る。 "
+            "絵文字は 💥🔥👀🏆🤝 のどれかを見出し行の末尾に多くても1個。 "
+            "元投稿が英語なら、 その要点を自然な日本語に訳して伝えるのが最大の価値 "
+            "(記者・球団発表の発言は『』で日本語訳して引用してよい)。 "
+            "元投稿にある数字 (球速・成績・金額・回数・順位) はそのまま具体的に入れる (数字が価値)。 "
+            "感想・応援・巨人ファン視点・辛口・分析講釈・呼びかけは書かない (中立の速報)。 "
+            "『楽しみ』『すごい』『さすが』などの感想語も書かない。 "
+            "★あなたに映像の中身は見えていない。 事実として使ってよいのは元投稿の本文テキストだけ。 "
+            "URL / ハッシュタグ / 媒体名は書かない。 元投稿に無い数字・事実は一切足さない。"
         )
     elif is_video_sns:
         # 2026-07-06 user「(MLB引用RT🖼 大谷) これはポストの内容とあっていない」:
@@ -2002,6 +2031,11 @@ def build_quote_rt_comment(
                 "※前回は長い/感想・講釈っぽくて却下された。 verified data の補足を核に、 "
                 "50〜90字・1〜2文で短く書き直す。\n"
             )
+        elif is_ss_news:
+            retry_note = (
+                "※前回は「感想語が入った/元投稿に無い数字を書いた/見出しになっていない」で却下された。 "
+                "1行目を日本語見出しで言い切り、 元投稿にある数字と事実だけで、 感想なしの速報として書き直す。\n"
+            )
         elif is_video_sns:
             # 2026-07-09 user「直して」: 動画系の実際の主落因は unverified_number (元投稿に
             # 無い回数・球数・球速を実況調で書く) なのに、 リトライ文が抽象性しか注意して
@@ -2027,6 +2061,9 @@ def build_quote_rt_comment(
         elif is_reply:
             task_line = f"【今回のタスク: {subject}への補足リプ】"
             task_instr = f"上記 voice のまま、 次の{subject}にデータを1つ補足する短いリプを書く。"
+        elif is_ss_news:
+            task_line = f"【今回のタスク: {subject}の日本語速報】"
+            task_instr = f"上記の方針で、 次の{subject}の内容を日本語の速報として伝える引用RTコメントを書く。"
         else:
             task_line = f"【今回のタスク: {subject}への反応コメント】"
             task_instr = f"上記 voice のまま、 次の{subject}に反応するヨシラバーのコメントを書く。"
@@ -2064,7 +2101,12 @@ def build_quote_rt_comment(
         last_preview = text[:60]
         safety_ok = bool(text) and _gemini_branding_safety_check(text, verified_text)
         unverified = _extract_unverified_numbers(text, verified_text) if text else []
-        voice_ok = bool(text) and _voice_quality_ok(text, live=is_live, short_ok=is_empathy)
+        # SS型は感嘆符・熱量を見るヨシラバーvoice 門番を通さない (中立速報が正)。
+        # スカスカ (見出しだけで訳・数字が無い) だけ弾く。 safety / unverified は共通。
+        if is_ss_news:
+            voice_ok = len(text) >= 40
+        else:
+            voice_ok = bool(text) and _voice_quality_ok(text, live=is_live, short_ok=is_empathy)
         # 2026-07-07 user「ファンリプ長くない?」: empathy リプは prompt 指定 (20〜55字) を
         # 大きく超えたら gate で弾いてリトライ (最終便は relaxed fallback 側で許容)。
         empathy_len_ok = (not is_empathy) or len(text) <= 70

@@ -260,15 +260,22 @@ class ReplyTargetHandleTests(unittest.TestCase):
     def test_mlb_voice_note_distinguishes_ex_giants_and_extra_stars(self) -> None:
         from src.tools import run_x_post_mail as runner
 
+        # 2026-07-18: 引用RT (reply=False) は SS型中立速報。ファン感想 (送り出した
+        # 親心) は入らず、元巨人は事実ラベルのみ許可。
         _subject, ex_note = runner._mlb_voice_subject_and_note("岡本和真")
         self.assertIn("巨人からMLB", ex_note)
-        self.assertIn("送り出した", ex_note)
+        self.assertNotIn("送り出した", ex_note)
+        self.assertIn("感想は書かない", ex_note)
 
         subject, star_note = runner._mlb_voice_subject_and_note("山本由伸")
         self.assertEqual(subject, "山本由伸のMLB動画SNS投稿")
         self.assertIn("元巨人ではない", star_note)
         self.assertNotIn("送り出した", star_note)
         self.assertNotIn("巨人からMLB", star_note)
+
+        # リプ (reply=True) は従来どおり巨人ファン視点の共感 note を維持。
+        _subject, ex_reply_note = runner._mlb_voice_subject_and_note("岡本和真", reply=True)
+        self.assertIn("送り出した", ex_reply_note)
 
     def test_mlb_reply_defaults(self) -> None:
         """2026-07-03: MLBリプ lane は env gate (default OFF)、対象は日本語系 default。"""

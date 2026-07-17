@@ -471,30 +471,43 @@ def _mlb_voice_subject_and_note(player: str, *, reply: bool = False) -> tuple[st
     """Return LLM framing for MLB watch/reply without mislabeling extra stars."""
     # 2026-07-06 user「MLBリプ候補も数字が入るのが変。相手の内容に合わせて書いて」:
     # reply 時の tone は補足でなく共感 (元投稿の場面・気持ちに寄り添う) にする。
+    # 2026-07-18 user「ヨシラバーと色をかえてもいいかな、メジャーは」: 引用RT
+    # (reply=False) は SS型中立速報 (quote_style="ss_news") へ切替。視点 note も
+    # ファン感想でなく速報用に差し替える。リプは従来の empathy のまま。
+    if not reply:
+        if player == "大谷翔平":
+            return "大谷翔平のMLB動画SNS投稿", (
+                "大谷は巨人と無関係。巨人との関連付け・ファン感想は入れず、"
+                "中立の速報として書く。"
+            )
+        if player in lane._MLB_EX_GIANTS:
+            return f"元巨人・{player}のMLB動画SNS投稿", (
+                f"{player}は巨人からMLBへ行った選手。見出しで『元巨人の{player}』と"
+                "事実として書いてよいが、親心・誇り・応援などの感想は書かない。"
+            )
+        return f"{player}のMLB動画SNS投稿", (
+            f"{player}は元巨人ではない。巨人所属だったように見える表現は禁止。"
+            "中立の速報として書く。"
+        )
     if player == "大谷翔平":
-        subject = "大谷翔平のMLB投稿" if reply else "大谷翔平のMLB動画SNS投稿"
-        tone = "元投稿の内容に寄り添う短い共感の返し" if reply else "楽しむ・驚く反応"
         note = (
             "大谷は巨人と無関係の別枠。巨人ファン視点や巨人との"
-            f"比較は入れず、純粋に野球ファンとして大谷のプレーを{tone}にする。"
+            "比較は入れず、純粋に野球ファンとして大谷のプレーを"
+            "元投稿の内容に寄り添う短い共感の返しにする。"
         )
-        return subject, note
+        return "大谷翔平のMLB投稿", note
     if player in lane._MLB_EX_GIANTS:
-        subject = f"元巨人・{player}のMLB投稿" if reply else f"元巨人・{player}のMLB動画SNS投稿"
-        tone = "元投稿の内容に寄り添って短く共感を返す" if reply else "反応する"
         note = (
             f"{player}は巨人からMLBへ行った選手。巨人ファンとして"
-            f"送り出した側の親心・誇りの視点で{tone}。"
+            "送り出した側の親心・誇りの視点で元投稿の内容に寄り添って短く共感を返す。"
         )
-        return subject, note
-    subject = f"{player}のMLB投稿" if reply else f"{player}のMLB動画SNS投稿"
-    tone = "元投稿の内容に寄り添う短い共感の返しにする" if reply else "反応する"
+        return f"元巨人・{player}のMLB投稿", note
     note = (
         f"{player}は日本人スター枠で、元巨人ではない。"
         "巨人所属だったように見える親心・古巣目線・所属歴の表現は禁止。"
-        f"純粋に野球ファンとして{tone}。"
+        "純粋に野球ファンとして元投稿の内容に寄り添う短い共感の返しにする。"
     )
-    return subject, note
+    return f"{player}のMLB投稿", note
 
 
 def _mlb_watch_max_age_hours() -> float:
@@ -3479,6 +3492,7 @@ def _main_mlb_only(args: argparse.Namespace, recipients: list[str]) -> int:
                 return _g.build_quote_rt_comment(
                     parent_text, player, gemini_api_key=_k, now=_now,
                     subject=subject, extra_voice_note=note,
+                    quote_style="ss_news",
                 )
         except Exception as _mlb_imp_exc:  # noqa: BLE001
             LOG.warning("mlb-only: LLM comment unavailable: %r", _mlb_imp_exc)

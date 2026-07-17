@@ -1304,6 +1304,17 @@ def _video_post_char_cap() -> int:
         return 110
 
 
+def _mlb_watch_post_char_cap() -> int:
+    """MLB 引用RT (SS型速報) の上限 (既定 160、env X_MLB_POST_MAX_CHARS で調整可)。
+
+    2026-07-18 SS型 (見出し + 英語元投稿の訳 + 数字) は 110 だと訳が切れるため
+    動画既定 (110) と別上限。fav 実測 (2026-07-16) の当たり帯 100〜180 内に収める。"""
+    try:
+        return max(60, int(os.environ.get("X_MLB_POST_MAX_CHARS", "160")))
+    except (TypeError, ValueError):
+        return 160
+
+
 def _classify_news_material(title: str, excerpt: str) -> tuple[str, str]:
     """Classify RSS/source material without inventing facts."""
     haystack = f"{title} {excerpt}"
@@ -2979,7 +2990,11 @@ def build_mlb_watch_candidates(
         # 同意 first のため選手名 lead を強制しない。引用RTは従来通り名前 lead。
         if not as_reply:
             post_text = _ensure_player_name_leads_post_text(post_text, player)
-        post_text = _cap_sentence(post_text, _video_post_char_cap())
+        # 引用RT (SS型速報) は訳+数字ぶん長めの上限、リプは従来の動画上限のまま。
+        post_text = _cap_sentence(
+            post_text,
+            _video_post_char_cap() if as_reply else _mlb_watch_post_char_cap(),
+        )
         handle = p["handle"]
         if player == "大谷翔平":
             frame = "大谷別枠"

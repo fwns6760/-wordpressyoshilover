@@ -272,7 +272,9 @@ def _share_buttons(title: str) -> str:
     unfiltered_html が有効なので onclick が保持される（検証済み）。title は percent-encode
     済みなので onclick 属性内に引用符が混ざらない。"""
     text_enc = quote(f"{title}\n", safe="")
-    x_oc = ("window.open('https://twitter.com/intent/tweet?text=" + text_enc
+    # 2026-07-17: 旧 twitter.com/intent/tweet はリダイレクト+アプリ内でログインが
+    # x.com と分裂する報告があるため、現行の x.com/intent/post に統一。
+    x_oc = ("window.open('https://x.com/intent/post?text=" + text_enc
             + "&url='+encodeURIComponent(location.href),'_blank','noopener');return false;")
     line_oc = ("window.open('https://social-plugins.line.me/lineit/share?url='"
                "+encodeURIComponent(location.href),'_blank','noopener');return false;")

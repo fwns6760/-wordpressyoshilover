@@ -977,24 +977,32 @@ class Handler(BaseHTTPRequestHandler):
             qs = parse_qs(parsed.query or "")
             text_param = (qs.get("text", [""])[0] or "")
             hashtags_param = (qs.get("hashtags", [""])[0] or "")
+            # 2026-07-17: in_reply_to (リプ) / url (引用) 対応。X Android app の
+            # 不具合 (intent がログインページ落ち・リプ送信失敗) 回避のため、
+            # mail のリプ/引用ボタンもこの browser 内 form-POST 経路を通す。
+            reply_to_param = (qs.get("in_reply_to", [""])[0] or "").strip()
+            url_param = (qs.get("url", [""])[0] or "").strip()
+            action_label = "リプとして開く" if reply_to_param else "X 投稿画面を開く"
             page = (
                 '<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8">'
                 '<meta name="viewport" content="width=device-width,initial-scale=1">'
-                '<title>X 投稿画面を開く</title></head>'
+                f'<title>{action_label}</title></head>'
                 '<body style="font-family:-apple-system,BlinkMacSystemFont,'
                 '\'Hiragino Sans\',\'Yu Gothic\',sans-serif;padding:24px;'
                 'max-width:480px;margin:0 auto;text-align:center;color:#222;">'
-                '<h2 style="font-size:18px;margin:0 0 12px;">X 投稿画面を開く</h2>'
+                f'<h2 style="font-size:18px;margin:0 0 12px;">{action_label}</h2>'
                 '<p style="font-size:13px;color:#666;margin:0 0 20px;">'
                 '下のボタンを押すと、 browser に現在 login 中の X account で '
                 'composer が開きます。</p>'
                 '<form method="POST" action="/x-intent">'
                 f'<input type="hidden" name="text" value="{_html.escape(text_param)}">'
                 f'<input type="hidden" name="hashtags" value="{_html.escape(hashtags_param)}">'
+                f'<input type="hidden" name="in_reply_to" value="{_html.escape(reply_to_param)}">'
+                f'<input type="hidden" name="url" value="{_html.escape(url_param)}">'
                 '<button type="submit" style="display:inline-block;background:#000;'
                 'color:#fff;border:0;padding:14px 40px;font-size:16px;font-weight:600;'
                 'border-radius:8px;cursor:pointer;width:100%;max-width:320px;">'
-                '🐦 X で投稿する</button></form>'
+                f'🐦 {action_label}</button></form>'
                 '</body></html>'
             )
             self._respond(200, page, content_type="text/html; charset=utf-8")
@@ -1022,10 +1030,18 @@ class Handler(BaseHTTPRequestHandler):
             form = parse_qs(raw)
             text_param = (form.get("text", [""])[0] or "")
             hashtags_param = (form.get("hashtags", [""])[0] or "")
+            # 2026-07-17: リプ(in_reply_to)・引用(url) を web intent に引き継ぐ。
+            # in_reply_to は数字の status id だけ通す (open redirect / 汚染防止)。
+            reply_to_param = (form.get("in_reply_to", [""])[0] or "").strip()
+            url_param = (form.get("url", [""])[0] or "").strip()
             from urllib.parse import quote as _q
             location = f"https://x.com/intent/post?text={_q(text_param, safe='')}"
             if hashtags_param:
                 location += f"&hashtags={_q(hashtags_param, safe=',')}"
+            if reply_to_param.isdigit():
+                location += f"&in_reply_to={reply_to_param}"
+            if url_param.startswith("https://x.com/") or url_param.startswith("https://twitter.com/"):
+                location += f"&url={_q(url_param, safe='')}"
             self._respond(302, "", content_type="text/plain", extra_headers={"Location": location})
             return
         if parsed.path == "/x-direct-post":

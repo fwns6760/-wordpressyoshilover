@@ -110,8 +110,11 @@ class HandleShareCandGetTests(unittest.TestCase):
         self.assertIn("Xアプリを開く（テキストのみ）", body)
         self.assertIn("share-x-cand-copy-btn", body)
         self.assertIn("本文をコピー", body)
-        self.assertIn("copyPostText().then(openXIntent, openXIntent)", body)
+        # 2026-07-17: 失敗時に X intent へ自動遷移しない (X app 側の intent 破損時に
+        # 手詰まりになる + ページを離れると画像の長押し保存ができないため)。
+        self.assertNotIn("copyPostText().then(openXIntent, openXIntent)", body)
         self.assertNotIn(".finally(openXIntent)", body)
+        self.assertIn("画像を長押し保存", body)
 
     def test_fetcher_base_url_makes_image_proxy_absolute(self):
         code, body, _ = handle_share_cand_get(

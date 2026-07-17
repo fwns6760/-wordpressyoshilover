@@ -556,9 +556,18 @@ def _build_share_cand_page_html(
 	    }}).then(function() {{
 	      setStatus('X アプリ側で投稿内容を確認してください。');
 	    }}).catch(function(err) {{
-	      console.warn('share-x-cand share failed, falling back to X intent', err);
-	      setStatus('画像つき共有に失敗しました。本文をコピーして X を開きます。');
-	      copyPostText().then(openXIntent, openXIntent);
+	      // 2026-07-17: 失敗時に X intent へ自動遷移しない。X app 側の不具合
+	      // (intent がログインページに落ちる回) だと遷移先が手詰まりになる上、
+	      // このページを離れると画像の長押し保存ができなくなるため、ページに
+	      // 留まって手動手順を案内する。
+	      console.warn('share-x-cand share failed', err);
+	      copyPostText().then(function(ok) {{
+	        setStatus((ok ? '本文をコピーしました。' : '本文のコピーに失敗しました。「本文をコピー」を押してください。')
+	          + ' 画像つき共有が失敗したので手動で: ①上の画像を長押し保存 → '
+	          + '②「Xアプリを開く」か ブラウザで x.com を開いて貼り付け＋画像添付。');
+	      }}, function() {{
+	        setStatus('本文のコピーに失敗しました。「本文をコピー」を押し、画像を長押し保存して手動で投稿してください。');
+	      }});
 	    }});
 	  }});
 	}})();

@@ -2699,6 +2699,13 @@ _MLB_WATCH_HANDLES = [
     "velvityrose",
     "MasayaKotani",
     "mochiko_dayo17",
+    # 2026-07-18 user go (方針: 日本人選手ゲート維持 + 米国有名アカ追加)。
+    # 実 feed 検証済 (2026-07-18、RSSHub 経由・直近20件):
+    # JomboyMedia=米国最大級のファン発リプレイ解説/クリップ (動画15・大谷言及6) /
+    # CodifyBaseball=スタッツカード画像 (大谷言及8、MLBStats と同型で画像中心)。
+    # BaseballBros は動画17だが日本人選手言及ゼロ = alias gate を通らないため見送り。
+    "JomboyMedia",
+    "CodifyBaseball",
 ]
 # 表示名 → 検出 alias (部分一致)。MLB 文脈の feed なので姓のみで安全。
 # US チーム公式は first name だけで呼ぶ投稿があるため英 first name も入れる

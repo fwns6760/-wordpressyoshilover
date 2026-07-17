@@ -436,9 +436,23 @@ def _build_share_cand_page_html(
         'style="display:inline-block;padding:9px 14px;background:#f5f5f5;color:#222;'
         'border-radius:6px;font-size:13px;font-weight:700;border:1px solid #ccc;">'
         '本文をコピー</button></p>'
+        # 2026-07-17: X app v12.8 が「画像+本文」の共有を受けなくなった報告への
+        # 代替経路。①画像だけ共有(本文は自動コピー→貼り付け) ②画像をクリップ
+        # ボードへコピー(X の本文欄で長押し貼り付け)。
+        '<p style="margin:8px 0 0;">'
+        '<button type="button" id="share-x-cand-imgonly-btn" '
+        'style="display:inline-block;padding:9px 14px;background:#1d4ed8;color:#fff;'
+        'border-radius:6px;font-size:13px;font-weight:700;border:0;">'
+        '🖼 画像だけ共有（本文は自動コピー）</button></p>'
+        '<p style="margin:8px 0 0;">'
+        '<button type="button" id="share-x-cand-copyimg-btn" '
+        'style="display:inline-block;padding:9px 14px;background:#f5f5f5;color:#222;'
+        'border-radius:6px;font-size:13px;font-weight:700;border:1px solid #ccc;">'
+        '📋 画像をコピー（投稿画面で貼り付け）</button></p>'
         '<p style="margin-top:12px;color:#666;font-size:12px;">'
-        '※ Android の X アプリが画像つき共有を受けない場合は、本文をコピーして '
-        'X の投稿画面を開きます。画像は上のプレビューを長押し保存して手動添付できます。'
+        '※ Android の X アプリが画像つき共有を受けない場合は、「画像だけ共有」か'
+        '「画像をコピー」を試してください。画像は上のプレビューを長押し保存して'
+        '手動添付もできます。'
         '</p></div>'
     )
 
@@ -455,6 +469,13 @@ def _build_share_cand_page_html(
 	  function setStatus(message) {{
 	    var el = document.getElementById('share-x-cand-status');
 	    if (el) {{ el.textContent = message || ''; }}
+	  }}
+
+	  function describeError(err) {{
+	    try {{
+	      return (err && err.name ? err.name + ': ' : '') +
+	        (err && err.message ? err.message : String(err));
+	    }} catch (e) {{ return 'unknown'; }}
 	  }}
 
 	  function copyPostText() {{
@@ -503,6 +524,68 @@ def _build_share_cand_page_html(
 	      }});
 	  }}
 	  imageReady = preloadImage();
+
+	  // 2026-07-17: X app v12.8 が files+text の共有を受けない場合の代替2経路。
+	  function blobToPng(blob) {{
+	    if (blob.type === 'image/png') {{ return Promise.resolve(blob); }}
+	    return new Promise(function(resolve, reject) {{
+	      var img = new Image();
+	      var u = URL.createObjectURL(blob);
+	      img.onload = function() {{
+	        var c = document.createElement('canvas');
+	        c.width = img.naturalWidth; c.height = img.naturalHeight;
+	        c.getContext('2d').drawImage(img, 0, 0);
+	        c.toBlob(function(b) {{
+	          URL.revokeObjectURL(u);
+	          if (b) {{ resolve(b); }} else {{ reject(new Error('png convert failed')); }}
+	        }}, 'image/png');
+	      }};
+	      img.onerror = function() {{ URL.revokeObjectURL(u); reject(new Error('image load failed')); }};
+	      img.src = u;
+	    }});
+	  }}
+
+	  var imgOnlyBtn = document.getElementById('share-x-cand-imgonly-btn');
+	  if (imgOnlyBtn) {{
+	    imgOnlyBtn.addEventListener('click', function() {{
+	      setStatus('画像だけ共有を準備しています...');
+	      imageReady.then(function() {{
+	        if (!(navigator.share && preloadedFile)) {{ throw new Error('file share unsupported'); }}
+	        return copyPostText().then(function(copied) {{
+	          try {{ history.replaceState({{}}, document.title, '/share-x-blank'); }} catch (e) {{}}
+	          return navigator.share({{files: [preloadedFile]}}).then(function() {{
+	            setStatus(copied
+	              ? '画像を渡しました。本文はコピー済みなので、投稿画面の本文欄を長押し→貼り付けしてください。'
+	              : '画像を渡しました。本文は「本文をコピー」でコピーして貼り付けてください。');
+	          }});
+	        }});
+	      }}).catch(function(err) {{
+	        console.warn('share-x-cand image-only share failed', err);
+	        setStatus('画像だけ共有も失敗しました。「📋 画像をコピー」か長押し保存を試してください。 [詳細: ' + describeError(err) + ']');
+	      }});
+	    }});
+	  }}
+
+	  var copyImgBtn = document.getElementById('share-x-cand-copyimg-btn');
+	  if (copyImgBtn) {{
+	    copyImgBtn.addEventListener('click', function() {{
+	      setStatus('画像をコピーしています...');
+	      imageReady.then(function() {{
+	        if (!preloadedFile) {{ throw new Error('image not ready'); }}
+	        if (!(navigator.clipboard && navigator.clipboard.write && window.ClipboardItem)) {{
+	          throw new Error('clipboard image unsupported');
+	        }}
+	        return blobToPng(preloadedFile).then(function(png) {{
+	          return navigator.clipboard.write([new ClipboardItem({{'image/png': png}})]);
+	        }}).then(function() {{
+	          setStatus('画像をコピーしました。Xアプリの投稿画面で本文欄を長押し→貼り付けすると画像が入ります。本文は「本文をコピー」で。');
+	        }});
+	      }}).catch(function(err) {{
+	        console.warn('share-x-cand copy image failed', err);
+	        setStatus('画像のコピーに失敗しました。上のプレビューを長押し保存してください。 [詳細: ' + describeError(err) + ']');
+	      }});
+	    }});
+	  }}
 
 	  var btn = document.getElementById('share-x-cand-btn');
 	  var copyBtn = document.getElementById('share-x-cand-copy-btn');
@@ -563,10 +646,11 @@ def _build_share_cand_page_html(
 	      console.warn('share-x-cand share failed', err);
 	      copyPostText().then(function(ok) {{
 	        setStatus((ok ? '本文をコピーしました。' : '本文のコピーに失敗しました。「本文をコピー」を押してください。')
-	          + ' 画像つき共有が失敗したので手動で: ①上の画像を長押し保存 → '
-	          + '②「Xアプリを開く」か ブラウザで x.com を開いて貼り付け＋画像添付。');
+	          + ' 画像つき共有が失敗したので「🖼 画像だけ共有」か「📋 画像をコピー」を試してください。'
+	          + ' [詳細: ' + describeError(err) + ']');
 	      }}, function() {{
-	        setStatus('本文のコピーに失敗しました。「本文をコピー」を押し、画像を長押し保存して手動で投稿してください。');
+	        setStatus('本文のコピーに失敗しました。「本文をコピー」を押し、画像を長押し保存して手動で投稿してください。'
+	          + ' [詳細: ' + describeError(err) + ']');
 	      }});
 	    }});
 	  }});

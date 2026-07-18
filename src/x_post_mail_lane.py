@@ -2746,6 +2746,55 @@ _MLB_EXTRA_STARS = frozenset({
     "佐々木朗希", "今永昇太", "吉田正尚",
 })
 
+# 2026-07-18 user「メジャーの情報間違い多い。何度も指摘された」: この lane は
+# 巨人 live lane の実名/claim gate が無く、数字を含まない捏造 (別選手への言及・
+# 場面/去就/怪我の断定) が素通りしていた。post に下の語が出たら、元投稿
+# (英語含む) に対応する根拠語が無い限り出力ごと破棄する (訳は通し、付け足しだけ
+# 落とす)。根拠語は 日本語=原文そのまま / 英語=小文字化した原文 への部分一致。
+_MLB_CLAIM_EVIDENCE: dict[str, tuple[str, ...]] = {
+    "サヨナラ": ("サヨナラ", "walk-off", "walkoff", "walk off", "walks it off", "walked it off"),
+    "満塁": ("満塁", "grand slam", "bases loaded"),
+    "グランドスラム": ("満塁", "グランドスラム", "grand slam"),
+    "完封": ("完封", "shutout", "shut out"),
+    "完全試合": ("完全試合", "perfect game"),
+    "ノーヒットノーラン": ("ノーヒットノーラン", "no-hitter", "no hitter", "no-no"),
+    "史上": ("史上", "history", "historic", "first", "ever", "record"),
+    "移籍": ("移籍", "trade", "acquir", "waiver", "claimed"),
+    "契約": ("契約", "contract", "deal", "sign", "extension"),
+    "引退": ("引退", "retire"),
+    "故障": ("故障", "injur", "hurt", "sidelined", "shut down"),
+    "負傷": ("負傷", "injur", "hurt", "sidelined"),
+    "離脱": ("離脱", "injur", "sidelined", "miss"),
+    "肩": ("肩", "shoulder"),
+    "肘": ("肘", "elbow"),
+    "膝": ("膝", "knee"),
+    "手術": ("手術", "surgery", "tommy john"),
+    "新人王": ("新人王", "rookie of the year", "roty"),
+}
+
+
+def _mlb_watch_fact_gate(post_text: str, player: str, src_text: str) -> str:
+    """post に元投稿の裏付けが無い高リスク要素があれば理由 slug、無ければ ""。
+
+    - 別選手名 gate: 対象以外の watch 選手名が post に出たら、元投稿にその選手の
+      alias (日本語/英語) が無い限り捏造として reject
+      (実例 2026-07-18: 「大谷翔平に次ぐ史上2人目」を英文ソースなしで付け足し)。
+    - claim 語 gate: _MLB_CLAIM_EVIDENCE の語は元投稿に根拠がある時だけ通す。
+    """
+    src = src_text or ""
+    src_lc = src.lower()
+    for name, aliases in _MLB_WATCH_PLAYERS.items():
+        if name == player:
+            continue
+        if name in post_text and not any(a in src for a in aliases):
+            return f"fabricated_player:{name}"
+    for word, evidence in _MLB_CLAIM_EVIDENCE.items():
+        if word in post_text and not any(
+            (e in src) or (e in src_lc) for e in evidence
+        ):
+            return f"unsupported_claim:{word}"
+    return ""
+
 
 # 2026-07-14 user「動画の重複がある」(同じHRのclipが媒体違いで何度も候補に載る):
 # 本文から通算/今季の本塁打「号数」を拾い、同一 (選手×号数) を同じプレーとして
@@ -2887,6 +2936,12 @@ def build_mlb_watch_candidates(
                 "has_video": bool(item.get("has_video")),
                 "has_media": _has_media,
                 "published_at": published_at,
+                # 2026-07-18 鮮度 context: 古い元投稿を「これから」フレームで
+                # 書く時系列ズレ対策に voice 側へ渡す (published_at 不明は None)。
+                "age_hours": (
+                    (now_utc - published_at).total_seconds() / 3600.0
+                    if published_at is not None else None
+                ),
             })
     # 動画多め: 動画付きを先に。2026-07-11 user「メジャーの動画が日本人より
     # 早くほしい」: 従来は handle 定義順 (=日本語メディア先頭) がそのまま優先に
@@ -2975,7 +3030,12 @@ def build_mlb_watch_candidates(
         post_text = ""
         if comment_fn is not None:
             try:
-                post_text = (comment_fn(p["text"], player) or "").strip()
+                try:
+                    post_text = (
+                        comment_fn(p["text"], player, p.get("age_hours")) or ""
+                    ).strip()
+                except TypeError:  # comment_fn が age 非対応 (後方互換)
+                    post_text = (comment_fn(p["text"], player) or "").strip()
             except Exception as exc:  # noqa: BLE001
                 LOG.info("mlb_watch comment_fn failed: %r", exc)
                 post_text = ""
@@ -2984,6 +3044,15 @@ def build_mlb_watch_candidates(
             LOG.info(
                 "mlb_watch skip: voice empty player=%s handle=%s",
                 player, p["handle"],
+            )
+            continue
+        # 2026-07-18 捏造ガード (実名/claim、巨人 live lane c3c62b25 と同型):
+        # 元投稿に裏付けの無い別選手言及・高リスク claim は出力ごと破棄。
+        bad_fact = _mlb_watch_fact_gate(post_text, player, p["text"])
+        if bad_fact:
+            LOG.info(
+                "mlb_watch skip: %s player=%s handle=%s",
+                bad_fact, player, p["handle"],
             )
             continue
         # 2026-07-07 user「リプは相手の意見にもっとよりそって」: 返信 (empathy) は
@@ -5788,10 +5857,24 @@ def encode_x_quote_intent_url(text: str, quote_url: str) -> str:
 
 
 def encode_x_reply_intent_url(text: str, tweet_id: str) -> str:
-    """リプライ用 X Web Intent URL。 ``in_reply_to`` で対象 tweet への返信として開く
-    (text=ヨシラバー声のリプ文)。 大手投稿に返信=大観客に露出 (インプ近道)。 半自動。"""
+    """リプライ用のリンク。 大手投稿に返信=大観客に露出 (インプ近道)。 半自動。
+
+    2026-07-17: ``x.com/intent/post?in_reply_to=`` は新しい X Android app が投稿画面でなく
+    アプリ内ブラウザのログインページで開くため実機で使えない (リプ全滅)。SNSMONEY の
+    Android 中継アプリ (package org.shinylab.snsmoney.xhelper) が同じ壁を
+    `返信文を clipboard へコピー → 元ポストを X app で開く → ユーザーが 💬 → 貼り付け`
+    で越えているので、``ANDROID_X_LAUNCH_BASE_URL`` があればそちらへ流す。
+    中継アプリは id だけから ``https://x.com/i/status/<id>`` を組み立てるので url は不要。
+    未設定時は従来の Web Intent へフォールバック (PC ブラウザでは従来どおり動く)。
+
+    注意: 中継アプリは X app を開くだけなので、**X app で今ログインしている
+    アカウント**から飛ぶ。ブラウザ経路のようにブラウザ側のログインでは決まらない。
+    """
     enc_text = _url_quote(text or "", safe="")
     tid = _url_quote(str(tweet_id or ""), safe="")
+    launcher = os.environ.get("ANDROID_X_LAUNCH_BASE_URL", "").strip().rstrip("/")
+    if launcher and tid:
+        return f"{launcher}/x-app?mode=reply&id={tid}&text={enc_text}"
     return f"{_X_INTENT_URL_BASE}?text={enc_text}&in_reply_to={tid}"
 
 
@@ -6472,6 +6555,7 @@ def _compose_html_body(
         # ため、 画像つきボタンがある時もテキストのみ intent を予備ボタンで併記
         # する (intent は X compose 直開きで画像ステップを通らない = 確実)。
         fallback_intent_html = ""
+        reply_copy_html = ""
         if share_x_url:
             button_label = "🐦 画像つきで X に投稿"
             if intent_url:
@@ -6484,7 +6568,28 @@ def _compose_html_body(
                     "✍ テキストのみで投稿 (画像は手動添付)</a>"
                 )
         elif cand_reply_id:
-            button_label = "💬 この投稿にリプライ"
+            # 中継アプリ経由では「元ポストが開く→💬→貼り付け」なので、リプ欄が直接
+            # 開くと約束しない (2026-07-17)。
+            _launcher = os.environ.get("ANDROID_X_LAUNCH_BASE_URL", "").strip().rstrip("/")
+            button_label = (
+                "💬 元ポストを開く (💬→貼り付け)"
+                if _launcher
+                else "💬 この投稿にリプライ"
+            )
+            if _launcher:
+                # clipboard を他で上書きした後にリプ文だけ入れ直す導線
+                # (SNSMONEY の候補メールと同じ形)。
+                _copy_href = (
+                    f"{_launcher}/x-app?mode=copy&text="
+                    + _url_quote(post_text or "", safe="")
+                )
+                reply_copy_html = (
+                    f"<a href=\"{_html.escape(_copy_href)}\" "
+                    "style=\"display:inline-block;padding:8px 14px;"
+                    "background:#4c1d95;color:#fff;text-decoration:none;"
+                    "border-radius:6px;font-size:13px;font-weight:600;\">"
+                    "📋 リプ文をコピー</a>"
+                )
         elif cand_quote_url:
             button_label = "🐦 引用RTで X に投稿"
         else:
@@ -6535,6 +6640,7 @@ def _compose_html_body(
             "style=\"display:inline-block;padding:8px 14px;background:#000;"
             "color:#fff;text-decoration:none;border-radius:6px;font-size:13px;"
             f"font-weight:600;\">{button_label}</a>"
+            f"{reply_copy_html}"
             f"{fallback_intent_html}"
             f"{open_original_html}"
             f"<div style=\"font-size:11px;color:{counter_color};\">"

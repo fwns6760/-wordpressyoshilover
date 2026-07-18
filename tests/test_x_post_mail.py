@@ -1186,6 +1186,31 @@ class ComposeMailTests(unittest.TestCase):
         self.assertIn("根拠データを開く", mail.html_body)
         self.assertIn("%E6%8A%95%E7%A8%BF%E6%9C%AC%E6%96%87", mail.html_body)
 
+    def test_reply_candidate_uses_android_relay_buttons(self) -> None:
+        """2026-07-17: ANDROID_X_LAUNCH_BASE_URL があればリプは中継アプリ経由。
+        SNSMONEY の候補メールと同じく「元ポストを開く」+「リプ文をコピー」の2つを出す。"""
+        from unittest.mock import patch
+
+        ts = datetime(2026, 6, 3, 21, 0, tzinfo=JST)
+        cand = Candidate(
+            title="報知リプ候補",
+            metric="HOCHI_REPLY",
+            period_label="報知リプ候補",
+            draft_text="根拠",
+            post_text="坂本勇人、この流れは次の場面まで見たいですね。",
+            char_count=25,
+            reply_to_id="12345",
+        )
+        with patch.dict("os.environ", {"ANDROID_X_LAUNCH_BASE_URL": "https://launcher.example"}):
+            mail = compose_mail([cand], now=ts)
+        # 壊れている Web Intent へ落ちていないこと。
+        self.assertNotIn("in_reply_to=12345", mail.html_body)
+        self.assertIn("https://launcher.example/x-app?mode=reply&amp;id=12345", mail.html_body)
+        self.assertIn("💬 元ポストを開く", mail.html_body)
+        # clipboard 上書き後の復帰導線。
+        self.assertIn("📋 リプ文をコピー", mail.html_body)
+        self.assertIn("https://launcher.example/x-app?mode=copy&amp;text=", mail.html_body)
+
     def test_reply_candidate_uses_reply_intent_button(self) -> None:
         ts = datetime(2026, 6, 3, 21, 0, tzinfo=JST)
         cand = Candidate(
@@ -6824,3 +6849,136 @@ class PlayerNameLeadSpaceInsensitiveTests(unittest.TestCase):
 
         out = lane._ensure_player_name_leads_post_text("戸郷翔征はギアが違った。", "戸郷翔征")
         self.assertEqual(out, "戸郷翔征はギアが違った。")
+
+
+class MlbWatchFactGateTests(unittest.TestCase):
+    """2026-07-18 user「メジャーの情報間違い多い。何度も指摘された」修正便:
+    引用RT/リプ lane の捏造ガード (別選手名 + 高リスク claim 語)。"""
+
+    @staticmethod
+    def _item(title: str, status_id: str) -> str:
+        media = (
+            "&lt;img src=&quot;https://pbs.twimg.com/amplify_video_thumb/"
+            f"{status_id}/img/x.jpg&quot;&gt;"
+        )
+        return (
+            f"<item><title>{title}</title>"
+            f"<description>{title} {media}</description>"
+            f"<link>https://x.com/MLBJapan/status/{status_id}</link></item>"
+        )
+
+    def _feed(self, *items: str) -> str:
+        return "<rss><channel>" + "".join(items) + "</channel></rss>"
+
+    def test_fabricated_cross_player_rejected(self):
+        """実例 (2026-07-18): 村上のHRダービー投稿に『大谷翔平に次ぐ史上2人目』を
+        英文ソースの裏付けなしで付け足し → reject。"""
+        from src import x_post_mail_lane as lane
+
+        bad = lane._mlb_watch_fact_gate(
+            "村上宗隆、大谷翔平に次ぐ活躍！",
+            "村上宗隆",
+            "Munetaka Murakami finished with 9 home runs in the first round!",
+        )
+        self.assertEqual(bad, "fabricated_player:大谷翔平")
+
+    def test_cross_player_allowed_when_alias_in_source(self):
+        from src import x_post_mail_lane as lane
+
+        bad = lane._mlb_watch_fact_gate(
+            "村上宗隆、大谷翔平と並ぶ活躍！",
+            "村上宗隆",
+            "Murakami joins Shohei Ohtani in the record books",
+        )
+        self.assertEqual(bad, "")
+
+    def test_unsupported_claim_rejected(self):
+        """元投稿に無い『サヨナラ』『肩』等の高リスク claim は破棄。"""
+        from src import x_post_mail_lane as lane
+
+        self.assertEqual(
+            lane._mlb_watch_fact_gate(
+                "大谷翔平、サヨナラホームラン！",
+                "大谷翔平",
+                "Shohei Ohtani crushes his 30th home run of the season",
+            ),
+            "unsupported_claim:サヨナラ",
+        )
+        self.assertEqual(
+            lane._mlb_watch_fact_gate(
+                "大谷翔平、肩の回復を最優先。",
+                "大谷翔平",
+                "The Dodgers have revealed if Shohei Ohtani will pitch in this series",
+            ),
+            "unsupported_claim:肩",
+        )
+
+    def test_supported_claim_passes_english_evidence(self):
+        """英語ソースに根拠があれば claim 語は通す (訳を殺さない)。"""
+        from src import x_post_mail_lane as lane
+
+        self.assertEqual(
+            lane._mlb_watch_fact_gate(
+                "村上宗隆、サヨナラ弾！",
+                "村上宗隆",
+                "Munetaka Murakami walks it off for the White Sox!",
+            ),
+            "",
+        )
+        self.assertEqual(
+            lane._mlb_watch_fact_gate(
+                "大谷翔平、膝の状態は問題なしと監督。",
+                "大谷翔平",
+                "Roberts says Ohtani's knee is fine",
+            ),
+            "",
+        )
+
+    def test_gate_wired_into_build_candidates(self):
+        """voice が捏造 claim を返した候補は build 段階で skip される。"""
+        from src import x_post_mail_lane as lane
+
+        feed = self._feed(self._item("Shohei Ohtani crushes his 30th home run", "31"))
+        cands = lane.build_mlb_watch_candidates(
+            max_count=3,
+            fetch_fn=lambda url: feed if "MLBJapan" in url else "<rss><channel></channel></rss>",
+            comment_fn=lambda pt, pl: f"{pl}、サヨナラホームラン！",
+        )
+        self.assertEqual(cands, [])
+
+    def test_age_hours_passed_to_comment_fn(self):
+        """comment_fn が 3 引数対応なら age_hours が渡る (pubDate 無し feed は None)。"""
+        from src import x_post_mail_lane as lane
+
+        seen: list = []
+
+        def _fn(pt, pl, age_hours=None):
+            seen.append(age_hours)
+            return f"{pl}、第30号ホームラン！"
+
+        feed = self._feed(self._item("大谷翔平が第30号ホームラン", "32"))
+        cands = lane.build_mlb_watch_candidates(
+            max_count=3,
+            fetch_fn=lambda url: feed if "MLBJapan" in url else "<rss><channel></channel></rss>",
+            comment_fn=_fn,
+        )
+        self.assertEqual(len(cands), 1)
+        self.assertEqual(seen, [None])
+
+
+class MlbStaleNoteTests(unittest.TestCase):
+    """2026-07-18 時系列ズレ対策: 古い元投稿は試合前フレーム禁止 note を足す。"""
+
+    def test_fresh_or_unknown_is_empty(self):
+        from src.tools import run_x_post_mail as runner
+
+        self.assertEqual(runner._mlb_stale_note(None), "")
+        self.assertEqual(runner._mlb_stale_note(0.5), "")
+        self.assertEqual(runner._mlb_stale_note(2.9), "")
+
+    def test_stale_note_mentions_age(self):
+        from src.tools import run_x_post_mail as runner
+
+        note = runner._mlb_stale_note(7.4)
+        self.assertIn("約7時間前", note)
+        self.assertIn("試合前・未来フレーム", note)

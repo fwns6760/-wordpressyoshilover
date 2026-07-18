@@ -467,6 +467,19 @@ def _mlb_watch_max_per_run() -> int:
     return _resolve_int_env("X_POST_MLB_WATCH_MAX", 3, min_value=0)
 
 
+def _mlb_stale_note(age_hours) -> str:
+    """2026-07-18 user「メジャーの情報間違い多い」(時系列ズレ対策):
+    古い元投稿を「これから」「楽しみ」等の試合前フレームで書く事故を防ぐ。
+    3h 未満 / 不明は従来 prompt と完全一致 (空文字)。"""
+    if age_hours is None or age_hours < 3:
+        return ""
+    return (
+        f" この元投稿は約{int(age_hours)}時間前のもの。試合やイベントは既に"
+        "進行・終了している可能性が高い。『これから』『今夜』『楽しみ』等の"
+        "試合前・未来フレームで書かず、元投稿が伝えた時点の事実として書く。"
+    )
+
+
 def _mlb_voice_subject_and_note(player: str, *, reply: bool = False) -> tuple[str, str]:
     """Return LLM framing for MLB watch/reply without mislabeling extra stars."""
     # 2026-07-06 user「MLBリプ候補も数字が入るのが変。相手の内容に合わせて書いて」:
@@ -3487,11 +3500,11 @@ def _main_mlb_only(args: argparse.Namespace, recipients: list[str]) -> int:
         try:
             from src import x_post_branding_gen as _mlb_xbg
 
-            def mlb_comment_fn(parent_text, player, _k=_mlb_key, _g=_mlb_xbg, _now=now_jst):  # noqa: E731
+            def mlb_comment_fn(parent_text, player, age_hours=None, _k=_mlb_key, _g=_mlb_xbg, _now=now_jst):  # noqa: E731
                 subject, note = _mlb_voice_subject_and_note(player, reply=False)
                 return _g.build_quote_rt_comment(
                     parent_text, player, gemini_api_key=_k, now=_now,
-                    subject=subject, extra_voice_note=note,
+                    subject=subject, extra_voice_note=note + _mlb_stale_note(age_hours),
                     quote_style="ss_news",
                 )
         except Exception as _mlb_imp_exc:  # noqa: BLE001
@@ -3530,12 +3543,12 @@ def _main_mlb_only(args: argparse.Namespace, recipients: list[str]) -> int:
     # */10 の本便に少量同乗させる (dedup 共有で二重 mail なし)。empathy 型 =
     # 元投稿の内容への純粋な反応 (db数字なし、2026-07-06 user 決定を踏襲)。
     if fast_rep_max > 0:
-        def mlb_fast_rep_comment_fn(parent_text, player, _k=_mlb_key, _now=now_jst):  # noqa: E731
+        def mlb_fast_rep_comment_fn(parent_text, player, age_hours=None, _k=_mlb_key, _now=now_jst):  # noqa: E731
             from src import x_post_branding_gen as _fr_xbg
             subject, note = _mlb_voice_subject_and_note(player, reply=True)
             return _fr_xbg.build_quote_rt_comment(
                 parent_text, player, gemini_api_key=_k, now=_now,
-                subject=subject, extra_voice_note=note,
+                subject=subject, extra_voice_note=note + _mlb_stale_note(age_hours),
                 budget_site="reply", require_db_fact=False,
                 reply_style="empathy",
             )
@@ -4713,13 +4726,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                 try:
                     from src import x_post_branding_gen as _mlb_xbg
 
-                    def mlb_comment_fn(parent_text, player, _k=_mlb_key, _g=_mlb_xbg, _now=now_jst):  # noqa: E731
+                    def mlb_comment_fn(parent_text, player, age_hours=None, _k=_mlb_key, _g=_mlb_xbg, _now=now_jst):  # noqa: E731
                         # フレーミング: 元巨人 / 大谷別枠 / 日本人スター枠を分離。
                         # 山本由伸・鈴木誠也・村上宗隆は元巨人扱いしない。
                         subject, note = _mlb_voice_subject_and_note(player, reply=False)
                         return _g.build_quote_rt_comment(
                             parent_text, player, gemini_api_key=_k, now=_now,
-                            subject=subject, extra_voice_note=note,
+                            subject=subject, extra_voice_note=note + _mlb_stale_note(age_hours),
                         )
                 except Exception as _mlb_imp_exc:  # noqa: BLE001
                     LOG.warning("mlb_watch LLM comment unavailable: %r", _mlb_imp_exc)
@@ -4889,12 +4902,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                 try:
                     from src import x_post_branding_gen as _mlbr_xbg
 
-                    def mlb_rep_comment_fn(parent_text, player, _k=_mlbr_key, _g=_mlbr_xbg, _now=now_jst):  # noqa: E731
+                    def mlb_rep_comment_fn(parent_text, player, age_hours=None, _k=_mlbr_key, _g=_mlbr_xbg, _now=now_jst):  # noqa: E731
                         # フレーミングは引用RT lane と同じ分類。
                         subject, note = _mlb_voice_subject_and_note(player, reply=True)
                         return _g.build_quote_rt_comment(
                             parent_text, player, gemini_api_key=_k, now=_now,
-                            subject=subject, extra_voice_note=note,
+                            subject=subject, extra_voice_note=note + _mlb_stale_note(age_hours),
                             budget_site="reply", require_db_fact=False,
                             reply_style="empathy",
                         )

@@ -336,12 +336,9 @@ def build_share_drafts(
             LOG.warning("x_share llm draft failed: %r", exc)
     if not main_text:
         main_text, reply_body = _build_drafts_fallback(title_line, body)
-    # 2026-07-14 クリック導線: 本文の最終行で必ずリプ欄 (URLの置き場) を指す。
-    # 上限に収まらない異常系だけ誘導行を諦める (本文優先)。
-    if _REPLY_POINTER not in main_text:
-        with_pointer = f"{main_text}\n\n{_REPLY_POINTER}"
-        if x_weighted_len(with_pointer) <= _main_weighted_limit():
-            main_text = with_pointer
+    # 2026-07-19 user「リプの考えは捨てる」: おりポス単発運用のため、
+    # リプ欄への誘導行 (_REPLY_POINTER) は付けない。reply_text は
+    # 任意で手動リプする時のコピー元としてのみ残す。
     reply_text = f"{reply_body}\n{link}".strip()
     return {
         "ok": True,
@@ -521,15 +518,14 @@ def _assemble_main(title_line: str, hook: str, summary: str) -> str:
     """フック → タイトル行 → 本文。超過時は本文を文単位で切り詰めてから間引く。
 
     上限は _main_weighted_limit() (Premium 長文、default 900 weighted)。
-    リプ誘導行 (_REPLY_POINTER) の分は build_share_drafts が後段で足すため、
-    ここでその weighted 分を先に予約して切り詰める。
+    (2026-07-19 リプ誘導行の付与を廃止したため、予約は本文分のみ。)
     """
     limit = _main_weighted_limit()
     if hook and summary:
         head = f"{hook}\n\n{title_line}\n\n"
         trimmed = _trim_to_budget_sentences(
             summary,
-            limit - x_weighted_len(head) - x_weighted_len(f"\n\n{_REPLY_POINTER}"),
+            limit - x_weighted_len(head),
         )
         if trimmed != summary:
             LOG.info("x_share assemble summary_trimmed to fit weighted limit")

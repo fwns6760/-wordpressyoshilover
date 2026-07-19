@@ -138,15 +138,15 @@ class BuildShareDraftsTests(unittest.TestCase):
         self.assertEqual(
             drafts["main_text"],
             "低めの制球が答え。\n\n井上温大が7回無失点で今季3勝目（スポーツ報知）\n\n"
-            "丁寧に低めを突く投球で7回無失点。\n\n続きはリプ欄の記事から",
+            "丁寧に低めを突く投球で7回無失点。",
         )
         self.assertIn("次戦はカード頭で先発予定。", drafts["reply_text"])
 
-    def test_main_text_always_points_to_reply(self):
-        """2026-07-14 user「クリック減った。工夫できない」: URLの置き場 (リプ欄)
-        への誘導行を本文の最終行に必ず入れる。fallback 経路も対象。"""
+    def test_main_text_has_no_reply_pointer(self):
+        """2026-07-19 user「リプの考えは捨てる」: おりポス単発運用のため、
+        リプ欄への誘導行は本文に入れない。fallback 経路も対象。"""
         drafts = xshare.build_share_drafts(self._MATERIAL, gemini_api_key="")
-        self.assertTrue(drafts["main_text"].endswith("続きはリプ欄の記事から"))
+        self.assertNotIn("リプ欄", drafts["main_text"])
         self.assertLessEqual(
             xshare.x_weighted_len(drafts["main_text"]),
             xshare._main_weighted_limit(),

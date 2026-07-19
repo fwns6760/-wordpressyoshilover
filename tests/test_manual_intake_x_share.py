@@ -394,9 +394,12 @@ class XShareEndpointTests(unittest.TestCase):
         self.assertEqual(payload["reason"], "empty_text")
 
     def test_thread_weighted_too_long_rejected(self):
-        # 2026-07-07: おりポス (main) は Premium 長文上限 (default 900 weighted)。
+        # 2026-07-19: おりポス (main) は Premium 長文上限 (default 1400 weighted)。
+        # 上限を動的に参照して常に「上限超過」の本文を作る (上限変更でこのテストが
+        # 実APIへ到達した事故の再発防止)。
+        over = xshare._main_weighted_limit() // 2 + 10
         body = json.dumps({
-            "main_text": "あ" * 460,  # weighted 920 > 900
+            "main_text": "あ" * over,
             "reply_text": "r",
         }).encode("utf-8")
         status, payload = _invoke(

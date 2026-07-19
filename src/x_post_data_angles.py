@@ -934,31 +934,24 @@ def _season_hr_by_player(db_path: str) -> dict[str, int]:
     return out
 
 
-def build_legend_age_compare_candidates(
+def legend_age_compare_facts(
     db_path: str,
     *,
     now: Optional[datetime] = None,
-    max_count: int = 1,
     max_age: int = 26,
     min_career_hr: int = 5,
-    dedup_set: Optional[set[str]] = None,
-    with_image: bool = True,
     career_cache: Optional[dict] = None,
     legends: Optional[dict] = None,
-) -> list:
-    """「同年齢シーズン時点の通算本塁打」で現役若手 × レジェンドを対比する驚き候補。
+) -> list[dict]:
+    """同年齢シーズン時点の通算本塁打で 現役若手 × レジェンド を採点した構造化 rows。
 
-    角度① 新旧比較 (2026-06-12 user 合意)。 年齢=その年に迎える満年齢 (年度-生年)
-    で両者同一ルール比較。 現役側 = npb_career cache の過去年度 + insight.db の今季
-    (career page の今季行は使わない = 二重計上防止)。 レジェンド側 =
-    config/legend_age_seasons.json (NPB公式 verify 済み bake-in)。
-
-    驚きゲート: 「レジェンドの同年齢時点 (>0本) を上回っている」若手だけ通す。
-    cache 未取得環境では空 list (graceful)。
+    X 角度① (build_legend_age_compare_candidates) と YT Shorts
+    (yt_shorts_agecompare) の共通ソース。数式・gate は 1 箇所に保つ。
+    返りは beaten_cum 降順の
+    {player, age, cum_hr, beaten_name, beaten_cum, above_name, above_cum}。
     """
     if now is None:
         now = datetime.now(JST)
-    Candidate = _candidate_cls()
     if legends is None:
         legends = _load_legend_age_seasons()
     if career_cache is None:
@@ -1037,9 +1030,63 @@ def build_legend_age_compare_candidates(
         above_pair = min(above) if above else None
         scored.append((beaten_cum, name, age, cum, beaten_name, above_pair))
 
+    return [
+        {
+            "player": name,
+            "age": age,
+            "cum_hr": cum,
+            "beaten_name": beaten_name,
+            "beaten_cum": beaten_cum,
+            "above_name": above_pair[1] if above_pair else "",
+            "above_cum": above_pair[0] if above_pair else 0,
+        }
+        for beaten_cum, name, age, cum, beaten_name, above_pair in sorted(
+            scored, reverse=True)
+    ]
+
+
+def build_legend_age_compare_candidates(
+    db_path: str,
+    *,
+    now: Optional[datetime] = None,
+    max_count: int = 1,
+    max_age: int = 26,
+    min_career_hr: int = 5,
+    dedup_set: Optional[set[str]] = None,
+    with_image: bool = True,
+    career_cache: Optional[dict] = None,
+    legends: Optional[dict] = None,
+) -> list:
+    """「同年齢シーズン時点の通算本塁打」で現役若手 × レジェンドを対比する驚き候補。
+
+    角度① 新旧比較 (2026-06-12 user 合意)。 年齢=その年に迎える満年齢 (年度-生年)
+    で両者同一ルール比較。 現役側 = npb_career cache の過去年度 + insight.db の今季
+    (career page の今季行は使わない = 二重計上防止)。 レジェンド側 =
+    config/legend_age_seasons.json (NPB公式 verify 済み bake-in)。
+
+    驚きゲート: 「レジェンドの同年齢時点 (>0本) を上回っている」若手だけ通す。
+    cache 未取得環境では空 list (graceful)。採点は legend_age_compare_facts と共通。
+    """
+    if now is None:
+        now = datetime.now(JST)
+    Candidate = _candidate_cls()
+    rows = legend_age_compare_facts(
+        db_path,
+        now=now,
+        max_age=max_age,
+        min_career_hr=min_career_hr,
+        career_cache=career_cache,
+        legends=legends,
+    )
+
     out: list = []
-    for beaten_cum, name, age, cum, beaten_name, above_pair in sorted(
-            scored, reverse=True):
+    for row in rows:
+        name = row["player"]
+        age = row["age"]
+        cum = row["cum_hr"]
+        beaten_name = row["beaten_name"]
+        beaten_cum = row["beaten_cum"]
+        above_pair = (row["above_cum"], row["above_name"]) if row["above_name"] else None
         if len(out) >= max_count:
             break
         signature = f"legend_compare|{name}|{age}|{cum}"

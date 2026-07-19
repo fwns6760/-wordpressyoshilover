@@ -1285,6 +1285,11 @@ _HTML_FORM = """<!DOCTYPE html>
     var copyRow = document.createElement('div');
     copyRow.style.cssText = 'display:flex;gap:6px;margin-top:6px;';
     copyRow.appendChild(xsCopyBtn('📋 本文をコピー', mainTa));
+    // 2026-07-19 user「リプのURLが入っていない」: 伸びたおりポスに後から
+    // 手動で URL リプを足す用。textarea は出さずコピーだけ。
+    if (draft.article_url) {
+      copyRow.appendChild(xsCopyBtn('🔗 記事URLコピー', { value: draft.article_url }));
+    }
     xsEditor.appendChild(copyRow);
     var xsImgPromise = draft.image_url
       ? fetch('/x-share-image?' + new URLSearchParams({url: draft.image_url}).toString(), {credentials: 'same-origin'})
@@ -1351,8 +1356,8 @@ _HTML_FORM = """<!DOCTYPE html>
     xsGuide.className = 'insight-meta';
     xsGuide.style.cssText = 'margin-top:6px;';
     xsGuide.textContent = draft.image_url
-      ? '中継アプリが画像をXへ渡し、本文をコピーします。投稿画面で長押し→貼り付け→ポスト。 [v6]'
-      : '中継アプリ経由で本文がXの投稿画面に入ります。そのままポスト。 [v6]';
+      ? '中継アプリが画像をXへ渡し、本文をコピーします。投稿画面で長押し→貼り付け→ポスト。伸びた時は「記事URLコピー」→自分のポストに返信で貼る。 [v7]'
+      : '中継アプリ経由で本文がXの投稿画面に入ります。そのままポスト。 [v7]';
     xsEditor.appendChild(xsGuide);
   }
   async function xsLoadDraft(postId) {

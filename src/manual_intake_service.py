@@ -1318,10 +1318,36 @@ _HTML_FORM = """<!DOCTYPE html>
     var postBtn = document.createElement('button');
     postBtn.type = 'button';
     postBtn.className = 'primary';
-    postBtn.textContent = draft.image_url ? '📱 Xへ共有 (①コピー+画像添付)' : '📱 Xへ共有 (①)';
+    postBtn.textContent = '📱 Xアプリで投稿';
     postBtn.style.cssText = 'width:100%;padding:14px;font-size:15px;margin-top:8px;';
     postBtn.addEventListener('click', async function() {
       var first = mainTa.value || '';
+      var second = (dataTa && dataTa.value.trim()) ? dataTa.value : (replyTa.value || '');
+      if (/android/i.test(navigator.userAgent)) {
+        // SNSMONEY mail ボタンと同じ: X中継アプリを intent:// で直接起動
+        // (中間ページなし)。アプリが画像+①を X composer へ渡し②をコピーする。
+        // タブは遷移しないため、③コピーなどエディタはそのまま使える。
+        var params = { text: first };
+        if (draft.image_url && second.trim()) {
+          params.mode = 'thread';
+          params.reply = second;
+          params.image = draft.image_url;
+        } else {
+          params.mode = 'post';
+          if (draft.image_url) { params.image = draft.image_url; }
+        }
+        // Android Uri.getQueryParameter は '+' を空白へ戻さないため
+        // URLSearchParams ではなく encodeURIComponent (%20系) で組む。
+        var pairs = [];
+        Object.keys(params).forEach(function(k) { pairs.push(k + '=' + encodeURIComponent(params[k])); });
+        var query = pairs.join('&');
+        var host = 'snsmoney-intake-cb4fqki2ha-an.a.run.app';
+        location.href = 'intent://' + host + '/x-app?' + query
+          + '#Intent;scheme=https;package=org.shinylab.snsmoney.xhelper;S.browser_fallback_url='
+          + encodeURIComponent('https://' + host + '/x-app?' + query) + ';end';
+        return;
+      }
+      // Android 以外: Web Share → x.com/intent/post の順で fallback
       try { await navigator.clipboard.writeText(first); } catch (e) {}
       var blob = xsImgPromise ? await xsImgPromise : null;
       try {
@@ -1347,9 +1373,7 @@ _HTML_FORM = """<!DOCTYPE html>
     var xsGuide = document.createElement('div');
     xsGuide.className = 'insight-meta';
     xsGuide.style.cssText = 'margin-top:6px;';
-    xsGuide.textContent = draft.image_url
-      ? '押すと①をコピーして画像の共有シートが開きます。Xを選ぶ→本文に①を貼り付け→「＋」→ここに戻って' + (dataTa ? '②③' : '②') + 'をコピー→貼り付け→Post all。'
-      : '押すと共有シートに①が入ります。投稿後、' + (dataTa ? '②③' : '②') + 'をコピーしてリプで追加。';
+    xsGuide.textContent = 'X中継アプリが画像+①をXへ渡し、②をコピーします。Xで「＋」→貼り付け' + (dataTa ? '→③はここに戻ってコピーして追加' : '') + '→Post all。';
     xsEditor.appendChild(xsGuide);
   }
   async function xsLoadDraft(postId) {

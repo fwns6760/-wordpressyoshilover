@@ -8,3 +8,6 @@
 - 11:55 JST | user怒りFB「なぜSNSMONEYを中継してる」 | SNSMONEY /x-app 経由をrejectされ全撤去 | 自前 Web Share 方式へ再実装 (commit 888d3e66)
 - 11:57 JST | deploy | manual-intake-service-00167-w77 | ①clipboard+画像Web Share (files)、/x-share-image proxy (WP_URL host限定・auth付き) | snsmoney参照ゼロをsmoke確認
 - 教訓 | yoshiloverの機能を他プロジェクト(SNSMONEY)のインフラ・アプリ経由にしない。外部依存ゼロで自前完結が既定
+- 12:05 JST | user再訂正「ポストができない。アプリからポストしてる。SNSMONEYは」 | Web Share方式では投稿にならない・SNSMONEYのX中継アプリ経由が正 | NGだったのは中間ページ、アプリ経由自体はOK
+- 12:08 JST | fix commit 3475d1f4 + deploy manual-intake-service-00168-pb9 | Androidはintent://でX中継アプリ直起動(中間ページなし、画像+①→X、②clipboard)、非AndroidはWeb Share/intent-post fallback | build SUCCESS + intent://配信をsmoke確認
+- 教訓(訂正) | 7/19の怒りの対象は「SNSMONEYの中間画面が挟まるUX」であって、X中継アプリの流用自体は user 公認 (SNSMONEYで実運用中)。intent://直起動が正解形

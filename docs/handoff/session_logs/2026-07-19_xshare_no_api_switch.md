@@ -22,3 +22,4 @@
 - 15:20 JST | user「もう少し長く」「バズる感じに」 | commit 01c70617: SUMMARY 300-600字/上限1400/争点+立場フック/感情引用優先 | deploy 00177-b4k | 証跡: pytest 67 passed (上限テスト動的化で実API到達事故も修正)・配信JS node --check OK。テスト中X APIが402 credits depleted応答=クーポン枯渇の直接証拠
 
 19:20 JST | fix commit | DAZN動画has_video誤判定 (entity-encoded video+media poster) | 86a32d42 | 次build時に同梱deploy
+19:40 JST | feat commit + deploy | /clips 動画引用RT即応 | 48550e03 / build ae5c3c51 / rev 00178-7dw 100% | prod smoke: page 200・gate 403・authed candidates ok (DAZN含む7 handle) 。x-post-mail-lane job image の DAZN fix 反映は次の mail-lane build に同梱

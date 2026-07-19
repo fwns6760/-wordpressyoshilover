@@ -785,7 +785,7 @@ _HTML_FORM = """<!DOCTYPE html>
   </section>
   <section class=\"tab-panel\" data-tab=\"xshare\" id=\"tab-panel-xshare\" hidden>
     <h2 style=\"font-size:16px;margin:6px 0 8px;\">🔗 記事をXで共有 (おりポス+リプ)</h2>
-    <p class=\"insight-meta\" style=\"margin:0 0 10px;\">おりポス=最強の発言1個で引き込む本文+画像 (URLなし・末尾にリプ誘導行)、リプ=残りのチラ見せ+URL。ボタン1回で連続投稿。</p>
+    <p class=\"insight-meta\" style=\"margin:0 0 10px;\">おりポス=最強の発言1個で引き込む本文+画像 (URLなし・末尾にリプ誘導行)、リプ=残りのチラ見せ+URL。X中継アプリ経由で投稿 (X API不使用)。</p>
     <button type=\"button\" id=\"xshare-thread-btn\" class=\"primary\" style=\"width:100%;padding:12px;font-size:15px;margin-bottom:8px;\">🧵 今日の試合スレ案を作る (結果→データ→記事)</button>
     <button type=\"button\" id=\"xshare-refresh\" class=\"secondary\" style=\"width:100%;padding:12px;font-size:15px;\">🔄 最近の公開記事を読み込む</button>
     <div style=\"display:flex;gap:8px;margin-top:8px;\">
@@ -1287,42 +1287,53 @@ _HTML_FORM = """<!DOCTYPE html>
     replyTa.value = draft.reply_text || '';
     xsEditor.appendChild(replyTa);
     xsEditor.appendChild(xsCounter(replyTa, 'リプ'));
+    // 2026-07-19: X API 無料枠 402 を受けて API 直投稿 (/x-share-thread) を廃止し、
+    // SNSMONEY 方式へ切替。snsmoney-intake の /x-app 起動ページ (認証不要) 経由で
+    // X中継アプリが画像+①を X composer へ渡し、②をクリップボードへコピーする。
+    function xsCopyBtn(label, ta) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'secondary';
+      b.style.cssText = 'flex:1;padding:10px;font-size:13px;';
+      b.textContent = label;
+      b.addEventListener('click', function() {
+        try { navigator.clipboard.writeText(ta.value || ''); b.textContent = '✅ コピー済'; } catch (e) { alert('コピー失敗: ' + String(e)); }
+        setTimeout(function() { b.textContent = label; }, 2000);
+      });
+      return b;
+    }
+    var copyRow = document.createElement('div');
+    copyRow.style.cssText = 'display:flex;gap:6px;margin-top:6px;';
+    copyRow.appendChild(xsCopyBtn('📋 ①コピー', mainTa));
+    if (dataTa) { copyRow.appendChild(xsCopyBtn('📋 ②コピー', dataTa)); }
+    copyRow.appendChild(xsCopyBtn('📋 ' + (dataTa ? '③' : '②') + 'コピー', replyTa));
+    xsEditor.appendChild(copyRow);
     var postBtn = document.createElement('button');
     postBtn.type = 'button';
     postBtn.className = 'primary';
-    postBtn.textContent = draft.is_thread ? '🚀 スレを連続投稿 (最大3連)' : '🚀 おりポス+リプを連続投稿';
-    postBtn.style.cssText = 'width:100%;padding:14px;font-size:15px;margin-top:6px;';
-    postBtn.addEventListener('click', async function() {
-      var nParts = 2 + ((dataTa && dataTa.value.trim()) ? 1 : 0);
-      if (!confirm('X に' + nParts + '連投稿します。よろしいですか？')) { return; }
-      postBtn.disabled = true;
-      postBtn.textContent = '🚀 投稿中...';
-      try {
-        var resp = await fetch('/x-share-thread', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-          credentials: 'same-origin',
-          body: JSON.stringify({
-            main_text: mainTa.value || '',
-            reply_text: replyTa.value || '',
-            data_text: (dataTa && dataTa.value) || '',
-            image_url: draft.image_url || '',
-            share_type: draft.share_type || (draft.is_thread ? 'postgame_thread' : ''),
-          }),
-        });
-        var json = await resp.json().catch(function() { return {}; });
-        if (json && json.ok) {
-          postBtn.textContent = '✅ 投稿成功 (おりポス id=' + (json.main_tweet_id || '?') + (json.image_attached ? ' / 画像付き' : ' / ⚠️画像なし') + ')';
-        } else {
-          postBtn.textContent = '❌ 失敗: ' + (json.reason || ('status ' + resp.status));
-          postBtn.disabled = false;
-        }
-      } catch (e) {
-        postBtn.textContent = '❌ エラー: ' + String(e);
-        postBtn.disabled = false;
+    postBtn.textContent = '📱 Xアプリで投稿 (API不使用・X中継アプリ)';
+    postBtn.style.cssText = 'width:100%;padding:14px;font-size:15px;margin-top:8px;';
+    postBtn.addEventListener('click', function() {
+      var second = (dataTa && dataTa.value.trim()) ? dataTa.value : (replyTa.value || '');
+      var params = { text: mainTa.value || '' };
+      if (draft.image_url && second.trim()) {
+        params.mode = 'thread';
+        params.reply = second;
+        params.image = draft.image_url;
+      } else {
+        params.mode = 'post';
+        if (draft.image_url) { params.image = draft.image_url; }
       }
+      window.open('https://snsmoney-intake-cb4fqki2ha-an.a.run.app/x-app?' + new URLSearchParams(params).toString(), '_blank');
     });
     xsEditor.appendChild(postBtn);
+    var xsGuide = document.createElement('div');
+    xsGuide.className = 'insight-meta';
+    xsGuide.style.cssText = 'margin-top:6px;';
+    xsGuide.textContent = dataTa
+      ? '中継アプリが画像+①をXへ渡し、②をコピーします。Xで「＋」→②を貼り付け→この画面に戻って③をコピー→「＋」→貼り付け→Post all。'
+      : '中継アプリが画像+①をXへ渡し、②をコピーします。Xで「＋」→②を貼り付け→Post all。';
+    xsEditor.appendChild(xsGuide);
   }
   async function xsLoadDraft(postId) {
     xsEditor.hidden = true;

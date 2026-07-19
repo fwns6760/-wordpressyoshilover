@@ -223,9 +223,16 @@ _VIDEO_THUMB_MARKERS = (
     "ext_tw_video_thumb",    # 外部 / 旧形式動画
     "tweet_video_thumb",     # アニメ GIF (X 上は動画扱い)
     "<video",                # 稀に video 要素そのもの
+    "&lt;video",             # entity-encoded の video 要素 (DAZN 実 feed 2026-07-19)
+    "video.twimg.com",       # video 本体 URL (poster が media/ の独自サムネでも動画)
     "video/mp4",
     "/video/1",
 )
+
+# DAZN 等は動画に独自サムネを付けるため poster="https://pbs.twimg.com/media/..."
+# になる (2026-07-19 実 feed)。 poster 属性の media/ を写真添付と誤認しないよう、
+# has_image 判定前に poster 属性ごと除去する (生 HTML / entity-encoded 両対応)。
+_POSTER_ATTR_RE = _re.compile(r'poster=(?:&quot;.*?&quot;|".*?")', _re.I | _re.S)
 
 
 def _has_video_markup(desc_html: str) -> bool:
@@ -267,9 +274,10 @@ def _extract_rss_items(xml: str) -> list[dict]:
                 "has_video": _has_video_markup(desc_raw),
                 # 静止画 (写真) の添付判定。RSSHub は写真を
                 # <img src="https://pbs.twimg.com/media/..."> で埋め込む。
-                # 動画サムネ (amplify_video_thumb 等) は media/ を含まないので
-                # 動画と画像は独立に判定できる (2026-07-02 MLB watch 用)。
-                "has_image": "pbs.twimg.com/media/" in (desc_raw or ""),
+                # 動画サムネ (amplify_video_thumb 等) は media/ を含まないが、
+                # DAZN 等の独自サムネは poster=".../media/..." で入るため
+                # poster 属性を除去してから判定する (2026-07-19)。
+                "has_image": "pbs.twimg.com/media/" in _POSTER_ATTR_RE.sub("", desc_raw or ""),
                 "published_at": _parse_pubdate(item),
             })
     return out

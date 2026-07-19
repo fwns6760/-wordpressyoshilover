@@ -138,6 +138,34 @@ class GatherBuzzPostsTests(unittest.TestCase):
         self.assertEqual([p["url"] for p in posts], ["https://x.com/y/status/1"])
         self.assertTrue(posts[0]["has_video"])
 
+    def test_dazn_encoded_video_with_media_poster_counts_as_video(self):
+        # 2026-07-19 実事故: DAZN クリップは entity-encoded <video> + 独自サムネ
+        # poster="https://pbs.twimg.com/media/..." のため has_video=False /
+        # has_image=True と誤判定され、試合帯の動画 lane (require_video=True) で
+        # 全滅 → ビジター戦 (日テレ無し) の動画候補がゼロになっていた。
+        feed = (
+            "<rss><channel>"
+            "<item><title>泉口友汰 値千金の5号ソロ</title>"
+            "<description>10球目を捉えた&lt;br&gt;⚾️巨人×中日&lt;br&gt;"
+            "&lt;video width=&quot;1920&quot; height=&quot;1080&quot; "
+            "src=&quot;https://video.twimg.com/amplify_video/1/vid/avc1/1280x720/a.mp4?tag=14&quot; "
+            "controls=&quot;controls&quot; "
+            "poster=&quot;https://pbs.twimg.com/media/HNk?format=jpg&amp;amp;name=orig&quot;&gt;"
+            "&lt;/video&gt;</description>"
+            "<link>https://x.com/DAZNJPNBaseball/status/1</link></item>"
+            "</channel></rss>"
+        )
+        det = lambda t: "泉口友汰" if "泉口" in t else ""  # noqa: E731
+        posts = vr.gather_buzz_posts(
+            detect_player_fn=det, fetch_fn=lambda u: feed,
+            handles=["DAZNJPNBaseball"], min_score=2, require_video=True,
+            max_age_hours=1e9,
+        )
+        self.assertEqual([p["url"] for p in posts], ["https://x.com/DAZNJPNBaseball/status/1"])
+        self.assertTrue(posts[0]["has_video"])
+        # poster の media/ URL は写真添付ではない
+        self.assertFalse(posts[0]["has_image"])
+
     def test_max_age_hours_drops_old_posts(self):
         from datetime import datetime, timezone
         feed = (

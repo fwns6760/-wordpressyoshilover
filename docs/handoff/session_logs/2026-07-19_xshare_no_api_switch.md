@@ -20,3 +20,5 @@
 - 14:45 JST | v8事故: '\n\n'がPython実改行化→配信JS構文エラーで画面全滅(pytest緑でも検出不能) | fix 59a439fb: String.fromCharCode(10,10) + 埋込JS node --check手順を検証に追加
 - 14:50 JST | v8確定 deploy 00176-xv9 | おりポス=本文+URL一体text、x.com/intent/post 1タップ、画像はOGPカード | 証跡: 配信JS node --check OK / playwright render errors[] / textarea+href実測でURL付与確認
 - 15:20 JST | user「もう少し長く」「バズる感じに」 | commit 01c70617: SUMMARY 300-600字/上限1400/争点+立場フック/感情引用優先 | deploy 00177-b4k | 証跡: pytest 67 passed (上限テスト動的化で実API到達事故も修正)・配信JS node --check OK。テスト中X APIが402 credits depleted応答=クーポン枯渇の直接証拠
+
+19:20 JST | fix commit | DAZN動画has_video誤判定 (entity-encoded video+media poster) | 86a32d42 | 次build時に同梱deploy

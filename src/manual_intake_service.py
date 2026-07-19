@@ -518,6 +518,7 @@ _HTML_FORM = """<!DOCTYPE html>
     <a class=\"tab-btn\" href=\"/live\" style=\"text-decoration:none;display:inline-block\">⚾ 観戦</a>
     <a class=\"tab-btn\" href=\"/friends\" style=\"text-decoration:none;display:inline-block\">👥 常連</a>
     <a class=\"tab-btn\" href=\"/trend\" style=\"text-decoration:none;display:inline-block\">🔥 トレンド</a>
+    <a class=\"tab-btn\" href=\"/clips\" style=\"text-decoration:none;display:inline-block\">🎬 動画</a>
     <a class=\"tab-btn\" href=\"/scout\" style=\"text-decoration:none;display:inline-block\">🎯 開拓</a>
     <a class=\"tab-btn\" href=\"/profile\" style=\"text-decoration:none;display:inline-block\">📌 固定</a>
   </nav>
@@ -2875,6 +2876,166 @@ def _pick_link_reply_target(ctx_text: str) -> tuple[str, str]:
     return url, label
 
 
+def _build_clip_candidates(
+    now: datetime | None = None,
+    *,
+    max_age_hours: float = 6.0,
+    limit: int = 12,
+    gather_fn=None,
+) -> dict[str, Any]:
+    """🎬 動画引用RT即応 (/clips、2026-07-19 user GO) の候補一覧。
+
+    素材・gate は mail 便の video_radar と完全共用 (RSSHub read-only / ¥0 /
+    この関数は LLM なし)。試合帯の handle 構成とビジター戦の日テレ除外
+    (game_buzz_handles) も共用。comment は定型 (LLM は /clip-comment で別途)。
+    """
+    from zoneinfo import ZoneInfo
+
+    from src import video_radar as vr
+    from src import x_post_mail_lane as lane
+
+    if now is None:
+        now = datetime.now(ZoneInfo("Asia/Tokyo"))
+    handles = lane.game_buzz_handles(now)
+    alias_map = {
+        **lane._load_giants_player_aliases(),
+        **lane._load_giants_member_aliases(),
+    }
+
+    def _detect(text: str) -> str:
+        return lane.detect_giants_player_name(text, alias_map=alias_map)
+
+    gather = gather_fn or vr.gather_buzz_posts
+    # min_score=1: mail 便 (2) より緩め。アプリは user が目で選ぶので、選手名
+    # なしでも出来事語のあるクリップ (チームプレー等) まで見せる。
+    posts = gather(
+        detect_player_fn=_detect,
+        handles=handles,
+        min_score=1,
+        require_video=True,
+        now=now,
+        max_age_hours=max_age_hours,
+    )
+    phase_label, _phase_hint = lane._video_comment_phase_hint(now)
+    cap = lane._video_post_char_cap()
+    clips: list[dict[str, Any]] = []
+    for p in posts[: max(1, int(limit))]:
+        player = (p.get("player") or "").strip()
+        comment = ""
+        if player:
+            try:
+                comment = lane._cap_sentence(
+                    lane._x_buzz_event_comment(
+                        p.get("text", ""), player, phase=phase_label
+                    ),
+                    cap,
+                )
+            except Exception:  # noqa: BLE001 - 定型が作れなくても候補は出す
+                comment = ""
+        clips.append(
+            {
+                "text": (p.get("text") or "").strip()[:180],
+                "url": p.get("url") or "",
+                "handle": p.get("handle") or "",
+                "player": player,
+                "tag": p.get("type_tag") or "",
+                "comment": comment,
+            }
+        )
+    return {
+        "ok": True,
+        "away": lane._today_giants_away(now),
+        "handles": handles,
+        "clips": clips,
+    }
+
+
+def _render_clips_page() -> str:
+    """2026-07-19 user「これ (manual-intake) の中に」: 動画引用RT即応ページ。
+
+    実測で最強インプ lane (巨人動画SNS、2026-07-15) を、15分毎 mail を待たず
+    アプリで即引用RTする。/trend と同じ「mail待ち→即応」変換。投稿は
+    x.com/intent/post 1タップ (API 不使用、コメント+クリップURL で引用化)。
+    """
+    return """<!doctype html>
+<html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>動画引用RT｜ヨシラバー</title>
+<style>
+body{font-family:sans-serif;background:#fafafa;margin:0;padding:12px;max-width:640px;margin:auto}
+h1{font-size:1.1rem;color:#1565c0}
+button{font-size:1rem;padding:10px 14px;border:0;border-radius:8px;cursor:pointer}
+.card{background:#fff;border:1px solid #ddd;border-radius:10px;padding:12px;margin-top:12px}
+.card .meta{font-size:.78rem;color:#1565c0}
+.card .src{font-size:.88rem;color:#444;margin-top:6px;white-space:pre-wrap;background:#f5f9ff;border-radius:8px;padding:8px}
+.card .cnt{font-size:.75rem;color:#aaa;margin-top:2px}
+.row{display:flex;gap:8px;margin-top:8px}
+.post{display:block;flex:1;background:#1d9bf0;color:#fff;text-align:center;text-decoration:none;padding:10px 0;border-radius:8px;font-weight:bold}
+.regen{background:#fff3e0;flex:1}
+.orig{background:#eee;flex:0 0 auto;font-size:.85rem;text-decoration:none;color:#555;padding:10px 12px;border-radius:8px}
+#status{margin-top:10px;font-size:.9rem;color:#666}
+.note{font-size:.78rem;color:#999;margin-top:6px;line-height:1.5}
+.mode{font-size:.85rem;color:#e65100;font-weight:bold;margin-top:8px}
+textarea{width:100%;box-sizing:border-box;font-size:1.05rem;padding:10px;border:1px solid #ccc;border-radius:8px;margin-top:8px}
+</style></head><body>
+<h1>🎬 動画引用RT — クリップに即乗る <a href="/" style="font-size:.8rem;float:right;color:#888">← 戻る</a></h1>
+<p class="note">日テレ/DAZN/記者アカの<b>直近の動画クリップ</b>です。コメントを整えて「Xで引用RT」を押すと、コメント+クリップURL入りでXの投稿画面が開きます (そのままポスト=引用RTになります)。動画SNSは実測で一番インプが取れる枠。試合中は特に鮮度勝負です。</p>
+<div class="row">
+<button onclick="load()" style="background:#e3f2fd;flex:1">🔄 最新クリップを取得</button>
+</div>
+<div class="mode" id="mode"></div>
+<div id="status"></div>
+<div id="out"></div>
+<script>
+function intentHref(comment, clipUrl){
+  const text=(comment||'').trim();
+  return 'https://x.com/intent/post?text='+encodeURIComponent((text?text+String.fromCharCode(10,10):'')+clipUrl);
+}
+function makeCard(c){
+  const div=document.createElement('div'); div.className='card';
+  div.innerHTML='<div class="meta"></div><div class="src"></div>'+
+    '<textarea class="txt" placeholder="コメント (空でもクリップだけ引用できます)"></textarea><div class="cnt"></div>'+
+    '<div class="row"><a class="post" target="_blank" rel="noopener">Xで引用RT</a>'+
+    '<button class="regen">🤖 コメント生成</button>'+
+    '<a class="orig" target="_blank" rel="noopener">元ポスト</a></div>';
+  div.querySelector('.meta').textContent='🎬 @'+c.handle+(c.player?' ・ '+c.player:'')+(c.tag?' ・ '+c.tag:'');
+  div.querySelector('.src').textContent=c.text;
+  const ta=div.querySelector('.txt'), cnt=div.querySelector('.cnt'), post=div.querySelector('.post');
+  ta.value=c.comment||'';
+  const fit=()=>{cnt.textContent=ta.value.length+'字'; post.href=intentHref(ta.value, c.url); ta.style.height='auto'; ta.style.height=(ta.scrollHeight+4)+'px';};
+  ta.oninput=fit;
+  div.querySelector('.orig').href=c.url;
+  div.querySelector('.regen').onclick=async(ev)=>{
+    ev.target.disabled=true; ev.target.textContent='生成中…';
+    try{
+      const r=await fetch('/clip-comment?'+new URLSearchParams({text:c.text, player:c.player||''}));
+      const j=await r.json();
+      if(j.ok && j.text){ ta.value=j.text; fit(); ev.target.textContent='🤖 コメント生成'; }
+      else{ ev.target.textContent='生成できず (もう一度)'; }
+    }catch(e){ ev.target.textContent='エラー (もう一度)'; }
+    ev.target.disabled=false;
+  };
+  setTimeout(fit,0);
+  return div;
+}
+async function load(){
+  document.getElementById('status').textContent='クリップ取得中… (10〜30秒、初回は長め)';
+  document.getElementById('mode').textContent='';
+  try{
+    const r=await fetch('/clip-candidates');
+    if(r.status===403){ document.getElementById('status').textContent='認証切れです。トップ ( / ) を token 付きで開き直してください'; return; }
+    const j=await r.json();
+    const out=document.getElementById('out'); out.innerHTML='';
+    if(j.away===true){ document.getElementById('mode').textContent='🚌 今日はビジター戦 → 日テレ除外・DAZN/記者アカ中心'; }
+    if(!j.ok || !j.clips || !j.clips.length){ document.getElementById('status').textContent='直近の動画クリップがありません (試合中/直後が狙い目)'; return; }
+    document.getElementById('status').textContent=j.clips.length+'件。上ほど新しく強い候補:';
+    for(const c of j.clips){ out.appendChild(makeCard(c)); }
+  }catch(e){ document.getElementById('status').textContent='エラー: '+e; }
+}
+load();
+</script></body></html>"""
+
+
 def _render_trend_page() -> str:
     """2026-07-16 user「フォロワーを増やすのに何かアプリ作れない？」。
 
@@ -4354,6 +4515,11 @@ def build_handler(
                     self, 200, _render_trend_page(), content_type="text/html; charset=utf-8"
                 )
                 return
+            if path == "/clips":
+                _text_response(
+                    self, 200, _render_clips_page(), content_type="text/html; charset=utf-8"
+                )
+                return
             if path == "/scout":
                 _text_response(
                     self, 200, _render_scout_page(), content_type="text/html; charset=utf-8"
@@ -4546,6 +4712,77 @@ def build_handler(
                     _json_response(self, 502, {"ok": False, "reason": f"x_api_error:{exc!r}"})
                     return
                 _json_response(self, 200, {"ok": True, "url": url})
+                return
+            if path in ("/clip-candidates", "/clip-comment"):
+                # 🎬動画引用RT即応アプリ (2026-07-19)。candidates=¥0、comment=LLM 1call
+                expected_token = _require_token()
+                if expected_token:
+                    cookie_token = ""
+                    raw_cookie = self.headers.get("Cookie") or ""
+                    for part in raw_cookie.split(";"):
+                        kv = part.strip().split("=", 1)
+                        if len(kv) == 2 and kv[0].strip() == "manual_intake_session":
+                            cookie_token = kv[1].strip()
+                            break
+                    query_token = ""
+                    qtok = parse_qs(parsed.query, keep_blank_values=False).get("token") or []
+                    if qtok:
+                        query_token = (qtok[0] or "").strip()
+                    if cookie_token != expected_token and query_token != expected_token:
+                        _json_response(self, 403, {"ok": False, "reason": "forbidden"})
+                        return
+                if path == "/clip-candidates":
+                    try:
+                        _json_response(self, 200, _build_clip_candidates())
+                    except Exception as exc:  # noqa: BLE001
+                        bound_logger.exception("clip_candidates_failed")
+                        _json_response(
+                            self, 500, {"ok": False, "reason": f"clip_candidates_error:{exc!r}"}
+                        )
+                    return
+                params = parse_qs(parsed.query, keep_blank_values=False)
+                clip_text = ((params.get("text") or [""])[0] or "").strip()
+                clip_player = ((params.get("player") or [""])[0] or "").strip()
+                if not clip_text:
+                    _json_response(self, 400, {"ok": False, "reason": "text_required"})
+                    return
+                api_key = (
+                    os.environ.get("GEMINI_API_KEY")
+                    or os.environ.get("GEMMA_BRANDING_GEMINI_API_KEY")
+                    or ""
+                ).strip()
+                if not api_key:
+                    _json_response(self, 500, {"ok": False, "reason": "gemini_key_missing"})
+                    return
+                try:
+                    from zoneinfo import ZoneInfo
+
+                    from src import x_post_branding_gen as _xbg
+                    from src import x_post_mail_lane as _lane
+
+                    _now = datetime.now(ZoneInfo("Asia/Tokyo"))
+                    _phase_label, _phase_hint = _lane._video_comment_phase_hint(_now)
+                    # mail 便の vr_comment_fn と同一方針: 元投稿の場面最優先、
+                    # DB 数字は混ぜない。短文 cap (動画+テキスト同時投稿対策) も共用。
+                    text_out = (
+                        _xbg.build_quote_rt_comment(
+                            clip_text,
+                            clip_player,
+                            phase_hint=_phase_hint,
+                            gemini_api_key=api_key,
+                            now=_now,
+                            subject="動画SNS",
+                        )
+                        or ""
+                    ).strip()
+                    if not text_out:
+                        _json_response(self, 200, {"ok": False, "reason": "generation_empty"})
+                        return
+                    text_out = _lane._cap_sentence(text_out, _lane._video_post_char_cap())
+                    _json_response(self, 200, {"ok": True, "text": text_out})
+                except Exception as exc:  # noqa: BLE001
+                    bound_logger.exception("clip_comment_failed")
+                    _json_response(self, 500, {"ok": False, "reason": f"clip_comment_error:{exc!r}"})
                 return
             if path in ("/trend-words", "/trend-draft"):
                 # 🔥トレンド反応 即応アプリ (2026-07-16)。words=¥0、draft=LLM 1call

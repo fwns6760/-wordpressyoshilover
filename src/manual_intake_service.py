@@ -785,7 +785,7 @@ _HTML_FORM = """<!DOCTYPE html>
   </section>
   <section class=\"tab-panel\" data-tab=\"xshare\" id=\"tab-panel-xshare\" hidden>
     <h2 style=\"font-size:16px;margin:6px 0 8px;\">🔗 記事をXで共有 (おりポス+リプ)</h2>
-    <p class=\"insight-meta\" style=\"margin:0 0 10px;\">おりポス=最強の発言1個で引き込む本文+画像 (URLなし・末尾にリプ誘導行)、リプ=残りのチラ見せ+URL。X中継アプリ経由で投稿 (X API不使用)。</p>
+    <p class=\"insight-meta\" style=\"margin:0 0 10px;\">おりポス=最強の発言1個で引き込む本文+画像 (URLなし・末尾にリプ誘導行)、リプ=残りのチラ見せ+URL。共有シートから投稿 (X API不使用)。</p>
     <button type=\"button\" id=\"xshare-thread-btn\" class=\"primary\" style=\"width:100%;padding:12px;font-size:15px;margin-bottom:8px;\">🧵 今日の試合スレ案を作る (結果→データ→記事)</button>
     <button type=\"button\" id=\"xshare-refresh\" class=\"secondary\" style=\"width:100%;padding:12px;font-size:15px;\">🔄 最近の公開記事を読み込む</button>
     <div style=\"display:flex;gap:8px;margin-top:8px;\">
@@ -1287,9 +1287,11 @@ _HTML_FORM = """<!DOCTYPE html>
     replyTa.value = draft.reply_text || '';
     xsEditor.appendChild(replyTa);
     xsEditor.appendChild(xsCounter(replyTa, 'リプ'));
-    // 2026-07-19: X API 無料枠 402 を受けて API 直投稿 (/x-share-thread) を廃止し、
-    // SNSMONEY 方式へ切替。snsmoney-intake の /x-app 起動ページ (認証不要) 経由で
-    // X中継アプリが画像+①を X composer へ渡し、②をクリップボードへコピーする。
+    // 2026-07-19: X API 402 (PPU化でクーポン残高切れ) を受けて API 直投稿
+    // (/x-share-thread) を廃止。外部依存なしの Android ネイティブ共有へ切替:
+    // ①をclipboardへコピー + 画像をWeb Share (files) でXへ渡す。
+    // X app v12.8以降 files+text 同時共有は画像が捨てられるため files のみ渡し、
+    // 本文は貼り付け方式 (SNSMONEY中継アプリと同じ回避策)。
     function xsCopyBtn(label, ta) {
       var b = document.createElement('button');
       b.type = 'button';
@@ -1308,46 +1310,46 @@ _HTML_FORM = """<!DOCTYPE html>
     if (dataTa) { copyRow.appendChild(xsCopyBtn('📋 ②コピー', dataTa)); }
     copyRow.appendChild(xsCopyBtn('📋 ' + (dataTa ? '③' : '②') + 'コピー', replyTa));
     xsEditor.appendChild(copyRow);
+    var xsImgPromise = draft.image_url
+      ? fetch('/x-share-image?' + new URLSearchParams({url: draft.image_url}).toString(), {credentials: 'same-origin'})
+          .then(function(r) { return r.ok ? r.blob() : null; })
+          .catch(function() { return null; })
+      : null;
     var postBtn = document.createElement('button');
     postBtn.type = 'button';
     postBtn.className = 'primary';
-    postBtn.textContent = '📱 Xアプリで投稿 (API不使用・X中継アプリ)';
+    postBtn.textContent = draft.image_url ? '📱 Xへ共有 (①コピー+画像添付)' : '📱 Xへ共有 (①)';
     postBtn.style.cssText = 'width:100%;padding:14px;font-size:15px;margin-top:8px;';
-    postBtn.addEventListener('click', function() {
-      var second = (dataTa && dataTa.value.trim()) ? dataTa.value : (replyTa.value || '');
-      var params = { text: mainTa.value || '' };
-      if (draft.image_url && second.trim()) {
-        params.mode = 'thread';
-        params.reply = second;
-        params.image = draft.image_url;
-      } else {
-        params.mode = 'post';
-        if (draft.image_url) { params.image = draft.image_url; }
+    postBtn.addEventListener('click', async function() {
+      var first = mainTa.value || '';
+      try { await navigator.clipboard.writeText(first); } catch (e) {}
+      var blob = xsImgPromise ? await xsImgPromise : null;
+      try {
+        if (blob) {
+          var file = new File([blob], 'eyecatch.jpg', { type: blob.type || 'image/jpeg' });
+          if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            await navigator.share({ files: [file] });
+            postBtn.textContent = '✅ 共有した (①はコピー済み→Xで貼り付け)';
+            return;
+          }
+        }
+        if (navigator.share) {
+          await navigator.share({ text: first });
+          postBtn.textContent = '✅ 共有した';
+          return;
+        }
+      } catch (e) {
+        if (e && e.name === 'AbortError') { return; }
       }
-      // Android Uri.getQueryParameter は '+' を空白に戻さないため、
-      // URLSearchParams ではなく %20 系 (encodeURIComponent) で組む。
-      var pairs = [];
-      Object.keys(params).forEach(function(k) { pairs.push(k + '=' + encodeURIComponent(params[k])); });
-      var query = pairs.join('&');
-      var host = 'snsmoney-intake-cb4fqki2ha-an.a.run.app';
-      if (/android/i.test(navigator.userAgent)) {
-        // 中間ページを挟まず X中継アプリを直接起動 (SNSMONEY mailボタンと同じ)。
-        // アプリ未導入時のみ /x-app 起動ページへ fallback。タブは遷移しないので
-        // ③コピーなどエディタ状態はそのまま残る。
-        location.href = 'intent://' + host + '/x-app?' + query
-          + '#Intent;scheme=https;package=org.shinylab.snsmoney.xhelper;S.browser_fallback_url='
-          + encodeURIComponent('https://' + host + '/x-app?' + query) + ';end';
-      } else {
-        window.open('https://' + host + '/x-app?' + query, '_blank');
-      }
+      window.open('https://x.com/intent/post?text=' + encodeURIComponent(first), '_blank');
     });
     xsEditor.appendChild(postBtn);
     var xsGuide = document.createElement('div');
     xsGuide.className = 'insight-meta';
     xsGuide.style.cssText = 'margin-top:6px;';
-    xsGuide.textContent = dataTa
-      ? '中継アプリが画像+①をXへ渡し、②をコピーします。Xで「＋」→②を貼り付け→この画面に戻って③をコピー→「＋」→貼り付け→Post all。'
-      : '中継アプリが画像+①をXへ渡し、②をコピーします。Xで「＋」→②を貼り付け→Post all。';
+    xsGuide.textContent = draft.image_url
+      ? '押すと①をコピーして画像の共有シートが開きます。Xを選ぶ→本文に①を貼り付け→「＋」→ここに戻って' + (dataTa ? '②③' : '②') + 'をコピー→貼り付け→Post all。'
+      : '押すと共有シートに①が入ります。投稿後、' + (dataTa ? '②③' : '②') + 'をコピーしてリプで追加。';
     xsEditor.appendChild(xsGuide);
   }
   async function xsLoadDraft(postId) {
@@ -4703,7 +4705,7 @@ def build_handler(
                     bound_logger.exception("trend_draft_failed")
                     _json_response(self, 500, {"ok": False, "reason": f"trend_draft_error:{exc!r}"})
                 return
-            if path in ("/x-share-recent", "/x-share-draft", "/x-thread-draft"):
+            if path in ("/x-share-recent", "/x-share-draft", "/x-thread-draft", "/x-share-image"):
                 # 2026-07-06 user GO「Xまで共有でおりポスとリプまでつくって」:
                 # 記事共有タブ用 API。auth は /x-post-draft と同じ cookie / query token。
                 expected_token = _require_token()
@@ -4722,6 +4724,38 @@ def build_handler(
                     if cookie_token != expected_token and query_token != expected_token:
                         _json_response(self, 403, {"ok": False, "reason": "forbidden"})
                         return
+                if path == "/x-share-image":
+                    # 2026-07-19: Web Share (files) 用に eyecatch を same-origin で
+                    # 返す proxy (WP domain への直 fetch は CORS で落ちるため)。
+                    # SSRF guard: WP_URL と同 host の https のみ許可。
+                    img_params = parse_qs(parsed.query, keep_blank_values=False)
+                    img_url = ((img_params.get("url") or [""])[0] or "").strip()
+                    wp_host = urlparse(os.environ.get("WP_URL", "").strip()).netloc
+                    parsed_img = urlparse(img_url)
+                    if (
+                        parsed_img.scheme != "https"
+                        or not wp_host
+                        or parsed_img.netloc != wp_host
+                    ):
+                        _json_response(self, 400, {"ok": False, "reason": "bad_image_url"})
+                        return
+                    try:
+                        import requests as _requests
+
+                        img_resp = _requests.get(img_url, timeout=15)
+                        img_resp.raise_for_status()
+                    except Exception as exc:  # noqa: BLE001
+                        bound_logger.exception("x_share_image_failed")
+                        _json_response(self, 502, {"ok": False, "reason": f"image_error:{exc!r}"})
+                        return
+                    img_body = img_resp.content
+                    img_ctype = img_resp.headers.get("Content-Type") or "image/jpeg"
+                    self.send_response(200)
+                    self.send_header("Content-Type", img_ctype)
+                    self.send_header("Content-Length", str(len(img_body)))
+                    self.end_headers()
+                    self.wfile.write(img_body)
+                    return
                 try:
                     from src import manual_intake_x_share as _xshare
                 except Exception as exc:  # noqa: BLE001

@@ -602,6 +602,53 @@ def _select_ranking_topic(
     return topics[idx]
 
 
+def _load_duel_topics_from_repo(as_of: str) -> list:
+    from src.data_site_query import fetch_batting_stats_season
+    from src.yt_shorts_duel import list_duel_topics, load_duel_config
+
+    return list_duel_topics(load_duel_config(), fetch_batting_stats_season, as_of=as_of)
+
+
+def _select_duel_topic(
+    topics: list,
+    *,
+    bucket: str,
+    current: datetime,
+    cooldown_days: int,
+    live: bool,
+):
+    """対戦カードを cooldown(直近使用の組み合わせ除外)+ 日替わり rotate で選ぶ。"""
+    if not topics:
+        return None
+    cooldown_players: set[str] = set()
+    cooldown_topic_keys: set[str] = set()
+    if live and bucket:
+        cooldown_players, cooldown_topic_keys = _recent_used(bucket, current, cooldown_days, "duel")
+    filtered = [
+        t
+        for t in topics
+        if t.topic_key not in cooldown_topic_keys
+        and _normalize_player_name(t.player) not in cooldown_players
+    ]
+    pool = filtered or topics
+    if not filtered and (cooldown_players or cooldown_topic_keys):
+        LOG.warning("yt_shorts_duel_cooldown_exhausted: rotate over all cards")
+    return pool[current.toordinal() % len(pool)]
+
+
+def _with_duel_images(topic):
+    """対決の両選手に権利クリア写真(Commons free 優先 → 自社 eyecatch)を付与。"""
+    from dataclasses import replace as _replace
+
+    a_url, a_credit = _ranking_player_photo(topic.a.player)
+    b_url, b_credit = _ranking_player_photo(topic.b.player)
+    return _replace(
+        topic,
+        a=_replace(topic.a, image_url=a_url, credit=a_credit),
+        b=_replace(topic.b, image_url=b_url, credit=b_credit),
+    )
+
+
 def _ranking_player_photo(player: str) -> tuple[str, str]:
     """選手の権利クリア写真 (url/path, credit) を返す。無ければ ("","")。
 
@@ -863,6 +910,7 @@ def run(
     legend_entries: list[dict[str, Any]] | None = None,
     ranking_leaders: Mapping[str, Any] | None = None,
     standings_rows: list[dict[str, Any]] | None = None,
+    duel_topics: list | None = None,
 ) -> ShortsRunResult:
     dry_run = not live
     current = (now or _now_jst()).astimezone(JST)
@@ -989,6 +1037,58 @@ def run(
             date_key=date_key,
             fmt="ranking",
             youtube_tags=("巨人", "ジャイアンツ", "ヨシラバー", "ランキング", "shorts"),
+        )
+
+    if fmt == "duel":
+        cooldown_days = _cooldown_days_env()
+        if duel_topics is None:
+            duel_topics = _load_duel_topics_from_repo(as_of=date_key)
+        topic = _select_duel_topic(
+            duel_topics,
+            bucket=bucket,
+            current=current,
+            cooldown_days=cooldown_days,
+            live=live,
+        )
+        if topic is None:
+            if live and send_mail:
+                _failure_mail(
+                    "【YT Shorts失敗】対決カード候補なし",
+                    "定位置争いの対戦カード (config/yt_shorts_duels.json) に成績の揃うカードがありません。",
+                    dry_run=False,
+                )
+            return ShortsRunResult(status="no_topic", dry_run=dry_run, reason="empty_duel_data")
+        from src.yt_shorts_duel import build_duel_script
+
+        topic = _with_duel_images(topic)
+        script = build_duel_script(topic)
+        run_id = f"{date_key}-{_safe_id(topic.topic_key)}"
+        run_dir = Path(output_dir) / run_id
+        rendered = render_short(
+            topic,
+            script,
+            run_dir,
+            voicevox_base_url=voicevox_base_url or os.environ.get("VOICEVOX_BASE_URL", ""),
+            speaker=speaker,
+            allow_silent_tts=allow_silent_tts,
+            ffmpeg_bin=ffmpeg_bin,
+            fmt="duel",
+        )
+        return _finish_run(
+            topic=topic,
+            script=script,
+            rendered=rendered,
+            run_dir=run_dir,
+            run_id=run_id,
+            bucket=bucket,
+            live=live,
+            dry_run=dry_run,
+            send_mail=send_mail,
+            youtube_private_upload=youtube_private_upload,
+            current=current,
+            date_key=date_key,
+            fmt="duel",
+            youtube_tags=("巨人", "ジャイアンツ", "ヨシラバー", "ポジション争い", "shorts"),
         )
 
     if fmt == "standings":
@@ -1177,13 +1277,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--format",
-        choices=["data", "legend", "ranking", "standings", "both", "all", "rotate"],
+        choices=["data", "legend", "ranking", "standings", "duel", "both", "all", "rotate"],
         default=(os.environ.get("YT_SHORTS_FORMAT", "data") or "data"),
         help=(
             "Which Shorts format(s) to generate. "
             "'both' = data + 巨人レジェンド記録室. "
-            "'all' = data + legend + ranking + standings (全部毎回). "
-            "'rotate' = 1日1本、日替わりで data→legend→ranking→standings を巡回."
+            "'all' = data + legend + ranking + standings + duel (全部毎回). "
+            "'rotate' = 1日1本、日替わりで data→legend→ranking→standings→duel を巡回."
         ),
     )
     return parser
@@ -1200,13 +1300,13 @@ def main(argv: list[str] | None = None) -> int:
         else (_load_notable_data_from_json(args.topic_json) if args.topic_json else None)
     )
     if args.format == "rotate":
-        # 1日1本: JST 日付で data→legend→ranking→standings を巡回。
-        rotation = ["data", "legend", "ranking", "standings"]
+        # 1日1本: JST 日付で data→legend→ranking→standings→duel を巡回。
+        rotation = ["data", "legend", "ranking", "standings", "duel"]
         formats = [rotation[_now_jst().toordinal() % len(rotation)]]
     else:
         formats = {
             "both": ["data", "legend"],
-            "all": ["data", "legend", "ranking", "standings"],
+            "all": ["data", "legend", "ranking", "standings", "duel"],
         }.get(args.format, [args.format])
     single = len(formats) == 1
     results: list[dict[str, Any]] = []

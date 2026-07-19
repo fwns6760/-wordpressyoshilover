@@ -558,6 +558,75 @@ def _draw_ranking_credit(canvas, draw, credit: str) -> None:
         draw.text((WIDTH // 2, HEIGHT - 232), lines[0], font=_font(22), fill="#8a7a68", anchor="ma")
 
 
+def _draw_duel_stats_box(draw, side, *, y: int, highlight: bool) -> None:
+    """選手 1 人分の 3 指標ボックス (打率/本塁打/打点)。"""
+    fill = "#ff7a1a" if highlight else "#ffffff"
+    text_color = "#ffffff" if highlight else "#151515"
+    sub_color = "#ffe2c7" if highlight else "#8a7a68"
+    draw.rounded_rectangle((104, y, WIDTH - 104, y + 300), radius=48, fill=fill, outline="#ffb36b", width=4)
+    cols = (
+        ("打率", getattr(side, "avg_display", "-")),
+        ("本塁打", f"{getattr(side, 'hr', 0)}本"),
+        ("打点", str(getattr(side, "rbi", 0))),
+    )
+    col_w = (WIDTH - 208) // 3
+    for i, (label, value) in enumerate(cols):
+        cx = 104 + col_w * i + col_w // 2
+        draw.text((cx, y + 74), label, font=_font(40, bold=True), fill=sub_color, anchor="ma")
+        draw.text((cx, y + 208), value, font=_font(76, bold=True), fill=text_color, anchor="mm")
+
+
+def _draw_duel_frame(topic, script: ShortsScript, index: int, path: Path) -> None:
+    """争点対決 (定位置争い) フォーマット。2026-07-19 user GO。"""
+    img, draw = _frame_background()
+    _draw_ranking_chrome(draw)
+    slot = getattr(topic, "slot", "")
+    a = getattr(topic, "a", None)
+    b = getattr(topic, "b", None)
+    leader = getattr(topic, "leader", None)
+
+    if index == 0:
+        draw.text((WIDTH // 2, 250), "巨人 数字で見る", font=_font(52, bold=True), fill="#c94700", anchor="ma")
+        _draw_centered_lines(draw, _wrap_text(draw, slot, _font(96, bold=True), 920, max_lines=2), 340, _font(96, bold=True), "#151515")
+        if a is not None and b is not None:
+            _draw_photo_card(img, draw, url=getattr(a, "image_url", ""), name=getattr(a, "player", ""),
+                             x=64, y=640, width=440, height=700, name_size=40)
+            _draw_photo_card(img, draw, url=getattr(b, "image_url", ""), name=getattr(b, "player", ""),
+                             x=WIDTH - 64 - 440, y=640, width=440, height=700, name_size=40)
+            draw.rounded_rectangle((WIDTH // 2 - 110, 900, WIDTH // 2 + 110, 1080), radius=40, fill="#c94700")
+            draw.text((WIDTH // 2, 990), "VS", font=_font(96, bold=True), fill="#ffffff", anchor="mm")
+            _draw_ranking_credit(img, draw, " / ".join(
+                c for c in (getattr(a, "credit", ""), getattr(b, "credit", "")) if c
+            ))
+    elif index in (1, 2):
+        side = a if index == 1 else b
+        draw.text((WIDTH // 2, 280), f"巨人 {slot}", font=_font(44, bold=True), fill="#c94700", anchor="ma")
+        if side is not None:
+            _draw_photo_card(img, draw, url=getattr(side, "image_url", ""), name=getattr(side, "player", ""),
+                             x=140, y=370, width=800, height=760, name_size=48)
+            draw.text((WIDTH // 2, 1170), f"今シーズン {getattr(side, 'games', 0)}試合", font=_font(40, bold=True), fill="#8a7a68", anchor="ma")
+            _draw_duel_stats_box(draw, side, y=1250, highlight=False)
+            _draw_ranking_credit(img, draw, getattr(side, "credit", ""))
+    elif index == 3:
+        draw.text((WIDTH // 2, 270), f"巨人 {slot}", font=_font(44, bold=True), fill="#c94700", anchor="ma")
+        if a is not None and b is not None:
+            draw.text((WIDTH // 2, 380), getattr(a, "player", ""), font=_font(56, bold=True), fill="#151515", anchor="ma")
+            _draw_duel_stats_box(draw, a, y=470, highlight=leader is a)
+            draw.text((WIDTH // 2, 850), getattr(b, "player", ""), font=_font(56, bold=True), fill="#151515", anchor="ma")
+            _draw_duel_stats_box(draw, b, y=940, highlight=leader is b)
+            verdict = f"数字は今 {getattr(leader, 'player', '')}" if leader is not None else "数字はほぼ互角"
+            draw.rounded_rectangle((124, 1340, WIDTH - 124, 1540), radius=48, fill="#151515")
+            draw.text((WIDTH // 2, 1440), verdict, font=_font(64, bold=True), fill="#ffffff", anchor="mm")
+    else:
+        draw.rounded_rectangle((124, 600, WIDTH - 124, 1000), radius=48, fill="#ffffff", outline="#ffb36b", width=4)
+        draw.text((WIDTH // 2, 690), "続きはヨシラバーで", font=_font(56, bold=True), fill="#c94700", anchor="ma")
+        draw.text((WIDTH // 2, 800), "巨人 全選手データ", font=_font(46, bold=True), fill="#151515", anchor="ma")
+        draw.text((WIDTH // 2, 890), "/data/notable?v=yt", font=_font(34), fill="#555555", anchor="ma")
+
+    _draw_footer(draw)
+    img.save(path, "PNG")
+
+
 def _standings_background():
     from PIL import Image, ImageDraw
 
@@ -824,6 +893,7 @@ def render_frames(
         "legend": _draw_legend_frame,
         "ranking": _draw_ranking_frame,
         "standings": _draw_standings_frame,
+        "duel": _draw_duel_frame,
     }.get(fmt, _draw_frame)
     paths: list[Path] = []
     for index in range(5):

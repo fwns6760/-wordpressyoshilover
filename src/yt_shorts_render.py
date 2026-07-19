@@ -627,6 +627,108 @@ def _draw_duel_frame(topic, script: ShortsScript, index: int, path: Path) -> Non
     img.save(path, "PNG")
 
 
+def _draw_split_frame(topic, script: ShortsScript, index: int, path: Path) -> None:
+    """意外な数字 (スプリット上振れ) フォーマット。2026-07-19 user GO。"""
+    img, draw = _frame_background()
+    _draw_ranking_chrome(draw)
+    player = getattr(topic, "player", "")
+    phrase = getattr(topic, "bucket_phrase", "")
+    season_avg = getattr(topic, "season_avg_display", "-")
+    bucket_avg = getattr(topic, "bucket_avg_display", "-")
+
+    if index == 0:
+        draw.text((WIDTH // 2, 260), "知ってました？", font=_font(72, bold=True), fill="#c94700", anchor="ma")
+        draw.text((WIDTH // 2, 392), f"{player}の意外な数字", font=_font(56, bold=True), fill="#151515", anchor="ma")
+        _draw_photo_card(img, draw, url=getattr(topic, "image_url", ""), name=player,
+                         x=220, y=560, width=640, height=940, name_size=44)
+        _draw_ranking_credit(img, draw, getattr(topic, "credit", ""))
+    elif index == 1:
+        draw.text((WIDTH // 2, 300), player, font=_font(56, bold=True), fill="#151515", anchor="ma")
+        draw.text((WIDTH // 2, 560), "今シーズン通算", font=_font(52, bold=True), fill="#8a7a68", anchor="ma")
+        draw.rounded_rectangle((144, 700, WIDTH - 144, 1100), radius=54, fill="#ffffff", outline="#ffb36b", width=4)
+        draw.text((WIDTH // 2, 800), "打率", font=_font(48, bold=True), fill="#8a7a68", anchor="ma")
+        draw.text((WIDTH // 2, 970), season_avg, font=_font(160, bold=True), fill="#151515", anchor="mm")
+    elif index == 2:
+        draw.text((WIDTH // 2, 300), "ところが", font=_font(56, bold=True), fill="#151515", anchor="ma")
+        _draw_centered_lines(draw, _wrap_text(draw, phrase, _font(84, bold=True), 900, max_lines=2), 420, _font(84, bold=True), "#c94700")
+        draw.rounded_rectangle((124, 720, WIDTH - 124, 1180), radius=54, fill="#ff7a1a")
+        draw.text((WIDTH // 2, 830), "打率", font=_font(52, bold=True), fill="#ffe2c7", anchor="ma")
+        draw.text((WIDTH // 2, 1010), bucket_avg, font=_font(190, bold=True), fill="#ffffff", anchor="mm")
+    elif index == 3:
+        draw.text((WIDTH // 2, 290), f"{player}", font=_font(50, bold=True), fill="#151515", anchor="ma")
+        draw.rounded_rectangle((104, 430, WIDTH - 104, 730), radius=48, fill="#ffffff", outline="#ffb36b", width=4)
+        draw.text((WIDTH // 2, 500), "通算", font=_font(40, bold=True), fill="#8a7a68", anchor="ma")
+        draw.text((WIDTH // 2, 630), season_avg, font=_font(96, bold=True), fill="#151515", anchor="mm")
+        draw.rounded_rectangle((104, 800, WIDTH - 104, 1100), radius=48, fill="#ff7a1a")
+        _draw_centered_lines(draw, _wrap_text(draw, phrase, _font(40, bold=True), 800, max_lines=1), 868, _font(40, bold=True), "#ffe2c7")
+        draw.text((WIDTH // 2, 1000), bucket_avg, font=_font(96, bold=True), fill="#ffffff", anchor="mm")
+        sample = (
+            f"{getattr(topic, 'bucket_games', 0)}試合 "
+            f"{getattr(topic, 'bucket_ab', 0)}打数{getattr(topic, 'bucket_hits', 0)}安打"
+        )
+        draw.text((WIDTH // 2, 1210), sample, font=_font(44, bold=True), fill="#8a7a68", anchor="ma")
+    else:
+        draw.rounded_rectangle((124, 600, WIDTH - 124, 1000), radius=48, fill="#ffffff", outline="#ffb36b", width=4)
+        draw.text((WIDTH // 2, 690), "続きはヨシラバーで", font=_font(56, bold=True), fill="#c94700", anchor="ma")
+        draw.text((WIDTH // 2, 800), "巨人 全選手データ", font=_font(46, bold=True), fill="#151515", anchor="ma")
+        draw.text((WIDTH // 2, 890), "/data/notable?v=yt", font=_font(34), fill="#555555", anchor="ma")
+
+    _draw_footer(draw)
+    img.save(path, "PNG")
+
+
+def _draw_agecompare_frame(topic, script: ShortsScript, index: int, path: Path) -> None:
+    """同い年対決 (同年齢レジェンド対比) フォーマット。2026-07-19 user GO。"""
+    img, draw = _frame_background()
+    _draw_ranking_chrome(draw)
+    player = getattr(topic, "player", "")
+    age = getattr(topic, "age", 0)
+    cum = getattr(topic, "cum_hr", 0)
+    beaten = getattr(topic, "beaten_name", "")
+    beaten_cum = getattr(topic, "beaten_cum", 0)
+    above_name = getattr(topic, "above_name", "")
+    above_cum = getattr(topic, "above_cum", 0)
+
+    if index == 0:
+        draw.text((WIDTH // 2, 250), "同い年対決", font=_font(76, bold=True), fill="#c94700", anchor="ma")
+        draw.text((WIDTH // 2, 390), f"{player} vs {beaten}", font=_font(54, bold=True), fill="#151515", anchor="ma")
+        _draw_photo_card(img, draw, url=getattr(topic, "image_url", ""), name=player,
+                         x=220, y=560, width=640, height=940, name_size=44)
+        _draw_ranking_credit(img, draw, getattr(topic, "credit", ""))
+    elif index == 1:
+        draw.text((WIDTH // 2, 300), player, font=_font(60, bold=True), fill="#151515", anchor="ma")
+        draw.text((WIDTH // 2, 560), f"{age}歳シーズン時点", font=_font(50, bold=True), fill="#8a7a68", anchor="ma")
+        draw.rounded_rectangle((124, 700, WIDTH - 124, 1120), radius=54, fill="#ff7a1a")
+        draw.text((WIDTH // 2, 790), "通算ホームラン", font=_font(48, bold=True), fill="#ffe2c7", anchor="ma")
+        draw.text((WIDTH // 2, 980), f"{cum}本", font=_font(170, bold=True), fill="#ffffff", anchor="mm")
+    elif index == 2:
+        draw.text((WIDTH // 2, 300), beaten, font=_font(60, bold=True), fill="#151515", anchor="ma")
+        draw.text((WIDTH // 2, 560), f"{age}歳時点では", font=_font(50, bold=True), fill="#8a7a68", anchor="ma")
+        draw.rounded_rectangle((144, 700, WIDTH - 144, 1100), radius=54, fill="#ffffff", outline="#ffb36b", width=4)
+        draw.text((WIDTH // 2, 790), "通算ホームラン", font=_font(44, bold=True), fill="#8a7a68", anchor="ma")
+        draw.text((WIDTH // 2, 960), f"{beaten_cum}本", font=_font(150, bold=True), fill="#151515", anchor="mm")
+    elif index == 3:
+        draw.text((WIDTH // 2, 280), f"{age}歳どうし、同じルールで比較", font=_font(40, bold=True), fill="#8a7a68", anchor="ma")
+        draw.rounded_rectangle((104, 400, WIDTH - 104, 660), radius=48, fill="#ff7a1a")
+        draw.text((300, 530), player, font=_font(48, bold=True), fill="#ffffff", anchor="lm")
+        draw.text((WIDTH - 200, 530), f"{cum}本", font=_font(84, bold=True), fill="#ffffff", anchor="rm")
+        draw.rounded_rectangle((104, 720, WIDTH - 104, 980), radius=48, fill="#ffffff", outline="#ffb36b", width=4)
+        draw.text((300, 850), beaten, font=_font(48, bold=True), fill="#151515", anchor="lm")
+        draw.text((WIDTH - 200, 850), f"{beaten_cum}本", font=_font(84, bold=True), fill="#151515", anchor="rm")
+        draw.rounded_rectangle((124, 1100, WIDTH - 124, 1300), radius=48, fill="#151515")
+        draw.text((WIDTH // 2, 1200), "もう上回っている", font=_font(64, bold=True), fill="#ffffff", anchor="mm")
+        if above_name and above_cum > 0:
+            draw.text((WIDTH // 2, 1380), f"次の壁: {above_name} {above_cum}本", font=_font(40, bold=True), fill="#8a7a68", anchor="ma")
+    else:
+        draw.rounded_rectangle((124, 600, WIDTH - 124, 1000), radius=48, fill="#ffffff", outline="#ffb36b", width=4)
+        draw.text((WIDTH // 2, 690), "続きはヨシラバーで", font=_font(56, bold=True), fill="#c94700", anchor="ma")
+        draw.text((WIDTH // 2, 800), "巨人 全選手データ", font=_font(46, bold=True), fill="#151515", anchor="ma")
+        draw.text((WIDTH // 2, 890), "/data/notable?v=yt", font=_font(34), fill="#555555", anchor="ma")
+
+    _draw_footer(draw)
+    img.save(path, "PNG")
+
+
 def _standings_background():
     from PIL import Image, ImageDraw
 
@@ -894,6 +996,8 @@ def render_frames(
         "ranking": _draw_ranking_frame,
         "standings": _draw_standings_frame,
         "duel": _draw_duel_frame,
+        "split": _draw_split_frame,
+        "agecompare": _draw_agecompare_frame,
     }.get(fmt, _draw_frame)
     paths: list[Path] = []
     for index in range(5):

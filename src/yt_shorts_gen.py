@@ -636,6 +636,145 @@ def _select_duel_topic(
     return pool[current.toordinal() % len(pool)]
 
 
+def _load_split_topics_from_repo(as_of: str) -> list:
+    """支配下野手全員の split 集計から「意外な数字」候補 (hot only) を作る。"""
+    from src.data_site_query import (
+        fetch_batting_stats_season,
+        fetch_interleague_split_stats,
+        fetch_month_split_stats,
+        fetch_opponent_split_stats,
+        fetch_weekday_split_stats,
+        shihai_group_members,
+    )
+    from src.yt_shorts_split import find_surprise_topics
+
+    def _rows(items, label_fn):
+        return [
+            {
+                "label": label_fn(s),
+                "games": int(getattr(s, "games", 0) or 0),
+                "ab": int(getattr(s, "ab", 0) or 0),
+                "hits": int(getattr(s, "hits", 0) or 0),
+            }
+            for s in (items or [])
+        ]
+
+    entries: list[dict[str, Any]] = []
+    players = [p for g in ("捕手", "内野手", "外野手") for p in shihai_group_members(g)]
+    for player in players:
+        try:
+            season = fetch_batting_stats_season(player)
+        except Exception:  # noqa: BLE001 - 1 選手の失敗で全体を止めない
+            continue
+        if season is None or int(getattr(season, "ab", 0) or 0) <= 0:
+            continue
+        try:
+            splits = {
+                "曜日別": _rows(fetch_weekday_split_stats(player), lambda s: f"{s.label}曜日"),
+                "月別": _rows(fetch_month_split_stats(player), lambda s: s.label),
+                "交流戦": [
+                    r
+                    for r in _rows(fetch_interleague_split_stats(player), lambda s: s.label)
+                    if r["label"] == "交流戦"
+                ],
+                "相手別": _rows(fetch_opponent_split_stats(player), lambda s: f"対{s.opponent}"),
+            }
+        except Exception:  # noqa: BLE001
+            continue
+        entries.append(
+            {
+                "player": player,
+                "season": {"ab": int(season.ab or 0), "hits": int(season.hits or 0)},
+                "splits": splits,
+            }
+        )
+    return find_surprise_topics(entries, as_of=as_of)
+
+
+def _select_split_topic(
+    topics: list,
+    *,
+    bucket: str,
+    current: datetime,
+    cooldown_days: int,
+    live: bool,
+):
+    """意外な数字候補を gap 降順 + cooldown (同一選手/同一 topic 除外) で選ぶ。"""
+    if not topics:
+        return None
+    cooldown_players: set[str] = set()
+    cooldown_topic_keys: set[str] = set()
+    if live and bucket:
+        cooldown_players, cooldown_topic_keys = _recent_used(bucket, current, cooldown_days, "split")
+    filtered = [
+        t
+        for t in topics
+        if t.topic_key not in cooldown_topic_keys
+        and _normalize_player_name(t.player) not in cooldown_players
+    ]
+    if filtered:
+        return filtered[0]
+    if cooldown_players or cooldown_topic_keys:
+        LOG.warning("yt_shorts_split_cooldown_exhausted: rotate over all candidates")
+    return topics[current.toordinal() % len(topics)]
+
+
+def _with_split_image(topic):
+    """意外な数字の主役に権利クリア写真を付与 (Commons free 優先 → 自社 eyecatch)。"""
+    from dataclasses import replace as _replace
+
+    url, credit = _ranking_player_photo(topic.player)
+    if not url:
+        return topic
+    return _replace(topic, image_url=url, credit=credit)
+
+
+def _load_agecompare_topics_from_repo(as_of: str) -> list:
+    """X 角度① と同じ採点 (legend_age_compare_facts) から同い年対決候補を作る。"""
+    from src.x_post_data_angles import legend_age_compare_facts
+    from src.yt_shorts_agecompare import topics_from_facts
+
+    db_path = ""
+    try:
+        from src.data_site_query import _ensure_insight_db_local
+
+        db_path = str(_ensure_insight_db_local() or "")
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("yt_shorts_agecompare_db_unavailable err=%r", exc)
+    facts = legend_age_compare_facts(db_path)
+    return topics_from_facts(facts, as_of=as_of)
+
+
+def _select_agecompare_topic(
+    topics: list,
+    *,
+    bucket: str,
+    current: datetime,
+    cooldown_days: int,
+    live: bool,
+):
+    """同い年対決候補を驚き順 + cooldown (同一選手除外) で選ぶ。"""
+    if not topics:
+        return None
+    cooldown_players: set[str] = set()
+    cooldown_topic_keys: set[str] = set()
+    if live and bucket:
+        cooldown_players, cooldown_topic_keys = _recent_used(
+            bucket, current, cooldown_days, "agecompare"
+        )
+    filtered = [
+        t
+        for t in topics
+        if t.topic_key not in cooldown_topic_keys
+        and _normalize_player_name(t.player) not in cooldown_players
+    ]
+    if filtered:
+        return filtered[0]
+    if cooldown_players or cooldown_topic_keys:
+        LOG.warning("yt_shorts_agecompare_cooldown_exhausted: rotate over all candidates")
+    return topics[current.toordinal() % len(topics)]
+
+
 def _with_duel_images(topic):
     """対決の両選手に権利クリア写真(Commons free 優先 → 自社 eyecatch)を付与。"""
     from dataclasses import replace as _replace
@@ -911,6 +1050,8 @@ def run(
     ranking_leaders: Mapping[str, Any] | None = None,
     standings_rows: list[dict[str, Any]] | None = None,
     duel_topics: list | None = None,
+    split_topics: list | None = None,
+    agecompare_topics: list | None = None,
 ) -> ShortsRunResult:
     dry_run = not live
     current = (now or _now_jst()).astimezone(JST)
@@ -1089,6 +1230,110 @@ def run(
             date_key=date_key,
             fmt="duel",
             youtube_tags=("巨人", "ジャイアンツ", "ヨシラバー", "ポジション争い", "shorts"),
+        )
+
+    if fmt == "split":
+        cooldown_days = _cooldown_days_env()
+        if split_topics is None:
+            split_topics = _load_split_topics_from_repo(as_of=date_key)
+        topic = _select_split_topic(
+            split_topics,
+            bucket=bucket,
+            current=current,
+            cooldown_days=cooldown_days,
+            live=live,
+        )
+        if topic is None:
+            if live and send_mail:
+                _failure_mail(
+                    "【YT Shorts失敗】意外な数字候補なし",
+                    "スプリット上振れ (意外な数字) の候補が見つかりませんでした。",
+                    dry_run=False,
+                )
+            return ShortsRunResult(status="no_topic", dry_run=dry_run, reason="empty_split_data")
+        from src.yt_shorts_split import build_split_script
+
+        topic = _with_split_image(topic)
+        script = build_split_script(topic)
+        run_id = f"{date_key}-{_safe_id(topic.topic_key)}"
+        run_dir = Path(output_dir) / run_id
+        rendered = render_short(
+            topic,
+            script,
+            run_dir,
+            voicevox_base_url=voicevox_base_url or os.environ.get("VOICEVOX_BASE_URL", ""),
+            speaker=speaker,
+            allow_silent_tts=allow_silent_tts,
+            ffmpeg_bin=ffmpeg_bin,
+            fmt="split",
+        )
+        return _finish_run(
+            topic=topic,
+            script=script,
+            rendered=rendered,
+            run_dir=run_dir,
+            run_id=run_id,
+            bucket=bucket,
+            live=live,
+            dry_run=dry_run,
+            send_mail=send_mail,
+            youtube_private_upload=youtube_private_upload,
+            current=current,
+            date_key=date_key,
+            fmt="split",
+            youtube_tags=("巨人", "ジャイアンツ", "ヨシラバー", "意外な数字", "shorts"),
+        )
+
+    if fmt == "agecompare":
+        cooldown_days = _cooldown_days_env()
+        if agecompare_topics is None:
+            agecompare_topics = _load_agecompare_topics_from_repo(as_of=date_key)
+        topic = _select_agecompare_topic(
+            agecompare_topics,
+            bucket=bucket,
+            current=current,
+            cooldown_days=cooldown_days,
+            live=live,
+        )
+        if topic is None:
+            if live and send_mail:
+                _failure_mail(
+                    "【YT Shorts失敗】同い年対決候補なし",
+                    "同年齢レジェンド対比の候補が見つかりませんでした (レジェンド超え中の若手なし)。",
+                    dry_run=False,
+                )
+            return ShortsRunResult(status="no_topic", dry_run=dry_run, reason="empty_agecompare_data")
+        from src.yt_shorts_agecompare import build_agecompare_script
+
+        topic = _with_split_image(topic)
+        script = build_agecompare_script(topic)
+        run_id = f"{date_key}-{_safe_id(topic.topic_key)}"
+        run_dir = Path(output_dir) / run_id
+        rendered = render_short(
+            topic,
+            script,
+            run_dir,
+            voicevox_base_url=voicevox_base_url or os.environ.get("VOICEVOX_BASE_URL", ""),
+            speaker=speaker,
+            allow_silent_tts=allow_silent_tts,
+            ffmpeg_bin=ffmpeg_bin,
+            fmt="agecompare",
+        )
+        return _finish_run(
+            topic=topic,
+            script=script,
+            rendered=rendered,
+            run_dir=run_dir,
+            run_id=run_id,
+            bucket=bucket,
+            live=live,
+            dry_run=dry_run,
+            send_mail=send_mail,
+            youtube_private_upload=youtube_private_upload,
+            current=current,
+            date_key=date_key,
+            fmt="agecompare",
+            youtube_tags=("巨人", "ジャイアンツ", "ヨシラバー", "同い年対決", "shorts"),
         )
 
     if fmt == "standings":
@@ -1277,13 +1522,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--format",
-        choices=["data", "legend", "ranking", "standings", "duel", "both", "all", "rotate"],
+        choices=["data", "legend", "ranking", "standings", "duel", "split", "agecompare", "both", "all", "rotate"],
         default=(os.environ.get("YT_SHORTS_FORMAT", "data") or "data"),
         help=(
             "Which Shorts format(s) to generate. "
             "'both' = data + 巨人レジェンド記録室. "
-            "'all' = data + legend + ranking + standings + duel (全部毎回). "
-            "'rotate' = 1日1本、日替わりで data→legend→ranking→standings→duel を巡回."
+            "'all' = 全フォーマット毎回. "
+            "'rotate' = 1日1本、日替わりで data→legend→ranking→standings→duel→split→agecompare を巡回."
         ),
     )
     return parser
@@ -1300,13 +1545,13 @@ def main(argv: list[str] | None = None) -> int:
         else (_load_notable_data_from_json(args.topic_json) if args.topic_json else None)
     )
     if args.format == "rotate":
-        # 1日1本: JST 日付で data→legend→ranking→standings→duel を巡回。
-        rotation = ["data", "legend", "ranking", "standings", "duel"]
+        # 1日1本: JST 日付で全フォーマットを巡回。
+        rotation = ["data", "legend", "ranking", "standings", "duel", "split", "agecompare"]
         formats = [rotation[_now_jst().toordinal() % len(rotation)]]
     else:
         formats = {
             "both": ["data", "legend"],
-            "all": ["data", "legend", "ranking", "standings", "duel"],
+            "all": ["data", "legend", "ranking", "standings", "duel", "split", "agecompare"],
         }.get(args.format, [args.format])
     single = len(formats) == 1
     results: list[dict[str, Any]] = []

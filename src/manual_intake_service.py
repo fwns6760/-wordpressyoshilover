@@ -1316,17 +1316,11 @@ _HTML_FORM = """<!DOCTYPE html>
           .catch(function() { return null; })
       : null;
     function xsIntentUrl() {
-      var first = mainTa.value || '';
-      var second = (dataTa && dataTa.value.trim()) ? dataTa.value : (replyTa.value || '');
-      var params = { text: first };
-      if (draft.image_url && second.trim()) {
-        params.mode = 'thread';
-        params.reply = second;
-        params.image = draft.image_url;
-      } else {
-        params.mode = 'post';
-        if (draft.image_url) { params.image = draft.image_url; }
-      }
+      // 2026-07-19 user「オリポスだけで作って」: スレ (mode=thread) はやめて、
+      // SNSMONEY 株ポストと同じ単発 mode=post (画像+①) に固定する。
+      // ②③はコピーボタンから手動リプで足す。
+      var params = { mode: 'post', text: mainTa.value || '' };
+      if (draft.image_url) { params.image = draft.image_url; }
       var pairs = [];
       Object.keys(params).forEach(function(k) { pairs.push(k + '=' + encodeURIComponent(params[k])); });
       var query = pairs.join('&');
@@ -1341,7 +1335,7 @@ _HTML_FORM = """<!DOCTYPE html>
       // 「本物のリンク」で踏ませる (JS 遷移だと App Link 判定が働かない)。
       // href は編集のたびに組み直す。
       postBtn = document.createElement('a');
-      postBtn.textContent = '📱 Xアプリで投稿';
+      postBtn.textContent = '📱 Xアプリでおりポス投稿';
       postBtn.style.cssText = 'display:block;box-sizing:border-box;width:100%;padding:14px;font-size:15px;margin-top:8px;text-align:center;text-decoration:none;border-radius:6px;background:#f57f17;color:#fff;font-weight:600;';
       postBtn.href = xsIntentUrl();
       [mainTa, dataTa, replyTa].forEach(function(ta) {
@@ -1382,7 +1376,9 @@ _HTML_FORM = """<!DOCTYPE html>
     var xsGuide = document.createElement('div');
     xsGuide.className = 'insight-meta';
     xsGuide.style.cssText = 'margin-top:6px;';
-    xsGuide.textContent = 'X中継アプリが画像+①をXへ渡し、②をコピーします。Xで「＋」→貼り付け' + (dataTa ? '→③はここに戻ってコピーして追加' : '') + '→Post all。 [v4]';
+    xsGuide.textContent = draft.image_url
+      ? '中継アプリが画像をXへ渡し、①をコピーします。投稿画面で長押し→貼り付け→ポスト。リプを足す時は②' + (dataTa ? '③' : '') + 'をコピーして返信で。 [v5]'
+      : '中継アプリ経由で①がXの投稿画面に入ります。そのままポスト。 [v5]';
     xsEditor.appendChild(xsGuide);
   }
   async function xsLoadDraft(postId) {

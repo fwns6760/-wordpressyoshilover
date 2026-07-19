@@ -24,3 +24,4 @@
 19:20 JST | fix commit | DAZN動画has_video誤判定 (entity-encoded video+media poster) | 86a32d42 | 次build時に同梱deploy
 19:40 JST | feat commit + deploy | /clips 動画引用RT即応 | 48550e03 / build ae5c3c51 / rev 00178-7dw 100% | prod smoke: page 200・gate 403・authed candidates ok (DAZN含む7 handle) 。x-post-mail-lane job image の DAZN fix 反映は次の mail-lane build に同梱
 19:52 JST | deploy | x-post-mail-lane job image更新 (DAZN動画判定fix同梱) | build 855b78fe / gen 353 | 次の便からDAZNクリップがmail候補に入る
+20:10 JST | cost | AR調査: 真因=yt-shorts-gen 2.3GB image×3 (7/07-08) で保存量倍増 | yt-shorts旧2版削除 + cleanup policy (untagged>7d削除/直近2版keep) 設定 | scan課金なし確認済

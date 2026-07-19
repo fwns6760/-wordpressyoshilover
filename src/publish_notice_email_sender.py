@@ -2895,7 +2895,7 @@ def build_body_html_per_post(
             'padding:13px 20px;background:#7b1fa2;color:#ffffff;'
             'text-decoration:none;border-radius:6px;font-size:15px;'
             'font-weight:700;text-align:center;">'
-            '🧵 試合後スレを組む (3連投稿)</a>'
+            '⚾ おりポスを作る</a>'
             '</td></tr>'
         )
     admin_edit_url_raw = str(getattr(request, "admin_edit_url", "") or "").strip()

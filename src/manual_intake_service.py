@@ -784,9 +784,9 @@ _HTML_FORM = """<!DOCTYPE html>
     </details>
   </section>
   <section class=\"tab-panel\" data-tab=\"xshare\" id=\"tab-panel-xshare\" hidden>
-    <h2 style=\"font-size:16px;margin:6px 0 8px;\">🔗 記事をXで共有 (おりポス+リプ)</h2>
-    <p class=\"insight-meta\" style=\"margin:0 0 10px;\">おりポス=最強の発言1個で引き込む本文+画像 (URLなし・末尾にリプ誘導行)、リプ=残りのチラ見せ+URL。共有シートから投稿 (X API不使用)。</p>
-    <button type=\"button\" id=\"xshare-thread-btn\" class=\"primary\" style=\"width:100%;padding:12px;font-size:15px;margin-bottom:8px;\">🧵 今日の試合スレ案を作る (結果→データ→記事)</button>
+    <h2 style=\"font-size:16px;margin:6px 0 8px;\">🔗 記事をXで共有 (おりポス)</h2>
+    <p class=\"insight-meta\" style=\"margin:0 0 10px;\">おりポス=最強の発言1個で引き込む本文+画像 (URLなし)。Xアプリの投稿画面まで運ぶ (X API不使用)。</p>
+    <button type=\"button\" id=\"xshare-thread-btn\" class=\"primary\" style=\"width:100%;padding:12px;font-size:15px;margin-bottom:8px;\">⚾ 今日の試合のおりポス案を作る</button>
     <button type=\"button\" id=\"xshare-refresh\" class=\"secondary\" style=\"width:100%;padding:12px;font-size:15px;\">🔄 最近の公開記事を読み込む</button>
     <div style=\"display:flex;gap:8px;margin-top:8px;\">
       <input id=\"xshare-manual-input\" type=\"text\" inputmode=\"url\" placeholder=\"記事URL または post_id を直接入力\" style=\"flex:1;padding:10px;font-size:14px;\">
@@ -1253,9 +1253,11 @@ _HTML_FORM = """<!DOCTYPE html>
       noimg.textContent = '⚠️ アイキャッチ画像なし (テキストのみで投稿)';
       xsEditor.appendChild(noimg);
     }
+    // 2026-07-19 user「オリポスだけだろ」: リプ (②③) の UI を全廃し、
+    // おりポス 1 本 (画像+本文) だけの画面にする。
     var l1 = document.createElement('div');
     l1.style.cssText = 'font-weight:600;margin-top:10px;';
-    l1.textContent = '① おりポス (URLなし・画像付き)';
+    l1.textContent = 'おりポス本文 (URLなし・画像付き)';
     xsEditor.appendChild(l1);
     var mainTa = document.createElement('textarea');
     mainTa.rows = 6;
@@ -1263,30 +1265,6 @@ _HTML_FORM = """<!DOCTYPE html>
     mainTa.value = draft.main_text || '';
     xsEditor.appendChild(mainTa);
     xsEditor.appendChild(xsCounter(mainTa, 'おりポス', 900));
-    // 2026-07-07 試合後スレ: data_text があれば ②データリプ を挟んで3連にする
-    var dataTa = null;
-    if (draft.is_thread) {
-      var ld = document.createElement('div');
-      ld.style.cssText = 'font-weight:600;';
-      ld.textContent = '② データリプ (insight.db verified数字)' + (draft.data_text ? '' : ' — 取得できず (空なら2連で投稿)');
-      xsEditor.appendChild(ld);
-      dataTa = document.createElement('textarea');
-      dataTa.rows = 4;
-      dataTa.style.cssText = 'width:100%;margin-top:6px;font-size:14px;padding:10px;white-space:pre-wrap;';
-      dataTa.value = draft.data_text || '';
-      xsEditor.appendChild(dataTa);
-      xsEditor.appendChild(xsCounter(dataTa, 'データリプ'));
-    }
-    var l2 = document.createElement('div');
-    l2.style.cssText = 'font-weight:600;';
-    l2.textContent = (draft.is_thread ? '③' : '②') + ' リプ (記事の続き + URL)';
-    xsEditor.appendChild(l2);
-    var replyTa = document.createElement('textarea');
-    replyTa.rows = 4;
-    replyTa.style.cssText = 'width:100%;margin-top:6px;font-size:14px;padding:10px;white-space:pre-wrap;';
-    replyTa.value = draft.reply_text || '';
-    xsEditor.appendChild(replyTa);
-    xsEditor.appendChild(xsCounter(replyTa, 'リプ'));
     // 2026-07-19: X API 402 (PPU化でクーポン残高切れ) を受けて API 直投稿
     // (/x-share-thread) を廃止。外部依存なしの Android ネイティブ共有へ切替:
     // ①をclipboardへコピー + 画像をWeb Share (files) でXへ渡す。
@@ -1306,9 +1284,7 @@ _HTML_FORM = """<!DOCTYPE html>
     }
     var copyRow = document.createElement('div');
     copyRow.style.cssText = 'display:flex;gap:6px;margin-top:6px;';
-    copyRow.appendChild(xsCopyBtn('📋 ①コピー', mainTa));
-    if (dataTa) { copyRow.appendChild(xsCopyBtn('📋 ②コピー', dataTa)); }
-    copyRow.appendChild(xsCopyBtn('📋 ' + (dataTa ? '③' : '②') + 'コピー', replyTa));
+    copyRow.appendChild(xsCopyBtn('📋 本文をコピー', mainTa));
     xsEditor.appendChild(copyRow);
     var xsImgPromise = draft.image_url
       ? fetch('/x-share-image?' + new URLSearchParams({url: draft.image_url}).toString(), {credentials: 'same-origin'})
@@ -1338,9 +1314,7 @@ _HTML_FORM = """<!DOCTYPE html>
       postBtn.textContent = '📱 Xアプリでおりポス投稿';
       postBtn.style.cssText = 'display:block;box-sizing:border-box;width:100%;padding:14px;font-size:15px;margin-top:8px;text-align:center;text-decoration:none;border-radius:6px;background:#f57f17;color:#fff;font-weight:600;';
       postBtn.href = xsIntentUrl();
-      [mainTa, dataTa, replyTa].forEach(function(ta) {
-        if (ta) { ta.addEventListener('input', function() { postBtn.href = xsIntentUrl(); }); }
-      });
+      mainTa.addEventListener('input', function() { postBtn.href = xsIntentUrl(); });
     } else {
       // Android 以外: Web Share → x.com/intent/post の順で fallback
       postBtn = document.createElement('button');
@@ -1377,8 +1351,8 @@ _HTML_FORM = """<!DOCTYPE html>
     xsGuide.className = 'insight-meta';
     xsGuide.style.cssText = 'margin-top:6px;';
     xsGuide.textContent = draft.image_url
-      ? '中継アプリが画像をXへ渡し、①をコピーします。投稿画面で長押し→貼り付け→ポスト。リプを足す時は②' + (dataTa ? '③' : '') + 'をコピーして返信で。 [v5]'
-      : '中継アプリ経由で①がXの投稿画面に入ります。そのままポスト。 [v5]';
+      ? '中継アプリが画像をXへ渡し、本文をコピーします。投稿画面で長押し→貼り付け→ポスト。 [v6]'
+      : '中継アプリ経由で本文がXの投稿画面に入ります。そのままポスト。 [v6]';
     xsEditor.appendChild(xsGuide);
   }
   async function xsLoadDraft(postId) {
@@ -1424,7 +1398,7 @@ _HTML_FORM = """<!DOCTYPE html>
         xsEditor.scrollIntoView({behavior: 'smooth'});
         return true;
       }
-      alert(resp.status === 404 ? '試合結果の記事がまだありません (試合後に自動生成されてから使えます)。' : 'スレ案生成に失敗: ' + (json.reason || resp.status));
+      alert(resp.status === 404 ? '試合結果の記事がまだありません (試合後に自動生成されてから使えます)。' : 'おりポス案生成に失敗: ' + (json.reason || resp.status));
     } catch (e) {
       alert('エラー: ' + String(e));
     }
@@ -1434,10 +1408,10 @@ _HTML_FORM = """<!DOCTYPE html>
   if (xsThreadBtn) {
     xsThreadBtn.addEventListener('click', async function() {
       xsThreadBtn.disabled = true;
-      xsThreadBtn.textContent = '📡 スレ案 生成中...';
+      xsThreadBtn.textContent = '📡 おりポス案 生成中...';
       await xsLoadThreadDraft();
       xsThreadBtn.disabled = false;
-      xsThreadBtn.textContent = '🧵 今日の試合スレ案を作る (結果→データ→記事)';
+      xsThreadBtn.textContent = '⚾ 今日の試合のおりポス案を作る';
     });
   }
   // mail の「🧵 スレを組む」リンク (?thread=postgame) から開いた時は自動でスレ案を出す

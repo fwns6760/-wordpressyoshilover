@@ -13,3 +13,4 @@
 - 教訓(訂正) | 7/19の怒りの対象は「SNSMONEYの中間画面が挟まるUX」であって、X中継アプリの流用自体は user 公認 (SNSMONEYで実運用中)。intent://直起動が正解形
 - 12:20 JST | user報告「共有画面にXポストが出てない」= Web Share fallbackに落ちていた(旧rev 00167画面の残留 or JS遷移でintent://無視) | fix 731d2673: <a href=intent://>実アンカー方式+[v3]マーカー | deploy manual-intake-service-00169-kf8
 - 12:40 JST | user簡素化指示「オリポスだけで作って」 | commit e536b9e2: mode=post単発固定 (SNSMONEY株ポストと同一経路) + plain https App Link化 | deploy 00171-z8c [v5] 配信確認 (途中00170は旧v4 imageが乗る事故→再deployで解消)
+- 13:05 JST | user「オリポスだけだろ。リプが出るのはおかしい」 | commit ea8991ae: エディタからリプ②③UI全廃、おりポスのみ+mailボタン文言差替 | deploy 00172-dfh [v6]、headless render + 実スクショで画面確認済み

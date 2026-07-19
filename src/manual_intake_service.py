@@ -1315,65 +1315,77 @@ _HTML_FORM = """<!DOCTYPE html>
           .then(function(r) { return r.ok ? r.blob() : null; })
           .catch(function() { return null; })
       : null;
-    var postBtn = document.createElement('button');
-    postBtn.type = 'button';
-    postBtn.className = 'primary';
-    postBtn.textContent = '📱 Xアプリで投稿';
-    postBtn.style.cssText = 'width:100%;padding:14px;font-size:15px;margin-top:8px;';
-    postBtn.addEventListener('click', async function() {
+    function xsIntentUrl() {
       var first = mainTa.value || '';
       var second = (dataTa && dataTa.value.trim()) ? dataTa.value : (replyTa.value || '');
-      if (/android/i.test(navigator.userAgent)) {
-        // SNSMONEY mail ボタンと同じ: X中継アプリを intent:// で直接起動
-        // (中間ページなし)。アプリが画像+①を X composer へ渡し②をコピーする。
-        // タブは遷移しないため、③コピーなどエディタはそのまま使える。
-        var params = { text: first };
-        if (draft.image_url && second.trim()) {
-          params.mode = 'thread';
-          params.reply = second;
-          params.image = draft.image_url;
-        } else {
-          params.mode = 'post';
-          if (draft.image_url) { params.image = draft.image_url; }
-        }
-        // Android Uri.getQueryParameter は '+' を空白へ戻さないため
-        // URLSearchParams ではなく encodeURIComponent (%20系) で組む。
-        var pairs = [];
-        Object.keys(params).forEach(function(k) { pairs.push(k + '=' + encodeURIComponent(params[k])); });
-        var query = pairs.join('&');
-        var host = 'snsmoney-intake-cb4fqki2ha-an.a.run.app';
-        location.href = 'intent://' + host + '/x-app?' + query
-          + '#Intent;scheme=https;package=org.shinylab.snsmoney.xhelper;S.browser_fallback_url='
-          + encodeURIComponent('https://' + host + '/x-app?' + query) + ';end';
-        return;
+      var params = { text: first };
+      if (draft.image_url && second.trim()) {
+        params.mode = 'thread';
+        params.reply = second;
+        params.image = draft.image_url;
+      } else {
+        params.mode = 'post';
+        if (draft.image_url) { params.image = draft.image_url; }
       }
+      // Android Uri.getQueryParameter は '+' を空白へ戻さないため
+      // URLSearchParams ではなく encodeURIComponent (%20系) で組む。
+      var pairs = [];
+      Object.keys(params).forEach(function(k) { pairs.push(k + '=' + encodeURIComponent(params[k])); });
+      var query = pairs.join('&');
+      var host = 'snsmoney-intake-cb4fqki2ha-an.a.run.app';
+      return 'intent://' + host + '/x-app?' + query
+        + '#Intent;scheme=https;package=org.shinylab.snsmoney.xhelper;S.browser_fallback_url='
+        + encodeURIComponent('https://' + host + '/x-app?' + query) + ';end';
+    }
+    var postBtn;
+    if (/android/i.test(navigator.userAgent)) {
+      // SNSMONEY mail ボタンと同じく「本物のリンク」で X中継アプリを起動する。
+      // JS の location.href は Chrome が intent:// を無視して共有シート等へ
+      // 落ちる環境があるため、<a href> の実クリックで踏ませる。href は編集の
+      // たびに組み直す。
+      postBtn = document.createElement('a');
+      postBtn.textContent = '📱 Xアプリで投稿';
+      postBtn.style.cssText = 'display:block;box-sizing:border-box;width:100%;padding:14px;font-size:15px;margin-top:8px;text-align:center;text-decoration:none;border-radius:6px;background:#f57f17;color:#fff;font-weight:600;';
+      postBtn.href = xsIntentUrl();
+      [mainTa, dataTa, replyTa].forEach(function(ta) {
+        if (ta) { ta.addEventListener('input', function() { postBtn.href = xsIntentUrl(); }); }
+      });
+    } else {
       // Android 以外: Web Share → x.com/intent/post の順で fallback
-      try { await navigator.clipboard.writeText(first); } catch (e) {}
-      var blob = xsImgPromise ? await xsImgPromise : null;
-      try {
-        if (blob) {
-          var file = new File([blob], 'eyecatch.jpg', { type: blob.type || 'image/jpeg' });
-          if (navigator.canShare && navigator.canShare({ files: [file] })) {
-            await navigator.share({ files: [file] });
-            postBtn.textContent = '✅ 共有した (①はコピー済み→Xで貼り付け)';
+      postBtn = document.createElement('button');
+      postBtn.type = 'button';
+      postBtn.className = 'primary';
+      postBtn.textContent = '📱 Xへ共有';
+      postBtn.style.cssText = 'width:100%;padding:14px;font-size:15px;margin-top:8px;';
+      postBtn.addEventListener('click', async function() {
+        var first = mainTa.value || '';
+        try { await navigator.clipboard.writeText(first); } catch (e) {}
+        var blob = xsImgPromise ? await xsImgPromise : null;
+        try {
+          if (blob) {
+            var file = new File([blob], 'eyecatch.jpg', { type: blob.type || 'image/jpeg' });
+            if (navigator.canShare && navigator.canShare({ files: [file] })) {
+              await navigator.share({ files: [file] });
+              postBtn.textContent = '✅ 共有した (①はコピー済み→Xで貼り付け)';
+              return;
+            }
+          }
+          if (navigator.share) {
+            await navigator.share({ text: first });
+            postBtn.textContent = '✅ 共有した';
             return;
           }
+        } catch (e) {
+          if (e && e.name === 'AbortError') { return; }
         }
-        if (navigator.share) {
-          await navigator.share({ text: first });
-          postBtn.textContent = '✅ 共有した';
-          return;
-        }
-      } catch (e) {
-        if (e && e.name === 'AbortError') { return; }
-      }
-      window.open('https://x.com/intent/post?text=' + encodeURIComponent(first), '_blank');
-    });
+        window.open('https://x.com/intent/post?text=' + encodeURIComponent(first), '_blank');
+      });
+    }
     xsEditor.appendChild(postBtn);
     var xsGuide = document.createElement('div');
     xsGuide.className = 'insight-meta';
     xsGuide.style.cssText = 'margin-top:6px;';
-    xsGuide.textContent = 'X中継アプリが画像+①をXへ渡し、②をコピーします。Xで「＋」→貼り付け' + (dataTa ? '→③はここに戻ってコピーして追加' : '') + '→Post all。';
+    xsGuide.textContent = 'X中継アプリが画像+①をXへ渡し、②をコピーします。Xで「＋」→貼り付け' + (dataTa ? '→③はここに戻ってコピーして追加' : '') + '→Post all。 [v3]';
     xsEditor.appendChild(xsGuide);
   }
   async function xsLoadDraft(postId) {

@@ -1324,7 +1324,22 @@ _HTML_FORM = """<!DOCTYPE html>
         params.mode = 'post';
         if (draft.image_url) { params.image = draft.image_url; }
       }
-      window.open('https://snsmoney-intake-cb4fqki2ha-an.a.run.app/x-app?' + new URLSearchParams(params).toString(), '_blank');
+      // Android Uri.getQueryParameter は '+' を空白に戻さないため、
+      // URLSearchParams ではなく %20 系 (encodeURIComponent) で組む。
+      var pairs = [];
+      Object.keys(params).forEach(function(k) { pairs.push(k + '=' + encodeURIComponent(params[k])); });
+      var query = pairs.join('&');
+      var host = 'snsmoney-intake-cb4fqki2ha-an.a.run.app';
+      if (/android/i.test(navigator.userAgent)) {
+        // 中間ページを挟まず X中継アプリを直接起動 (SNSMONEY mailボタンと同じ)。
+        // アプリ未導入時のみ /x-app 起動ページへ fallback。タブは遷移しないので
+        // ③コピーなどエディタ状態はそのまま残る。
+        location.href = 'intent://' + host + '/x-app?' + query
+          + '#Intent;scheme=https;package=org.shinylab.snsmoney.xhelper;S.browser_fallback_url='
+          + encodeURIComponent('https://' + host + '/x-app?' + query) + ';end';
+      } else {
+        window.open('https://' + host + '/x-app?' + query, '_blank');
+      }
     });
     xsEditor.appendChild(postBtn);
     var xsGuide = document.createElement('div');

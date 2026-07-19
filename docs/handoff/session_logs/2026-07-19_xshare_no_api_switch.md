@@ -15,3 +15,4 @@
 - 12:40 JST | user簡素化指示「オリポスだけで作って」 | commit e536b9e2: mode=post単発固定 (SNSMONEY株ポストと同一経路) + plain https App Link化 | deploy 00171-z8c [v5] 配信確認 (途中00170は旧v4 imageが乗る事故→再deployで解消)
 - 13:05 JST | user「オリポスだけだろ。リプが出るのはおかしい」 | commit ea8991ae: エディタからリプ②③UI全廃、おりポスのみ+mailボタン文言差替 | deploy 00172-dfh [v6]、headless render + 実スクショで画面確認済み
 - 13:30 JST | user「リプの考えは捨てる」確定 | commit e2ab9d00: リプ誘導行「続きはリプ欄の記事から」自動付与を廃止 (test 67 passed) | manual-intake 00173-5ts deploy + publish-notice job image oripost-only-e2ab9d00 更新 (mailボタン=⚾おりポスを作る)
+- 14:00 JST | X Android仕様を外部ソースで確認 (web intentはtext-only公式、share intentのtext+image同時はX側が画像破棄=SNSMONEY実機注記とuser実体験一致) → 画像自動+本文貼り付けが無API最短で確定 | mode=thread案はrevert | commit 4fd39435: 記事URLコピーボタン追加、deploy 00174-j55 [v7]

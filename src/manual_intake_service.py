@@ -1265,7 +1265,7 @@ _HTML_FORM = """<!DOCTYPE html>
     // 2026-07-19 user「画像は持ってかなくていい。URLがあればアイキャッチが出る」:
     // 記事URLを本文末尾に入れ、OGPカードで画像を出す。これで共有はテキストのみ
     // = x.com/intent/post で完全1タップ (中継アプリ・貼り付け・画像運搬すべて不要)。
-    mainTa.value = (draft.main_text || '') + (draft.article_url ? '\n\n' + draft.article_url : '');
+    mainTa.value = (draft.main_text || '') + (draft.article_url ? String.fromCharCode(10, 10) + draft.article_url : '');
     xsEditor.appendChild(mainTa);
     xsEditor.appendChild(xsCounter(mainTa, 'おりポス', 900));
     // 2026-07-19: X API 402 (PPU化でクーポン残高切れ) を受けて API 直投稿

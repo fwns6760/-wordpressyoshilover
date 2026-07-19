@@ -1245,7 +1245,7 @@ _HTML_FORM = """<!DOCTYPE html>
       xsEditor.appendChild(img);
       var imeta = document.createElement('div');
       imeta.className = 'insight-meta';
-      imeta.textContent = '↑この画像をおりポスに添付します';
+      imeta.textContent = '↑アイキャッチ (本文末尾のURLのカードとして自動表示、添付はしない)';
       xsEditor.appendChild(imeta);
     } else {
       var noimg = document.createElement('div');
@@ -1262,7 +1262,10 @@ _HTML_FORM = """<!DOCTYPE html>
     var mainTa = document.createElement('textarea');
     mainTa.rows = 6;
     mainTa.style.cssText = 'width:100%;margin-top:6px;font-size:14px;padding:10px;white-space:pre-wrap;';
-    mainTa.value = draft.main_text || '';
+    // 2026-07-19 user「画像は持ってかなくていい。URLがあればアイキャッチが出る」:
+    // 記事URLを本文末尾に入れ、OGPカードで画像を出す。これで共有はテキストのみ
+    // = x.com/intent/post で完全1タップ (中継アプリ・貼り付け・画像運搬すべて不要)。
+    mainTa.value = (draft.main_text || '') + (draft.article_url ? '\n\n' + draft.article_url : '');
     xsEditor.appendChild(mainTa);
     xsEditor.appendChild(xsCounter(mainTa, 'おりポス', 900));
     // 2026-07-19: X API 402 (PPU化でクーポン残高切れ) を受けて API 直投稿
@@ -1285,79 +1288,26 @@ _HTML_FORM = """<!DOCTYPE html>
     var copyRow = document.createElement('div');
     copyRow.style.cssText = 'display:flex;gap:6px;margin-top:6px;';
     copyRow.appendChild(xsCopyBtn('📋 本文をコピー', mainTa));
-    // 2026-07-19 user「リプのURLが入っていない」: 伸びたおりポスに後から
-    // 手動で URL リプを足す用。textarea は出さずコピーだけ。
-    if (draft.article_url) {
-      copyRow.appendChild(xsCopyBtn('🔗 記事URLコピー', { value: draft.article_url }));
-    }
     xsEditor.appendChild(copyRow);
-    var xsImgPromise = draft.image_url
-      ? fetch('/x-share-image?' + new URLSearchParams({url: draft.image_url}).toString(), {credentials: 'same-origin'})
-          .then(function(r) { return r.ok ? r.blob() : null; })
-          .catch(function() { return null; })
-      : null;
-    function xsIntentUrl() {
-      // 2026-07-19 user「オリポスだけで作って」: スレ (mode=thread) はやめて、
-      // SNSMONEY 株ポストと同じ単発 mode=post (画像+①) に固定する。
-      // ②③はコピーボタンから手動リプで足す。
-      var params = { mode: 'post', text: mainTa.value || '' };
-      if (draft.image_url) { params.image = draft.image_url; }
-      var pairs = [];
-      Object.keys(params).forEach(function(k) { pairs.push(k + '=' + encodeURIComponent(params[k])); });
-      var query = pairs.join('&');
-      // SNSMONEY mail ボタンと完全同一仕様: plain https の App Link。
-      // 中継アプリが assetlinks.json 検証済みのため、リンクを踏むと Android が
-      // アプリを直接開く (Gmail のボタンと同じ挙動)。アプリ未連携時のみ
-      // /x-app 起動ページが出て、そこの大ボタンから開ける。
-      return 'https://snsmoney-intake-cb4fqki2ha-an.a.run.app/x-app?' + query;
+    // 2026-07-19 user「画像は持ってかなくていい。URLがあればアイキャッチが出る」:
+    // 本文末尾の記事URLがOGPカードとして画像を出すので、共有はテキストのみ。
+    // x.com/intent/post の実リンク = スマホはXアプリのcomposer、PCはx.comが
+    // 本文入りで開く (SNSMONEYのテキスト投稿ボタンと同一方式)。貼り付け不要。
+    var postBtn = document.createElement('a');
+    postBtn.textContent = '📱 Xでおりポス投稿 (1タップ)';
+    postBtn.style.cssText = 'display:block;box-sizing:border-box;width:100%;padding:14px;font-size:15px;margin-top:8px;text-align:center;text-decoration:none;border-radius:6px;background:#f57f17;color:#fff;font-weight:600;';
+    postBtn.target = '_blank';
+    postBtn.rel = 'noopener';
+    function xsPostHref() {
+      return 'https://x.com/intent/post?text=' + encodeURIComponent(mainTa.value || '');
     }
-    var postBtn;
-    if (/android/i.test(navigator.userAgent)) {
-      // 「本物のリンク」で踏ませる (JS 遷移だと App Link 判定が働かない)。
-      // href は編集のたびに組み直す。
-      postBtn = document.createElement('a');
-      postBtn.textContent = '📱 Xアプリでおりポス投稿';
-      postBtn.style.cssText = 'display:block;box-sizing:border-box;width:100%;padding:14px;font-size:15px;margin-top:8px;text-align:center;text-decoration:none;border-radius:6px;background:#f57f17;color:#fff;font-weight:600;';
-      postBtn.href = xsIntentUrl();
-      mainTa.addEventListener('input', function() { postBtn.href = xsIntentUrl(); });
-    } else {
-      // Android 以外: Web Share → x.com/intent/post の順で fallback
-      postBtn = document.createElement('button');
-      postBtn.type = 'button';
-      postBtn.className = 'primary';
-      postBtn.textContent = '📱 Xへ共有';
-      postBtn.style.cssText = 'width:100%;padding:14px;font-size:15px;margin-top:8px;';
-      postBtn.addEventListener('click', async function() {
-        var first = mainTa.value || '';
-        try { await navigator.clipboard.writeText(first); } catch (e) {}
-        var blob = xsImgPromise ? await xsImgPromise : null;
-        try {
-          if (blob) {
-            var file = new File([blob], 'eyecatch.jpg', { type: blob.type || 'image/jpeg' });
-            if (navigator.canShare && navigator.canShare({ files: [file] })) {
-              await navigator.share({ files: [file] });
-              postBtn.textContent = '✅ 共有した (①はコピー済み→Xで貼り付け)';
-              return;
-            }
-          }
-          if (navigator.share) {
-            await navigator.share({ text: first });
-            postBtn.textContent = '✅ 共有した';
-            return;
-          }
-        } catch (e) {
-          if (e && e.name === 'AbortError') { return; }
-        }
-        window.open('https://x.com/intent/post?text=' + encodeURIComponent(first), '_blank');
-      });
-    }
+    postBtn.href = xsPostHref();
+    mainTa.addEventListener('input', function() { postBtn.href = xsPostHref(); });
     xsEditor.appendChild(postBtn);
     var xsGuide = document.createElement('div');
     xsGuide.className = 'insight-meta';
     xsGuide.style.cssText = 'margin-top:6px;';
-    xsGuide.textContent = draft.image_url
-      ? '中継アプリが画像をXへ渡し、本文をコピーします。投稿画面で長押し→貼り付け→ポスト。伸びた時は「記事URLコピー」→自分のポストに返信で貼る。 [v7]'
-      : '中継アプリ経由で本文がXの投稿画面に入ります。そのままポスト。 [v7]';
+    xsGuide.textContent = 'Xの投稿画面が本文+URL入りで開きます。そのままポスト (アイキャッチはURLカードで自動表示、画像添付なし)。 [v8]';
     xsEditor.appendChild(xsGuide);
   }
   async function xsLoadDraft(postId) {

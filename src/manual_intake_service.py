@@ -1327,22 +1327,19 @@ _HTML_FORM = """<!DOCTYPE html>
         params.mode = 'post';
         if (draft.image_url) { params.image = draft.image_url; }
       }
-      // Android Uri.getQueryParameter は '+' を空白へ戻さないため
-      // URLSearchParams ではなく encodeURIComponent (%20系) で組む。
       var pairs = [];
       Object.keys(params).forEach(function(k) { pairs.push(k + '=' + encodeURIComponent(params[k])); });
       var query = pairs.join('&');
-      var host = 'snsmoney-intake-cb4fqki2ha-an.a.run.app';
-      return 'intent://' + host + '/x-app?' + query
-        + '#Intent;scheme=https;package=org.shinylab.snsmoney.xhelper;S.browser_fallback_url='
-        + encodeURIComponent('https://' + host + '/x-app?' + query) + ';end';
+      // SNSMONEY mail ボタンと完全同一仕様: plain https の App Link。
+      // 中継アプリが assetlinks.json 検証済みのため、リンクを踏むと Android が
+      // アプリを直接開く (Gmail のボタンと同じ挙動)。アプリ未連携時のみ
+      // /x-app 起動ページが出て、そこの大ボタンから開ける。
+      return 'https://snsmoney-intake-cb4fqki2ha-an.a.run.app/x-app?' + query;
     }
     var postBtn;
     if (/android/i.test(navigator.userAgent)) {
-      // SNSMONEY mail ボタンと同じく「本物のリンク」で X中継アプリを起動する。
-      // JS の location.href は Chrome が intent:// を無視して共有シート等へ
-      // 落ちる環境があるため、<a href> の実クリックで踏ませる。href は編集の
-      // たびに組み直す。
+      // 「本物のリンク」で踏ませる (JS 遷移だと App Link 判定が働かない)。
+      // href は編集のたびに組み直す。
       postBtn = document.createElement('a');
       postBtn.textContent = '📱 Xアプリで投稿';
       postBtn.style.cssText = 'display:block;box-sizing:border-box;width:100%;padding:14px;font-size:15px;margin-top:8px;text-align:center;text-decoration:none;border-radius:6px;background:#f57f17;color:#fff;font-weight:600;';
@@ -1385,7 +1382,7 @@ _HTML_FORM = """<!DOCTYPE html>
     var xsGuide = document.createElement('div');
     xsGuide.className = 'insight-meta';
     xsGuide.style.cssText = 'margin-top:6px;';
-    xsGuide.textContent = 'X中継アプリが画像+①をXへ渡し、②をコピーします。Xで「＋」→貼り付け' + (dataTa ? '→③はここに戻ってコピーして追加' : '') + '→Post all。 [v3]';
+    xsGuide.textContent = 'X中継アプリが画像+①をXへ渡し、②をコピーします。Xで「＋」→貼り付け' + (dataTa ? '→③はここに戻ってコピーして追加' : '') + '→Post all。 [v4]';
     xsEditor.appendChild(xsGuide);
   }
   async function xsLoadDraft(postId) {

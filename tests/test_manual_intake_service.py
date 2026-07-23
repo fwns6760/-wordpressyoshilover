@@ -664,5 +664,47 @@ class LiveServerSmokeTest(unittest.TestCase):
         self.assertEqual(cm.exception.code, 403)
 
 
+class LiveMediaFeedTest(unittest.TestCase):
+    """/live-media-feed 用 _fetch_live_media_feed (公式+報知リプ開拓チップ)。"""
+
+    @staticmethod
+    def _entry(text: str, tweet_id: str, age_min: float) -> dict:
+        return {
+            "title": text,
+            "link": f"https://twitter.com/TokyoGiants/status/{tweet_id}",
+            "published_parsed": time.gmtime(time.time() - age_min * 60),
+        }
+
+    def test_filters_and_sorts_newest_first(self) -> None:
+        entries = [
+            self._entry("RT リツイートは除外", "1", 5),
+            self._entry("古い玉は除外", "2", 60 * 24),
+            self._entry("2番目に新しい", "3", 30),
+            self._entry("いちばん新しい", "4", 3),
+            {"title": "statusでないリンクは除外", "link": "https://twitter.com/TokyoGiants"},
+            {
+                "title": "鮮度不明は除外",
+                "link": "https://twitter.com/TokyoGiants/status/9",
+            },
+        ]
+        with patch.object(svc, "_fetch_rss_source_entries", return_value=entries):
+            posts = svc._fetch_live_media_feed()
+        texts = [p["text"] for p in posts]
+        # handle 2つ分 fetch されるが link 重複は dedupe され 1 回分になる
+        self.assertEqual(texts, ["いちばん新しい", "2番目に新しい"])
+        self.assertTrue(all("/status/" in p["url"] for p in posts))
+        self.assertLessEqual(posts[0]["age_min"], posts[1]["age_min"])
+
+    def test_empty_feed_is_ok(self) -> None:
+        with patch.object(svc, "_fetch_rss_source_entries", return_value=[]):
+            self.assertEqual(svc._fetch_live_media_feed(), [])
+
+    def test_fetch_error_is_swallowed(self) -> None:
+        with patch.object(
+            svc, "_fetch_rss_source_entries", side_effect=OSError("rsshub down")
+        ):
+            self.assertEqual(svc._fetch_live_media_feed(), [])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -299,6 +299,66 @@ def _fetch_rss_source_entries(
     return [dict(entry) for entry in entries[: max(1, entry_limit)]]
 
 
+# 2026-07-23 user「手動アプリの開拓で巨人公式と報知の枠広げられない？」:
+# /live に公式+報知の新着ポストをチップ表示し、タップで既存リプ返し流路へ渡す。
+# 取得は自前 RSSHub (投稿系 API 不使用・¥0)、LLM はタップ時のみ。
+_LIVE_MEDIA_FEED_HANDLES = tuple(
+    h.strip()
+    for h in (os.environ.get("LIVE_MEDIA_FEED_HANDLES") or "TokyoGiants,hochi_giants").split(",")
+    if h.strip()
+)
+_LIVE_MEDIA_FEED_MAX_AGE_HOURS = float(os.environ.get("LIVE_MEDIA_FEED_MAX_AGE_HOURS") or 6.0)
+_LIVE_MEDIA_RSSHUB_BASE = (
+    os.environ.get("RSSHUB_BASE") or "https://rsshub-487178857517.asia-northeast1.run.app"
+).rstrip("/")
+
+
+def _fetch_live_media_feed(limit: int = 12) -> list[dict[str, Any]]:
+    """巨人公式+報知の新着Xポストを新しい順で返す (リプ開拓チップ用)。
+
+    RT/リプ扱いの entry と鮮度切れ (既定6h) は落とす。鮮度不明も落とす
+    (リプは速さが価値なので、古い可能性のある玉を出さない)。
+    """
+    now = datetime.now(timezone.utc)
+    items: list[dict[str, Any]] = []
+    seen_urls: set[str] = set()
+    for handle in _LIVE_MEDIA_FEED_HANDLES:
+        try:
+            entries = _fetch_rss_source_entries(
+                {"url": f"{_LIVE_MEDIA_RSSHUB_BASE}/twitter/user/{handle}?limit=20"},
+                entry_limit=20,
+            )
+        except Exception:  # noqa: BLE001
+            continue
+        for entry in entries:
+            title = html.unescape(str(entry.get("title") or "")).strip()
+            link = str(entry.get("link") or "").split("#")[0].strip()
+            if not title or not _extract_tweet_id(link) or link in seen_urls:
+                continue
+            if title.startswith(("RT ", "Re ", "R to ")):
+                continue
+            published = entry.get("published_parsed")
+            if not isinstance(published, time.struct_time):
+                continue
+            try:
+                age_sec = (now - datetime(*published[:6], tzinfo=timezone.utc)).total_seconds()
+            except Exception:  # noqa: BLE001
+                continue
+            if age_sec < 0 or age_sec > _LIVE_MEDIA_FEED_MAX_AGE_HOURS * 3600:
+                continue
+            seen_urls.add(link)
+            items.append(
+                {
+                    "handle": handle,
+                    "text": title[:140],
+                    "url": link,
+                    "age_min": int(age_sec // 60),
+                }
+            )
+    items.sort(key=lambda x: x["age_min"])
+    return items[: max(1, limit)]
+
+
 def _fetch_manual_source_entries(
     source: dict[str, Any],
     *,
@@ -2513,6 +2573,9 @@ button{font-size:1rem;padding:10px 16px;border:0;border-radius:8px;cursor:pointe
 <button onclick="friendAdd()" style="background:#e8eaf6;flex:1">➕ 常連に追加</button>
 <button onclick="location.href='/friends'" style="background:#ede7f6;flex:1">👥 常連</button>
 </div>
+<div class="row" style="margin-top:6px">
+<button onclick="mediaFeed()" style="background:#fff3e0;flex:1">📣 公式・報知の新着 → リプ開拓</button>
+</div>
 </div>
 <div id="chips" style="margin-top:8px"></div>
 <div id="status"></div>
@@ -2661,6 +2724,27 @@ async function replyDraft(replaceCard){
     const who = j.name+' @'+j.handle+(j.friend_count>0?' (常連'+(j.friend_count+1)+'回目)':' (初)');
     document.getElementById('status').textContent = '💬 '+who+': 「'+j.their_text.slice(0,80)+'」';
     showCard(makeCard(j.drafts[0], {k:'reply'}, {in_reply_to:j.reply_to_id, reply_to_handle:j.handle, reply_to_name:j.name}), replaceCard);
+  }catch(e){ document.getElementById('status').textContent='エラー: '+e; }
+}
+async function mediaFeed(){
+  document.getElementById('status').textContent='公式・報知の新着を取得中…';
+  try{
+    const r = await fetch('/live-media-feed');
+    const j = await r.json();
+    const chips=document.getElementById('chips'); chips.innerHTML='';
+    if(!j.ok || !j.posts || !j.posts.length){
+      document.getElementById('status').textContent='直近'+(j.max_age_hours||6)+'時間の新着がありません';
+      return;
+    }
+    document.getElementById('status').textContent='タップでリプ案を生成:';
+    for(const p of j.posts){
+      const b=document.createElement('button');
+      const age=(p.age_min<60)? p.age_min+'分前' : Math.floor(p.age_min/60)+'時間前';
+      b.textContent='📣 '+age+' @'+p.handle+': '+p.text;
+      b.style.cssText='display:block;width:100%;text-align:left;background:#fff;border:1px solid #ddd;margin-top:4px;font-size:.9rem';
+      b.onclick=()=>{ document.getElementById('rurl').value=p.url; saveState(); replyDraft(); };
+      chips.appendChild(b);
+    }
   }catch(e){ document.getElementById('status').textContent='エラー: '+e; }
 }
 async function friendAdd(){
@@ -3954,6 +4038,41 @@ def build_handler(
                 except Exception as exc:  # noqa: BLE001
                     bound_logger.exception("live_plays_failed")
                     _json_response(self, 500, {"ok": False, "reason": f"live_plays_error:{exc!r}"})
+                return
+            if path == "/live-media-feed":
+                # 2026-07-23: 公式+報知の新着をリプ開拓チップとして返す (LLMなし・¥0)
+                expected_token = _require_token()
+                if expected_token:
+                    cookie_token = ""
+                    raw_cookie = self.headers.get("Cookie") or ""
+                    for part in raw_cookie.split(";"):
+                        kv = part.strip().split("=", 1)
+                        if len(kv) == 2 and kv[0].strip() == "manual_intake_session":
+                            cookie_token = kv[1].strip()
+                            break
+                    query_token = ""
+                    qtok = parse_qs(parsed.query, keep_blank_values=False).get("token") or []
+                    if qtok:
+                        query_token = (qtok[0] or "").strip()
+                    if cookie_token != expected_token and query_token != expected_token:
+                        _json_response(self, 403, {"ok": False, "reason": "forbidden"})
+                        return
+                try:
+                    posts = _fetch_live_media_feed()
+                    _json_response(
+                        self,
+                        200,
+                        {
+                            "ok": True,
+                            "posts": posts,
+                            "max_age_hours": _LIVE_MEDIA_FEED_MAX_AGE_HOURS,
+                        },
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    bound_logger.exception("live_media_feed_failed")
+                    _json_response(
+                        self, 500, {"ok": False, "reason": f"live_media_feed_error:{exc!r}"}
+                    )
                 return
             if path == "/live-friends":
                 # 常連リスト閲覧 (read-only、LLM/課金なし)

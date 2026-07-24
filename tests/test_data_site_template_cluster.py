@@ -61,6 +61,13 @@ class RenderClusterHtmlTests(unittest.TestCase):
         self.assertIn("/data/jersey-numbers", html)
         self.assertIn("歴代背番号", html)
 
+    def test_popular_player_links_block(self) -> None:
+        # GSC で伸びている選手ページへの内部リンク (2026-07-24 SEO 施策)
+        html = render_cluster_html(self.players)
+        self.assertIn("検索で人気の巨人選手データ", html)
+        self.assertIn("/data/matsui-hideki", html)
+        self.assertIn("松井秀喜 通算成績・年俸", html)
+
     def test_intro_links_to_record_room_and_notable_page(self) -> None:
         html = render_cluster_html(self.players)
         self.assertIn("/data/notable", html)

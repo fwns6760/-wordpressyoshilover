@@ -15,7 +15,11 @@ import json as _json
 import os as _os
 
 from src.data_site_internal_link import breadcrumb_jsonld
-from src.data_site_related_links import dataset_jsonld, related_data_links_html
+from src.data_site_related_links import (
+    dataset_jsonld,
+    popular_player_links_html,
+    related_data_links_html,
+)
 
 SITE_BASE = "https://yoshilover.com"
 CLUSTER_URL = "https://yoshilover.com/data"
@@ -232,6 +236,7 @@ def render_roster_moves_html(data: dict | None = None) -> str:
         + intro
         + nav
         + body
+        + popular_player_links_html()
         + related_data_links_html(SLUG)
         + "</div>"
     )

@@ -770,10 +770,14 @@ def render_cluster_html(
     育成選手 [(name, position)] (育成枠の一覧のみ、 個別ページなし)。 ob_entries =
     OB・レジェンド [(slug, name)] (個別 profile ページあり)。
     """
+    from src.data_site_related_links import popular_player_links_html
+
     sections = [
         _build_intro_html(),
         _build_search_html(),
         _build_player_table_html(players, ikusei_entries, ob_entries),
+        # 検索で伸びている選手ページへ hub からリンクを寄せる (GSC 実測ベース)
+        popular_player_links_html(),
         _build_footnote_html(len(players)),
         _build_jsonld(players),
     ]

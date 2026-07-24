@@ -71,3 +71,11 @@ def test_recent_year_open_by_default() -> None:
 def test_title_and_excerpt() -> None:
     assert "出場選手登録・抹消" in render_roster_moves_title()
     assert "2025〜2026年" in render_roster_moves_excerpt(SAMPLE)
+
+
+def test_popular_player_links_block() -> None:
+    # GSC で伸びている選手ページへの内部リンク (2026-07-24 SEO 施策)
+    h = render_roster_moves_html(SAMPLE)
+    assert "検索で人気の巨人選手データ" in h
+    assert "/data/matsumoto-tsuyoshi" in h
+    assert "松本剛 成績" in h

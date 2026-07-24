@@ -31,6 +31,39 @@ def _esc(t) -> str:
     return _html.escape(str(t if t is not None else ""), quote=True)
 
 
+# (slug, anchor) — 検索で伸びている選手ページへ hub から内部リンクを寄せる
+# (2026-07-24 GSC 実測: 20位台まで来たページを 1 ページ目へ押し込む施策)。
+# anchor は当たりクエリの型「選手名+成績/年俸」に一致させる (リンク文言=検索語)。
+_POPULAR_PLAYERS = [
+    ("matsumoto-tsuyoshi", "松本剛 成績"),
+    ("matsui-hideki", "松井秀喜 通算成績・年俸"),
+    ("kitaura-ryuji", "北浦竜次 成績"),
+    ("sakamoto-hayato", "坂本勇人 成績"),
+    ("togo-shosei", "戸郷翔征 成績"),
+    ("richard", "リチャード 成績"),
+    ("ishizuka-yusei", "石塚裕惺 成績"),
+]
+
+
+def popular_player_links_html() -> str:
+    """「検索で人気の選手データ」内部リンクブロック (hub ページ用)。
+
+    GSC で表示の付き始めた選手ページへ、表示回数の多い hub からリンクを
+    寄せて順位を押し上げる。対象は _POPULAR_PLAYERS で管理 (GSC 実測で入替)。
+    """
+    chips = [
+        f'<a href="/data/{_esc(slug)}" style="display:inline-block;padding:6px 12px;margin:3px;'
+        'border:1px solid #f5d9c3;border-radius:16px;background:#fff8f2;color:#c74e00;'
+        f'text-decoration:none;font-size:13px;font-weight:600;">{_esc(label)}</a>'
+        for slug, label in _POPULAR_PLAYERS
+    ]
+    return (
+        '<section style="margin:26px 0 0;padding:14px;border-top:2px solid #eef0f3;">'
+        '<h2 style="font-size:15px;margin:0 0 8px;color:#333;">検索で人気の巨人選手データ</h2>'
+        '<div>' + "".join(chips) + "</div></section>"
+    )
+
+
 def related_data_links_html(current_slug: str) -> str:
     """「関連データ」内部リンクブロック (current ページ自身は除外)。"""
     chips = [

@@ -348,14 +348,28 @@ def _fetch_data_page_slugs(wp_client) -> set:
             DATA_PAGES_CACHE[api] = set()
             return set()
         parent_id = int(items[0]["id"])
-        r2 = requests.get(
-            f"{api}/pages",
-            params={"parent": parent_id, "per_page": 100, "_fields": "slug"},
-            auth=wp_client.auth,
-            timeout=WP_TIMEOUT_SECONDS,
-        )
-        r2.raise_for_status()
-        slugs = {p.get("slug", "") for p in (r2.json() or []) if p.get("slug")}
+        slugs = set()
+        page = 1
+        while True:
+            r2 = requests.get(
+                f"{api}/pages",
+                params={
+                    "parent": parent_id,
+                    "per_page": 100,
+                    "page": page,
+                    "_fields": "slug",
+                },
+                auth=wp_client.auth,
+                timeout=WP_TIMEOUT_SECONDS,
+            )
+            if r2.status_code == 400:
+                break
+            r2.raise_for_status()
+            rows = r2.json() or []
+            slugs.update(p.get("slug", "") for p in rows if p.get("slug"))
+            if len(rows) < 100:
+                break
+            page += 1
         DATA_PAGES_CACHE[api] = slugs
         return slugs
     except Exception as exc:  # noqa: BLE001
@@ -366,18 +380,24 @@ def _fetch_data_page_slugs(wp_client) -> set:
 
 def make_tag_url_resolver(data_slugs_available: set):
     """tag URL resolver factory。 /data/ に該当 player page があれば /data/{slug}/、
-    なければ /tag/{name}/ にフォールバック (C 内部リンク enrichment)。"""
+    なければ空文字を返して plain text にする。
+
+    未検証の /tag/{name}/ fallback は tag archive が無い選手で 404 を作るため廃止。
+    """
     try:
-        from data_site_slug import player_slug  # type: ignore
+        from src.data_site_slug import player_slug
     except Exception:
-        player_slug = None  # type: ignore
+        try:
+            from data_site_slug import player_slug  # type: ignore
+        except Exception:
+            player_slug = None  # type: ignore
 
     def resolve(name: str) -> str:
         if player_slug and data_slugs_available:
             slug = player_slug(name)
             if slug and slug in data_slugs_available:
                 return f"{WP_DATA_PAGE_URL_BASE}/{slug}/"
-        return wp_tag_url_for(name)
+        return ""
 
     return resolve
 

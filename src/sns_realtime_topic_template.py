@@ -113,9 +113,12 @@ def render_trend_chips(
         )
         if tag_url_for:
             url = tag_url_for(name)
-            chips.append(
-                f'<a class="ysn-chip {rank_class}" href="{_html.escape(url)}">{inner}</a>'
-            )
+            if url:
+                chips.append(
+                    f'<a class="ysn-chip {rank_class}" href="{_html.escape(url)}">{inner}</a>'
+                )
+            else:
+                chips.append(f'<span class="ysn-chip {rank_class}">{inner}</span>')
         else:
             chips.append(f'<span class="ysn-chip {rank_class}">{inner}</span>')
     sub = (

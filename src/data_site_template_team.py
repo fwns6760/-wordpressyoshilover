@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import html as _html
 
+from src.data_site_internal_link import linkify
+
 SITE_BASE = "https://yoshilover.com"
 CLUSTER_URL = "https://yoshilover.com/data"
 RANKING_URL = "https://yoshilover.com/data/ranking"
@@ -159,19 +161,9 @@ def render_ranking_excerpt(leaders: dict) -> str:
 
 
 def _ranking_block(cat: str, entries: list) -> str:
-    from src.data_site_slug import player_slug  # lazy import (循環回避)
-
-    def _link(name: str) -> str:
-        try:
-            return f"/data/{player_slug(name)}"
-        except Exception:  # noqa: BLE001
-            return ""
-
     rows = ""
     for i, e in enumerate(entries):
-        href = _link(e.player)
-        name_html = (f'<a href="{href}" style="flex:1;color:#1a1a1a;text-decoration:none;">{_esc(e.player)}</a>'
-                     if href else f'<span style="flex:1;">{_esc(e.player)}</span>')
+        name_html = f'<span style="flex:1;">{linkify(e.player)}</span>'
         rows += (
             '<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-bottom:1px solid #f0f0f0;">'
             f'<span style="width:24px;color:#e25400;text-align:center;font-weight:700;">{i + 1}</span>'
@@ -347,19 +339,9 @@ def render_record_excerpt(record: dict) -> str:
 
 def _record_block(club: str, members: list) -> str:
     """記録室のクラブ 1 つ(h2 = クラブ名そのまま)。"""
-    from src.data_site_slug import player_slug  # lazy import (循環回避)
-
-    def _link(name: str) -> str:
-        try:
-            return f"/data/{player_slug(name)}"
-        except Exception:  # noqa: BLE001
-            return ""
-
     rows = ""
     for i, e in enumerate(members):
-        href = _link(e.player)
-        name_html = (f'<a href="{href}" style="flex:1;color:#1a1a1a;text-decoration:none;">{_esc(e.player)}</a>'
-                     if href else f'<span style="flex:1;">{_esc(e.player)}</span>')
+        name_html = f'<span style="flex:1;">{linkify(e.player)}</span>'
         rows += (
             '<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-bottom:1px solid #f0f0f0;">'
             f'<span style="width:24px;color:#e25400;text-align:center;font-weight:700;">{i + 1}</span>'

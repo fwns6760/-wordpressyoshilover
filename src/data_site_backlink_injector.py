@@ -29,6 +29,7 @@ import os
 import re
 import sys
 from dataclasses import dataclass, field
+from datetime import date
 
 import requests
 from requests.auth import HTTPBasicAuth
@@ -82,6 +83,29 @@ def _max_per_player() -> int:
         return max(1, int(raw))
     except ValueError:
         return 20
+
+
+def _backfill_max_page() -> int:
+    """1日1ページずつ遡る過去記事 backfill の巡回上限。"""
+    raw = str(os.environ.get("DATA_SITE_BACKLINK_BACKFILL_MAX_PAGE", "180")).strip()
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        return 180
+
+
+def _backfill_page_for_date(today: date | None = None) -> int:
+    """日付だけで安定する backfill page を返す。
+
+    page 1 は毎回、新規記事の catch-up 用に別途読む。過去分は page 2 以降を
+    日次 rotation し、Cloud Run の ephemeral filesystem に cursor を持たずに
+    古い記事へ到達する。
+    """
+    max_page = _backfill_max_page()
+    if max_page <= 1:
+        return 1
+    current = today or date.today()
+    return 2 + (current.toordinal() % (max_page - 1))
 
 
 def _player_filter() -> str:
@@ -142,12 +166,23 @@ def _fetch_posts_for_tag(
     auth: HTTPBasicAuth,
     tag_id: int,
     limit: int,
+    pages: list[int] | None = None,
 ) -> list[dict]:
-    """tag id を持つ publish post を最大 limit 件、 新しい順で取得."""
+    """指定 page 群から tag 付き publish post を取得する。
+
+    既定は page 1 のみ。caller は page 1 + 日次 backfill page を渡し、新着を
+    取りこぼさずに過去 archive も少量ずつ埋める。
+    """
     posts: list[dict] = []
     per_page = min(limit, 100)
-    page = 1
-    while len(posts) < limit:
+    seen_ids: set[int] = set()
+    page_numbers = []
+    for page in pages or [1]:
+        page = max(1, int(page))
+        if page not in page_numbers:
+            page_numbers.append(page)
+
+    for page in page_numbers:
         try:
             r = requests.get(
                 base + "/wp-json/wp/v2/posts",
@@ -171,12 +206,14 @@ def _fetch_posts_for_tag(
             break
         rows = r.json() or []
         if not rows:
-            break
-        posts.extend(rows)
-        if len(rows) < per_page:
-            break
-        page += 1
-    return posts[:limit]
+            continue
+        for post in rows:
+            post_id = int((post or {}).get("id") or 0)
+            if post_id <= 0 or post_id in seen_ids:
+                continue
+            seen_ids.add(post_id)
+            posts.append(post)
+    return posts
 
 
 def _update_post_content(
@@ -217,11 +254,20 @@ def _process_player(player_name: str) -> InjectorSummary:
 
     base, auth = _wp_creds()
     limit = _max_per_player()
-    posts = _fetch_posts_for_tag(base, auth, tag_id, limit)
+    backfill_page = _backfill_page_for_date()
+    posts = _fetch_posts_for_tag(
+        base,
+        auth,
+        tag_id,
+        limit,
+        pages=[1, backfill_page],
+    )
     summary.posts_total = len(posts)
     aside_html = _build_aside_html(slug=slug, name=display_name)
 
     for post in posts:
+        if summary.posts_updated >= limit:
+            break
         post_id = int(post.get("id") or 0)
         if post_id <= 0:
             continue
@@ -251,8 +297,10 @@ def run() -> dict:
         LOG.info("filtered to slug=%s players=%s", filter_slug, target_names)
 
     LOG.info(
-        "backlink injector start scope=%s dry_run=%s max_per_player=%d players=%d",
-        _target_scope(), _dry_run_enabled(), _max_per_player(), len(target_names),
+        "backlink injector start scope=%s dry_run=%s max_per_player=%d "
+        "backfill_page=%d backfill_max_page=%d players=%d",
+        _target_scope(), _dry_run_enabled(), _max_per_player(),
+        _backfill_page_for_date(), _backfill_max_page(), len(target_names),
     )
 
     summaries: list[InjectorSummary] = []

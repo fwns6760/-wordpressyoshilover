@@ -1,6 +1,20 @@
 # assignments — 現場担当と次アクション
 
-最終更新: 2026-07-13 JST (MLB定点9人化 + 巨人引用RT記事型除外)
+最終更新: 2026-07-31 JST (473 内部リンク全件監査・repo修正)
+
+## 2026-07-31 — 473 内部リンク最適化 (user「全部GO」)
+
+- **Codex B / READY_FOR_AUTH_EXECUTOR**: repo実装・read-only live監査・回帰完了。
+- baseline: sitemap 1,135 URLはbroken 0。sitemap外267 targetのうち404は27
+  (旧運営者URL1 / 誤選手data URL20 / 存在しないtag6)。indexable orphan 4。
+- repo fix: current player slug map 977件、実在page限定link、SNS tag fallback廃止、
+  過去記事backfill rotation、掲示板spam除外 + `ugc nofollow`、
+  旧menu 404補正、orphan導線、全URL監査tool。
+- validation: targeted 120 passed / compileall / AST 9 / PHP lint / diff-check PASS。
+- **次担当 = authenticated executor**: clean限定overlayで frontend → data publisher →
+  SNS realtime → backlink dry-run/write の順に反映し、最終auditで
+  broken internal target 0 / indexable orphan 0 / spam topic 0を確認。
+- 不変: env / Secret / Scheduler / IAM / X。dirty repo rootの一括build禁止。
 
 ## 2026-07-13 — MLB定点ポスト9人化 + 巨人引用RT動画優先 (user「追加」「記事型はでてこなくていい」)
 

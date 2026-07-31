@@ -617,8 +617,10 @@ function yoshilover_063_render_home_data_hub() {
                 array( 'href' => '/data/team',             'ic' => '📊', 't' => 'セ・リーグ順位表',   's' => '順位・ゲーム差・日程' ),
                 array( 'href' => '/data/interleague',      'ic' => '⚔️', 't' => 'セ・パ交流戦',       's' => '今年の結果・歴代成績' ),
                 array( 'href' => '/data/rotation',         'ic' => '🧭', 't' => '先発ローテ一覧',     's' => '2007〜2026年 試合ごとの先発' ),
+                array( 'href' => '/data/opening-pitchers', 'ic' => '🎖️', 't' => '巨人 歴代開幕投手', 's' => '1936〜2026年 全90年の一覧' ),
                 array( 'href' => '/data/roster-moves',     'ic' => '🔁', 't' => '出場選手登録・抹消', 's' => '1軍登録メンバー・登録/抹消の動き' ),
                 array( 'href' => '/data/farm',             'ic' => '🌱', 't' => '2軍試合日程・結果',  's' => 'ファーム予定・成績' ),
+                array( 'href' => '/giants-sns-realtime-1gun', 'ic' => '📣', 't' => '巨人SNSリアルタイム', 's' => '一軍の今日の話題を集約' ),
                 array( 'href' => '/data/notable',          'ic' => '📈', 't' => '注目データ',         's' => '誰の記録か分かる一覧' ),
                 array( 'href' => '/data/tickets',          'ic' => '🎟️', 't' => 'チケット情報',       's' => '公式・プレイガイド購入リンク' ),
             ),
@@ -5848,8 +5850,51 @@ function yoshilover_063_board_like_js() {
  * 記事末尾に「巨人ファン掲示板で語ろう」を 1 回だけ注入する。
  * 直近で動いたトピック 1 件を添えて誘導する (1 時間 transient cache)。
  */
+function yoshilover_063_board_topic_is_safe( $topic ) {
+    if ( ! is_object( $topic ) || empty( $topic->ID ) ) {
+        return false;
+    }
+
+    $title = trim( wp_strip_all_tags( (string) get_the_title( $topic ) ) );
+    $body  = trim( wp_strip_all_tags( (string) ( $topic->post_content ?? '' ) ) );
+    $blob  = $title . ' ' . $body;
+    if ( $title === '' || ! preg_match( '/[一-龯々ぁ-んァ-ヶー]/u', $title ) ) {
+        return false;
+    }
+
+    // 全記事から link equity を渡すため、野球・巨人と無関係な最新 topic は出さない。
+    $baseball_terms = array(
+        '巨人', 'ジャイアンツ', 'giants', '野球', '試合', '選手', '監督',
+        '投手', '打者', '打線', '守備', '打撃', '先発', 'スタメン', '采配',
+        '補強', '移籍', 'ドラフト', '一軍', '二軍', '三軍', 'ファーム',
+        '東京ドーム', '勝利', '敗戦', 'ホームラン',
+    );
+    $has_context = false;
+    foreach ( $baseball_terms as $term ) {
+        if ( false !== stripos( $blob, $term ) ) {
+            $has_context = true;
+            break;
+        }
+    }
+    if ( ! $has_context ) {
+        return false;
+    }
+
+    $spam_terms = array(
+        'http://', 'https://', '[url=', 'casino', 'viagra', 'loan', 'crypto',
+        'автосервис', 'москва',
+    );
+    foreach ( $spam_terms as $term ) {
+        if ( false !== stripos( $blob, $term ) ) {
+            return false;
+        }
+    }
+    return true;
+}
+
 function yoshilover_063_get_board_hot_topic() {
-    $cached = get_transient( 'yoshilover_063_board_hot_topic_v1' );
+    // v2: unsafe topic を cache 済みの v1 から即時分離する。
+    $cached = get_transient( 'yoshilover_063_board_hot_topic_v2' );
     if ( is_array( $cached ) ) {
         return $cached;
     }
@@ -5859,26 +5904,58 @@ function yoshilover_063_get_board_hot_topic() {
             array(
                 'post_type'      => 'topic',
                 'post_status'    => 'publish',
-                'posts_per_page' => 1,
+                'posts_per_page' => 20,
                 'orderby'        => 'modified',
                 'order'          => 'DESC',
                 'no_found_rows'  => true,
             )
         );
-        if ( ! empty( $q->posts ) ) {
-            $t       = $q->posts[0];
+        foreach ( (array) $q->posts as $t ) {
+            if ( ! yoshilover_063_board_topic_is_safe( $t ) ) {
+                continue;
+            }
             $replies = function_exists( 'bbp_get_topic_reply_count' ) ? (int) bbp_get_topic_reply_count( $t->ID ) : 0;
             $result  = array(
                 'title'   => (string) get_the_title( $t ),
                 'url'     => (string) get_permalink( $t ),
                 'replies' => $replies,
             );
+            break;
         }
         wp_reset_postdata();
     }
-    set_transient( 'yoshilover_063_board_hot_topic_v1', $result, HOUR_IN_SECONDS );
+    set_transient( 'yoshilover_063_board_hot_topic_v2', $result, HOUR_IN_SECONDS );
     return $result;
 }
+
+/*
+ * 削除済み page_id=1980 を向く旧モバイルメニューを正規の運営者ページへ補正する。
+ * WP menu DB 側を直すまでの front guard。全ページに 404 link を出さない。
+ */
+function yoshilover_063_repair_legacy_about_menu_link( $atts, $item ) {
+    $href = isset( $atts['href'] ) ? (string) $atts['href'] : '';
+    if (
+        ( is_object( $item ) && (int) ( $item->ID ?? 0 ) === 55464 )
+        || false !== strpos( $href, 'page_id=1980' )
+    ) {
+        $atts['href'] = home_url( '/about-yoshilover' );
+    }
+    return $atts;
+}
+add_filter( 'nav_menu_link_attributes', 'yoshilover_063_repair_legacy_about_menu_link', 20, 2 );
+
+/*
+ * home-dashboard は旧トップ試作ページで、現トップと検索意図が重複する。
+ * 内部リンクを増やして競合させず noindex,follow とする。
+ */
+function yoshilover_063_noindex_legacy_home_dashboard( $robots ) {
+    if ( function_exists( 'is_page' ) && is_page( 'home-dashboard' ) ) {
+        $robots['noindex'] = true;
+        unset( $robots['index'] );
+    }
+    return $robots;
+}
+add_filter( 'wp_robots', 'yoshilover_063_noindex_legacy_home_dashboard', 20 );
 
 function yoshilover_063_render_board_cta( $variant = 'bottom' ) {
     $variant = ( $variant === 'inline' ) ? 'inline' : 'bottom';
@@ -5886,13 +5963,14 @@ function yoshilover_063_render_board_cta( $variant = 'bottom' ) {
     $html .= '<div class="yoshi-board-cta__body">';
     $html .= '<div class="yoshi-board-cta__title">💬 この話題、巨人ファン掲示板で語ろう</div>';
     $html .= '<div class="yoshi-board-cta__lead">登録不要・ニックネームだけで今すぐ書き込めます。</div>';
-    $topic = yoshilover_063_get_board_hot_topic();
+    // 同一記事に CTA は2箇所あるため、UGC topic 自体は bottom の1リンクだけにする。
+    $topic = $variant === 'bottom' ? yoshilover_063_get_board_hot_topic() : array();
     if ( ! empty( $topic['url'] ) && ! empty( $topic['title'] ) ) {
         $label = $topic['title'];
         if ( ! empty( $topic['replies'] ) ) {
             $label .= '(' . (int) $topic['replies'] . 'コメント)';
         }
-        $html .= '<a class="yoshi-board-cta__topic" href="' . esc_url( $topic['url'] ) . '">' . esc_html( $label ) . '</a>';
+        $html .= '<a class="yoshi-board-cta__topic" rel="ugc nofollow" href="' . esc_url( $topic['url'] ) . '">' . esc_html( $label ) . '</a>';
     }
     $html .= '</div>';
     $html .= '<a class="yoshi-board-cta__btn" href="' . esc_url( home_url( '/forums' ) ) . '">掲示板を見る</a>';

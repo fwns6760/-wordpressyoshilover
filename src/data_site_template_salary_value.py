@@ -20,7 +20,7 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from src.data_site_internal_link import breadcrumb_jsonld
+from src.data_site_internal_link import breadcrumb_jsonld, load_slug_map
 from src.data_site_related_links import dataset_jsonld
 
 SITE_BASE = "https://yoshilover.com"
@@ -147,6 +147,9 @@ def render_salary_value_excerpt(data: dict) -> str:
 
 
 def _player_link(name: str, slug: str) -> str:
+    # salary source に同一人物の旧 duplicate slug が残る場合も、WP から生成した
+    # current page map を優先して 404 link を出さない。
+    slug = str(load_slug_map().get(_norm(name)) or slug or "")
     if slug:
         return f'<a href="{SALARY_URL}/{_esc(slug)}/">{_esc(name)}</a>'
     return _esc(name)

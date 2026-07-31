@@ -17,13 +17,23 @@ import sys
 
 import requests
 
+from src.data_site_slug import _PLAYER_SLUG_MAP
+
 WP = "https://yoshilover.com"
 OUT = os.path.join(os.path.dirname(__file__), "..", "..", "config", "data_site_player_slugs.json")
 _HUBS = {"data", "ranking", "team", "record", "legends", "schedule", "leaders",
          "draft", "fa", "trade"}
 _WS = re.compile(r"[\s　]+")
 _PAREN = re.compile(r"[（(].*?[）)]")
-_SUFFIX = re.compile(r"\s*(通算成績|プロフィール|【).*$")
+_SUFFIX = re.compile(
+    r"\s*(?:"
+    r"20\d{2}年(?:成績(?:・(?:打率|防御率))?)?"
+    r"|通算成績"
+    r"|プロフィール"
+    r"|【"
+    r"|\|"
+    r").*$"
+)
 
 
 def _norm(s: str) -> str:
@@ -40,6 +50,16 @@ def _name_keys(title_name: str) -> list[str]:
     return [k for k in keys if k]
 
 
+def _player_name_from_title(title: str) -> str:
+    """WP の SEO title から照合用の選手名部分だけを返す。
+
+    現役ページは ``坂本勇人 2026年成績・打率【...】`` のような title を持つ。
+    旧実装は ``【`` 以降しか落とせず、``坂本勇人2026年成績・打率`` が slug map
+    の key になって、表中の ``坂本勇人`` と一致しなかった。
+    """
+    return _SUFFIX.sub("", title or "").strip()
+
+
 def _cluster_id() -> int:
     r = requests.get(f"{WP}/wp-json/wp/v2/pages",
                      params={"slug": "data", "_fields": "id"}, timeout=20)
@@ -52,6 +72,7 @@ def build() -> dict:
     if not cid:
         raise RuntimeError("data cluster page not found")
     mapping: dict[str, str] = {}
+    available_slugs: set[str] = set()
     page = 1
     while True:
         r = requests.get(f"{WP}/wp-json/wp/v2/pages",
@@ -66,8 +87,9 @@ def build() -> dict:
             slug = p.get("slug")
             if not slug or slug in _HUBS:
                 continue
+            available_slugs.add(slug)
             title = (p.get("title") or {}).get("rendered") or ""
-            name = _SUFFIX.sub("", title).strip()
+            name = _player_name_from_title(title)
             if not name:
                 continue
             for k in _name_keys(name):
@@ -75,6 +97,13 @@ def build() -> dict:
         if len(rows) < 100:
             break
         page += 1
+
+    # 同一人物に OB page と現役 staff page が併存する場合、WP の取得順で
+    # setdefault すると古い slug を選ぶことがある。現行 data-site が使う
+    # hand-authored canonical slug を最後に優先する。
+    for name, slug in _PLAYER_SLUG_MAP.items():
+        if slug in available_slugs:
+            mapping[_norm(name)] = slug
     return mapping
 
 

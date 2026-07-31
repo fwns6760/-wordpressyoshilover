@@ -22,7 +22,7 @@ from src.data_site_farm_source import (
     FarmGenericRow,
     FarmPlayerStat,
 )
-from src.data_site_slug import player_slug
+from src.data_site_internal_link import linkify
 
 
 SITE_BASE = "https://yoshilover.com"
@@ -307,11 +307,9 @@ def render_farm_players_html(batting: list[FarmPlayerStat], pitching: list[FarmP
 
 
 def _player_link(name: str) -> str:
-    try:
-        href = f"/data/{player_slug(name)}"
-    except Exception:  # noqa: BLE001
-        return _esc(name)
-    return f'<a href="{href}" style="font-weight:700;color:#1976d2;text-decoration:none;">{_esc(name)}</a>'
+    # player_slug() の未知名 fallback は日本語 slug を返すため、存在しない
+    # /data/<選手名> を作り得る。WP 実在ページから生成した map だけで link 化する。
+    return linkify(name)
 
 
 def _player_table(rows: list[FarmPlayerStat], role: str) -> str:

@@ -13,6 +13,8 @@ import html as _html
 import json as _json
 from dataclasses import dataclass
 
+from src.data_site_internal_link import linkify
+
 
 SITE_BASE = "https://yoshilover.com"
 CLUSTER_URL = f"{SITE_BASE}/data"
@@ -476,15 +478,8 @@ def _build_hot_html(hot: dict | None) -> str:
     p = (hot or {}).get("pitcher") or []
     if not b and not p:
         return ""
-    from src.data_site_slug import player_slug  # lazy import (循環回避)
-
     def _line(name, disp, rk, tot):
-        try:
-            href = f"/data/{player_slug(name)}"
-        except Exception:  # noqa: BLE001
-            href = ""
-        nm = (f'<a href="{href}" style="color:#1a1a1a;text-decoration:none;font-weight:600;">{_esc(name)}</a>'
-              if href else f'<strong>{_esc(name)}</strong>')
+        nm = linkify(name)
         rks = f'<span style="color:#888;font-size:12px;">（リーグ{rk}位）</span>' if rk else ""
         return f'<li style="padding:5px 0;border-bottom:1px solid #fff0e6;">{nm} {_esc(disp)} {rks}</li>'
 

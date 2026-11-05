@@ -86,3 +86,20 @@ def test_flags_need_enough_posts_before_judging():
         site_cur=(100, 1), site_prev=(5000, 50),
     )
     assert compute_flags(rep) == []
+
+
+def test_stragglers_only_between_2_and_14_days_and_not_indexed():
+    from src.prosports_weekly_seo_check import render_daily, stragglers
+    posts = [_post(1, 1), _post(2, 3), _post(3, 10), _post(4, 20), _post(5, 5)]
+    states = {
+        f"{S}p1/": "URL is unknown to Google",            # too young
+        f"{S}p2/": "Discovered - currently not indexed",
+        f"{S}p3/": "Submitted and indexed",
+        f"{S}p4/": "URL is unknown to Google",            # too old
+        # p5 missing -> UNKNOWN
+    }
+    found = stragglers(posts, states, TODAY)
+    assert [(p.id, age) for p, _, age in found] == [(5, 5), (2, 3)]
+    subject, body = render_daily(TODAY, found, len(posts))
+    assert subject.startswith("【要URL検査】") and "未登録 2 本" in subject
+    assert "検出済み" in body and f"{S}p5/" in body

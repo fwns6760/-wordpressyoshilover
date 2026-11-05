@@ -314,10 +314,67 @@ def render(rep: Report) -> tuple[str, str]:
     return subject, "\n".join(lines)
 
 
+# ---------------------------------------------------------------- daily mode: 「URL 検査を押す必要がある記事」だけ知らせる
+
+STRAGGLER_MIN_AGE = 2   # 公開 2 日未満はまだ自然に見つかる途中なので対象外
+STRAGGLER_MAX_AGE = 14
+
+
+def stragglers(posts: list[Post], states: dict[str, str], today: _dt.date) -> list[tuple[Post, str, int]]:
+    """公開 2〜14 日で、まだ登録されていない記事 [(post, state, age), ...] (古い順)。"""
+    out = []
+    for p in posts:
+        age = (today - p.date).days
+        if STRAGGLER_MIN_AGE <= age <= STRAGGLER_MAX_AGE and states.get(p.link, "UNKNOWN") != "Submitted and indexed":
+            out.append((p, states.get(p.link, "UNKNOWN"), age))
+    return sorted(out, key=lambda x: -x[2])
+
+
+JP_STATE = {
+    "URL is unknown to Google": "Google がまだ知らない",
+    "Discovered - currently not indexed": "検出済み・まだ見に来ていない",
+    "Crawled - currently not indexed": "クロール済み・登録見送り (中身を見て登録しなかった)",
+}
+
+
+def render_daily(today: _dt.date, found: list[tuple[Post, str, int]], checked: int) -> tuple[str, str]:
+    lines = [f"prosports 未登録記事チェック ({today.isoformat()})", "",
+             f"公開 {STRAGGLER_MIN_AGE}〜{STRAGGLER_MAX_AGE} 日の記事 {checked} 本を URL 検査し、未登録は {len(found)} 本でした。", "",
+             "■ Search Console で「インデックス登録をリクエスト」を押す記事 (古い順):"]
+    for p, state, age in found:
+        lines.append(f"  公開 {age} 日目  {p.link}")
+        lines.append(f"      状態: {JP_STATE.get(state, state)}")
+    lines += ["", "「クロール済み・登録見送り」は、押しても登録されないことがあります。何度も残る場合は記事の中身 (薄さ・重複) を見直す候補です。",
+              "", "(毎日 09:30 JST、未登録があるときだけ送信 / prosports-index-stragglers job)"]
+    return f"【要URL検査】prosports 未登録 {len(found)} 本 ({today.isoformat()})", "\n".join(lines)
+
+
+def run_daily(cap: int) -> tuple[str, str] | None:
+    token = _oauth_access_token()
+    today = _dt.date.today()
+    targets = [p for p in _posts() if STRAGGLER_MIN_AGE <= (today - p.date).days <= STRAGGLER_MAX_AGE][:cap]
+    states: dict[str, str] = {}
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        for p, state in zip(targets, ex.map(lambda p: _inspect(token, p.link), targets)):
+            states[p.link] = state
+    found = stragglers(targets, states, today)
+    LOG.info("daily: checked=%d stragglers=%d", len(targets), len(found))
+    if not found:
+        return None
+    return render_daily(today, found, len(targets))
+
+
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
     cap = int(os.environ.get("WEEKLY_INSPECT_CAP", "120") or 120)
-    subject, body = render(build_report(cap))
+    if os.environ.get("DAILY_MODE", "").strip() == "1":
+        daily = run_daily(cap)
+        if daily is None:
+            LOG.info("daily: nothing to report, no mail")
+            return 0
+        subject, body = daily
+    else:
+        subject, body = render(build_report(cap))
     LOG.info("report built:\n%s\n%s", subject, body)
     enabled = str(os.environ.get("GSC_REPORT_MAIL_ENABLED", "")).strip().lower() in {"1", "true", "yes", "on"}
     to = [a.strip() for a in os.environ.get("MAIL_BRIDGE_TO", "").split(",") if a.strip()]

@@ -1,0 +1,330 @@
+"""prosports.yoshilover.com 週次 SEO チェック (Cloud Run Job)。
+
+目的: AI で 1 日 10 本以上出しているサブドメインが「量 > 質」に傾いた兆しを、
+      user が覚えていなくても毎週メールで受け取れるようにする (read-only、サイトへの書き込みなし)。
+
+見るもの (すべて GSC / 公開 REST から取得、状態ファイル不要):
+  1. 直近 7 日に公開した記事の インデックス登録率 (URL 検査 API)
+  2. 公開 14〜35 日目の記事の 1 本あたり表示回数 を、
+     ひとつ前の世代 (今 42〜63 日目の記事) が同じ年齢だったときの値と比較
+  3. サイト全体の 表示 / クリック (直近 28 日 vs 前 28 日)
+  4. 一人一記事の崩れ (同じ名前の検索語が、自宅・hub 以外の 2 記事以上に分散)
+  5. どの hub (球団別一覧など) からもリンクされていない記事
+
+いずれかが閾値を超えたら件名に【要確認】を付ける。
+
+認証: Secret Manager `gsc-adc-oauth` (gsc_monthly_report と同じ)。
+メール: 既存 mail_delivery_bridge (Gmail SMTP)。
+
+env:
+  GSC_OAUTH_JSON          — secretRef で注入される OAuth json (必須)
+  GSC_SITE_URL            — 既定 https://prosports.yoshilover.com/
+  GSC_REPORT_MAIL_ENABLED — "1" で実送信 (既定 dry-run)
+  WEEKLY_INSPECT_CAP      — URL 検査の上限件数 (既定 120)
+  MAIL_BRIDGE_*           — mail_delivery_bridge と同じ
+"""
+
+from __future__ import annotations
+
+import datetime as _dt
+import logging
+import os
+import re
+import sys
+import time
+from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
+from urllib.parse import unquote
+
+import requests
+
+from src.gsc_monthly_report import API_BASE, _headers, _oauth_access_token
+from src.mail_delivery_bridge import MailRequest, send as bridge_send
+
+LOG = logging.getLogger("prosports_weekly_seo_check")
+
+SITE_URL = os.environ.get("GSC_SITE_URL", "https://prosports.yoshilover.com/").strip() or "https://prosports.yoshilover.com/"
+UA = {"User-Agent": "prosports-weekly-seo-check/1.0"}
+# hub = topic cluster の親ページ。slug は 2026-11-05 時点の実在一覧 (astoral-family は牧秀悟の記事なので含めない)。
+HUB_SLUGS = ["athlete-family", "athlete-homes", "baseball-family", "soccerkazokutsuma"] + [
+    f"{t}-tsuma-kazoku"
+    for t in ("baystars", "buffaloes", "carp", "dragons", "eagles", "fighters", "giants-geneki", "hanshin", "hawks", "lions", "marines", "swallows")
+]
+HOME_RE = re.compile(r"jitaku|tsuma-kazoku|-family/|homes/|soccerkazokutsuma")
+# 2026-11-05 に user と確認済みで問題ない分散 (同姓の別人 / 自宅・年俸など別テーマ / 統合済み旧 URL の名残)。
+# 新しい名前だけをメールに載せるための除外。家族記事どうしの分散が新たに出れば、ここに無いので載る。
+CANNIBAL_KNOWN_OK = {"相川亮二", "桑田真澄", "立浪和義", "立浪", "高橋", "宮本", "川崎宗則", "平田由佳", "西岡", "阿部", "阿部慎之助", "中村", "カープ", "巨人", "阪神"}
+
+# 閾値 (user 合意 2026-11-05: 登録率 / 1 本あたり表示 / サイト表示 の 3 つが落ちたら知らせる)
+INDEX_RATE_MIN = 0.85
+INDEX_RATE_MIN_POSTS = 5
+COHORT_RATIO_MIN = 0.6
+SITE_IMPR_RATIO_MIN = 0.7
+NOT_INDEXED_MAX = 3
+
+
+@dataclass
+class Post:
+    id: int
+    date: _dt.date
+    link: str
+    slug: str
+
+
+@dataclass
+class Report:
+    today: _dt.date
+    window_cur: tuple[str, str]
+    window_prev: tuple[str, str]
+    posts_total: int = 0
+    new_posts: list[Post] = field(default_factory=list)
+    new_states: dict[str, str] = field(default_factory=dict)
+    cohort_cur: tuple[int, float] = (0, 0.0)  # (posts, impr per post)
+    cohort_prev: tuple[int, float] = (0, 0.0)
+    site_cur: tuple[int, int] = (0, 0)  # (impr, clicks)
+    site_prev: tuple[int, int] = (0, 0)
+    cannibal: dict[str, dict[str, float]] = field(default_factory=dict)
+    not_in_hub: list[str] = field(default_factory=list)
+    near_page1: list[tuple[str, int, int, float]] = field(default_factory=list)
+    flags: list[str] = field(default_factory=list)
+
+
+# ---------------------------------------------------------------- fetchers
+
+def _posts() -> list[Post]:
+    out: list[Post] = []
+    page = 1
+    while True:
+        r = requests.get(
+            f"{SITE_URL}wp-json/wp/v2/posts",
+            params={"per_page": 100, "page": page, "_fields": "id,date,link,slug"},
+            headers=UA, timeout=60,
+        )
+        if r.status_code == 400:  # past last page
+            break
+        r.raise_for_status()
+        batch = r.json()
+        for p in batch:
+            out.append(Post(int(p["id"]), _dt.date.fromisoformat(p["date"][:10]), p["link"], p["slug"]))
+        if len(batch) < 100:
+            break
+        page += 1
+    return out
+
+
+def _gsc_rows(token: str, start: str, end: str, dimensions: list[str]) -> list[dict]:
+    site = requests.utils.quote(SITE_URL, safe="")
+    rows: list[dict] = []
+    start_row = 0
+    while True:
+        body = {"startDate": start, "endDate": end, "dimensions": dimensions, "rowLimit": 25000, "startRow": start_row}
+        r = requests.post(f"{API_BASE}/webmasters/v3/sites/{site}/searchAnalytics/query", headers=_headers(token), json=body, timeout=120)
+        r.raise_for_status()
+        got = r.json().get("rows") or []
+        rows += got
+        if len(got) < 25000:
+            return rows
+        start_row += 25000
+
+
+def _inspect(token: str, url: str) -> str:
+    try:
+        r = requests.post(
+            f"{API_BASE}/v1/urlInspection/index:inspect",
+            headers=_headers(token), json={"inspectionUrl": url, "siteUrl": SITE_URL}, timeout=30,
+        )
+        if not r.ok:
+            return f"API_ERROR_{r.status_code}"
+        res = (r.json().get("inspectionResult") or {}).get("indexStatusResult") or {}
+        return res.get("coverageState") or res.get("verdict") or "UNKNOWN"
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("inspect failed url=%s: %r", url, exc)
+        return "INSPECT_ERROR"
+
+
+def _hub_linked_urls() -> set[str]:
+    linked: set[str] = set()
+    for slug in HUB_SLUGS:
+        try:
+            html = requests.get(f"{SITE_URL}{slug}/", headers=UA, timeout=60).text
+        except Exception as exc:  # noqa: BLE001
+            LOG.warning("hub fetch failed %s: %r", slug, exc)
+            continue
+        linked |= {unquote(u) for u in re.findall(r'href="(https://prosports\.yoshilover\.com/[^"#?]+)"', html)}
+        time.sleep(0.3)
+    return linked
+
+
+def _final_url(url: str) -> str:
+    try:
+        return requests.head(url, headers=UA, timeout=30, allow_redirects=True).url
+    except Exception:  # noqa: BLE001
+        return url
+
+
+# ---------------------------------------------------------------- pure logic (unit-tested)
+
+def page_key(url: str) -> str:
+    return unquote(url).split("#")[0]
+
+
+def cohort_impr_per_post(posts: list[Post], impr_by_page: dict[str, float], today: _dt.date, lo: int, hi: int) -> tuple[int, float]:
+    members = [p for p in posts if lo <= (today - p.date).days <= hi]
+    if not members:
+        return 0, 0.0
+    total = sum(impr_by_page.get(page_key(p.link), 0.0) for p in members)
+    return len(members), round(total / len(members), 1)
+
+
+def cannibal_candidates(pq_rows: list[dict], min_impr: float = 150.0) -> dict[str, dict[str, float]]:
+    """同じ名前 (検索語の先頭トークン) が、自宅記事と hub を除く 2 記事以上に分散しているもの。"""
+    spl: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
+    for r in pq_rows:
+        page, query = r["keys"]
+        u = page_key(page)
+        if HOME_RE.search(u):
+            continue
+        name = query.split()[0] if query.split() else ""
+        if len(name) < 2:
+            continue
+        spl[name][u] += float(r.get("impressions", 0))
+    return {n: dict(d) for n, d in spl.items() if n not in CANNIBAL_KNOWN_OK and len([i for i in d.values() if i >= min_impr]) >= 2}
+
+
+def compute_flags(rep: Report) -> list[str]:
+    flags: list[str] = []
+    n = len(rep.new_posts)
+    indexed = sum(1 for s in rep.new_states.values() if s == "Submitted and indexed")
+    if n >= INDEX_RATE_MIN_POSTS and indexed / n < INDEX_RATE_MIN:
+        flags.append(f"新記事の登録率が {indexed}/{n} ({indexed * 100 // n}%) で {int(INDEX_RATE_MIN * 100)}% を下回った")
+    not_idx = sum(1 for s in rep.new_states.values() if s == "Crawled - currently not indexed")
+    if not_idx >= NOT_INDEXED_MAX:
+        flags.append(f"「クロール済み・未登録」の新記事が {not_idx} 本 (Google が中身を見て登録を見送った数)")
+    cp, cv = rep.cohort_cur
+    pp, pv = rep.cohort_prev
+    if cp >= 10 and pp >= 10 and pv > 0 and cv / pv < COHORT_RATIO_MIN:
+        flags.append(f"公開 2〜5 週目の記事の 1 本あたり表示が {cv:.0f} で、前の世代 ({pv:.0f}) の {cv / pv * 100:.0f}% に低下")
+    si, _ = rep.site_cur
+    pi, _ = rep.site_prev
+    if pi >= 10000 and si / pi < SITE_IMPR_RATIO_MIN:
+        flags.append(f"サイト全体の表示回数が前 28 日の {si / pi * 100:.0f}% に低下 ({pi:,} → {si:,})")
+    return flags
+
+
+# ---------------------------------------------------------------- report
+
+def build_report(inspect_cap: int = 120) -> Report:
+    token = _oauth_access_token()
+    today = _dt.date.today()
+    end1 = today - _dt.timedelta(days=2)
+    start1 = end1 - _dt.timedelta(days=27)
+    end0 = start1 - _dt.timedelta(days=1)
+    start0 = end0 - _dt.timedelta(days=27)
+    f = lambda d: d.strftime("%Y-%m-%d")  # noqa: E731
+    rep = Report(today=today, window_cur=(f(start1), f(end1)), window_prev=(f(start0), f(end0)))
+
+    posts = _posts()
+    rep.posts_total = len(posts)
+    LOG.info("posts=%d", len(posts))
+
+    cur = _gsc_rows(token, f(start1), f(end1), ["page"])
+    prev = _gsc_rows(token, f(start0), f(end0), ["page"])
+    impr_cur = {page_key(r["keys"][0]): float(r["impressions"]) for r in cur if "#" not in r["keys"][0]}
+    impr_prev = {page_key(r["keys"][0]): float(r["impressions"]) for r in prev if "#" not in r["keys"][0]}
+    rep.site_cur = (round(sum(r["impressions"] for r in cur)), round(sum(r["clicks"] for r in cur)))
+    rep.site_prev = (round(sum(r["impressions"] for r in prev)), round(sum(r["clicks"] for r in prev)))
+
+    # 1. new posts index state (URL 検査は 1 件 2〜5 秒かかるので 4 並列。quota 600/min には十分余裕)
+    rep.new_posts = [p for p in posts if (today - p.date).days <= 7][:inspect_cap]
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        for p, state in zip(rep.new_posts, ex.map(lambda p: _inspect(token, p.link), rep.new_posts)):
+            rep.new_states[p.link] = state
+    LOG.info("inspected=%d", len(rep.new_states))
+
+    # 2. cohorts at equal age: current 14-35d (current window) vs previous generation 42-63d (previous window)
+    rep.cohort_cur = cohort_impr_per_post(posts, impr_cur, today, 14, 35)
+    rep.cohort_prev = cohort_impr_per_post(posts, impr_prev, today, 42, 63)
+
+    # 4. cannibalization
+    pq = _gsc_rows(token, f(start1), f(end1), ["page", "query"])
+    rep.cannibal = cannibal_candidates(pq)
+
+    # 5. hub coverage (skip hubs themselves, posts younger than 1 day, and posts that 301 elsewhere)
+    linked = _hub_linked_urls()
+    hub_links = {f"{SITE_URL}{s}/" for s in HUB_SLUGS}
+    missing = [p.link for p in posts if page_key(p.link) not in linked and p.link not in hub_links and (today - p.date).days >= 1]
+    rep.not_in_hub = [u for u in missing if _final_url(u) == u]
+
+    # bonus: near page 1 (pos 4-10, impr>=1500) — 内部リンク強化の候補
+    pos_rows = {page_key(r["keys"][0]): r for r in cur if "#" not in r["keys"][0]}
+    rep.near_page1 = sorted(
+        [(u, round(r["impressions"]), round(r["clicks"]), r["position"]) for u, r in pos_rows.items() if r["impressions"] >= 1500 and 4.0 <= r["position"] <= 10.0 and not HOME_RE.search(u)],
+        key=lambda x: -x[1],
+    )[:8]
+
+    rep.flags = compute_flags(rep)
+    return rep
+
+
+def render(rep: Report) -> tuple[str, str]:
+    short = lambda u: u.replace(SITE_URL, "/")  # noqa: E731
+    n = len(rep.new_posts)
+    indexed = sum(1 for s in rep.new_states.values() if s == "Submitted and indexed")
+    cp, cv = rep.cohort_cur
+    pp, pv = rep.cohort_prev
+    si, sc = rep.site_cur
+    pi, pc = rep.site_prev
+    lines = [f"prosports 週次 SEO チェック ({rep.today.isoformat()})", ""]
+    if rep.flags:
+        lines += ["■ 要確認"] + [f"  ・{x}" for x in rep.flags] + [""]
+    else:
+        lines += ["■ 異常なし (登録率・1 本あたり表示・サイト全体とも閾値内)", ""]
+    lines += [
+        f"■ 直近 7 日の新記事: {n} 本 / 登録済み {indexed} 本" + (f" ({indexed * 100 // n}%)" if n else ""),
+    ]
+    others = [(short(u), s) for u, s in rep.new_states.items() if s != "Submitted and indexed"]
+    for u, s in others[:10]:
+        lines.append(f"    未登録: {u}  {s}")
+    lines += [
+        "",
+        f"■ 公開 2〜5 週目の記事 ({cp} 本): 1 本あたり表示 {cv:,.0f} 回",
+        f"   前の世代が同じ年齢だったとき ({pp} 本): {pv:,.0f} 回",
+        "",
+        f"■ サイト全体 (直近 28 日 {rep.window_cur[0]}〜{rep.window_cur[1]} / 前 28 日)",
+        f"   表示 {si:,} (前 {pi:,})  クリック {sc:,} (前 {pc:,})",
+        "",
+        f"■ 一人一記事の崩れ候補: {len(rep.cannibal)} 件" + ("" if rep.cannibal else " (なし)"),
+    ]
+    for name, d in sorted(rep.cannibal.items(), key=lambda kv: -sum(kv[1].values()))[:8]:
+        pages = " / ".join(f"{short(u)} {i:.0f}" for u, i in sorted(d.items(), key=lambda x: -x[1])[:3])
+        lines.append(f"    {name}: {pages}")
+    if rep.cannibal:
+        lines.append("    (同姓の別人・自宅記事・年俸など別テーマは問題なし。家族記事どうしなら統合を検討)")
+    lines += ["", f"■ どの一覧ページ (hub) からもリンクされていない記事: {len(rep.not_in_hub)} 本" + ("" if rep.not_in_hub else " (なし)")]
+    for u in rep.not_in_hub[:15]:
+        lines.append(f"    {short(u)}")
+    if rep.near_page1:
+        lines += ["", "■ もう少しで 1 ページ目上位 (4〜10 位・表示 1,500 以上) = 内部リンク強化の候補:"]
+        for u, imp, clk, pos in rep.near_page1:
+            lines.append(f"    {short(u)}: 表示 {imp:,} / クリック {clk:,} / 平均 {pos:.1f} 位")
+    lines += ["", f"記事総数 {rep.posts_total} 本 / 毎週月曜 10:00 JST 自動送信 (prosports-weekly-seo-check job)。サイトへの書き込みはしません。"]
+    mark = "【要確認】" if rep.flags else ""
+    subject = f"{mark}【prosports】週次SEOチェック {rep.today.isoformat()} — 新記事登録 {indexed}/{n}・2〜5週目 {cv:,.0f}表示/本"
+    return subject, "\n".join(lines)
+
+
+def main() -> int:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    cap = int(os.environ.get("WEEKLY_INSPECT_CAP", "120") or 120)
+    subject, body = render(build_report(cap))
+    LOG.info("report built:\n%s\n%s", subject, body)
+    enabled = str(os.environ.get("GSC_REPORT_MAIL_ENABLED", "")).strip().lower() in {"1", "true", "yes", "on"}
+    to = [a.strip() for a in os.environ.get("MAIL_BRIDGE_TO", "").split(",") if a.strip()]
+    result = bridge_send(MailRequest(to=to, subject=subject, text_body=body), dry_run=not enabled)
+    LOG.info("mail result: status=%s reason=%s", result.status, result.reason)
+    return 0 if result.status in {"sent", "dry_run"} else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

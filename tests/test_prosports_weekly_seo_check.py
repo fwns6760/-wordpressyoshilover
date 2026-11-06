@@ -103,3 +103,30 @@ def test_stragglers_only_between_2_and_14_days_and_not_indexed():
     subject, body = render_daily(TODAY, found, len(posts))
     assert subject.startswith("【要URL検査】") and "未登録 2 本" in subject
     assert "検出済み" in body and f"{S}p5/" in body
+
+
+def test_ai_visibility_windows_splits_last_and_prior_seven_days():
+    from src.prosports_weekly_seo_check import ai_visibility_windows
+    days = {
+        "2026-11-04": {"bot": {"GPTBot": 2, "ClaudeBot": 1}, "ref": {"chatgpt.com": 1}},
+        "2026-10-30": {"bot": {"GPTBot": 5}, "ref": {}},          # day -6 -> current window
+        "2026-10-29": {"bot": {"GPTBot": 7}, "ref": {"perplexity.ai": 3}},  # day -7 -> current window edge
+        "2026-10-28": {"bot": {"GPTBot": 100}},                    # day -8 -> prior window
+        "2026-10-22": {"bot": {"PerplexityBot": 4}},               # day -14 -> prior window edge
+        "2026-10-21": {"bot": {"PerplexityBot": 999}},             # day -15 -> dropped
+        "2026-11-05": {"bot": {"GPTBot": 999}},                    # today -> dropped (day incomplete)
+        "garbage": {"bot": {"GPTBot": 1}},
+    }
+    bots, refs = ai_visibility_windows(days, TODAY)
+    assert bots == {"GPTBot": (14, 100), "PerplexityBot": (0, 4), "ClaudeBot": (1, 0)}
+    assert refs == {"perplexity.ai": (3, 0), "chatgpt.com": (1, 0)}
+    assert ai_visibility_windows({}, TODAY) == ({}, {})
+
+
+def test_render_shows_ai_section_or_unavailable():
+    rep = Report(today=TODAY, window_cur=("a", "b"), window_prev=("c", "d"), ai_available=True,
+                 ai_bots={"GPTBot": (14, 100)}, ai_refs={})
+    _, body = render(rep)
+    assert "AI 検索での見え方" in body and "GPTBot 14 (前 100)" in body and "訪問: なし" in body
+    _, body = render(Report(today=TODAY, window_cur=("a", "b"), window_prev=("c", "d")))
+    assert "取得できませんでした" in body

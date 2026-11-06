@@ -10,6 +10,9 @@
   3. サイト全体の 表示 / クリック (直近 28 日 vs 前 28 日)
   4. 一人一記事の崩れ (同じ名前の検索語が、自宅・hub 以外の 2 記事以上に分散)
   5. どの hub (球団別一覧など) からもリンクされていない記事
+  6. AI 検索での見え方 (LLMO、2026-11-06): AI クローラーの記事取得数と、AI チャット/AI 検索から
+     の訪問数 (直近 7 日 vs 前 7 日)。サイト側 Code Snippet #53 が数え、公開 REST
+     /wp-json/prosports/v1/ai-visibility で返す集計値を読むだけ。
 
 いずれかが閾値を超えたら件名に【要確認】を付ける。
 
@@ -87,6 +90,9 @@ class Report:
     cannibal: dict[str, dict[str, float]] = field(default_factory=dict)
     not_in_hub: list[str] = field(default_factory=list)
     near_page1: list[tuple[str, int, int, float]] = field(default_factory=list)
+    ai_bots: dict[str, tuple[int, int]] = field(default_factory=dict)  # name -> (last 7d, prior 7d)
+    ai_refs: dict[str, tuple[int, int]] = field(default_factory=dict)  # referrer domain -> (last 7d, prior 7d)
+    ai_available: bool = False
     flags: list[str] = field(default_factory=list)
 
 
@@ -154,6 +160,38 @@ def _hub_linked_urls() -> set[str]:
         linked |= {unquote(u) for u in re.findall(r'href="(https://prosports\.yoshilover\.com/[^"#?]+)"', html)}
         time.sleep(0.3)
     return linked
+
+
+def _ai_visibility() -> dict | None:
+    """Snippet #53 の日別カウンタ {YYYY-MM-DD: {"bot": {name: n}, "ref": {domain: n}}}。取れなければ None。"""
+    try:
+        r = requests.get(f"{SITE_URL}wp-json/prosports/v1/ai-visibility", headers=UA, timeout=60)
+        r.raise_for_status()
+        days = r.json().get("days")
+        return days if isinstance(days, dict) else {}
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("ai-visibility fetch failed: %r", exc)
+        return None
+
+
+def ai_visibility_windows(days: dict, today: _dt.date, span: int = 7) -> tuple[dict[str, tuple[int, int]], dict[str, tuple[int, int]]]:
+    """直近 span 日 (today-span 〜 today-1) と、その前 span 日の合計を、bot 名 / 参照元ドメインごとに返す。"""
+    cur_lo, cur_hi = today - _dt.timedelta(days=span), today - _dt.timedelta(days=1)
+    prev_lo, prev_hi = cur_lo - _dt.timedelta(days=span), cur_lo - _dt.timedelta(days=1)
+    out: dict[str, dict[str, list[int]]] = {"bot": defaultdict(lambda: [0, 0]), "ref": defaultdict(lambda: [0, 0])}
+    for day, kinds in (days or {}).items():
+        try:
+            d = _dt.date.fromisoformat(str(day))
+        except ValueError:
+            continue
+        slot = 0 if cur_lo <= d <= cur_hi else 1 if prev_lo <= d <= prev_hi else None
+        if slot is None or not isinstance(kinds, dict):
+            continue
+        for kind in ("bot", "ref"):
+            for key, n in (kinds.get(kind) or {}).items():
+                out[kind][str(key)][slot] += int(n)
+    rank = lambda m: dict(sorted(((k, (v[0], v[1])) for k, v in m.items()), key=lambda kv: (-kv[1][0], -kv[1][1], kv[0])))  # noqa: E731
+    return rank(out["bot"]), rank(out["ref"])
 
 
 def _final_url(url: str) -> str:
@@ -263,6 +301,11 @@ def build_report(inspect_cap: int = 120) -> Report:
         key=lambda x: -x[1],
     )[:8]
 
+    # 6. AI 検索での見え方 (snippet #53 のカウンタ)
+    days = _ai_visibility()
+    rep.ai_available = days is not None
+    rep.ai_bots, rep.ai_refs = ai_visibility_windows(days or {}, today)
+
     rep.flags = compute_flags(rep)
     return rep
 
@@ -308,6 +351,13 @@ def render(rep: Report) -> tuple[str, str]:
         lines += ["", "■ もう少しで 1 ページ目上位 (4〜10 位・表示 1,500 以上) = 内部リンク強化の候補:"]
         for u, imp, clk, pos in rep.near_page1:
             lines.append(f"    {short(u)}: 表示 {imp:,} / クリック {clk:,} / 平均 {pos:.1f} 位")
+    lines += ["", "■ AI 検索での見え方 (直近 7 日 / 前 7 日)"]
+    if not rep.ai_available:
+        lines.append("    カウンタ (snippet #53) を取得できませんでした")
+    else:
+        fmt = lambda m: " / ".join(f"{k} {c} (前 {p})" for k, (c, p) in list(m.items())[:8]) or "なし"  # noqa: E731
+        lines.append(f"    AI クローラーの記事取得 (キャッシュ命中分は含まず): {fmt(rep.ai_bots)}")
+        lines.append(f"    AI チャット・AI 検索からの訪問: {fmt(rep.ai_refs)}")
     lines += ["", f"記事総数 {rep.posts_total} 本 / 毎週月曜 10:00 JST 自動送信 (prosports-weekly-seo-check job)。サイトへの書き込みはしません。"]
     mark = "【要確認】" if rep.flags else ""
     subject = f"{mark}【prosports】週次SEOチェック {rep.today.isoformat()} — 新記事登録 {indexed}/{n}・2〜5週目 {cv:,.0f}表示/本"

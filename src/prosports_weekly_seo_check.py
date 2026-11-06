@@ -158,7 +158,7 @@ def _inspect(token: str, url: str, attempts: int = 3) -> str:
         try:
             r = requests.post(
                 f"{API_BASE}/v1/urlInspection/index:inspect",
-                headers=_headers(token), json={"inspectionUrl": url, "siteUrl": SITE_URL}, timeout=30,
+                headers=_headers(token), json={"inspectionUrl": url, "siteUrl": SITE_URL}, timeout=90,
             )
             if r.ok:
                 res = (r.json().get("inspectionResult") or {}).get("indexStatusResult") or {}

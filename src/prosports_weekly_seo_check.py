@@ -13,6 +13,9 @@
   6. AI 検索での見え方 (LLMO、2026-11-06): AI クローラーの記事取得数と、AI チャット/AI 検索から
      の訪問数 (直近 7 日 vs 前 7 日)。サイト側 Code Snippet #53 が数え、公開 REST
      /wp-json/prosports/v1/ai-visibility で返す集計値を読むだけ。
+  7. タイトル絞り込みの材料 (2026-11-06 user GO): 公開 60 日以上の記事について、タイトルにあるのに
+     検索語に一度も出ない語と、検索語にあるのにタイトルに無い語を記事別に出す。月初の週 (1〜7 日) の
+     週次か、env TITLE_REPORT=1 のときだけ載せる。判断と編集は user (Claude はタイトルを変えない)。
 
 いずれかが閾値を超えたら件名に【要確認】を付ける。
 
@@ -24,6 +27,7 @@ env:
   GSC_SITE_URL            — 既定 https://prosports.yoshilover.com/
   GSC_REPORT_MAIL_ENABLED — "1" で実送信 (既定 dry-run)
   WEEKLY_INSPECT_CAP      — URL 検査の上限件数 (既定 120)
+  TITLE_REPORT            — "1" でタイトル絞り込み節を強制的に載せる (既定: 月初の週だけ)
   MAIL_BRIDGE_*           — mail_delivery_bridge と同じ
 """
 
@@ -38,6 +42,7 @@ import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from html import unescape as html_unescape
 from urllib.parse import unquote
 
 import requests
@@ -66,6 +71,15 @@ COHORT_RATIO_MIN = 0.6
 SITE_IMPR_RATIO_MIN = 0.7
 NOT_INDEXED_MAX = 3
 
+# タイトル絞り込み: タイトルに入りがちな家族系キーワード (長い語を先に置き、部分一致の二重数えを避ける)
+TITLE_VOCAB = [
+    "誹謗中傷", "馴れ初め", "再婚相手", "元嫁", "元妻", "奥さん", "嫁", "妻", "結婚", "再婚", "離婚", "彼女", "子供", "息子", "娘", "孫",
+    "実家", "両親", "父親", "母親", "父", "母", "兄弟", "兄", "弟", "姉", "妹", "祖父", "祖母", "家族", "画像", "写真", "住所", "自宅", "豪邸",
+    "年齢", "出身", "大学", "高校", "職業", "会社", "国籍", "宗教", "噂", "現在", "インスタ", "名前", "年収", "年俸", "死因", "病気", "トラブル", "愛車",
+]
+TITLE_MIN_AGE_DAYS = 60
+TITLE_REPORT_CAP = 40
+
 
 @dataclass
 class Post:
@@ -73,6 +87,7 @@ class Post:
     date: _dt.date
     link: str
     slug: str
+    title: str = ""
 
 
 @dataclass
@@ -93,6 +108,8 @@ class Report:
     ai_bots: dict[str, tuple[int, int]] = field(default_factory=dict)  # name -> (last 7d, prior 7d)
     ai_refs: dict[str, tuple[int, int]] = field(default_factory=dict)  # referrer domain -> (last 7d, prior 7d)
     ai_available: bool = False
+    title_rows: list[tuple[str, int, list[str], list[tuple[str, int]]]] = field(default_factory=list)  # (url, impr, never-queried title words, queried words missing from title)
+    title_report_on: bool = False
     flags: list[str] = field(default_factory=list)
 
 
@@ -104,7 +121,7 @@ def _posts() -> list[Post]:
     while True:
         r = requests.get(
             f"{SITE_URL}wp-json/wp/v2/posts",
-            params={"per_page": 100, "page": page, "_fields": "id,date,link,slug"},
+            params={"per_page": 100, "page": page, "_fields": "id,date,link,slug,title"},
             headers=UA, timeout=60,
         )
         if r.status_code == 400:  # past last page
@@ -112,7 +129,7 @@ def _posts() -> list[Post]:
         r.raise_for_status()
         batch = r.json()
         for p in batch:
-            out.append(Post(int(p["id"]), _dt.date.fromisoformat(p["date"][:10]), p["link"], p["slug"]))
+            out.append(Post(int(p["id"]), _dt.date.fromisoformat(p["date"][:10]), p["link"], p["slug"], html_unescape((p.get("title") or {}).get("rendered") or "")))
         if len(batch) < 100:
             break
         page += 1
@@ -134,19 +151,28 @@ def _gsc_rows(token: str, start: str, end: str, dimensions: list[str]) -> list[d
         start_row += 25000
 
 
-def _inspect(token: str, url: str) -> str:
-    try:
-        r = requests.post(
-            f"{API_BASE}/v1/urlInspection/index:inspect",
-            headers=_headers(token), json={"inspectionUrl": url, "siteUrl": SITE_URL}, timeout=30,
-        )
-        if not r.ok:
-            return f"API_ERROR_{r.status_code}"
-        res = (r.json().get("inspectionResult") or {}).get("indexStatusResult") or {}
-        return res.get("coverageState") or res.get("verdict") or "UNKNOWN"
-    except Exception as exc:  # noqa: BLE001
-        LOG.warning("inspect failed url=%s: %r", url, exc)
-        return "INSPECT_ERROR"
+def _inspect(token: str, url: str, attempts: int = 3) -> str:
+    """URL 検査。429 / 5xx / 通信エラーは 2, 4 秒待って最大 attempts 回。最後まで駄目なら API_ERROR_<code> か INSPECT_ERROR。"""
+    last = "INSPECT_ERROR"
+    for i in range(attempts):
+        try:
+            r = requests.post(
+                f"{API_BASE}/v1/urlInspection/index:inspect",
+                headers=_headers(token), json={"inspectionUrl": url, "siteUrl": SITE_URL}, timeout=30,
+            )
+            if r.ok:
+                res = (r.json().get("inspectionResult") or {}).get("indexStatusResult") or {}
+                return res.get("coverageState") or res.get("verdict") or "UNKNOWN"
+            last = f"API_ERROR_{r.status_code}"
+            LOG.warning("inspect %s -> HTTP %s (%s) attempt %d", url, r.status_code, r.text[:160].replace("\n", " "), i + 1)
+            if r.status_code < 500 and r.status_code != 429:
+                return last
+        except Exception as exc:  # noqa: BLE001
+            last = "INSPECT_ERROR"
+            LOG.warning("inspect %s failed: %r attempt %d", url, exc, i + 1)
+        if i + 1 < attempts:
+            time.sleep(2 * (i + 1))
+    return last
 
 
 def _hub_linked_urls() -> set[str]:
@@ -192,6 +218,42 @@ def ai_visibility_windows(days: dict, today: _dt.date, span: int = 7) -> tuple[d
                 out[kind][str(key)][slot] += int(n)
     rank = lambda m: dict(sorted(((k, (v[0], v[1])) for k, v in m.items()), key=lambda kv: (-kv[1][0], -kv[1][1], kv[0])))  # noqa: E731
     return rank(out["bot"]), rank(out["ref"])
+
+
+def title_pruning_rows(posts: list[Post], pq_rows: list[dict], today: _dt.date, min_age: int = TITLE_MIN_AGE_DAYS, cap: int = TITLE_REPORT_CAP) -> list[tuple[str, int, list[str], list[tuple[str, int]]]]:
+    """公開 min_age 日以上の記事ごとに (url, 表示合計, 検索に一度も出ないタイトル語, タイトルに無い検索語 top3 [(語, 表示)]) を返す。
+    検索語は GSC の query を空白で分けた語 (人名はタイトルに含まれるので自然に除外される)。"""
+    by_page: dict[str, list[tuple[str, float]]] = defaultdict(list)
+    for r in pq_rows:
+        if "#" in r["keys"][0]:
+            continue
+        by_page[page_key(r["keys"][0])].append((str(r["keys"][1]), float(r["impressions"])))
+    out: list[tuple[str, int, list[str], list[tuple[str, int]]]] = []
+    for p in posts:
+        if (today - p.date).days < min_age or not p.title:
+            continue
+        qs = by_page.get(page_key(p.link))
+        if not qs:
+            continue
+        total = sum(i for _, i in qs)
+        seen = ""
+        present: list[str] = []
+        for t in TITLE_VOCAB:  # longest-first vocabulary: skip 嫁 when 元嫁 already matched that spot
+            if t in p.title and t not in seen:
+                present.append(t)
+                seen += t
+        never = [t for t in present if not any(t in q for q, _ in qs)]
+        missing: dict[str, float] = defaultdict(float)
+        for q, i in qs:
+            for w in q.split():
+                if len(w) >= 2 and w not in p.title and not re.fullmatch(r"[\W\d_]+", w):
+                    missing[w] += i
+        floor = max(50.0, total * 0.03)
+        top = [(w, round(i)) for w, i in sorted(missing.items(), key=lambda kv: -kv[1])[:3] if i >= floor]
+        if never or top:
+            out.append((p.link, round(total), never, top))
+    out.sort(key=lambda x: -x[1])
+    return out[:cap]
 
 
 def _final_url(url: str) -> str:
@@ -301,6 +363,11 @@ def build_report(inspect_cap: int = 120) -> Report:
         key=lambda x: -x[1],
     )[:8]
 
+    # 7. タイトル絞り込みの材料 (月初の週 or TITLE_REPORT=1)
+    rep.title_report_on = today.day <= 7 or os.environ.get("TITLE_REPORT", "").strip() == "1"
+    if rep.title_report_on:
+        rep.title_rows = title_pruning_rows(posts, pq, today)
+
     # 6. AI 検索での見え方 (snippet #53 のカウンタ)
     days = _ai_visibility()
     rep.ai_available = days is not None
@@ -358,6 +425,18 @@ def render(rep: Report) -> tuple[str, str]:
         fmt = lambda m: " / ".join(f"{k} {c} (前 {p})" for k, (c, p) in list(m.items())[:8]) or "なし"  # noqa: E731
         lines.append(f"    AI クローラーの記事取得 (キャッシュ命中分は含まず): {fmt(rep.ai_bots)}")
         lines.append(f"    AI チャット・AI 検索からの訪問: {fmt(rep.ai_refs)}")
+    if rep.title_report_on:
+        lines += ["", f"■ タイトル絞り込みの材料 (公開 {TITLE_MIN_AGE_DAYS} 日以上・直近 28 日の検索語・表示が多い順 {len(rep.title_rows)} 本)",
+                  "   「出ない語」= タイトルにあるのに検索語に一度も現れない語 / 「無い語」= 検索語にあるのにタイトルに無い語 (表示)"]
+        for u, imp, never, top in rep.title_rows:
+            parts = [f"{short(u)} 表示 {imp:,}"]
+            if never:
+                parts.append("出ない語: " + "・".join(never))
+            if top:
+                parts.append("無い語: " + "・".join(f"{w} {i:,}" for w, i in top))
+            lines.append("    " + " | ".join(parts))
+        if not rep.title_rows:
+            lines.append("    (該当なし)")
     lines += ["", f"記事総数 {rep.posts_total} 本 / 毎週月曜 10:00 JST 自動送信 (prosports-weekly-seo-check job)。サイトへの書き込みはしません。"]
     mark = "【要確認】" if rep.flags else ""
     subject = f"{mark}【prosports】週次SEOチェック {rep.today.isoformat()} — 新記事登録 {indexed}/{n}・2〜5週目 {cv:,.0f}表示/本"

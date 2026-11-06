@@ -130,3 +130,35 @@ def test_render_shows_ai_section_or_unavailable():
     assert "AI 検索での見え方" in body and "GPTBot 14 (前 100)" in body and "訪問: なし" in body
     _, body = render(Report(today=TODAY, window_cur=("a", "b"), window_prev=("c", "d")))
     assert "取得できませんでした" in body
+
+
+def test_title_pruning_rows_finds_unqueried_title_words_and_missing_query_words():
+    from src.prosports_weekly_seo_check import title_pruning_rows
+    posts = [
+        Post(1, TODAY - dt.timedelta(days=90), f"{S}a/", "a", "栗山英樹の奥さんは誰？結婚しない理由と教師の兄、画像"),
+        Post(2, TODAY - dt.timedelta(days=10), f"{S}b/", "b", "若い記事の嫁"),            # too young
+        Post(3, TODAY - dt.timedelta(days=90), f"{S}c/", "c", "検索の無い記事の嫁"),      # no queries
+        Post(4, TODAY - dt.timedelta(days=90), f"{S}d/", "d", "元嫁と嫁のどちらも"),
+    ]
+    rows = [
+        {"keys": [f"{S}a/", "栗山英樹 奥さん"], "impressions": 800},
+        {"keys": [f"{S}a/", "栗山英樹 結婚"], "impressions": 300},
+        {"keys": [f"{S}a/", "栗山英樹 現在 年齢"], "impressions": 400},
+        {"keys": [f"{S}a/", "栗山 イチロー"], "impressions": 10},     # below the floor
+        {"keys": [f"{S}a/#x", "junk"], "impressions": 999},
+        {"keys": [f"{S}b/", "嫁"], "impressions": 100},
+        {"keys": [f"{S}d/", "元嫁"], "impressions": 100},
+    ]
+    out = title_pruning_rows(posts, rows, TODAY)
+    assert [u for u, *_ in out] == [f"{S}a/"]
+    url, impr, never, top = out[0]
+    assert impr == 1510 and never == ["兄", "画像"] and top == [("現在", 400), ("年齢", 400)]
+
+
+def test_render_title_section_only_when_on():
+    rep = Report(today=TODAY, window_cur=("a", "b"), window_prev=("c", "d"), ai_available=True,
+                 title_report_on=True, title_rows=[(f"{S}a/", 1510, ["画像"], [("現在", 400)])])
+    _, body = render(rep)
+    assert "タイトル絞り込みの材料" in body and "/a/ 表示 1,510 | 出ない語: 画像 | 無い語: 現在 400" in body
+    _, body = render(Report(today=TODAY, window_cur=("a", "b"), window_prev=("c", "d")))
+    assert "タイトル絞り込み" not in body

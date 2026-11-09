@@ -999,17 +999,17 @@ function yoshilover_063_get_topic_hub_items() {
  *
  * 旧: items は WP option `yoshilover_topic_hub_items` の手動固定値で、 自動更新が無く
  * 古い記事 (例: 数ヶ月前のヤクルト戦) が凍結表示され続けていた。
- * 新: 直近 14 日で「コメントが多い = 実際に話題になっている」 記事を自動抽出して上書き。
+ * 新: 直近 7 日で「コメントが多い = 実際に話題になっている」 記事を自動抽出して上書き。
  * コメントが付いた記事が無ければ直近の新着で埋める。 1 時間 transient cache。
- * 取得 0 件のときだけ従来の手動 option ($items) に fallback (安全側)。
+ * 取得 0 件なら空表示。古い手動 option や期間外の記事で補充しない。
  */
 function yoshilover_063_auto_topic_hub_items( $items ) {
     if ( ! class_exists( 'WP_Query' ) ) {
         return $items;
     }
-    $cached = get_transient( 'yoshi_topic_hub_auto_v2' );
+    $cached = get_transient( 'yoshi_topic_hub_auto_v3' );
     if ( is_array( $cached ) ) {
-        return ! empty( $cached ) ? $cached : $items;
+        return $cached;
     }
 
     $out         = array();
@@ -1024,13 +1024,13 @@ function yoshilover_063_auto_topic_hub_items( $items ) {
         return function_exists( 'mb_substr' ) ? mb_substr( $t, 0, 36 ) : substr( $t, 0, 96 );
     };
 
-    // 1) 直近 14 日 コメント数 desc (話題の記事)。
+    // 1) 直近 7 日 コメント数 desc (話題の記事)。
     $hot = new WP_Query( array(
         'post_type'              => 'post',
         'post_status'            => 'publish',
         'posts_per_page'         => 10,
         'orderby'                => array( 'comment_count' => 'DESC', 'date' => 'DESC' ),
-        'date_query'             => array( array( 'after' => '14 days ago' ) ),
+        'date_query'             => array( array( 'after' => '7 days ago' ) ),
         'ignore_sticky_posts'    => true,
         'no_found_rows'          => true,
         'update_post_meta_cache' => false,
@@ -1067,6 +1067,7 @@ function yoshilover_063_auto_topic_hub_items( $items ) {
             'post_type'              => 'post',
             'post_status'            => 'publish',
             'posts_per_page'         => 14,
+            'date_query'             => array( array( 'after' => '7 days ago' ) ),
             'orderby'                => 'date',
             'order'                  => 'DESC',
             'ignore_sticky_posts'    => true,
@@ -1096,8 +1097,8 @@ function yoshilover_063_auto_topic_hub_items( $items ) {
         }
     }
 
-    set_transient( 'yoshi_topic_hub_auto_v2', $out, HOUR_IN_SECONDS );
-    return ! empty( $out ) ? $out : $items;
+    set_transient( 'yoshi_topic_hub_auto_v3', $out, HOUR_IN_SECONDS );
+    return $out;
 }
 add_filter( 'yoshilover_topic_hub_items', 'yoshilover_063_auto_topic_hub_items', 20 );
 
@@ -1495,6 +1496,7 @@ function yoshilover_063_get_breaking_strip_items( $limit = 5 ) {
             'post_type'              => 'post',
             'post_status'            => 'publish',
             'posts_per_page'         => 24,
+            'date_query'             => array( array( 'after' => current_time( 'Y-m-d' ), 'inclusive' => true ) ),
             'ignore_sticky_posts'    => true,
             'no_found_rows'          => true,
             'update_post_meta_cache' => true,
@@ -1641,30 +1643,6 @@ function yoshilover_063_get_today_giants_box_items( $limit = 5 ) {
 
         if ( count( $items ) >= $limit ) {
             return $items;
-        }
-    }
-
-    foreach ( yoshilover_063_get_topic_hub_items() as $item ) {
-        $url = isset( $item['url'] ) ? trim( (string) $item['url'] ) : '';
-        if ( $url === '' || isset( $seen[ $url ] ) ) {
-            continue;
-        }
-
-        $badge = isset( $item['badge'] ) ? trim( (string) $item['badge'] ) : '';
-        $items[] = array(
-            'type'    => 'topic',
-            'subtype' => 'topic',
-            'label'   => $badge !== '' ? $badge : '注目',
-            'title'   => isset( $item['title'] ) ? trim( (string) $item['title'] ) : '',
-            'url'     => $url,
-            'phase'   => '',
-            'score'   => '',
-            'time'    => '',
-        );
-        $seen[ $url ] = true;
-
-        if ( count( $items ) >= $limit ) {
-            break;
         }
     }
 
@@ -7236,3 +7214,10 @@ function yoshilover_063_flush_data_sitemap_cache( $post_id ) {
     delete_transient( 'yoshilover_063_data_sitemap_xml' );
 }
 add_action( 'save_post', 'yoshilover_063_flush_data_sitemap_cache' );
+function yoshilover_063_flush_home_standings_cache( $post_id ) {
+    $post = get_post( $post_id );
+    if ( $post instanceof WP_Post && $post->post_type === 'page' && $post->post_name === 'standings' ) {
+        delete_transient( 'yoshi_home_today_dash' );
+    }
+}
+add_action( 'save_post', 'yoshilover_063_flush_home_standings_cache' );

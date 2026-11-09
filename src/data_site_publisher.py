@@ -1704,22 +1704,9 @@ def publish_phase1(only_slugs: set[str] | None = None) -> dict[str, object]:
     LOG.info("jersey numbers upsert slug=jersey-numbers page_id=%s action=%s rows=%d",
              jersey_result.page_id, jersey_result.action, len(jersey_rows))
 
-    # draft ページ upsert（巨人ドラフト史 hub、user 指定 2026-06-05）— parent=cluster → /data/draft/
-    # 全年代整備完了まで本番非公開: ENABLE_DATA_SITE_DRAFT=1 のときだけ upsert。
-    if _draft_page_enabled():
-        draft_data = load_draft_data()
-        draft_result = _upsert_page(
-            slug="draft",
-            title=render_draft_title(),
-            content_html=render_draft_html(draft_data),
-            parent=cluster_page_id,
-            excerpt=render_draft_excerpt(draft_data),
-        )
-        LOG.info("draft upsert slug=draft page_id=%s action=%s picks=%d",
-                 draft_result.page_id, draft_result.action,
-                 len(draft_data.get("draft_picks") or []))
-    else:
-        LOG.info("draft page gated OFF (ENABLE_DATA_SITE_DRAFT not set) — skip upsert")
+    # The daily refresh job owns the published draft hub and fetches NPB.
+    # Do not overwrite it here with the older image-baked draft history.
+    LOG.info("draft hub managed by rotation-updater; skip baked overwrite")
 
     # FA ページ upsert（FA獲得選手 + FA有資格選手、user 指定 2026-06-05）— parent=cluster → /data/fa/
     fa_data = load_fa_data()

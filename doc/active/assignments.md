@@ -1,5 +1,12 @@
 # assignments — 現場担当と次アクション
 
+## 2026-11-09 — 順位表・ドラフト・トップの自動更新復旧
+
+- **Codex / CLOSED / LIVE_DEPLOYED_VERIFIED**: 512MiB jobのOOMをcompact DBで解消。NPB当年ドラフトを既存毎朝7:30ジョブへ追加し、別publisherの古い履歴上書きを停止。トップの当日/7日制限とcache破棄を修正。
+- final execution `rotation-updater-lvlx4` 成功、順位表143試合・2026ドラフト11人・トップ旧記事card0を公開/PC/スマホ確認。Scheduler/env/Secret/memory不変。
+- 証跡: `doc/done/2026-11/2026-11-09-data-freshness-recovery.md`。次は翌朝自然発火観測のみ。
+
+
 最終更新: 2026-07-31 JST (473 内部リンク全件監査・repo修正)
 
 ## 2026-07-31 — 473 内部リンク最適化 (user「全部GO」)

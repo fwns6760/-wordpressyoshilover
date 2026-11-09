@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -243,7 +244,7 @@ def refresh_salary_value(base, auth, cluster_id, cur) -> bool:
     insight.db (GCS cache) が取れない日は skip (他ページ更新を止めない)。
     規定到達者が少なすぎる時期も skip = 薄いまま公開しない (品質基準⑤)。
     """
-    from src import manual_intake_insight_query as miq
+    from google.cloud import storage
     from src.data_site_template_salary_value import (
         is_thin,
         load_salary_value_data,
@@ -251,11 +252,23 @@ def refresh_salary_value(base, auth, cluster_id, cur) -> bool:
         render_salary_value_html,
         render_salary_value_title,
     )
-    db_info = miq.ensure_local_db()
-    if not db_info.get("ok"):
-        print(f"[salary-value] insight.db unavailable; skip: {db_info}", file=sys.stderr)
+    # Cloud Run's writable filesystem counts against its 512 MiB limit.
+    # Never download the canonical, unbounded analysis DB in this job.
+    bucket = os.environ.get("INSIGHT_GCS_BUCKET", "").strip()
+    if not bucket:
         return False
-    data = load_salary_value_data(str(db_info.get("path")))
+    prefix = os.environ.get("INSIGHT_GCS_PREFIX", "").strip("/ ")
+    blob = storage.Client().bucket(bucket).blob(f"{prefix}/data_site.db" if prefix else "data_site.db")
+    blob.reload()
+    if blob.size is None or blob.size > 128 * 1024 * 1024:
+        print("[salary-value] compact DB exceeds size limit; skip", file=sys.stderr)
+        return False
+    path = Path("/tmp/salary_value_data_site.db")
+    try:
+        blob.download_to_filename(str(path), if_generation_match=blob.generation)
+        data = load_salary_value_data(str(path))
+    finally:
+        path.unlink(missing_ok=True)
     if not data or is_thin(data):
         print(f"[salary-value] thin data (batters={len((data or {}).get('batters') or [])}); "
               "skip (低品質のまま出さない)", file=sys.stderr)
@@ -303,7 +316,9 @@ def refresh_standings(base, auth, cluster_id, cur) -> bool:
             })
         except (KeyError, ValueError, TypeError):
             continue
-    if not standings:
+    if (len(standings) != 6 or len({r["team"] for r in standings}) != 6
+            or not any(r["team"] == "巨人" for r in standings)
+            or any(r["g"] != r["w"] + r["l"] + r["t"] for r in standings)):
         print("[standings] rows unusable; skip", file=sys.stderr)
         return False
 
@@ -321,13 +336,37 @@ def refresh_standings(base, auth, cluster_id, cur) -> bool:
         except Exception as exc:  # noqa: BLE001
             print(f"[standings] leaders({kind}) fetch failed; skip section: {exc!r}", file=sys.stderr)
 
-    date_label = datetime.now(timezone(timedelta(hours=9))).strftime("%Y年%-m月%-d日")
+    # Use the source's data date, not the run date (especially off-season).
+    from html import unescape
+    source_text = unescape(re.sub(r"<[^>]+>", " ", html))
+    if "全日程終了" in source_text:
+        date_label = f"{cur}年 全日程終了"
+    else:
+        match = re.search(r"(\d{4}年\s*\d{1,2}月\s*\d{1,2}日).*?現在", source_text)
+        if not match:
+            print("[standings] source date missing; leave page unchanged", file=sys.stderr)
+            return False
+        date_label = re.sub(r"\s+", "", match.group(1))
     title, content, excerpt = sa.render_standings_article(
         standings, date_label=date_label, source="NPB公式 順位表・個人成績",
         leader_tables=leader_tables,
     )
     return _upsert(base, auth, slug="standings", title=title,
                    content=content, excerpt=excerpt, parent=cluster_id)
+
+
+def refresh_draft(base, auth, cluster_id, cur) -> bool:
+    from src.npb_draft_source import refresh_history
+    from src.data_site_template_draft import (
+        load_draft_data, render_draft_html, render_draft_title, render_draft_excerpt,
+    )
+    # Maintain the already-published hub; never unlock a new page implicitly.
+    if not _find_page_id(base, auth, "draft", parent=cluster_id):
+        return False
+    data = refresh_history(load_draft_data(), cur)
+    return _upsert(base, auth, slug="draft", title=render_draft_title(),
+                   content=render_draft_html(data), excerpt=render_draft_excerpt(data),
+                   parent=cluster_id)
 
 
 def _report_player_class_drift() -> None:
@@ -364,11 +403,11 @@ def main() -> int:
     _report_player_class_drift()
     base, auth = _creds()
     cluster_id = _find_page_id(base, auth, "data", parent=0)
-    cur = datetime.now(timezone.utc).year
+    cur = datetime.now(timezone(timedelta(hours=9))).year
     ok = []
-    for fn in (refresh_rotation, refresh_roster_moves, refresh_injured,
-               refresh_open_games, refresh_interleague, refresh_salary_value,
-               refresh_standings):
+    for fn in (refresh_standings, refresh_draft, refresh_rotation,
+               refresh_roster_moves, refresh_injured, refresh_open_games,
+               refresh_interleague, refresh_salary_value):
         try:
             ok.append(fn(base, auth, cluster_id, cur))
         except Exception as exc:  # noqa: BLE001

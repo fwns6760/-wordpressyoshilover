@@ -1,5 +1,12 @@
 # 102 ticket index and priority board
 
+## 2026-11-22 — 赤星憲広のエンティティ・トピクラ同期
+
+- **Codex / CLOSED / LIVE_VERIFIED / Issue #133**: リライト済み記事288の主エンティティを赤星憲広へ同期し、芸能人一覧から阪神OBへ移動。パンくず・戻りリンク・関連4記事の案内も更新。
+- 7ページの保存・保護項目一致、公開HTTP200、JSON-LD、PC/スマホの検索・絞り込みを確認。本文の事実記述・タイトル・URL・日時・SEOメタ保持。
+- 詳細: `doc/done/2026-11/2026-11-22-akahoshi-entity-cluster.md`。一時snippet102停止、常設snippet不変。
+
+
 ## meta
 
 - owner: Claude Code

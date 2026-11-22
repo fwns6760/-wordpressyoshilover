@@ -1,0 +1,258 @@
+{
+  "status": "LIVE_VERIFIED",
+  "issue": 133,
+  "authorization": "本文を赤星憲広中心へ変更済みとのユーザー通知を受け、合意済みの設定同期を実施",
+  "scope": {
+    "ids": [
+      64935,
+      62065,
+      288,
+      155,
+      242,
+      1003,
+      11998
+    ],
+    "operations": 11
+  },
+  "saved": [
+    {
+      "id": 64935,
+      "url": "https://prosports.yoshilover.com/athlete-celebrities/",
+      "contentVerified": true,
+      "datesAndProtectedFieldsPreserved": true
+    },
+    {
+      "id": 62065,
+      "url": "https://prosports.yoshilover.com/hanshin-tsuma-kazoku/",
+      "contentVerified": true,
+      "datesAndProtectedFieldsPreserved": true
+    },
+    {
+      "id": 288,
+      "url": "https://prosports.yoshilover.com/tokuharaeri/",
+      "contentVerified": true,
+      "datesAndProtectedFieldsPreserved": true
+    },
+    {
+      "id": 155,
+      "url": "https://prosports.yoshilover.com/sekimotokentaro/",
+      "contentVerified": true,
+      "datesAndProtectedFieldsPreserved": true
+    },
+    {
+      "id": 242,
+      "url": "https://prosports.yoshilover.com/hojofumiya/",
+      "contentVerified": true,
+      "datesAndProtectedFieldsPreserved": true
+    },
+    {
+      "id": 1003,
+      "url": "https://prosports.yoshilover.com/itoiyoshio/",
+      "contentVerified": true,
+      "datesAndProtectedFieldsPreserved": true
+    },
+    {
+      "id": 11998,
+      "url": "https://prosports.yoshilover.com/post-11998/",
+      "contentVerified": true,
+      "datesAndProtectedFieldsPreserved": true
+    }
+  ],
+  "proofs": {
+    "success": true,
+    "proofs": [
+      {
+        "id": 64935,
+        "scopedChangesOnly": true,
+        "otherCardsMediaScriptsPreserved": true
+      },
+      {
+        "id": 62065,
+        "scopedChangesOnly": true,
+        "otherCardsMediaScriptsPreserved": true
+      },
+      {
+        "id": 288,
+        "scopedChangesOnly": true,
+        "otherCardsMediaScriptsPreserved": true
+      },
+      {
+        "id": 155,
+        "scopedChangesOnly": true,
+        "otherCardsMediaScriptsPreserved": true
+      },
+      {
+        "id": 242,
+        "scopedChangesOnly": true,
+        "otherCardsMediaScriptsPreserved": true
+      },
+      {
+        "id": 1003,
+        "scopedChangesOnly": true,
+        "otherCardsMediaScriptsPreserved": true
+      },
+      {
+        "id": 11998,
+        "scopedChangesOnly": true,
+        "otherCardsMediaScriptsPreserved": true
+      }
+    ],
+    "celebrityCardsBefore": 13,
+    "celebrityCardsAfter": 12,
+    "hanshinCardsAfter": 62
+  },
+  "hashes": [
+    {
+      "id": 64935,
+      "before_sha256": "cbdc5b1d691eddf32a70e9e2fe3eeb17843c90f6bbe065acd2d776e811557c4b",
+      "after_sha256": "551271dbc964cbbacf1357403bbc935930c17c4b82762d47c45d98af4fabd325"
+    },
+    {
+      "id": 62065,
+      "before_sha256": "cc533c8d075fb3967a1c37ec4d472d340879fb3d3bc8f878c7817e195b5d27cf",
+      "after_sha256": "ee676544a0295ab7734b2e99fac5b5895b25f9f10dbc374dffe978bbf5b15654"
+    },
+    {
+      "id": 288,
+      "before_sha256": "0e5ab8bee6e55ca27a7457a89460358d9ea42955d9869c1fc9647b2a2f12fb67",
+      "after_sha256": "e9d302a6aa3440af258983925c859caed1fc8e281f84b9ada6b3f002375318f7"
+    },
+    {
+      "id": 155,
+      "before_sha256": "b4c8bbc97c7246ee6905eeb9a075a1c66ab199dfa7a74c79c09adb6fc1c998be",
+      "after_sha256": "d133c2e5c09d96d478ff3bc638086b91edacfd528dc710129fc07fef96b76930"
+    },
+    {
+      "id": 242,
+      "before_sha256": "ebf86754f9c625c39f2648a7ca117ac4d6ae4499d61ba7fce4f3ecc441837137",
+      "after_sha256": "9b518bc3d15a08f7a8ef8804a2a7753375b6420ca4de1b98e817c28e2e81e141"
+    },
+    {
+      "id": 1003,
+      "before_sha256": "3d5835fd0cce03f712332c61b2714d77900893f8298c4262d46f8eb822e1af1b",
+      "after_sha256": "8435d0255d08938a0709509c4f0771be5b1f384662a7363e9bb27775cc8ffa39"
+    },
+    {
+      "id": 11998,
+      "before_sha256": "13464d347075e5570c00901392fd6350d7d6660b7a7b9d692b90c543abc55749",
+      "after_sha256": "e415c907b37a90c5e89a2402dd061eb9e2e53aa318acb380d692a05d6ece9aa4"
+    }
+  ],
+  "public": {
+    "success": true,
+    "phase": "after",
+    "http200": [
+      64935,
+      62065,
+      288,
+      155,
+      242,
+      1003,
+      11998
+    ],
+    "about": {
+      "@type": "Person",
+      "name": "赤星憲広",
+      "alternateName": "あかほしのりひろ"
+    },
+    "breadcrumb": {
+      "@type": "BreadcrumbList",
+      "@id": "https://prosports.yoshilover.com/#breadcrumb",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "item": {
+            "@id": "https://prosports.yoshilover.com/category/proyakyuu/",
+            "name": "野球"
+          }
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "item": {
+            "@id": "https://prosports.yoshilover.com/hanshin-tsuma-kazoku/",
+            "name": "阪神タイガース選手の結婚・妻・家族一覧"
+          }
+        }
+      ]
+    },
+    "celebrityCards": 12,
+    "hanshinCards": 62,
+    "incoming": [
+      {
+        "id": 155,
+        "labels": [
+          "赤星憲広の結婚歴は？何回目で初婚？子供の性別や息子・駅伝の噂、実家、嫁・徳原恵梨の大学と馴れ初め"
+        ]
+      },
+      {
+        "id": 242,
+        "labels": [
+          "赤星憲広の結婚歴は？何回目で初婚？子供の性別や息子・駅伝の噂、実家、嫁・徳原恵梨の大学と馴れ初め"
+        ]
+      },
+      {
+        "id": 1003,
+        "labels": [
+          "赤星憲広の結婚歴は？何回目で初婚？子供の性別や息子・駅伝の噂、実家、嫁・徳原恵梨の大学と馴れ初め"
+        ]
+      },
+      {
+        "id": 11998,
+        "labels": [
+          "赤星憲広の結婚・子供と実家"
+        ]
+      }
+    ]
+  },
+  "ui": {
+    "success": true,
+    "method": "Saved page HTML executed with third-party/theme scripts excluded; link destinations separately verified over HTTP.",
+    "results": [
+      {
+        "hub": 62065,
+        "article": 288,
+        "width": 1280,
+        "singlePersonCard": true,
+        "articleLink": true,
+        "searchAndFilters": true,
+        "noOverflow": true
+      },
+      {
+        "hub": 62065,
+        "article": 288,
+        "width": 390,
+        "singlePersonCard": true,
+        "articleLink": true,
+        "searchAndFilters": true,
+        "noOverflow": true
+      }
+    ]
+  },
+  "guard": {
+    "id": 102,
+    "active": false
+  },
+  "active_snippets_before": [
+    16,
+    18,
+    19,
+    39,
+    53
+  ],
+  "active_snippets_after": [
+    16,
+    18,
+    19,
+    39,
+    53
+  ],
+  "syntax_checks": [
+    "python compileall",
+    "python AST",
+    "php -l guard.php",
+    "node --check apply.mjs"
+  ],
+  "raw_evidence": "/tmp/akahoshi-entity-20261122/"
+}

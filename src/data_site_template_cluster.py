@@ -786,7 +786,7 @@ SEASON_LABEL = "2026年"
 
 def render_cluster_title() -> str:
     # 「巨人 2026 選手 打率」 等の long-tail を拾うためシーズン年を前寄せ。
-    return f"巨人選手データ {SEASON_LABEL} - 全選手の打率・防御率・成績一覧 | ヨシラバー"
+    return f"巨人選手データ【{SEASON_LABEL}】成績一覧・打率・本塁打・防御率 | ヨシラバー"
 
 
 __all__ = [

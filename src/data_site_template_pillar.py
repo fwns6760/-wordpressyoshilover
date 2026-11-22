@@ -1478,10 +1478,11 @@ def render_pillar_title(player: PillarPlayerInfo) -> str:
         head = f"{player.name} 通算成績{sal}・プロフィール"
     elif player.role in ("manager", "coach"):
         head = f"{player.name} {SEASON_LABEL} 通算成績{sal}・プロフィール"
-    elif "投手" in pos:
-        head = f"{player.name} {SEASON_LABEL}成績・防御率{sal}"
     else:
-        head = f"{player.name} {SEASON_LABEL}成績・打率{sal}"
+        # 年は成績の対象シーズン。翌年の契約更改で成績年を進めない。
+        metrics = "防御率・勝利数" if "投手" in pos else "打率・本塁打"
+        career = "・通算成績" if player.npb_career else ""
+        return f"{player.name}の成績【{SEASON_LABEL}・巨人】{metrics}{career}"
     return f"{head}{bracket} | 巨人選手データ"
 
 

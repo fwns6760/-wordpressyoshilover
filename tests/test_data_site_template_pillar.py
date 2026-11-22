@@ -331,9 +331,9 @@ class RenderPillarTitleTests(unittest.TestCase):
         p = PillarPlayerInfo(name="坂本勇人", slug="sakamoto-hayato", position="内野手", jersey_number="6")
         title = render_pillar_title(p)
         self.assertIn("坂本勇人", title)
-        self.assertIn("内野手", title)
-        self.assertIn("6", title)
-        self.assertIn("巨人選手データ", title)
+        self.assertIn("2026年・巨人", title)
+        self.assertIn("打率・本塁打", title)
+        self.assertNotIn("通算成績", title)  # 通算データ未取得時は約束しない。
 
 
 class CareerHistoryRenderTests(unittest.TestCase):

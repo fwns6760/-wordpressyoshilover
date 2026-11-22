@@ -428,8 +428,9 @@ def render_salary_player_title(p: dict) -> str:
     if p.get("active") is False:
         return f"{p['name']}の年俸推移【現役時代】契約金・通算年俸 | 巨人データ"
     latest = _latest(p)
+    contract = "・契約金" if (p.get("draft") or {}).get("keiyakukin_man") else ""
     return (
-        f"{p['name']}の年俸推移【{int(latest['year'])}年最新】契約金・通算年俸 | 巨人データ"
+        f"{p['name']}の年俸【{int(latest['year'])}年】推移{contract}・通算年俸"
     )
 
 
@@ -487,7 +488,9 @@ def render_salary_player_html(p: dict) -> str:
     )
     intro = (
         f'<h1 id="top" style="font-size:21px;margin:0 0 4px;">'
-        f"{_esc(p['name'])}の年俸推移（{_esc(_career_span(p))}・契約金・通算年俸）</h1>"
+        + (f"{_esc(p['name'])}の年俸推移（{_esc(_career_span(p))}・契約金・通算年俸）</h1>"
+         if is_ob else f"{_esc(render_salary_player_title(p))}</h1>")
+        +
         '<p style="font-size:13px;color:#666;margin:0 0 12px;line-height:1.7;">'
         f"{_esc(p['name'])}{f'（{_esc(prof)}）' if prof else ''}の{span_phrase}"
         "年度別の棒グラフ、通算年俸の積み上がりが分かる折れ線グラフ、"
@@ -595,7 +598,7 @@ def render_salary_section_html(p: dict) -> str:
 
 def render_salary_index_title(data: dict | None = None) -> str:
     data = data if data is not None else load_salary_data()
-    return f"巨人 年俸ランキング【{_index_year(data)}年最新】選手別の推定年俸・通算年俸 | 巨人データ"
+    return f"巨人の年俸ランキング【{_index_year(data)}年】選手別一覧・年俸推移"
 
 
 def render_salary_index_excerpt(data: dict | None = None) -> str:
@@ -621,7 +624,7 @@ def render_salary_index_html(data: dict | None = None) -> str:
     )
     intro = (
         f'<h1 id="top" style="font-size:21px;margin:0 0 4px;">'
-        f"巨人 年俸ランキング（{cur}年・選手別推定年俸）</h1>"
+        f"{_esc(render_salary_index_title(data))}</h1>"
         '<p style="font-size:13px;color:#666;margin:0 0 12px;line-height:1.7;">'
         f"読売ジャイアンツ（巨人）関連選手の{cur}年推定年俸ランキングです。"
         "選手名のリンク先で、入団から現在までの年度別年俸推移（棒グラフ・折れ線グラフ）、"

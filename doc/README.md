@@ -1,5 +1,12 @@
 # 102 ticket index and priority board
 
+## 2026-11-22 — 契約更改の年俸自動取得
+
+- **Codex / CLOSED / LIVE_DEPLOYED_VERIFIED / Issue #132**: 既存毎朝7:30ジョブで契約更改情報を2サイト照合→履歴保存→既存年俸ページ・SEOタイトル更新。2027年27人確認、2件保留。未確認の年俸は前年から流用しない。
+- 101選手＋一覧の102ページ反映、API135・公開6確認。修正版2回成功、再実行WP write 0。関連122 tests pass。2026年履歴・成績保持、コスパの年一致も修正。
+- 詳細: `doc/done/2026-11/2026-11-22-salary-auto-refresh.md`。Scheduler/env/Secret/IAM不変。次回自然発火未観測。下段の先行タイトル便にある「自動取込未実装」は本便で解消。
+
+
 ## 2026-11-22 — 年俸・選手成績のSEOタイトル整理
 
 - **Codex / CLOSED / LIVE_DEPLOYED_VERIFIED**: 年俸104・成績68・一覧2の174ページを更新。title/H1のみ、金額・本文表・URL保持。関連96 tests pass、API174件・公開8件確認。

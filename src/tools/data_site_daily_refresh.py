@@ -360,7 +360,7 @@ def _report_player_class_drift() -> None:
         print(f"[player-class] drift check skipped: {exc!r}", file=sys.stderr)
 
 
-def main() -> int:
+def _refresh_other_data() -> int:
     _report_player_class_drift()
     base, auth = _creds()
     cluster_id = _find_page_id(base, auth, "data", parent=0)
@@ -376,6 +376,24 @@ def main() -> int:
             ok.append(False)
     # 1 つでも成功すれば 0 (両方失敗のみ非ゼロ)
     return 0 if any(ok) else 1
+
+
+def main() -> int:
+    # Salary is independent of the historical page refreshers and can be smoked alone.
+    from src.salary_auto_refresh import refresh_salary
+    try:
+        base, auth = _creds()
+        cluster_id = _find_page_id(base, auth, "data", parent=0)
+        if not cluster_id:
+            raise ValueError("data cluster missing")
+        salary_ok = refresh_salary(base, auth, cluster_id)
+    except Exception as exc:
+        print(f"[salary-auto] failed: {type(exc).__name__}", file=sys.stderr)
+        salary_ok = False
+    if "--salary-only" in sys.argv:
+        return 0 if salary_ok else 1
+    other_result = _refresh_other_data()
+    return other_result if salary_ok else 1
 
 
 if __name__ == "__main__":

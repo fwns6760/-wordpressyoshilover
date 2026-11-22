@@ -105,6 +105,8 @@ def load_salary_data() -> dict:
             data = _json.load(fh)
     except Exception:
         return {}
+    from src.salary_auto_refresh import load_persisted_data
+    data = load_persisted_data(data)
     _reconcile_actives_with_roster(data)
     return data
 
@@ -428,6 +430,9 @@ def render_salary_player_title(p: dict) -> str:
     if p.get("active") is False:
         return f"{p['name']}の年俸推移【現役時代】契約金・通算年俸 | 巨人データ"
     latest = _latest(p)
+    target = int(p.get("salary_target_year") or latest["year"])
+    if target > int(latest["year"]):
+        return f"{p['name']}の年俸【{target}年は未確認】契約更改状況・年俸推移"
     contract = "・契約金" if (p.get("draft") or {}).get("keiyakukin_man") else ""
     return (
         f"{p['name']}の年俸【{int(latest['year'])}年】推移{contract}・通算年俸"
@@ -439,6 +444,11 @@ def render_salary_player_excerpt(p: dict) -> str:
     total = _fmt_man(_total_man(p))
     kin = (p.get("draft") or {}).get("keiyakukin_man")
     kin_txt = f"契約金は{_fmt_man_yen(kin)}。" if kin else ""
+    target = int(p.get("salary_target_year") or latest["year"])
+    if p.get("active") is not False and target > int(latest["year"]):
+        return (f"{p['name']}の{target}年推定年俸は未確認です。"
+                f"参考として{int(latest['year'])}年の{_fmt_man_yen(latest['salary_man'])}と、"
+                "過去の年俸推移・通算推定年俸を掲載。契約更改報道を確認でき次第更新します。")
     if p.get("active") is False:
         peak = _peak(p)
         return (
@@ -453,6 +463,23 @@ def render_salary_player_excerpt(p: dict) -> str:
         f"入団から現在まで（{_career_span(p)}）の年度別推定年俸を"
         "棒グラフ・折れ線グラフと一覧表でまとめた巨人データです。"
     )
+
+
+def _contract_notice(p: dict) -> str:
+    target = p.get("salary_target_year")
+    if not target or p.get("active") is False:
+        return ""
+    latest = _latest(p)
+    if p.get("salary_update_status") == "review":
+        text = f"{target}年の年俸は報道を照合中です。確認できるまで、掲載済みの金額を保持しています。"
+    elif int(latest["year"]) < int(target):
+        text = (f"{target}年の推定年俸はまだ確認できていません。未更改または確認待ちのため、"
+                f"以下は{latest['year']}年までの年俸です。前年と同額と決まった意味ではありません。")
+    else:
+        text = f"{target}年の推定年俸は契約更改情報を照合済みです。"
+        if latest.get("reported_on"):
+            text += f" 更改報道日: {latest['reported_on']}。"
+    return f'<p class="ys-salary-contract" style="padding:12px;background:#fff6ec;line-height:1.8;">{_esc(text)}</p>'
 
 
 def render_salary_player_html(p: dict) -> str:
@@ -497,7 +524,8 @@ def render_salary_player_html(p: dict) -> str:
         "前年比付きの一覧表、契約金・ドラフト情報を掲載しています。</p>"
     )
     body = (
-        _player_pills(p)
+        _contract_notice(p)
+        + _player_pills(p)
         + _jump_nav()
         + f'<h2 id="sl-bar">年度別 推定年俸（棒グラフ）</h2>'
         + _bar_chart_svg(years_sorted)
@@ -555,6 +583,9 @@ def render_salary_player_html(p: dict) -> str:
 # ──────────────────────────── 一覧ページ ────────────────────────────
 
 def _index_year(data: dict) -> int:
+    target = ((data.get("_meta") or {}).get("salary_auto") or {}).get("target_year")
+    if target:
+        return int(target)
     return max(
         (int(y["year"]) for p in (data.get("players") or []) for y in p["years"]),
         default=0,
@@ -598,6 +629,8 @@ def render_salary_section_html(p: dict) -> str:
 
 def render_salary_index_title(data: dict | None = None) -> str:
     data = data if data is not None else load_salary_data()
+    if (data.get("_meta") or {}).get("salary_auto"):
+        return f"巨人の年俸・契約更改【{_index_year(data)}年】ランキングと選手別推移"
     return f"巨人の年俸ランキング【{_index_year(data)}年】選手別一覧・年俸推移"
 
 
@@ -606,7 +639,7 @@ def render_salary_index_excerpt(data: dict | None = None) -> str:
     cur = _index_year(data)
     n = len(data.get("players") or [])
     return (
-        f"読売ジャイアンツ（巨人）関連選手の{cur}年推定年俸をランキング形式で一覧化。"
+        f"読売ジャイアンツ（巨人）の{cur}年推定年俸と契約更改状況。確認済みの金額と未確認の選手を分けて掲載。"
         f"現在{n}選手を掲載。各選手のページでは入団からの年度別年俸推移を"
         "棒グラフ・折れ線グラフ付きで、契約金・通算推定年俸とあわせて確認できます。"
     )
@@ -636,6 +669,13 @@ def render_salary_index_html(data: dict | None = None) -> str:
 
     actives = [p for p in players if p.get("active") is not False]
     obs = [p for p in players if p.get("active") is False]
+    pending = [p for p in actives if int(latest_for(p)["year"]) != cur]
+    actives = [p for p in actives if int(latest_for(p)["year"]) == cur]
+    checked = ((data.get("_meta") or {}).get("salary_auto") or {}).get("checked_on")
+    if checked:
+        intro += (f'<p style="font-size:13px;">契約更改情報の確認日: {_esc(checked)}。'
+                  f'{cur}年分を確認できた選手は{len(actives)}人、未確認は{len(pending)}人です。'
+                  '金額はすべて推定。前年の金額を翌年の年俸として扱わず、確認できた選手から更新します。</p>')
     actives.sort(key=lambda p: -int(latest_for(p)["salary_man"]))
     rows = []
     for i, p in enumerate(actives, start=1):
@@ -648,6 +688,8 @@ def render_salary_index_html(data: dict | None = None) -> str:
             f"<td><b>{_esc(_fmt_man_yen(latest['salary_man']))}</b>"
             + (f'<br><span style="font-size:10px;color:#999;">{int(latest["year"])}年</span>'
                if int(latest["year"]) != cur else "")
+            + ('<br><span style="font-size:11px;">新しい報道を照合中</span>'
+               if p.get("salary_update_status") == "review" else "")
             + "</td>"
             f"<td>約{_esc(_fmt_man(_total_man(p)))}円</td>"
             f'<td style="font-size:12px;">{_esc(_career_span(p))}</td>'
@@ -655,13 +697,25 @@ def render_salary_index_html(data: dict | None = None) -> str:
             'style="font-size:12px;color:#e25400;font-weight:700;">推移を見る →</a></td></tr>'
         )
     table = (
-        '<h2 id="sl-ranking">推定年俸ランキング（現役）</h2>'
+        f'<h2 id="sl-ranking">{cur}年 推定年俸ランキング（確認済み）</h2>'
         '<p style="font-size:12px;color:#666;margin:0 0 8px;">'
         "金額はメディア報道に基づく推定値。通算はMLB在籍年の円換算（当時レート推定）を含む単純合算。</p>"
         '<div class="ys-sl__scroll"><table><thead><tr>'
         "<th>順位</th><th>選手</th><th>推定年俸</th><th>通算推定年俸</th><th>掲載期間</th><th></th>"
         f"</tr></thead><tbody>{''.join(rows)}</tbody></table></div>"
     )
+    if pending:
+        pending_rows = []
+        for p in sorted(pending, key=lambda p: p["name"]):
+            previous = latest_for(p)
+            status = "報道を照合中" if p.get("salary_update_status") == "review" else "未更改・未確認"
+            pending_rows.append(
+                f'<tr><td><a href="{CLUSTER_URL}/{SLUG}/{_esc(p["slug"])}">{_esc(p["name"])}</a></td>'
+                f'<td>{cur}年は{status}</td><td>{previous["year"]}年 {_esc(_fmt_man_yen(previous["salary_man"]))}</td></tr>')
+        table += (f'<h2 id="sl-pending">{cur}年の年俸が未確認の選手</h2>'
+                  '<p>未更改または確認待ちです。参考額は掲載済みの過年度の推定年俸で、翌年も同額という意味ではありません。</p>'
+                  '<div class="ys-sl__scroll"><table><thead><tr><th>選手</th><th>契約更改状況</th>'
+                  '<th>参考: 過年度の年俸</th></tr></thead><tbody>' + ''.join(pending_rows) + '</tbody></table></div>')
     if obs:
         obs.sort(key=lambda p: -_total_man(p))
         ob_rows = []

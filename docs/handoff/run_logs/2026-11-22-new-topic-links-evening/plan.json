@@ -1,0 +1,415 @@
+{
+  "pillar_pages": [
+    {
+      "id": 60527,
+      "title": "巨人（ジャイアンツ）選手の結婚・妻・家族一覧｜既婚者・独身・OB・監督コーチ【2026年】",
+      "url": "https://prosports.yoshilover.com/giants-geneki-tsuma-kazoku/",
+      "intent": "人物と家族の話題から記事を探す",
+      "scope": "所属歴・指導歴・競技に対応する既存一覧",
+      "excluded": "個別の家族の詳細"
+    },
+    {
+      "id": 62134,
+      "title": "西武ライオンズ選手の結婚・妻・家族一覧｜既婚者・独身・OB・監督コーチ",
+      "url": "https://prosports.yoshilover.com/lions-tsuma-kazoku/",
+      "intent": "人物と家族の話題から記事を探す",
+      "scope": "所属歴・指導歴・競技に対応する既存一覧",
+      "excluded": "個別の家族の詳細"
+    },
+    {
+      "id": 62129,
+      "title": "ヤクルトスワローズ選手の結婚・妻・家族一覧｜既婚者・独身・OB・監督コーチ",
+      "url": "https://prosports.yoshilover.com/swallows-tsuma-kazoku/",
+      "intent": "人物と家族の話題から記事を探す",
+      "scope": "所属歴・指導歴・競技に対応する既存一覧",
+      "excluded": "個別の家族の詳細"
+    },
+    {
+      "id": 62127,
+      "title": "横浜DeNAベイスターズ選手の結婚・妻・家族一覧｜既婚者・独身・OB・監督コーチ",
+      "url": "https://prosports.yoshilover.com/baystars-tsuma-kazoku/",
+      "intent": "人物と家族の話題から記事を探す",
+      "scope": "所属歴・指導歴・競技に対応する既存一覧",
+      "excluded": "個別の家族の詳細"
+    },
+    {
+      "id": 62068,
+      "title": "中日ドラゴンズ選手の結婚・妻・家族一覧｜既婚者・独身・OB・監督コーチ",
+      "url": "https://prosports.yoshilover.com/dragons-tsuma-kazoku/",
+      "intent": "人物と家族の話題から記事を探す",
+      "scope": "所属歴・指導歴・競技に対応する既存一覧",
+      "excluded": "個別の家族の詳細"
+    },
+    {
+      "id": 62065,
+      "title": "阪神タイガース選手の結婚・妻・家族一覧｜既婚者・独身・OB・監督コーチ",
+      "url": "https://prosports.yoshilover.com/hanshin-tsuma-kazoku/",
+      "intent": "人物と家族の話題から記事を探す",
+      "scope": "所属歴・指導歴・競技に対応する既存一覧",
+      "excluded": "個別の家族の詳細"
+    },
+    {
+      "id": 62671,
+      "title": "アスリートの結婚と家族｜格闘技・冬季競技・その他のスポーツ",
+      "url": "https://prosports.yoshilover.com/athlete-family/",
+      "intent": "人物と家族の話題から記事を探す",
+      "scope": "所属歴・指導歴・競技に対応する既存一覧",
+      "excluded": "個別の家族の詳細"
+    }
+  ],
+  "cluster_articles": [
+    {
+      "id": 66484,
+      "name": "辻発彦",
+      "kana": "つじはつひこ",
+      "aliases": [
+        "辻 発彦"
+      ],
+      "topics": [
+        "marriage",
+        "children"
+      ],
+      "label": "辻発彦の妻・息子と家族",
+      "description": "妻との出会いや結婚、息子・辻ヤスシさんと家族について紹介します。",
+      "npb": "https://npb.jp/bis/players/31933869.html",
+      "url": "https://prosports.yoshilover.com/tsujihatuhiko/",
+      "intent": "辻発彦の妻・息子と家族",
+      "pillar_difference": "個別の人物の家族の詳細",
+      "cannibalization": "既存の記事URLを利用し、所属ごとの記事複製は作らない。"
+    },
+    {
+      "id": 66471,
+      "name": "亀山努",
+      "kana": "かめやまつとむ",
+      "aliases": [
+        "亀山 努",
+        "亀山つとむ"
+      ],
+      "topics": [
+        "marriage",
+        "children",
+        "parents"
+      ],
+      "label": "亀山努の結婚・子供と双子の弟",
+      "description": "結婚や子供について伝わる情報と、双子の弟・亀山忍さんとの関わりを紹介します。",
+      "npb": "https://npb.jp/bis/players/53553868.html",
+      "url": "https://prosports.yoshilover.com/kameyamatsutomu/",
+      "intent": "亀山努の結婚・子供と双子の弟",
+      "pillar_difference": "個別の人物の家族の詳細",
+      "cannibalization": "既存の記事URLを利用し、所属ごとの記事複製は作らない。"
+    },
+    {
+      "id": 66477,
+      "name": "迫田さおり",
+      "kana": "さこださおり",
+      "aliases": [
+        "迫田 さおり"
+      ],
+      "topics": [
+        "single",
+        "parents"
+      ],
+      "label": "迫田さおりの結婚情報・両親と兄弟",
+      "description": "結婚に関する本人の発言と、鹿児島の両親、姉・双子の弟との関わりを紹介します。",
+      "url": "https://prosports.yoshilover.com/sakodasaori/",
+      "intent": "迫田さおりの結婚情報・両親と兄弟",
+      "pillar_difference": "個別の人物の家族の詳細",
+      "cannibalization": "既存の記事URLを利用し、所属ごとの記事複製は作らない。"
+    },
+    {
+      "id": 66463,
+      "name": "菅野智之",
+      "kana": "すがのともゆき",
+      "aliases": [],
+      "topics": [
+        "parents"
+      ],
+      "label": "菅野智之の家系図・両親と実家",
+      "description": "父・菅野隆志さん、母・詠美さんと、原家につながる家系図を紹介します。",
+      "npb": "https://npb.jp/bis/players/41745137.html",
+      "url": "https://prosports.yoshilover.com/sugagnokakeizu/",
+      "intent": "菅野智之の家系図・両親と実家",
+      "pillar_difference": "個別の人物の家族の詳細",
+      "cannibalization": "既存の記事URLを利用し、所属ごとの記事複製は作らない。"
+    }
+  ],
+  "internal_links": {
+    "placements": [
+      {
+        "article": 66484,
+        "hub": 62134,
+        "category": "監督・コーチ",
+        "position": "元監督・元内野手"
+      },
+      {
+        "article": 66484,
+        "hub": 62129,
+        "category": "監督・コーチ",
+        "position": "元内野手・元コーチ"
+      },
+      {
+        "article": 66484,
+        "hub": 62127,
+        "category": "監督・コーチ",
+        "position": "元コーチ"
+      },
+      {
+        "article": 66484,
+        "hub": 62068,
+        "category": "監督・コーチ",
+        "position": "元二軍監督・元コーチ"
+      },
+      {
+        "article": 66471,
+        "hub": 62065,
+        "category": "OB",
+        "position": "元外野手"
+      },
+      {
+        "article": 66477,
+        "hub": 62671,
+        "category": "球技・水泳・体操・陸上",
+        "position": "バレーボール・元日本代表"
+      }
+    ],
+    "return_links": {
+      "66484": [
+        62134,
+        62129,
+        62127,
+        62068
+      ],
+      "66471": [
+        62065
+      ],
+      "66477": [
+        62671
+      ],
+      "66463": [
+        60527
+      ]
+    },
+    "related_links": [
+      {
+        "source": 66484,
+        "target": 66373,
+        "context": "同じ西武OBの結婚や家族については、",
+        "anchor": "石毛宏典の妻・子供と家族の記事"
+      },
+      {
+        "source": 66471,
+        "target": 288,
+        "context": "阪神OBの結婚や家族については、",
+        "anchor": "赤星憲広の結婚歴・妻・子供と実家の記事"
+      },
+      {
+        "source": 66477,
+        "target": 66418,
+        "context": "元バレーボール日本代表の家族については、",
+        "anchor": "竹下佳江の夫・子供と実家の家族の記事"
+      },
+      {
+        "source": 66463,
+        "target": 1704,
+        "context": "菅野智之さんの結婚や子供については、",
+        "anchor": "菅野智之の結婚相手・妻と子供の記事"
+      },
+      {
+        "source": 66463,
+        "target": 11834,
+        "context": "伯父・原辰徳さんの家族については、",
+        "anchor": "原辰徳の妻・息子と家族の記事"
+      },
+      {
+        "source": 1704,
+        "target": 66463,
+        "context": "父母や原家とのつながりについては、",
+        "anchor": "菅野智之の家系図・両親と実家の記事"
+      }
+    ],
+    "existing_related_links": [],
+    "homes_links": []
+  },
+  "linked_articles": [
+    {
+      "id": 66484,
+      "title": "辻発彦の嫁（奥さん）は？息子・辻ヤスシのwikiの結婚、娘・孫も",
+      "url": "https://prosports.yoshilover.com/tsujihatuhiko/"
+    },
+    {
+      "id": 66477,
+      "title": "迫田さおりの旦那（夫）は？結婚相手の写真や子供、兄弟・父親も",
+      "url": "https://prosports.yoshilover.com/sakodasaori/"
+    },
+    {
+      "id": 66471,
+      "title": "亀山努の嫁と結婚、子供・息子は？双子の弟など兄弟も",
+      "url": "https://prosports.yoshilover.com/kameyamatsutomu/"
+    },
+    {
+      "id": 66463,
+      "title": "菅野智之の家系図と家族！父親・菅野隆志の職業、母・菅野詠美、実家と兄弟は？",
+      "url": "https://prosports.yoshilover.com/sugagnokakeizu/"
+    },
+    {
+      "id": 288,
+      "title": "赤星憲広の結婚歴は？何回目で初婚？子供の性別や息子・駅伝の噂、実家、嫁・徳原恵梨の大学と馴れ初め",
+      "url": "https://prosports.yoshilover.com/tokuharaeri/"
+    },
+    {
+      "id": 40544,
+      "title": "中澤佑二の嫁は中澤摩耶？写真・結婚・子供と娘の名前・年齢・大学・身長、実家・両親・家族",
+      "url": "https://prosports.yoshilover.com/nakazawayomekodomojitaku/"
+    },
+    {
+      "id": 66425,
+      "title": "登坂絵莉の旦那の職業と年齢は？子供、実家の家族と父親",
+      "url": "https://prosports.yoshilover.com/tousakaeri/"
+    },
+    {
+      "id": 66418,
+      "title": "竹下佳江の旦那との馴れ初めは？再婚・元夫の噂と実家の家族、住まい",
+      "url": "https://prosports.yoshilover.com/takeshitayoshie/"
+    },
+    {
+      "id": 66409,
+      "title": "潮田玲子の旦那の仕事は？年収・年齢、悪口、増嶋竜也と馴れ初め、悪口、再婚相手の噂、子供の名前・学校、実家の父親と兄",
+      "url": "https://prosports.yoshilover.com/shiotareiko/"
+    },
+    {
+      "id": 66402,
+      "title": "高橋成美の実家は松戸で金持ち？ハーフの噂、父親の仕事は外交官？母親・兄弟と家族構成",
+      "url": "https://prosports.yoshilover.com/takahashinarumi/"
+    },
+    {
+      "id": 66394,
+      "title": "パンチ佐藤の嫁は中国人で国際結婚！子供は何人？娘の年齢・大学・ニュースキン、息子・孫・自宅",
+      "url": "https://prosports.yoshilover.com/panchisatho/"
+    },
+    {
+      "id": 66378,
+      "title": "田尾安志の妻・田尾宏子の年齢は？前妻、子供の息子・娘と家族・弟・孫",
+      "url": "https://prosports.yoshilover.com/taoyasushi/"
+    },
+    {
+      "id": 66368,
+      "title": "今成亮太の嫁と子供・息子は？実家と家族、父親・今成泰章",
+      "url": "https://prosports.yoshilover.com/imanariryouta/"
+    },
+    {
+      "id": 65298,
+      "title": "イチローに子供がいない理由は？妻・福島弓子との年の差と馴れ初め",
+      "url": "https://prosports.yoshilover.com/ichiro/"
+    },
+    {
+      "id": 66353,
+      "title": "武井壮の元妻と結婚歴、彼女・元カノは？実家は武富士？母親の死因・再婚相手と父親",
+      "url": "https://prosports.yoshilover.com/takeisou/"
+    },
+    {
+      "id": 66345,
+      "title": "福原愛の実家は金持ち？父親・福原武彦と絶縁、母親の現在と住まい・国籍、兄・秀行",
+      "url": "https://prosports.yoshilover.com/fukuharaai/"
+    },
+    {
+      "id": 55823,
+      "title": "観月あこ（錦織圭妻）実家が金持ち？宗教は？富山の両親や高松葬祭の娘説・学歴",
+      "url": "https://prosports.yoshilover.com/mitsukiakotoyama/"
+    },
+    {
+      "id": 64286,
+      "title": "宗佑磨の結婚相手・奥さんは？彼女の有無とハーフの本名、父・母親",
+      "url": "https://prosports.yoshilover.com/muneyuuma/"
+    },
+    {
+      "id": 66328,
+      "title": "川合俊一の妻・中野みゆきとの馴れ初めと現在｜子供はいない？何人？実家も",
+      "url": "https://prosports.yoshilover.com/kawaisyunichi/"
+    },
+    {
+      "id": 60527,
+      "title": "巨人（ジャイアンツ）選手の結婚・妻・家族一覧｜既婚者・独身・OB・監督コーチ【2026年】",
+      "url": "https://prosports.yoshilover.com/giants-geneki-tsuma-kazoku/"
+    },
+    {
+      "id": 62065,
+      "title": "阪神タイガース選手の結婚・妻・家族一覧｜既婚者・独身・OB・監督コーチ",
+      "url": "https://prosports.yoshilover.com/hanshin-tsuma-kazoku/"
+    },
+    {
+      "id": 62068,
+      "title": "中日ドラゴンズ選手の結婚・妻・家族一覧｜既婚者・独身・OB・監督コーチ",
+      "url": "https://prosports.yoshilover.com/dragons-tsuma-kazoku/"
+    },
+    {
+      "id": 62127,
+      "title": "横浜DeNAベイスターズ選手の結婚・妻・家族一覧｜既婚者・独身・OB・監督コーチ",
+      "url": "https://prosports.yoshilover.com/baystars-tsuma-kazoku/"
+    },
+    {
+      "id": 62129,
+      "title": "ヤクルトスワローズ選手の結婚・妻・家族一覧｜既婚者・独身・OB・監督コーチ",
+      "url": "https://prosports.yoshilover.com/swallows-tsuma-kazoku/"
+    },
+    {
+      "id": 62134,
+      "title": "西武ライオンズ選手の結婚・妻・家族一覧｜既婚者・独身・OB・監督コーチ",
+      "url": "https://prosports.yoshilover.com/lions-tsuma-kazoku/"
+    },
+    {
+      "id": 62671,
+      "title": "アスリートの結婚と家族｜格闘技・冬季競技・その他のスポーツ",
+      "url": "https://prosports.yoshilover.com/athlete-family/"
+    },
+    {
+      "id": 1704,
+      "title": "菅野智之の結婚相手・妻の画像は？自宅はどこ？子供と報じられた2人",
+      "url": "https://prosports.yoshilover.com/suganotomoyuki/"
+    },
+    {
+      "id": 11834,
+      "title": "原辰徳の妻の実家と職業や再婚とは？息子学歴と家族構成？娘や連れ子、現在や実子を解説",
+      "url": "https://prosports.yoshilover.com/harayome2019/"
+    },
+    {
+      "id": 66373,
+      "title": "石毛宏典の妻と結婚歴・離婚、子供（娘・息子）は？実家と家族・兄弟、自宅まで",
+      "url": "https://prosports.yoshilover.com/ishigehiromichi/"
+    }
+  ],
+  "priority": [
+    "未設定4記事を確認し、巨人・阪神・西武ほかとアスリートの既存ピラーへ掲載",
+    "各記事から掲載先へ戻るリンクを追加",
+    "関係のある記事への横リンクを補完",
+    "公開HTMLと検索・フィルター・表示を確認"
+  ],
+  "classification": "既存記事の内部リンク整備。新規記事作成・本文リライト・統合なし。",
+  "sources": [
+    {
+      "url": "https://npb.jp/bis/players/31933869.html",
+      "reason": "辻発彦の読みと西武・ヤクルト在籍歴"
+    },
+    {
+      "url": "https://pacificleague.com/news/2018/7/5390",
+      "reason": "辻発彦のヤクルト・横浜・中日の指導歴と西武監督歴"
+    },
+    {
+      "url": "https://npb.jp/bis/players/53553868.html",
+      "reason": "亀山努の読み・阪神在籍歴"
+    },
+    {
+      "url": "https://www.sports-biz.co.jp/athlete/sakodasaori/",
+      "reason": "迫田さおりの競技と元日本代表歴"
+    },
+    {
+      "url": "https://npb.jp/bis/players/41745137.html",
+      "reason": "菅野智之の氏名と巨人在籍歴、既存同一人物カードの確認"
+    }
+  ],
+  "secondary": {
+    "hub": 60527,
+    "owner": 1704,
+    "article": 66463
+  },
+  "editorial_note": "菅野智之は既存人物カードに家系図記事を追加し、結婚記事と相互リンクで検索意図を分ける。辻発彦は在籍・指導歴で4球団へ掲載し、元監督・元コーチと明記。新しい人物記事は作らず、既存の事実本文とタイトルを保持する。"
+}

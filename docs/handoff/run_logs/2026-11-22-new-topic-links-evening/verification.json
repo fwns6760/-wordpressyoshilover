@@ -1,0 +1,599 @@
+{
+  "status": "LIVE_VERIFIED",
+  "issue": 135,
+  "scope": {
+    "authorization": "トピクラ新しい記事やって",
+    "date_jst": "2026-11-22",
+    "todayPublishedRecords": 10,
+    "articles": [
+      66484,
+      66471,
+      66477,
+      66463
+    ],
+    "ids": [
+      62134,
+      62129,
+      62127,
+      62068,
+      62065,
+      62671,
+      60527,
+      66484,
+      66471,
+      66477,
+      66463,
+      1704
+    ],
+    "immutable": [
+      "existing factual prose",
+      "title",
+      "slug",
+      "status",
+      "dates",
+      "meta",
+      "categories",
+      "tags",
+      "images",
+      "other records",
+      "redirects",
+      "scheduler",
+      "env",
+      "secrets"
+    ]
+  },
+  "public": {
+    "success": true,
+    "http200": [
+      62134,
+      62129,
+      62127,
+      62068,
+      62065,
+      62671,
+      60527,
+      66484,
+      66471,
+      66477,
+      66463,
+      1704,
+      66373,
+      288,
+      66418,
+      11834
+    ],
+    "articles": [
+      {
+        "id": 66484,
+        "about": {
+          "@type": "Person",
+          "name": "辻発彦",
+          "alternateName": "つじはつひこ",
+          "sameAs": "https://npb.jp/bis/players/31933869.html"
+        },
+        "primaryHub": 62134,
+        "hubs": [
+          62134,
+          62129,
+          62127,
+          62068
+        ]
+      },
+      {
+        "id": 66471,
+        "about": {
+          "@type": "Person",
+          "name": "亀山努",
+          "alternateName": "かめやまつとむ",
+          "sameAs": "https://npb.jp/bis/players/53553868.html"
+        },
+        "primaryHub": 62065,
+        "hubs": [
+          62065
+        ]
+      },
+      {
+        "id": 66477,
+        "about": {
+          "@type": "Person",
+          "name": "迫田さおり",
+          "alternateName": "さこださおり"
+        },
+        "primaryHub": 62671,
+        "hubs": [
+          62671
+        ]
+      },
+      {
+        "id": 66463,
+        "about": {
+          "@type": "Person",
+          "name": "菅野智之",
+          "alternateName": "すがのともゆき",
+          "sameAs": [
+            "https://npb.jp/bis/players/41745137.html",
+            "https://yoshilover.com/data/sugano-tomoyuki"
+          ]
+        },
+        "primaryHub": 60527,
+        "hubs": [
+          60527
+        ]
+      }
+    ],
+    "secondarySinglePersonCard": true,
+    "linksVerified": 20
+  },
+  "ui": {
+    "success": true,
+    "method": "Saved page HTML executed with third-party/theme scripts excluded; link destinations separately verified over HTTP.",
+    "results": [
+      {
+        "hub": 62134,
+        "article": 66484,
+        "width": 1280,
+        "singlePersonCard": true,
+        "articleLink": true,
+        "searchAndFilters": true,
+        "noOverflow": true
+      },
+      {
+        "hub": 62129,
+        "article": 66484,
+        "width": 1280,
+        "singlePersonCard": true,
+        "articleLink": true,
+        "searchAndFilters": true,
+        "noOverflow": true
+      },
+      {
+        "hub": 62127,
+        "article": 66484,
+        "width": 1280,
+        "singlePersonCard": true,
+        "articleLink": true,
+        "searchAndFilters": true,
+        "noOverflow": true
+      },
+      {
+        "hub": 62068,
+        "article": 66484,
+        "width": 1280,
+        "singlePersonCard": true,
+        "articleLink": true,
+        "searchAndFilters": true,
+        "noOverflow": true
+      },
+      {
+        "hub": 62065,
+        "article": 66471,
+        "width": 1280,
+        "singlePersonCard": true,
+        "articleLink": true,
+        "searchAndFilters": true,
+        "noOverflow": true
+      },
+      {
+        "hub": 62671,
+        "article": 66477,
+        "width": 1280,
+        "singlePersonCard": true,
+        "articleLink": true,
+        "searchAndFilters": true,
+        "noOverflow": true
+      },
+      {
+        "hub": 60527,
+        "article": 66463,
+        "width": 1280,
+        "singlePersonCard": true,
+        "articleLink": true,
+        "searchAndFilters": true,
+        "noOverflow": true
+      },
+      {
+        "hub": 62134,
+        "article": 66484,
+        "width": 390,
+        "singlePersonCard": true,
+        "articleLink": true,
+        "searchAndFilters": true,
+        "noOverflow": true
+      },
+      {
+        "hub": 62129,
+        "article": 66484,
+        "width": 390,
+        "singlePersonCard": true,
+        "articleLink": true,
+        "searchAndFilters": true,
+        "noOverflow": true
+      },
+      {
+        "hub": 62127,
+        "article": 66484,
+        "width": 390,
+        "singlePersonCard": true,
+        "articleLink": true,
+        "searchAndFilters": true,
+        "noOverflow": true
+      },
+      {
+        "hub": 62068,
+        "article": 66484,
+        "width": 390,
+        "singlePersonCard": true,
+        "articleLink": true,
+        "searchAndFilters": true,
+        "noOverflow": true
+      },
+      {
+        "hub": 62065,
+        "article": 66471,
+        "width": 390,
+        "singlePersonCard": true,
+        "articleLink": true,
+        "searchAndFilters": true,
+        "noOverflow": true
+      },
+      {
+        "hub": 62671,
+        "article": 66477,
+        "width": 390,
+        "singlePersonCard": true,
+        "articleLink": true,
+        "searchAndFilters": true,
+        "noOverflow": true
+      },
+      {
+        "hub": 60527,
+        "article": 66463,
+        "width": 390,
+        "singlePersonCard": true,
+        "articleLink": true,
+        "searchAndFilters": true,
+        "noOverflow": true
+      }
+    ]
+  },
+  "pureMappingRegression": {
+    "success": true,
+    "existingIdentitiesPreserved": 519,
+    "newIdentities": 4,
+    "primaryPriority": true,
+    "unpublishedRejected": true
+  },
+  "existingPublicIdentitiesPreserved": [
+    1704,
+    288,
+    66373,
+    66418,
+    11834
+  ],
+  "audit": {
+    "checked_at": "2026-11-22T17:56:11+09:00",
+    "targets": [
+      {
+        "id": 66484,
+        "title": "辻発彦の嫁（奥さん）は？息子・辻ヤスシのwikiの結婚、娘・孫も",
+        "url": "https://prosports.yoshilover.com/tsujihatuhiko/",
+        "hub_ids": [
+          62134,
+          62129,
+          62127,
+          62068
+        ],
+        "return_hub_ids": [
+          62134,
+          62129,
+          62127,
+          62068
+        ],
+        "related_article_ids": [
+          66373
+        ],
+        "issues": [],
+        "missing_return_hub_ids": [],
+        "editorial_checks": []
+      },
+      {
+        "id": 66477,
+        "title": "迫田さおりの旦那（夫）は？結婚相手の写真や子供、兄弟・父親も",
+        "url": "https://prosports.yoshilover.com/sakodasaori/",
+        "hub_ids": [
+          62671
+        ],
+        "return_hub_ids": [
+          62671
+        ],
+        "related_article_ids": [
+          66418
+        ],
+        "issues": [],
+        "missing_return_hub_ids": [],
+        "editorial_checks": []
+      },
+      {
+        "id": 66471,
+        "title": "亀山努の嫁と結婚、子供・息子は？双子の弟など兄弟も",
+        "url": "https://prosports.yoshilover.com/kameyamatsutomu/",
+        "hub_ids": [
+          62065
+        ],
+        "return_hub_ids": [
+          62065
+        ],
+        "related_article_ids": [
+          288
+        ],
+        "issues": [],
+        "missing_return_hub_ids": [],
+        "editorial_checks": []
+      },
+      {
+        "id": 66463,
+        "title": "菅野智之の家系図と家族！父親・菅野隆志の職業、母・菅野詠美、実家と兄弟は？",
+        "url": "https://prosports.yoshilover.com/sugagnokakeizu/",
+        "hub_ids": [
+          60527
+        ],
+        "return_hub_ids": [
+          60527
+        ],
+        "related_article_ids": [
+          1704,
+          11834
+        ],
+        "issues": [],
+        "missing_return_hub_ids": [],
+        "editorial_checks": []
+      }
+    ],
+    "remainingMissingPillarIds": []
+  },
+  "saved": [
+    {
+      "id": 62134,
+      "url": "https://prosports.yoshilover.com/lions-tsuma-kazoku/",
+      "contentVerified": true,
+      "datesAndProtectedFieldsPreserved": true
+    },
+    {
+      "id": 62129,
+      "url": "https://prosports.yoshilover.com/swallows-tsuma-kazoku/",
+      "contentVerified": true,
+      "datesAndProtectedFieldsPreserved": true
+    },
+    {
+      "id": 62127,
+      "url": "https://prosports.yoshilover.com/baystars-tsuma-kazoku/",
+      "contentVerified": true,
+      "datesAndProtectedFieldsPreserved": true
+    },
+    {
+      "id": 62068,
+      "url": "https://prosports.yoshilover.com/dragons-tsuma-kazoku/",
+      "contentVerified": true,
+      "datesAndProtectedFieldsPreserved": true
+    },
+    {
+      "id": 62065,
+      "url": "https://prosports.yoshilover.com/hanshin-tsuma-kazoku/",
+      "contentVerified": true,
+      "datesAndProtectedFieldsPreserved": true
+    },
+    {
+      "id": 62671,
+      "url": "https://prosports.yoshilover.com/athlete-family/",
+      "contentVerified": true,
+      "datesAndProtectedFieldsPreserved": true
+    },
+    {
+      "id": 60527,
+      "url": "https://prosports.yoshilover.com/giants-geneki-tsuma-kazoku/",
+      "contentVerified": true,
+      "datesAndProtectedFieldsPreserved": true
+    },
+    {
+      "id": 66484,
+      "url": "https://prosports.yoshilover.com/tsujihatuhiko/",
+      "contentVerified": true,
+      "datesAndProtectedFieldsPreserved": true
+    },
+    {
+      "id": 66471,
+      "url": "https://prosports.yoshilover.com/kameyamatsutomu/",
+      "contentVerified": true,
+      "datesAndProtectedFieldsPreserved": true
+    },
+    {
+      "id": 66477,
+      "url": "https://prosports.yoshilover.com/sakodasaori/",
+      "contentVerified": true,
+      "datesAndProtectedFieldsPreserved": true
+    },
+    {
+      "id": 66463,
+      "url": "https://prosports.yoshilover.com/sugagnokakeizu/",
+      "contentVerified": true,
+      "datesAndProtectedFieldsPreserved": true
+    },
+    {
+      "id": 1704,
+      "url": "https://prosports.yoshilover.com/suganotomoyuki/",
+      "contentVerified": true,
+      "datesAndProtectedFieldsPreserved": true
+    }
+  ],
+  "counts": [
+    {
+      "id": 60527,
+      "before": {
+        "people": 148,
+        "declaredArticleIds": 148
+      },
+      "after": {
+        "people": 148,
+        "declaredArticleIds": 149
+      }
+    },
+    {
+      "id": 62134,
+      "before": {
+        "people": 47,
+        "declaredArticleIds": 47
+      },
+      "after": {
+        "people": 48,
+        "declaredArticleIds": 48
+      }
+    },
+    {
+      "id": 62129,
+      "before": {
+        "people": 54,
+        "declaredArticleIds": 54
+      },
+      "after": {
+        "people": 55,
+        "declaredArticleIds": 55
+      }
+    },
+    {
+      "id": 62127,
+      "before": {
+        "people": 46,
+        "declaredArticleIds": 46
+      },
+      "after": {
+        "people": 47,
+        "declaredArticleIds": 47
+      }
+    },
+    {
+      "id": 62068,
+      "before": {
+        "people": 51,
+        "declaredArticleIds": 51
+      },
+      "after": {
+        "people": 52,
+        "declaredArticleIds": 52
+      }
+    },
+    {
+      "id": 62065,
+      "before": {
+        "people": 62,
+        "declaredArticleIds": 62
+      },
+      "after": {
+        "people": 63,
+        "declaredArticleIds": 63
+      }
+    },
+    {
+      "id": 62671,
+      "before": {
+        "people": 50,
+        "declaredArticleIds": 50
+      },
+      "after": {
+        "people": 51,
+        "declaredArticleIds": 51
+      }
+    }
+  ],
+  "hashes": [
+    {
+      "id": 62134,
+      "before_sha256": "c8314afaebd176f44f714c74f64c8fd0e551890a92ee39a77f9c01368cbf28dc",
+      "after_sha256": "c86a5ddcfc2e607b4f2929507957cee39ee801bcba0010f6a0bbf50bc8399c74"
+    },
+    {
+      "id": 62129,
+      "before_sha256": "c13e5ad27311c6c471f186db362d5a661be478c10138f9d9a317ed9132aeedf9",
+      "after_sha256": "b709cb079517b7ff162417b55d989d341fd828409c26772c79aecd21594ac026"
+    },
+    {
+      "id": 62127,
+      "before_sha256": "6076b72d720c5b46334ec5fbcdca30bb53794e95bc622540c58dd74266c3854b",
+      "after_sha256": "be44fbff014a8c09b682203e2f7391be9853d82ae6b4f18ef44c8c2ab813126b"
+    },
+    {
+      "id": 62068,
+      "before_sha256": "5c240ac3fa4c97eee1f6b8bcf31af658fcb5fc3e7de606dd778fcb45e4f86e26",
+      "after_sha256": "93c1aeda08dbe8f8ed766aec5b670c88082a7e07ef77d5a434c51285974be1d1"
+    },
+    {
+      "id": 62065,
+      "before_sha256": "ee676544a0295ab7734b2e99fac5b5895b25f9f10dbc374dffe978bbf5b15654",
+      "after_sha256": "12aea2d79f556ab78023cc09db58dbdc8c29ca72d702bf738954eeee56ee38dd"
+    },
+    {
+      "id": 62671,
+      "before_sha256": "a2be3f80bb2c6a2aa2ff0ba2cf5c63cdb053700fbf09703c1516c6cad70477b8",
+      "after_sha256": "aa208cfc58850b680ac82295279b32f49db64992f5b601635d1bdf59223b4137"
+    },
+    {
+      "id": 60527,
+      "before_sha256": "2b0d65e46848c8068199a42d87b78e213b65edcc8c08552cd036c1b3149124a5",
+      "after_sha256": "f575060be2325337516ba0dda37df2353be93ecb8c361b0a53724bed095226e4"
+    },
+    {
+      "id": 66484,
+      "before_sha256": "0b2e4aa03a1599655aa4f2b897f6d79d1097d1ff8e9b59074a463424dcdb04a1",
+      "after_sha256": "3951e5a6e908d15ffdcae3995c29541c04f4a54e09e428bf4dfbb9edefaafd06"
+    },
+    {
+      "id": 66471,
+      "before_sha256": "797c17d9d018c7060d7fd4e8268e60983a15fa34a9600591993a4c8c95fdf9e4",
+      "after_sha256": "7495a02d692ae283e9c1d46c31d5624d09dd8e97275f172cd80a152aa27385ab"
+    },
+    {
+      "id": 66477,
+      "before_sha256": "afc8cbd66f54f217101fbe3970659293b426a7659cb97dd888c01d4fd053f655",
+      "after_sha256": "edd601eea6d16655c7231285a7d8a529c5f22b45b3150069b302d5bde392911b"
+    },
+    {
+      "id": 66463,
+      "before_sha256": "3be659d56b8fc8f86c5452a24216af9f66105f32f8a3d08b0133c41b1dc66da6",
+      "after_sha256": "f48c4a4d787a2c07667938a8bfafcf9bcf25fbaf3f6251273a0ffb31cdb54cd1"
+    },
+    {
+      "id": 1704,
+      "before_sha256": "14a4f13c2cde4fbb2c4fff93e9498748074847355c3f6c277262f4f81537c3e6",
+      "after_sha256": "17fd05b32e74aa63a9d9f9a5f561a93a7d1eab4baefd9791299dd15d1e0b5f93"
+    }
+  ],
+  "schemaCode": {
+    "id": 39,
+    "before_sha256": "3b77b83b0271b3f6c484010dfd2c0ec22614dcee103f15e24d52b02eb3e23a9d",
+    "after_sha256": "a2417ab6854dc128f4be4ba63848f65e8857015e3d6f84712e256693e65e52ce",
+    "active": true
+  },
+  "guard": {
+    "id": 103,
+    "active": false
+  },
+  "active_snippets_before": [
+    16,
+    18,
+    19,
+    39,
+    53
+  ],
+  "active_snippets_after": [
+    16,
+    18,
+    19,
+    39,
+    53
+  ],
+  "syntaxChecks": [
+    "Python compile/AST",
+    "PHP lint schema/guard",
+    "node --check apply.mjs"
+  ],
+  "rawEvidence": "/tmp/new-topic-links-20261122-evening"
+}

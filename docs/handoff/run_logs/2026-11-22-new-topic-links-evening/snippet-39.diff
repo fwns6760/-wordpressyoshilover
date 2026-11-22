@@ -1,0 +1,28 @@
+--- snippet39-before
++++ snippet39-after
+@@ -130,7 +130,7 @@
+ function ps_subject_map() {
+     $map = get_transient('ps_subject_map_v5');
+     if (is_array($map)) { return $map; }
+-    $map = [];
++    $map = []; $additional = [];
+     foreach ([64935, 60527, 62065, 62068, 62128, 62130, 62133, 62129, 62126, 62127, 62132, 62131, 62134, 62671, 1494] as $hid) {
+         $hub = get_post($hid);
+         if (!$hub || $hub->post_status !== 'publish' || !preg_match('#<script type="application/json" id="gh-data">(.*?)</script>#s', $hub->post_content, $m)) { continue; }
+@@ -142,7 +142,15 @@
+             if ($pid > 0 && isset($map[$pid]) && empty($map[$pid]['npb']) && preg_match('#^https://npb\.jp/bis/players/\d+\.html$#', (string)($p['npb'] ?? ''))) { $map[$pid]['npb'] = (string)$p['npb']; }
+             // 20261113: the same player's stats page on the main site ("ydata" slug on the card) -> Person.sameAs
+             if ($pid > 0 && isset($map[$pid]) && empty($map[$pid]['ydata']) && preg_match('#^[a-z0-9-]+$#', (string)($p['ydata'] ?? ''))) { $map[$pid]['ydata'] = 'https://yoshilover.com/data/' . $p['ydata']; }
+-        }
++            // Explicit additional articles for the same person; primary card mappings retain priority.
++            foreach ((array)($p['article_ids'] ?? []) as $aid) {
++                $aid = (int)$aid;
++                if ($aid > 0 && $aid !== $pid && isset($map[$pid]) && !isset($additional[$aid])) { $additional[$aid] = $pid; }
++            }
++        }
++    }
++    foreach ($additional as $aid => $owner) {
++        if (!isset($map[$aid]) && isset($map[$owner]) && get_post_status($aid) === 'publish') { $map[$aid] = $map[$owner]; }
+     }
+     set_transient('ps_subject_map_v5', $map, 6 * HOUR_IN_SECONDS);
+     return $map;

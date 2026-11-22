@@ -914,9 +914,12 @@ def _insight_db_path() -> str:
 
 
 def _ensure_insight_db_local() -> Optional[str]:
-    """GCS から insight.db を local cache に download (TTL 1h)、 path を返す.
+    """GCS から data-site 専用の compact DB を local cache に download.
 
-    既に local file あれば再 download せず、 missing で download 失敗時は None。
+    canonical ``insight.db`` は分析履歴を含み 400 MiB 超まで成長するため、Cloud
+    Run の in-memory filesystem に置くと 512 MiB job が OOM になる。公開 job は
+    upstream が生成する ``data_site.db`` だけを読む。既に local file あれば再
+    download せず、missing / download 失敗時は None。
     呼び出し元は None なら stats なし扱い (template placeholder)。
     """
     path = _insight_db_path()
@@ -933,19 +936,19 @@ def _ensure_insight_db_local() -> Optional[str]:
         LOG.warning("google-cloud-storage import failed: %r", exc)
         return None
     prefix = (os.environ.get("INSIGHT_GCS_PREFIX") or "").strip().strip("/")
-    object_name = f"{prefix}/insight.db" if prefix else "insight.db"
+    object_name = f"{prefix}/data_site.db" if prefix else "data_site.db"
     try:
         client = storage.Client()
         bucket_obj = client.bucket(bucket)
         blob = bucket_obj.blob(object_name)
         if not blob.exists():
-            LOG.warning("insight.db blob missing in GCS: bucket=%s name=%s", bucket, object_name)
+            LOG.error("compact data_site.db blob missing in GCS: bucket=%s name=%s", bucket, object_name)
             return None
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         blob.download_to_filename(path)
         return path
     except Exception as exc:  # noqa: BLE001
-        LOG.warning("insight.db download failed: %r", exc)
+        LOG.error("compact data_site.db download failed: %r", exc)
         return None
 
 

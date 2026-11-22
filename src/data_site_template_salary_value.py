@@ -63,19 +63,33 @@ def load_salary_value_data(
     """salary json × insight.db を join して表データを作る (純粋寄り、 test 可)。"""
     if now is None:
         now = datetime.now(JST)
+    use_persisted = salary_json_path is None
     if salary_json_path is None:
         salary_json_path = str(
             Path(__file__).resolve().parent.parent / "config" / "giants_salary.json")
     try:
         sal_raw = _json.loads(Path(salary_json_path).read_text(encoding="utf-8"))
+        if use_persisted:
+            from src.salary_auto_refresh import load_persisted_data
+            sal_raw = load_persisted_data(sal_raw)
+        with _sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
+            latest_game = conn.execute(
+                "SELECT MAX(g.game_date) FROM games g WHERE "
+                "EXISTS(SELECT 1 FROM batting_logs b WHERE b.game_id=g.game_id AND b.team_name='巨人') "
+                "OR EXISTS(SELECT 1 FROM pitching_logs p WHERE p.game_id=g.game_id AND p.team_name='巨人')"
+            ).fetchone()[0]
+        if not latest_game:
+            return {}
+        season = int(str(latest_game)[:4])
+        period = (f"{season}-01-01", f"{season+1}-01-01")
     except Exception:  # noqa: BLE001
         return {}
-    salary: dict[str, tuple[int, str]] = {}  # 正規化名 -> (2026年俸万円, slug)
+    salary: dict[str, tuple[int, str]] = {}  # 成績と同じ年度の年俸だけを使う。
     for p in sal_raw.get("players") or []:
         if not p.get("active"):
             continue
         for y in p.get("years") or []:
-            if y.get("year") == 2026 and y.get("team") == "巨人" and y.get("salary_man"):
+            if y.get("year") == season and y.get("team") == "巨人" and y.get("salary_man"):
                 salary[_norm(p.get("name") or "")] = (
                     int(y["salary_man"]), str(p.get("slug") or ""))
                 break
@@ -87,9 +101,10 @@ def load_salary_value_data(
     try:
         with _sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
             for canon, ab, h, rbi in conn.execute(
-                "SELECT player_canonical, SUM(COALESCE(AB,0)), SUM(COALESCE(H,0)), "
-                " SUM(COALESCE(RBI,0)) FROM batting_logs WHERE team_name='巨人' "
-                " AND player_canonical IS NOT NULL GROUP BY player_canonical",
+                "SELECT b.player_canonical, SUM(COALESCE(b.AB,0)), SUM(COALESCE(b.H,0)), "
+                " SUM(COALESCE(b.RBI,0)) FROM batting_logs b JOIN games g ON g.game_id=b.game_id "
+                "WHERE b.team_name='巨人' AND b.player_canonical IS NOT NULL "
+                "AND g.game_date >= ? AND g.game_date < ? GROUP BY b.player_canonical", period,
             ):
                 h, ab, rbi = int(h or 0), int(ab or 0), int(rbi or 0)
                 sal = salary.get(_norm(canon))
@@ -101,9 +116,10 @@ def load_salary_value_data(
                     "avg": h / ab if ab else 0.0, "unit": sal[0] / h,
                 })
             for canon, n, k, ip in conn.execute(
-                "SELECT player_canonical, COUNT(*), SUM(COALESCE(K,0)), "
-                " SUM(COALESCE(IP,0)) FROM pitching_logs WHERE team_name='巨人' "
-                " AND player_canonical IS NOT NULL GROUP BY player_canonical",
+                "SELECT p.player_canonical, COUNT(*), SUM(COALESCE(p.K,0)), "
+                " SUM(COALESCE(p.IP,0)) FROM pitching_logs p JOIN games g ON g.game_id=p.game_id "
+                "WHERE p.team_name='巨人' AND p.player_canonical IS NOT NULL "
+                "AND g.game_date >= ? AND g.game_date < ? GROUP BY p.player_canonical", period,
             ):
                 k, n = int(k or 0), int(n or 0)
                 sal = salary.get(_norm(canon))
@@ -120,7 +136,8 @@ def load_salary_value_data(
     pitchers.sort(key=lambda r: r["unit"])
     return {
         "updated": now.strftime("%Y-%m-%d %H:%M JST"),
-        "year": now.year,
+        "year": season,
+        "stats_as_of": str(latest_game)[:10],
         "batters": batters,
         "pitchers": pitchers,
     }
@@ -139,7 +156,7 @@ def render_salary_value_excerpt(data: dict) -> str:
     b = (data.get("batters") or [])
     top = b[0]["name"] if b else ""
     return (
-        f"読売ジャイアンツの{data.get('year')}年推定年俸と今季成績を掛け合わせ、"
+        f"読売ジャイアンツの{data.get('year')}年推定年俸と同年度の成績を掛け合わせ、"
         f"「1安打あたりの年俸」「1奪三振あたりの年俸」で割安選手を割り出す独自分析。"
         + (f"現在の最割安は{top}。" if top else "")
         + "毎朝自動更新。"
@@ -226,13 +243,14 @@ def render_salary_value_html(data: dict) -> str:
         f'<h1 id="top" style="font-size:21px;margin:0 0 4px;">巨人 年俸コスパ分析 {year}'
         "（1安打あたりの推定年俸）</h1>"
         '<p style="font-size:13px;color:#444;margin:0 0 8px;line-height:1.7;">'
-        f"読売ジャイアンツの{year}年推定年俸と今季成績を掛け合わせ、"
+        f"読売ジャイアンツの{year}年推定年俸と同年度の成績を掛け合わせ、"
         "「<b>1安打あたりいくら払っているか</b>」「<b>1奪三振あたりいくらか</b>」という"
         "単価で選手を並べた独自分析です。単価が小さいほど、年俸に対して結果を多く出している"
         "「割安」な選手ということになります。よくある年俸ランキング（金額順）は"
         f'<a href="{SALARY_URL}/">年俸一覧ページ</a>に任せ、ここでは単価の切り口だけを扱います。</p>'
         f'<p style="font-size:12px;color:#888;margin:0 0 16px;">最終更新: {_esc(data.get("updated"))}'
-        "（毎朝自動更新）｜年俸は報道ベースの推定値（出来高等は含まない場合があります）</p>"
+        f"（毎朝自動更新）｜成績基準日: {_esc(data.get("stats_as_of"))}。年俸と成績は同じ{year}年で比較しています。"
+        "年俸は報道ベースの推定値です。</p>"
     )
     how = (
         '<h2 style="font-size:17px;margin:20px 0 6px;">算出方法と読み方</h2>'

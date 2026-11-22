@@ -324,6 +324,8 @@ def render_draft_html(data: dict | None = None) -> str:
         '守備位置・所属はドラフト指名時のもの。'
         f'{("最終更新: " + updated if updated else "")}</p>'
     )
+    for year, url in sorted((data.get("official_sources") or {}).items(), reverse=True):
+        src_note += f'<p><a href="{_esc(url)}">NPB公式 { _esc(year) }年 巨人指名結果</a></p>'
 
     sections = [
         _section_shell("draft", "① ドラフト指名選手一覧（支配下）",

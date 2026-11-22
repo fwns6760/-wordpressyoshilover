@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Yoshilover 063 Frontend (topic hub / SNS reactions / Phase 1 noindex)
  * Description: 062 contract §2 §3 §5 の front impl。topic hub / SNS block / noindex を基盤に、トップ速報帯・記事下回遊束・右カラム rail・上部密集ナビ・人気記事導線まで含めて SWELL front を高密度化する。既存 SWELL コメント欄は触らない。
- * Version: 0.24.9
+ * Version: 0.24.16
  * Author: yoshilover
  */
 
@@ -59,6 +59,306 @@ function yoshilover_063_serve_indexnow_key() {
         echo YOSHILOVER_063_INDEXNOW_KEY;
         exit;
     }
+}
+
+/* ------------------------------------------------------------
+ * 0.1) HTTPS 正規化 + /data SEO 出力補正 (2026-07-30)
+ *
+ *    - Xserver の .htaccess を安全に読めない環境でも、WordPress に到達した
+ *      HTTP request を HTTPS / non-www へ 301。
+ *    - data-site publisher が持つ手書き excerpt を meta description に使い、
+ *      自動 excerpt のナビ・UI文字混入を避ける。
+ *    - SWELL と本文 JSON-LD の BreadcrumbList 重複は、最初の1件だけ残す。
+ * ---------------------------------------------------------- */
+
+// /data-sitemap.xml は init で直接返すため、それより前の priority で正規化する。
+add_action( 'init', 'yoshilover_063_force_https_redirect', -1000 );
+function yoshilover_063_force_https_redirect() {
+    if ( is_admin()
+        || ( defined( 'WP_CLI' ) && WP_CLI )
+        || ( defined( 'DOING_CRON' ) && DOING_CRON ) ) {
+        return;
+    }
+
+    $forwarded_proto = strtolower( trim( explode( ',', (string) ( $_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '' ) )[0] ) );
+    if ( is_ssl() || $forwarded_proto === 'https' ) {
+        return;
+    }
+
+    $target = yoshilover_063_https_redirect_target(
+        home_url( '/' ),
+        (string) ( $_SERVER['REQUEST_URI'] ?? '/' )
+    );
+    if ( $target === '' ) {
+        return;
+    }
+
+    wp_safe_redirect( $target, 301, 'Yoshilover HTTPS' );
+    exit;
+}
+
+function yoshilover_063_https_redirect_target( $home, $request_uri ) {
+    $host = (string) parse_url( (string) $home, PHP_URL_HOST );
+    if ( $host === '' ) {
+        return '';
+    }
+
+    // header injection を防ぎ、host は request header でなく WordPress 設定から固定する。
+    $request_uri = preg_replace( '/[\r\n]+/', '', (string) $request_uri );
+    if ( ! is_string( $request_uri ) || $request_uri === '' || $request_uri[0] !== '/' ) {
+        $request_uri = '/';
+    }
+    return 'https://' . $host . $request_uri;
+}
+
+/*
+ * 0.2) 重複した旧OB選手ページを現行coach/playerページへ統合 (2026-07-31)
+ *
+ * data sitemapに残った旧romanization 3件は、現行ページと同一人物・同一検索意図で
+ * 内部リンクも持たない。リンクを増やして重複を延命せず301で評価を現行URLへ集約する。
+ */
+add_action( 'template_redirect', 'yoshilover_063_redirect_legacy_data_players', 1 );
+function yoshilover_063_redirect_legacy_data_players() {
+    if ( is_admin() || ( defined( 'WP_CLI' ) && WP_CLI ) ) {
+        return;
+    }
+    $target_path = yoshilover_063_legacy_data_redirect_target(
+        (string) ( $_SERVER['REQUEST_URI'] ?? '' )
+    );
+    if ( $target_path === '' ) {
+        return;
+    }
+    wp_safe_redirect( home_url( $target_path ), 301, 'Yoshilover legacy data canonical' );
+    exit;
+}
+
+function yoshilover_063_legacy_data_redirect_target( $request_uri ) {
+    $path = trim( (string) parse_url( (string) $request_uri, PHP_URL_PATH ), '/' );
+    $redirects = array(
+        'data/kinjoh-tatsuhiko' => '/data/kinjo-tatsuhiko',
+        'data/ohta-taishi'      => '/data/ota-taishi',
+        'data/ohtake-kan'       => '/data/otake-hiroshi',
+    );
+    return isset( $redirects[ $path ] ) ? $redirects[ $path ] : '';
+}
+
+function yoshilover_063_is_data_page() {
+    if ( ! is_page() ) {
+        return false;
+    }
+    $post = get_queried_object();
+    if ( ! is_object( $post ) || empty( $post->ID ) ) {
+        return false;
+    }
+    $page_uri = trim( (string) get_page_uri( (int) $post->ID ), '/' );
+    return $page_uri === 'data' || strpos( $page_uri, 'data/' ) === 0;
+}
+
+function yoshilover_063_trim_description_text( $text, $max_chars = 155 ) {
+    $text = html_entity_decode( (string) $text, ENT_QUOTES | ENT_HTML5, 'UTF-8' );
+    $text = preg_replace( '/[\s\x{3000}]+/u', ' ', trim( $text ) );
+    if ( ! is_string( $text ) || $text === '' ) {
+        return '';
+    }
+
+    $chars = preg_split( '//u', $text, -1, PREG_SPLIT_NO_EMPTY );
+    if ( ! is_array( $chars ) ) {
+        return $text;
+    }
+
+    $cut_chars     = array_slice( $chars, 0, min( count( $chars ), $max_chars ) );
+    $last_boundary = -1;
+    foreach ( $cut_chars as $index => $char ) {
+        if ( in_array( $char, array( '。', '！', '？' ), true ) ) {
+            $last_boundary = $index;
+        }
+    }
+    // SEO plugin の自動抜粋が 120 文字で文中切れしていても、UI断片を残さない。
+    if ( count( $chars ) <= $max_chars ) {
+        if ( $last_boundary >= 39 && $last_boundary < count( $chars ) - 1 ) {
+            return implode( '', array_slice( $chars, 0, $last_boundary + 1 ) );
+        }
+        return $text;
+    }
+
+    // 極端に短い description を避けつつ、可能なら文末で自然に止める。
+    if ( $last_boundary >= 39 ) {
+        return implode( '', array_slice( $cut_chars, 0, $last_boundary + 1 ) );
+    }
+
+    return rtrim( implode( '', array_slice( $cut_chars, 0, max( 1, $max_chars - 1 ) ) ), " \t\n\r\0\x0B、,。" ) . '…';
+}
+
+add_filter( 'ssp_output_description', 'yoshilover_063_data_page_description', 20 );
+add_filter( 'ssp_output_og_description', 'yoshilover_063_data_page_description', 20 );
+function yoshilover_063_data_page_description( $description ) {
+    if ( ! yoshilover_063_is_data_page() ) {
+        return $description;
+    }
+
+    $post = get_queried_object();
+    $raw  = is_object( $post ) && isset( $post->post_excerpt )
+        ? (string) $post->post_excerpt
+        : '';
+    $page_uri = is_object( $post ) && ! empty( $post->ID )
+        ? trim( (string) get_page_uri( (int) $post->ID ), '/' )
+        : '';
+    if ( $raw === '' && $page_uri === 'data' ) {
+        $raw = '読売ジャイアンツの一軍・二軍選手データを毎日更新。打率・防御率・試合別成績・選手別ランキングを、NPB公式記録から独自集計しています。';
+    }
+    if ( $raw === '' ) {
+        $raw = (string) $description;
+    }
+
+    $clean = wp_strip_all_tags( strip_shortcodes( $raw ), true );
+    $clean = yoshilover_063_trim_description_text( $clean );
+    return $clean !== '' ? $clean : $description;
+}
+
+function yoshilover_063_jsonld_is_breadcrumb( $node ) {
+    return is_array( $node )
+        && isset( $node['@type'] )
+        && is_string( $node['@type'] )
+        && $node['@type'] === 'BreadcrumbList';
+}
+
+function yoshilover_063_dedupe_breadcrumb_jsonld( $html ) {
+    if ( ! is_string( $html ) || $html === '' ) {
+        return $html;
+    }
+
+    $seen = false;
+    $result = preg_replace_callback(
+        '#(<script\b(?=[^>]*\btype=["\']application/ld\+json["\'])[^>]*>)(.*?)(</script>)#is',
+        function( $match ) use ( &$seen ) {
+            $decoded = json_decode( trim( $match[2] ), true );
+            if ( ! is_array( $decoded ) ) {
+                return $match[0];
+            }
+
+            if ( yoshilover_063_jsonld_is_breadcrumb( $decoded ) ) {
+                if ( $seen ) {
+                    return '';
+                }
+                $seen = true;
+                return $match[0];
+            }
+
+            if ( empty( $decoded['@graph'] ) || ! is_array( $decoded['@graph'] ) ) {
+                return $match[0];
+            }
+
+            $changed = false;
+            $graph   = array();
+            foreach ( $decoded['@graph'] as $node ) {
+                if ( yoshilover_063_jsonld_is_breadcrumb( $node ) ) {
+                    if ( $seen ) {
+                        $changed = true;
+                        continue;
+                    }
+                    $seen = true;
+                }
+                $graph[] = $node;
+            }
+            if ( ! $changed ) {
+                return $match[0];
+            }
+            if ( empty( $graph ) ) {
+                return '';
+            }
+
+            $decoded['@graph'] = $graph;
+            $encoded = wp_json_encode( $decoded, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES );
+            return is_string( $encoded ) && $encoded !== ''
+                ? $match[1] . $encoded . $match[3]
+                : $match[0];
+        },
+        $html
+    );
+    return is_string( $result ) ? $result : $html;
+}
+
+function yoshilover_063_normalize_sameas_node( &$node ) {
+    if ( ! is_array( $node ) ) {
+        return false;
+    }
+    $changed = false;
+    foreach ( $node as $key => &$value ) {
+        if ( $key === 'sameAs' && is_string( $value ) ) {
+            $parts = preg_split(
+                '/(?:\r\n|\r|\n|\\\\r\\\\n|\\\\n)+|(?<=\/)\s+(?=https?:\/\/)/u',
+                trim( $value )
+            );
+            $urls = array();
+            foreach ( (array) $parts as $part ) {
+                $url = trim( (string) $part );
+                if ( filter_var( $url, FILTER_VALIDATE_URL ) ) {
+                    $urls[] = $url;
+                }
+            }
+            if ( ! empty( $urls ) ) {
+                $value   = array_values( array_unique( $urls ) );
+                $changed = true;
+            }
+        } elseif ( is_array( $value ) && yoshilover_063_normalize_sameas_node( $value ) ) {
+            $changed = true;
+        }
+    }
+    unset( $value );
+    return $changed;
+}
+
+/**
+ * Normalize every sameAs field in every JSON-LD script, including nested
+ * founder/author nodes. The previous string replacement fixed only the first
+ * top-level occurrence and left CRLF-joined URLs in other schema blocks.
+ */
+function yoshilover_063_normalize_jsonld_sameas( $html ) {
+    if ( ! is_string( $html ) || $html === '' ) {
+        return $html;
+    }
+    $result = preg_replace_callback(
+        '#(<script\b(?=[^>]*\btype=["\']application/ld\+json["\'])[^>]*>)(.*?)(</script>)#is',
+        function( $match ) {
+            $decoded = json_decode( trim( $match[2] ), true );
+            if ( ! is_array( $decoded ) || ! yoshilover_063_normalize_sameas_node( $decoded ) ) {
+                return $match[0];
+            }
+            $encoded = wp_json_encode(
+                $decoded,
+                JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+            );
+            return is_string( $encoded ) && $encoded !== ''
+                ? $match[1] . $encoded . $match[3]
+                : $match[0];
+        },
+        $html
+    );
+    return is_string( $result ) ? $result : $html;
+}
+
+/**
+ * A WordPress page title is already the document H1. Data templates also
+ * contain a visual heading, so keep the first H1 and demote later ones to H2.
+ * Pages whose theme title is hidden still retain their template H1.
+ */
+function yoshilover_063_demote_duplicate_h1( $html ) {
+    if ( ! is_string( $html ) || $html === '' ) {
+        return $html;
+    }
+    $seen = false;
+    $result = preg_replace_callback(
+        '#<h1\b([^>]*)>(.*?)</h1>#is',
+        function( $match ) use ( &$seen ) {
+            if ( ! $seen ) {
+                $seen = true;
+                return $match[0];
+            }
+            return '<h2' . $match[1] . '>' . $match[2] . '</h2>';
+        },
+        $html
+    );
+    return is_string( $result ) ? $result : $html;
 }
 
 /* ------------------------------------------------------------
@@ -752,32 +1052,13 @@ function yoshilover_063_buffer_inject_header_titles( $buffer ) {
         return $buffer;
     }
 
-    // 398-SEO (2026-05-20): Schema.org sameAs の CRLF-joined string を array に修正。
-    $samesas_marker = '"sameAs":["';
-    $samesas_pos = strpos( $buffer, $samesas_marker );
-    if ( $samesas_pos !== false ) {
-        $inner_start = $samesas_pos + strlen( $samesas_marker );
-        $end_pos     = strpos( $buffer, '"]', $inner_start );
-        if ( $end_pos !== false ) {
-            $inner = substr( $buffer, $inner_start, $end_pos - $inner_start );
-            // JSON 内の `\r\n` は literal で 4 chars (バックスラッシュ + r + バックスラッシュ + n)
-            if ( strpos( $inner, "\\r\\n" ) !== false || strpos( $inner, "\\n" ) !== false ) {
-                // PHP regex で literal `\r\n` (4 chars) を split。
-                $parts = preg_split( '/\\\\r\\\\n|\\\\n/', $inner );
-                $urls  = array();
-                foreach ( (array) $parts as $p ) {
-                    $p = trim( (string) $p );
-                    if ( $p !== '' ) {
-                        $urls[] = $p;
-                    }
-                }
-                if ( count( $urls ) > 1 ) {
-                    $new_inner = implode( '","', $urls );
-                    $buffer    = substr_replace( $buffer, $new_inner, $inner_start, $end_pos - $inner_start );
-                }
-            }
-        }
+    if ( yoshilover_063_is_data_page() ) {
+        $buffer = yoshilover_063_dedupe_breadcrumb_jsonld( $buffer );
+        $buffer = yoshilover_063_demote_duplicate_h1( $buffer );
     }
+
+    // 398-SEO / 2026-07-30: every nested sameAs must be a URL array.
+    $buffer = yoshilover_063_normalize_jsonld_sameas( $buffer );
 
     // 398-SEO (2026-05-20): Schema Organization の url を `/page-1980/` から `/` に修正。
     $buffer = str_replace(
@@ -999,17 +1280,17 @@ function yoshilover_063_get_topic_hub_items() {
  *
  * 旧: items は WP option `yoshilover_topic_hub_items` の手動固定値で、 自動更新が無く
  * 古い記事 (例: 数ヶ月前のヤクルト戦) が凍結表示され続けていた。
- * 新: 直近 14 日で「コメントが多い = 実際に話題になっている」 記事を自動抽出して上書き。
+ * 新: 直近 7 日で「コメントが多い = 実際に話題になっている」 記事を自動抽出して上書き。
  * コメントが付いた記事が無ければ直近の新着で埋める。 1 時間 transient cache。
- * 取得 0 件のときだけ従来の手動 option ($items) に fallback (安全側)。
+ * 取得 0 件なら空表示。古い手動 option や期間外の記事で補充しない。
  */
 function yoshilover_063_auto_topic_hub_items( $items ) {
     if ( ! class_exists( 'WP_Query' ) ) {
         return $items;
     }
-    $cached = get_transient( 'yoshi_topic_hub_auto_v2' );
+    $cached = get_transient( 'yoshi_topic_hub_auto_v3' );
     if ( is_array( $cached ) ) {
-        return ! empty( $cached ) ? $cached : $items;
+        return $cached;
     }
 
     $out         = array();
@@ -1024,13 +1305,13 @@ function yoshilover_063_auto_topic_hub_items( $items ) {
         return function_exists( 'mb_substr' ) ? mb_substr( $t, 0, 36 ) : substr( $t, 0, 96 );
     };
 
-    // 1) 直近 14 日 コメント数 desc (話題の記事)。
+    // 1) 直近 7 日 コメント数 desc (話題の記事)。
     $hot = new WP_Query( array(
         'post_type'              => 'post',
         'post_status'            => 'publish',
         'posts_per_page'         => 10,
         'orderby'                => array( 'comment_count' => 'DESC', 'date' => 'DESC' ),
-        'date_query'             => array( array( 'after' => '14 days ago' ) ),
+        'date_query'             => array( array( 'after' => '7 days ago' ) ),
         'ignore_sticky_posts'    => true,
         'no_found_rows'          => true,
         'update_post_meta_cache' => false,
@@ -1067,6 +1348,7 @@ function yoshilover_063_auto_topic_hub_items( $items ) {
             'post_type'              => 'post',
             'post_status'            => 'publish',
             'posts_per_page'         => 14,
+            'date_query'             => array( array( 'after' => '7 days ago' ) ),
             'orderby'                => 'date',
             'order'                  => 'DESC',
             'ignore_sticky_posts'    => true,
@@ -1096,8 +1378,8 @@ function yoshilover_063_auto_topic_hub_items( $items ) {
         }
     }
 
-    set_transient( 'yoshi_topic_hub_auto_v2', $out, HOUR_IN_SECONDS );
-    return ! empty( $out ) ? $out : $items;
+    set_transient( 'yoshi_topic_hub_auto_v3', $out, HOUR_IN_SECONDS );
+    return $out;
 }
 add_filter( 'yoshilover_topic_hub_items', 'yoshilover_063_auto_topic_hub_items', 20 );
 
@@ -1495,6 +1777,7 @@ function yoshilover_063_get_breaking_strip_items( $limit = 5 ) {
             'post_type'              => 'post',
             'post_status'            => 'publish',
             'posts_per_page'         => 24,
+            'date_query'             => array( array( 'after' => current_time( 'Y-m-d' ), 'inclusive' => true ) ),
             'ignore_sticky_posts'    => true,
             'no_found_rows'          => true,
             'update_post_meta_cache' => true,
@@ -1641,30 +1924,6 @@ function yoshilover_063_get_today_giants_box_items( $limit = 5 ) {
 
         if ( count( $items ) >= $limit ) {
             return $items;
-        }
-    }
-
-    foreach ( yoshilover_063_get_topic_hub_items() as $item ) {
-        $url = isset( $item['url'] ) ? trim( (string) $item['url'] ) : '';
-        if ( $url === '' || isset( $seen[ $url ] ) ) {
-            continue;
-        }
-
-        $badge = isset( $item['badge'] ) ? trim( (string) $item['badge'] ) : '';
-        $items[] = array(
-            'type'    => 'topic',
-            'subtype' => 'topic',
-            'label'   => $badge !== '' ? $badge : '注目',
-            'title'   => isset( $item['title'] ) ? trim( (string) $item['title'] ) : '',
-            'url'     => $url,
-            'phase'   => '',
-            'score'   => '',
-            'time'    => '',
-        );
-        $seen[ $url ] = true;
-
-        if ( count( $items ) >= $limit ) {
-            break;
         }
     }
 
@@ -7143,12 +7402,51 @@ add_action( 'init', 'yoshilover_063_data_sitemap_route' );
  * クローラーが自力発見できる経路を robots.txt に追加する。
  */
 function yoshilover_063_robots_txt_add_data_sitemap( $output, $public ) {
-    if ( '1' === (string) $public ) {
-        $output .= "\nSitemap: " . home_url( '/data-sitemap.xml' ) . "\n";
+    $data_sitemap = home_url( '/data-sitemap.xml' );
+    $private_site = (bool) preg_match( '/^Disallow:\s*\/\s*$/mi', (string) $output );
+
+    // SEO SIMPLE PACK 経由では $public が期待どおり 1 で渡らない構成がある。
+    // robots 本文がサイト全体を拒否していないことを正本にして、重複なく追記する。
+    if ( ! $private_site && strpos( (string) $output, $data_sitemap ) === false ) {
+        $output = rtrim( (string) $output ) . "\n\nSitemap: " . $data_sitemap . "\n";
     }
     return $output;
 }
 add_filter( 'robots_txt', 'yoshilover_063_robots_txt_add_data_sitemap', 20, 2 );
+
+/**
+ * SEO plugin が WordPress 標準 robots_txt filter を経由しない構成でも、
+ * 公開サイトの robots.txt と data sitemap discovery を一定に保つ。
+ */
+function yoshilover_063_build_robots_txt( $public ) {
+    if ( '1' !== (string) $public ) {
+        return "User-agent: *\nDisallow: /\n";
+    }
+
+    $output  = "User-agent: *\n";
+    $output .= "Disallow: /wp-admin/\n";
+    $output .= "Allow: /wp-admin/admin-ajax.php\n\n";
+    $output .= 'Sitemap: ' . home_url( '/sitemap.xml' ) . "\n";
+    return yoshilover_063_robots_txt_add_data_sitemap( $output, $public );
+}
+
+add_action( 'init', 'yoshilover_063_robots_txt_route', -900 );
+function yoshilover_063_robots_txt_route() {
+    if ( empty( $_SERVER['REQUEST_URI'] ) ) {
+        return;
+    }
+    $path = wp_parse_url( wp_unslash( $_SERVER['REQUEST_URI'] ), PHP_URL_PATH );
+    if ( '/robots.txt' !== $path ) {
+        return;
+    }
+
+    if ( ! headers_sent() ) {
+        header( 'Content-Type: text/plain; charset=UTF-8' );
+        header( 'X-Robots-Tag: noindex' );
+    }
+    echo yoshilover_063_build_robots_txt( get_option( 'blog_public', '1' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+    exit;
+}
 
 /**
  * /data-sitemap.xml を intercept して専用 sitemap を返す。
@@ -7206,6 +7504,12 @@ function yoshilover_063_build_data_sitemap_xml() {
         if ( 'publish' !== get_post_status( $pid ) ) {
             continue;
         }
+        // 2026-07-06: noindex ページ (成績データ皆無の thin OB pillar 等) は
+        // sitemap から除外する。sitemap は「index してほしい URL のリスト」で、
+        // noindex 混在は GSC の除外警告と品質シグナル低下の元。
+        if ( '1' === (string) get_post_meta( $pid, 'yoshi_noindex', true ) ) {
+            continue;
+        }
         $loc = get_permalink( $pid );
         if ( ! $loc ) {
             continue;
@@ -7236,3 +7540,10 @@ function yoshilover_063_flush_data_sitemap_cache( $post_id ) {
     delete_transient( 'yoshilover_063_data_sitemap_xml' );
 }
 add_action( 'save_post', 'yoshilover_063_flush_data_sitemap_cache' );
+function yoshilover_063_flush_home_standings_cache( $post_id ) {
+    $post = get_post( $post_id );
+    if ( $post instanceof WP_Post && $post->post_type === 'page' && $post->post_name === 'standings' ) {
+        delete_transient( 'yoshi_home_today_dash' );
+    }
+}
+add_action( 'save_post', 'yoshilover_063_flush_home_standings_cache' );

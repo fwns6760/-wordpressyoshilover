@@ -345,7 +345,7 @@ def _build_recent_digest_html(player: PillarPlayerInfo) -> str:
 
 
 def _build_recent_games_html(player: PillarPlayerInfo) -> str:
-    """当季 (2026) 全試合の打撃結果表。 data 無ければ section omit。"""
+    """当季 (2026) の収録済み打撃結果表。 data 無ければ section omit。"""
     if not player.recent_games:
         return ""
     rows_html = "\n".join(
@@ -357,7 +357,7 @@ def _build_recent_games_html(player: PillarPlayerInfo) -> str:
     )
     return (
         '<div class="ys-card">'
-        f'<h2>{SEASON_LABEL} 全 {len(player.recent_games)} 試合</h2>'
+        f'<h2>{SEASON_LABEL} 試合別記録（収録 {len(player.recent_games)} 試合）</h2>'
         '<table><thead><tr>'
         '<th>日付</th><th>相手</th><th>打数</th><th>安打</th><th>本塁打</th><th>打点</th><th>盗塁</th>'
         '</tr></thead>'
@@ -620,7 +620,7 @@ def _build_pitching_season_html(player: PillarPlayerInfo) -> str:
         f'<td style="padding:8px 4px;color:#1976d2;font-weight:600;">{_fmt_era(player.pitch_whip)}</td>'
         '</tr></tbody></table>'
         '<p style="font-size:11px;color:#999;margin:8px 0 0;">'
-        '※ insight.db 集計 (NPB official box score 由来)、 毎朝 6:00 + 試合後 17:30 / 23:00 JST 更新'
+        '※ NPB公式試合記録を1日複数回取り込み、公開ページは毎日更新'
         '</p></section>'
     )
 
@@ -687,7 +687,7 @@ def _build_pitching_recent_html(player: PillarPlayerInfo) -> str:
     return (
         '<section class="ys-pillar-pitch-recent" '
         'style="background:#fff;border:1px solid #eee;padding:14px;margin:0 0 16px;border-radius:4px;">'
-        f'<h2 style="font-size:16px;margin:0 0 10px;">{SEASON_LABEL} 全 {len(player.recent_pitching_games)} 登板</h2>'
+        f'<h2 style="font-size:16px;margin:0 0 10px;">{SEASON_LABEL} 登板別記録（収録 {len(player.recent_pitching_games)} 登板）</h2>'
         '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
         '<thead><tr style="background:#fafafa;text-align:center;">'
         '<th style="padding:8px 4px;">日付</th>'
@@ -1478,10 +1478,11 @@ def render_pillar_title(player: PillarPlayerInfo) -> str:
         head = f"{player.name} 通算成績{sal}・プロフィール"
     elif player.role in ("manager", "coach"):
         head = f"{player.name} {SEASON_LABEL} 通算成績{sal}・プロフィール"
-    elif "投手" in pos:
-        head = f"{player.name} {SEASON_LABEL}成績・防御率{sal}"
     else:
-        head = f"{player.name} {SEASON_LABEL}成績・打率{sal}"
+        # 年は成績の対象シーズン。翌年の契約更改で成績年を進めない。
+        metrics = "防御率・勝利数" if "投手" in pos else "打率・本塁打"
+        career = "・通算成績" if player.npb_career else ""
+        return f"{player.name}の成績【{SEASON_LABEL}・巨人】{metrics}{career}"
     return f"{head}{bracket} | 巨人選手データ"
 
 

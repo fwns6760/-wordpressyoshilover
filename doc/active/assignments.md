@@ -1,5 +1,12 @@
 # assignments — 現場担当と次アクション
 
+## 2026-11-23 — サブドメインの最新4記事のトピクラ
+
+- **Codex / CLOSED / LIVE_VERIFIED / Issue #136**: 金村義明・角中勝也・定岡正二・西本聖を既存6球団一覧へ接続。10ページに24リンクを追加、未設定4→0。
+- 公開12URL、PC/スマホ20ケース、4記事の人物情報とパンくず、全581レコードの保護項目・対象外不変を確認。一時guard104停止、常設snippet不変。
+- 詳細: `doc/done/2026-11/2026-11-23-latest-topic-clusters.md`。
+
+
 ## 2026-11-23 — 全登録ページのSEO修正を本番反映
 
 - **Codex / CLOSED / LIVE_DEPLOYED_VERIFIED / Issue #134**: 要点842ページ・年俸102ページ・投手33ページ・交流戦/ドラフト/SNS見出しを修正。公開1,139 URLとPC/スマホ12ケース成功、保護metadata差分0、再実行年俸write0。正本同期後146 tests pass。

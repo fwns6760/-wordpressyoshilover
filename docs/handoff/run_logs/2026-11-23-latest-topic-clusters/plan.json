@@ -1,0 +1,337 @@
+{
+  "pillar_pages": [
+    {
+      "id": 60527,
+      "title": "巨人（ジャイアンツ）選手の結婚・妻・家族一覧｜既婚者・独身・OB・監督コーチ【2026年】",
+      "url": "https://prosports.yoshilover.com/giants-geneki-tsuma-kazoku/",
+      "intent": "人物と家族の話題から記事を探す",
+      "scope": "所属歴・指導歴・競技に対応する既存一覧",
+      "excluded": "個別の家族の詳細"
+    },
+    {
+      "id": 62065,
+      "title": "阪神タイガース選手の結婚・妻・家族一覧｜既婚者・独身・OB・監督コーチ",
+      "url": "https://prosports.yoshilover.com/hanshin-tsuma-kazoku/",
+      "intent": "人物と家族の話題から記事を探す",
+      "scope": "所属歴・指導歴・競技に対応する既存一覧",
+      "excluded": "個別の家族の詳細"
+    },
+    {
+      "id": 62068,
+      "title": "中日ドラゴンズ選手の結婚・妻・家族一覧｜既婚者・独身・OB・監督コーチ",
+      "url": "https://prosports.yoshilover.com/dragons-tsuma-kazoku/",
+      "intent": "人物と家族の話題から記事を探す",
+      "scope": "所属歴・指導歴・競技に対応する既存一覧",
+      "excluded": "個別の家族の詳細"
+    },
+    {
+      "id": 62131,
+      "title": "オリックスバファローズ選手の結婚・妻・家族一覧｜既婚者・独身・OB・監督コーチ",
+      "url": "https://prosports.yoshilover.com/buffaloes-tsuma-kazoku/",
+      "intent": "人物と家族の話題から記事を探す",
+      "scope": "所属歴・指導歴・競技に対応する既存一覧",
+      "excluded": "個別の家族の詳細"
+    },
+    {
+      "id": 62133,
+      "title": "ロッテマリーンズ選手の結婚・妻・家族一覧｜既婚者・独身・OB・監督コーチ",
+      "url": "https://prosports.yoshilover.com/marines-tsuma-kazoku/",
+      "intent": "人物と家族の話題から記事を探す",
+      "scope": "所属歴・指導歴・競技に対応する既存一覧",
+      "excluded": "個別の家族の詳細"
+    },
+    {
+      "id": 62134,
+      "title": "西武ライオンズ選手の結婚・妻・家族一覧｜既婚者・独身・OB・監督コーチ",
+      "url": "https://prosports.yoshilover.com/lions-tsuma-kazoku/",
+      "intent": "人物と家族の話題から記事を探す",
+      "scope": "所属歴・指導歴・競技に対応する既存一覧",
+      "excluded": "個別の家族の詳細"
+    }
+  ],
+  "cluster_articles": [
+    {
+      "id": 66505,
+      "name": "金村義明",
+      "kana": "かねむらよしあき",
+      "aliases": [
+        "金村 義明"
+      ],
+      "topics": [
+        "marriage",
+        "children",
+        "parents"
+      ],
+      "label": "金村義明の妻・息子と実家の家族",
+      "description": "妻や息子、実家の母・兄など、金村義明の家族に関する情報を紹介しています。",
+      "npb": "https://npb.jp/bis/players/41343865.html",
+      "url": "https://prosports.yoshilover.com/kanemurayoshiaki/",
+      "intent": "金村義明の妻・息子と実家の家族",
+      "pillar_difference": "個別の人物の家族の詳細",
+      "cannibalization": "既存の記事URLを利用し、所属ごとの記事複製は作らない。"
+    },
+    {
+      "id": 66510,
+      "name": "角中勝也",
+      "kana": "かくなかかつや",
+      "aliases": [
+        "角中 勝也"
+      ],
+      "topics": [
+        "marriage",
+        "children",
+        "parents"
+      ],
+      "label": "角中勝也の妻・子供と両親",
+      "description": "結婚相手や子供、父と母について、角中勝也の家族に関する情報を紹介しています。",
+      "url": "https://prosports.yoshilover.com/kakunakakatsuya/",
+      "intent": "角中勝也の妻・子供と両親",
+      "pillar_difference": "個別の人物の家族の詳細",
+      "cannibalization": "既存の記事URLを利用し、所属ごとの記事複製は作らない。"
+    },
+    {
+      "id": 66517,
+      "name": "定岡正二",
+      "kana": "さだおかしょうじ",
+      "aliases": [
+        "定岡 正二"
+      ],
+      "topics": [
+        "marriage",
+        "children",
+        "parents"
+      ],
+      "label": "定岡正二の結婚・実家と兄弟",
+      "description": "結婚に関する情報や甥との関係、実家と定岡三兄弟について紹介しています。",
+      "npb": "https://npb.jp/bis/players/61363844.html",
+      "url": "https://prosports.yoshilover.com/sadaokasyouji/",
+      "intent": "定岡正二の結婚・実家と兄弟",
+      "pillar_difference": "個別の人物の家族の詳細",
+      "cannibalization": "既存の記事URLを利用し、所属ごとの記事複製は作らない。"
+    },
+    {
+      "id": 66524,
+      "name": "西本聖",
+      "kana": "にしもとたかし",
+      "aliases": [
+        "西本 聖"
+      ],
+      "topics": [
+        "marriage",
+        "children",
+        "parents"
+      ],
+      "label": "西本聖の結婚・妻と家族",
+      "description": "結婚と妻にまつわるエピソード、子供や実家の家族に関する情報を紹介しています。",
+      "npb": "https://npb.jp/bis/players/91793842.html",
+      "url": "https://prosports.yoshilover.com/enatsutakashi/",
+      "intent": "西本聖の結婚・妻と家族",
+      "pillar_difference": "個別の人物の家族の詳細",
+      "cannibalization": "既存の記事URLを利用し、所属ごとの記事複製は作らない。"
+    }
+  ],
+  "internal_links": {
+    "placements": [
+      {
+        "article": 66505,
+        "hub": 62131,
+        "category": "OB",
+        "position": "近鉄OB・元内野手"
+      },
+      {
+        "article": 66505,
+        "hub": 62068,
+        "category": "OB",
+        "position": "元内野手"
+      },
+      {
+        "article": 66505,
+        "hub": 62134,
+        "category": "OB",
+        "position": "元内野手"
+      },
+      {
+        "article": 66510,
+        "hub": 62133,
+        "category": "OB",
+        "position": "元外野手（2026年引退）"
+      },
+      {
+        "article": 66517,
+        "hub": 60527,
+        "category": "OB",
+        "position": "元投手"
+      },
+      {
+        "article": 66524,
+        "hub": 60527,
+        "category": "OB",
+        "position": "元投手"
+      },
+      {
+        "article": 66524,
+        "hub": 62068,
+        "category": "OB",
+        "position": "元投手"
+      },
+      {
+        "article": 66524,
+        "hub": 62131,
+        "category": "OB",
+        "position": "元投手・コーチ経験者"
+      },
+      {
+        "article": 66524,
+        "hub": 62065,
+        "category": "監督・コーチ",
+        "position": "元投手コーチ"
+      },
+      {
+        "article": 66524,
+        "hub": 62133,
+        "category": "監督・コーチ",
+        "position": "元投手コーチ"
+      }
+    ],
+    "return_links": {
+      "66505": [
+        62131,
+        62068,
+        62134
+      ],
+      "66510": [
+        62133
+      ],
+      "66517": [
+        60527
+      ],
+      "66524": [
+        60527,
+        62068,
+        62131,
+        62065,
+        62133
+      ]
+    },
+    "related_links": [
+      {
+        "source": 66505,
+        "target": 30190,
+        "context": "同じ近鉄OBの家族については、",
+        "anchor": "中村紀洋の妻・娘と家族の記事"
+      },
+      {
+        "source": 66510,
+        "target": 12027,
+        "context": "同じロッテOBの家族については、",
+        "anchor": "里崎智也の結婚・子供と家族の記事"
+      },
+      {
+        "source": 66517,
+        "target": 66524,
+        "context": "同じ巨人OBの家族については、",
+        "anchor": "西本聖の結婚・妻と家族の記事"
+      },
+      {
+        "source": 66524,
+        "target": 66517,
+        "context": "同じ巨人OBの家族については、",
+        "anchor": "定岡正二の結婚・実家と兄弟の記事"
+      }
+    ],
+    "existing_related_links": [],
+    "homes_links": []
+  },
+  "linked_articles": [
+    {
+      "id": 12027,
+      "title": "里崎智也の結婚相手？嫁画像？再婚・結婚を隠す理由、子供は何人？双子？阪神ファンの家族、国籍・自宅",
+      "url": "https://prosports.yoshilover.com/satozakihon/"
+    },
+    {
+      "id": 30190,
+      "title": "中村紀洋の妻が中村浩子バレーが嫁アパレル？自宅？娘と風呂やゴルフの家族を紹介",
+      "url": "https://prosports.yoshilover.com/nakamuranorikatei/"
+    },
+    {
+      "id": 60527,
+      "title": "巨人（ジャイアンツ）選手の結婚・妻・家族一覧｜既婚者・独身・OB・監督コーチ【2026年】",
+      "url": "https://prosports.yoshilover.com/giants-geneki-tsuma-kazoku/"
+    },
+    {
+      "id": 62065,
+      "title": "阪神タイガース選手の結婚・妻・家族一覧｜既婚者・独身・OB・監督コーチ",
+      "url": "https://prosports.yoshilover.com/hanshin-tsuma-kazoku/"
+    },
+    {
+      "id": 62068,
+      "title": "中日ドラゴンズ選手の結婚・妻・家族一覧｜既婚者・独身・OB・監督コーチ",
+      "url": "https://prosports.yoshilover.com/dragons-tsuma-kazoku/"
+    },
+    {
+      "id": 62131,
+      "title": "オリックスバファローズ選手の結婚・妻・家族一覧｜既婚者・独身・OB・監督コーチ",
+      "url": "https://prosports.yoshilover.com/buffaloes-tsuma-kazoku/"
+    },
+    {
+      "id": 62133,
+      "title": "ロッテマリーンズ選手の結婚・妻・家族一覧｜既婚者・独身・OB・監督コーチ",
+      "url": "https://prosports.yoshilover.com/marines-tsuma-kazoku/"
+    },
+    {
+      "id": 62134,
+      "title": "西武ライオンズ選手の結婚・妻・家族一覧｜既婚者・独身・OB・監督コーチ",
+      "url": "https://prosports.yoshilover.com/lions-tsuma-kazoku/"
+    },
+    {
+      "id": 66505,
+      "title": "金村義明の妻（嫁）の画像は？息子の長男・三男、店と西荻窪、実家の母・兄・自宅まで",
+      "url": "https://prosports.yoshilover.com/kanemurayoshiaki/"
+    },
+    {
+      "id": 66510,
+      "title": "角中勝也の嫁・角中麗さんは誰？年齢は4歳年上、結婚して子供は息子3人｜父・稔、母・久美も",
+      "url": "https://prosports.yoshilover.com/kakunakakatsuya/"
+    },
+    {
+      "id": 66517,
+      "title": "定岡正二の嫁は？結婚してる？なぜ独身かと息子・実家、定岡三兄弟の家族",
+      "url": "https://prosports.yoshilover.com/sadaokasyouji/"
+    },
+    {
+      "id": 66524,
+      "title": "西本聖の嫁は？結婚と妻の現在、息子・家族・病気",
+      "url": "https://prosports.yoshilover.com/enatsutakashi/"
+    }
+  ],
+  "priority": [
+    "最新記事を確認し未設定4記事を既存6球団ピラーへ掲載",
+    "各記事から掲載先へ戻るリンクを追加",
+    "関係のある記事への横リンクを補完",
+    "公開HTMLと検索・フィルター・表示を確認"
+  ],
+  "classification": "既存記事の内部リンク整備。新規記事作成・本文リライト・統合なし。",
+  "sources": [
+    {
+      "url": "https://npb.jp/bis/players/41343865.html",
+      "reason": "金村義明の近鉄・中日・西武の所属歴をNPB年度別成績で確認。"
+    },
+    {
+      "url": "https://www.marines.co.jp/news/detail/202600893548.html",
+      "reason": "2026年7月20日、球団公式の角中勝也の今季限りの引退発表。11月23日時点でOBへ掲載。"
+    },
+    {
+      "url": "https://npb.jp/bis/players/61363844.html",
+      "reason": "定岡正二の読売所属歴と読みを確認。"
+    },
+    {
+      "url": "https://npb.jp/bis/players/91793842.html",
+      "reason": "西本聖の巨人・中日・オリックス所属歴と読みを確認。"
+    },
+    {
+      "url": "https://www.joqr.co.jp/kiwami/2018/02/index_13.html",
+      "reason": "所属放送局の2018年2月6日プロフィールで西本聖の阪神・ロッテ・オリックスの指導歴を確認。"
+    }
+  ],
+  "editorial_note": "金村義明は近鉄OBとしてオリックス一覧と中日・西武へ、角中勝也は2026年引退を確認してロッテOBへ、定岡正二は巨人OBへ、西本聖は巨人・中日・オリックスOBと阪神・ロッテの元コーチへ掲載。西本聖の記事は既存URL enatsutakashi をそのまま利用し、人物名でエンティティを確認する。新規記事や複製は作らず、説明は既存記事の範囲で中立的に案内する。"
+}

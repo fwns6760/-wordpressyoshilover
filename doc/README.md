@@ -1,5 +1,12 @@
 # 102 ticket index and priority board
 
+## 2026-11-23 — サブドメインの最新4記事のトピクラ
+
+- **Codex / CLOSED / LIVE_VERIFIED / Issue #136**: 金村義明・角中勝也・定岡正二・西本聖を既存6球団一覧へ接続。10ページに24リンクを追加、未設定4→0。
+- 公開12URL、PC/スマホ20ケース、4記事の人物情報とパンくず、全581レコードの保護項目・対象外不変を確認。一時guard104停止、常設snippet不変。
+- 詳細: `doc/done/2026-11/2026-11-23-latest-topic-clusters.md`。
+
+
 ## 2026-11-23 — 全登録ページのSEO修正を本番反映
 
 - **Codex / CLOSED / LIVE_DEPLOYED_VERIFIED / Issue #134**: 要点842ページ、年俸説明102ページ、投球回/公式成績33投手、交流戦終了・ドラフト年度・SNS見出しを修正。既知1,139 URLはHTTPエラー0、PC/スマホ12ケース成功。

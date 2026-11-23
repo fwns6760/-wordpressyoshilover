@@ -1,0 +1,41 @@
+{
+  "articles": [
+    {"id":66505,"name":"金村義明","kana":"かねむらよしあき","aliases":["金村 義明"],"topics":["marriage","children","parents"],"label":"金村義明の妻・息子と実家の家族","description":"妻や息子、実家の母・兄など、金村義明の家族に関する情報を紹介しています。","npb":"https://npb.jp/bis/players/41343865.html"},
+    {"id":66510,"name":"角中勝也","kana":"かくなかかつや","aliases":["角中 勝也"],"topics":["marriage","children","parents"],"label":"角中勝也の妻・子供と両親","description":"結婚相手や子供、父と母について、角中勝也の家族に関する情報を紹介しています。"},
+    {"id":66517,"name":"定岡正二","kana":"さだおかしょうじ","aliases":["定岡 正二"],"topics":["marriage","children","parents"],"label":"定岡正二の結婚・実家と兄弟","description":"結婚に関する情報や甥との関係、実家と定岡三兄弟について紹介しています。","npb":"https://npb.jp/bis/players/61363844.html"},
+    {"id":66524,"name":"西本聖","kana":"にしもとたかし","aliases":["西本 聖"],"topics":["marriage","children","parents"],"label":"西本聖の結婚・妻と家族","description":"結婚と妻にまつわるエピソード、子供や実家の家族に関する情報を紹介しています。","npb":"https://npb.jp/bis/players/91793842.html"}
+  ],
+  "placements": [
+    {"article":66505,"hub":62131,"category":"OB","position":"近鉄OB・元内野手"},
+    {"article":66505,"hub":62068,"category":"OB","position":"元内野手"},
+    {"article":66505,"hub":62134,"category":"OB","position":"元内野手"},
+    {"article":66510,"hub":62133,"category":"OB","position":"元外野手（2026年引退）"},
+    {"article":66517,"hub":60527,"category":"OB","position":"元投手"},
+    {"article":66524,"hub":60527,"category":"OB","position":"元投手"},
+    {"article":66524,"hub":62068,"category":"OB","position":"元投手"},
+    {"article":66524,"hub":62131,"category":"OB","position":"元投手・コーチ経験者"},
+    {"article":66524,"hub":62065,"category":"監督・コーチ","position":"元投手コーチ"},
+    {"article":66524,"hub":62133,"category":"監督・コーチ","position":"元投手コーチ"}
+  ],
+  "hubLabels": {
+    "60527":"巨人の選手・OBの結婚・家族まとめ",
+    "62065":"阪神の選手・監督・コーチの結婚・家族まとめ",
+    "62068":"中日の選手・OBの結婚・家族まとめ",
+    "62131":"オリックス・近鉄OBの結婚・家族まとめ",
+    "62133":"ロッテの選手・OB・コーチの結婚・家族まとめ",
+    "62134":"西武の選手・OBの結婚・家族まとめ"
+  },
+  "peers": [
+    {"source":66505,"target":30190,"context":"同じ近鉄OBの家族については、","anchor":"中村紀洋の妻・娘と家族の記事"},
+    {"source":66510,"target":12027,"context":"同じロッテOBの家族については、","anchor":"里崎智也の結婚・子供と家族の記事"},
+    {"source":66517,"target":66524,"context":"同じ巨人OBの家族については、","anchor":"西本聖の結婚・妻と家族の記事"},
+    {"source":66524,"target":66517,"context":"同じ巨人OBの家族については、","anchor":"定岡正二の結婚・実家と兄弟の記事"}
+  ],
+  "sources": [
+    {"url":"https://npb.jp/bis/players/41343865.html","reason":"金村義明の近鉄・中日・西武の所属歴をNPB年度別成績で確認。"},
+    {"url":"https://www.marines.co.jp/news/detail/202600893548.html","reason":"2026年7月20日、球団公式の角中勝也の今季限りの引退発表。11月23日時点でOBへ掲載。"},
+    {"url":"https://npb.jp/bis/players/61363844.html","reason":"定岡正二の読売所属歴と読みを確認。"},
+    {"url":"https://npb.jp/bis/players/91793842.html","reason":"西本聖の巨人・中日・オリックス所属歴と読みを確認。"},
+    {"url":"https://www.joqr.co.jp/kiwami/2018/02/index_13.html","reason":"所属放送局の2018年2月6日プロフィールで西本聖の阪神・ロッテ・オリックスの指導歴を確認。"}
+  ]
+}

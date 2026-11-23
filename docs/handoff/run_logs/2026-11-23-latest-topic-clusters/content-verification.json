@@ -1,0 +1,13 @@
+{
+  "success": true,
+  "allClusterArticles": 559,
+  "allMissingPillarOrReturn": 0,
+  "publishedRecordsChecked": 581,
+  "changed": 10,
+  "nonTargetRecordsUnchanged": true,
+  "protectedFieldsAndDatesPreserved": true,
+  "existingClusterEdgesPreserved": true,
+  "todayArticles": 16,
+  "todayMissingPillarOrReturn": 0,
+  "guardInactive": true
+}

@@ -1,0 +1,39 @@
+{
+  "authorization": "サブドメの最新のトピクラはって",
+  "date_jst": "2026-11-23",
+  "todayPublishedRecords": 16,
+  "articles": [
+    66505,
+    66510,
+    66517,
+    66524
+  ],
+  "ids": [
+    62131,
+    62068,
+    62134,
+    62133,
+    60527,
+    62065,
+    66505,
+    66510,
+    66517,
+    66524
+  ],
+  "immutable": [
+    "existing factual prose",
+    "title",
+    "slug",
+    "status",
+    "dates",
+    "meta",
+    "categories",
+    "tags",
+    "images",
+    "other records",
+    "redirects",
+    "scheduler",
+    "env",
+    "secrets"
+  ]
+}

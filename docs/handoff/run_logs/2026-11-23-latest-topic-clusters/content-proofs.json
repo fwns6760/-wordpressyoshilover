@@ -1,0 +1,56 @@
+{
+  "success": true,
+  "proofs": [
+    {
+      "id": 62131,
+      "reversible": true,
+      "existingProseLinksImagesScriptsPreserved": true
+    },
+    {
+      "id": 62068,
+      "reversible": true,
+      "existingProseLinksImagesScriptsPreserved": true
+    },
+    {
+      "id": 62134,
+      "reversible": true,
+      "existingProseLinksImagesScriptsPreserved": true
+    },
+    {
+      "id": 62133,
+      "reversible": true,
+      "existingProseLinksImagesScriptsPreserved": true
+    },
+    {
+      "id": 60527,
+      "reversible": true,
+      "existingProseLinksImagesScriptsPreserved": true
+    },
+    {
+      "id": 62065,
+      "reversible": true,
+      "existingProseLinksImagesScriptsPreserved": true
+    },
+    {
+      "id": 66505,
+      "reversible": true,
+      "existingProseLinksImagesScriptsPreserved": true
+    },
+    {
+      "id": 66510,
+      "reversible": true,
+      "existingProseLinksImagesScriptsPreserved": true
+    },
+    {
+      "id": 66517,
+      "reversible": true,
+      "existingProseLinksImagesScriptsPreserved": true
+    },
+    {
+      "id": 66524,
+      "reversible": true,
+      "existingProseLinksImagesScriptsPreserved": true
+    }
+  ],
+  "newLinks": 24
+}

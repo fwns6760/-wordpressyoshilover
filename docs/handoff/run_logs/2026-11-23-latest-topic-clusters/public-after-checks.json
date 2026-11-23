@@ -1,0 +1,138 @@
+{
+  "success": true,
+  "phase": "after",
+  "pages": 12,
+  "canonicalAndIndexable": true,
+  "linkChecks": [
+    {
+      "source": 60527,
+      "target": 66517,
+      "kind": "placement"
+    },
+    {
+      "source": 60527,
+      "target": 66524,
+      "kind": "placement"
+    },
+    {
+      "source": 62065,
+      "target": 66524,
+      "kind": "placement"
+    },
+    {
+      "source": 62068,
+      "target": 66505,
+      "kind": "placement"
+    },
+    {
+      "source": 62068,
+      "target": 66524,
+      "kind": "placement"
+    },
+    {
+      "source": 62131,
+      "target": 66505,
+      "kind": "placement"
+    },
+    {
+      "source": 62131,
+      "target": 66524,
+      "kind": "placement"
+    },
+    {
+      "source": 62133,
+      "target": 66510,
+      "kind": "placement"
+    },
+    {
+      "source": 62133,
+      "target": 66524,
+      "kind": "placement"
+    },
+    {
+      "source": 62134,
+      "target": 66505,
+      "kind": "placement"
+    },
+    {
+      "source": 66505,
+      "target": 62131,
+      "kind": "return",
+      "automaticNavigationLinks": 0
+    },
+    {
+      "source": 66505,
+      "target": 62068,
+      "kind": "return",
+      "automaticNavigationLinks": 0
+    },
+    {
+      "source": 66505,
+      "target": 62134,
+      "kind": "return",
+      "automaticNavigationLinks": 0
+    },
+    {
+      "source": 66505,
+      "target": 30190,
+      "kind": "related"
+    },
+    {
+      "source": 66510,
+      "target": 62133,
+      "kind": "return",
+      "automaticNavigationLinks": 0
+    },
+    {
+      "source": 66510,
+      "target": 12027,
+      "kind": "related"
+    },
+    {
+      "source": 66517,
+      "target": 60527,
+      "kind": "return",
+      "automaticNavigationLinks": 0
+    },
+    {
+      "source": 66517,
+      "target": 66524,
+      "kind": "related"
+    },
+    {
+      "source": 66524,
+      "target": 60527,
+      "kind": "return",
+      "automaticNavigationLinks": 0
+    },
+    {
+      "source": 66524,
+      "target": 62068,
+      "kind": "return",
+      "automaticNavigationLinks": 0
+    },
+    {
+      "source": 66524,
+      "target": 62131,
+      "kind": "return",
+      "automaticNavigationLinks": 0
+    },
+    {
+      "source": 66524,
+      "target": 62065,
+      "kind": "return",
+      "automaticNavigationLinks": 0
+    },
+    {
+      "source": 66524,
+      "target": 62133,
+      "kind": "return",
+      "automaticNavigationLinks": 0
+    },
+    {
+      "source": 66524,
+      "target": 66517,
+      "kind": "related"
+    }
+  ]
+}

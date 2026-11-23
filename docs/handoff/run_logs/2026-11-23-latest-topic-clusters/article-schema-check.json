@@ -1,0 +1,29 @@
+{
+  "success": true,
+  "checks": [
+    {
+      "id": 66505,
+      "subject": "金村義明",
+      "correctArticleAbout": true,
+      "visibleAndSchemaBreadcrumbHub": "https://prosports.yoshilover.com/buffaloes-tsuma-kazoku/"
+    },
+    {
+      "id": 66510,
+      "subject": "角中勝也",
+      "correctArticleAbout": true,
+      "visibleAndSchemaBreadcrumbHub": "https://prosports.yoshilover.com/marines-tsuma-kazoku/"
+    },
+    {
+      "id": 66517,
+      "subject": "定岡正二",
+      "correctArticleAbout": true,
+      "visibleAndSchemaBreadcrumbHub": "https://prosports.yoshilover.com/giants-geneki-tsuma-kazoku/"
+    },
+    {
+      "id": 66524,
+      "subject": "西本聖",
+      "correctArticleAbout": true,
+      "visibleAndSchemaBreadcrumbHub": "https://prosports.yoshilover.com/hanshin-tsuma-kazoku/"
+    }
+  ]
+}

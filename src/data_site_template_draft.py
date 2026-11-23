@@ -284,11 +284,17 @@ def render_draft_title() -> str:
     return "巨人 歴代ドラフト指名選手一覧【1位・育成・外れ1位・競合】 | 巨人データ"
 
 
+def _draft_span(data: dict) -> str:
+    years = [int(r["year"]) for key in ("draft_picks", "ikusei_picks")
+             for r in data.get(key, []) if str(r.get("year", "")).isdigit()]
+    return f"{min(years)}〜{max(years)}年" if years else "確認できた年度"
+
+
 def render_draft_excerpt(data: dict) -> str:
     n = len(data.get("draft_picks") or []) + len(data.get("ikusei_picks") or [])
     return ("読売ジャイアンツの歴代ドラフト指名選手を巨人専用にまとめたデータベース。"
             "支配下・育成・ドラフト外入団・指名競合（外れ1位）・スカウト名簿・契約変更まで網羅。"
-            f"現在{n}件を掲載、1965〜2024年を順次整備中。")
+            f"{_draft_span(data)}の指名を現在{n}件掲載しています。")
 
 
 _NAV_LINKS = [
@@ -366,7 +372,7 @@ def render_draft_html(data: dict | None = None) -> str:
         + '<h1 style="font-size:20px;margin:0 0 4px;">巨人 歴代ドラフト指名選手データベース</h1>'
         '<p style="font-size:13px;color:#666;margin:0 0 12px;">'
         '読売ジャイアンツの歴代ドラフト指名（支配下・育成・ドラフト外）、指名競合と外れ1位、'
-        'スカウト名簿、契約変更までを巨人専用に1ページでまとめます。1965〜2024年を順次整備中。</p>'
+        f'スカウト名簿、契約変更までを巨人専用に1ページでまとめます。{_draft_span(data)}の指名を掲載しています。</p>'
         f'{src_note}'
         f'{_render_topics(data)}'
         f'{jump}'

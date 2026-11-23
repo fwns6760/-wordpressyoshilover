@@ -1,0 +1,186 @@
+[
+  {
+    "h1": 1,
+    "viewport": 1280,
+    "documentWidth": 1280,
+    "summaries": 1,
+    "summaryOverflow": false,
+    "blankLinks": 0,
+    "jsonldCount": 4,
+    "invalidJsonld": 0,
+    "summaryText": [
+      "年度別成績の要点\n\n2007〜2026年の掲載記録を比較しています。\n\n単年の最多勝利数は2013年の24勝です。\n単年の最多奪三振は2011年の241奪三振です。\n単年の最多登板数は2007・2013年の28登板です。\n\n比較対象はこのページの年度別表です。NPB・MLB、在籍球団、一軍・二軍の区分は各表の見出しと所属欄で確認できます。異なる表の記録は合算していません。"
+    ],
+    "path": "data/tanaka-masahiro",
+    "width": 1280,
+    "status": 200
+  },
+  {
+    "h1": 1,
+    "viewport": 1280,
+    "documentWidth": 1280,
+    "summaries": 1,
+    "summaryOverflow": false,
+    "blankLinks": 0,
+    "jsonldCount": 3,
+    "invalidJsonld": 0,
+    "summaryText": [
+      "年俸推移の要点\n\n田中将大の2027年年俸は8000万円（推定）。2026年の1億円と比べ、2000万円減（20%減）です。\n\n掲載期間（2007〜2027年）で最高の推定年俸は2015年の26億6200万円です。\n\n2026年の一軍成績と年俸\n\n13登板、4勝4敗、投球回68と1/3回、49奪三振、防御率3.42。NPB公式の巨人在籍分の成績です（確認日: 2026-11-23）。成績と契約を比較する参考情報で、増減の理由を断定するものではありません。\n\n金額は報道に基づく推定値です。MY FAVORITE GIANTSの契約更改一覧とスポーツナビの契約更改情報で、対象年度・選手名・金額が一致したものを掲載しています。 報道日: 2026-11-20。"
+    ],
+    "path": "data/salary/tanaka-masahiro",
+    "width": 1280,
+    "status": 200
+  },
+  {
+    "h1": 1,
+    "viewport": 1280,
+    "documentWidth": 1280,
+    "summaries": 1,
+    "summaryOverflow": false,
+    "blankLinks": 0,
+    "jsonldCount": 4,
+    "invalidJsonld": 0,
+    "summaryText": [
+      "年度別成績の要点\n\n1958〜1974年の掲載記録を比較しています。\n\n単年の最多本塁打は1968年の39本です。\n単年の最多安打は1963・1966年の163安打です。\n単年の最多打点は1968年の125打点です。\n\n比較対象はこのページの年度別表です。NPB・MLB、在籍球団、一軍・二軍の区分は各表の見出しと所属欄で確認できます。異なる表の記録は合算していません。"
+    ],
+    "path": "data/nagashima-shigeo",
+    "width": 1280,
+    "status": 200
+  },
+  {
+    "h1": 1,
+    "viewport": 1280,
+    "documentWidth": 1280,
+    "summaries": 1,
+    "summaryOverflow": false,
+    "blankLinks": 0,
+    "jsonldCount": 3,
+    "invalidJsonld": 0,
+    "summaryText": [
+      "ランキングの上位\n\n2026年 交流戦（全日程終了）12球団順位表の掲載順位です。\n\n1位は西武 パ（勝率 .824）です。\n2位はソフトバンク パ（勝率 .778）です。\n2位は日本ハム パ（勝率 .778）です。\n\n順位の対象年度と集計範囲は表の見出しに記載しています。各選手・球団の内訳は下の表で確認できます。"
+    ],
+    "path": "data/interleague",
+    "width": 1280,
+    "status": 200
+  },
+  {
+    "h1": 1,
+    "viewport": 1280,
+    "documentWidth": 1280,
+    "summaries": 0,
+    "summaryOverflow": false,
+    "blankLinks": 0,
+    "jsonldCount": 2,
+    "invalidJsonld": 0,
+    "summaryText": [],
+    "path": "data/draft",
+    "width": 1280,
+    "status": 200
+  },
+  {
+    "h1": 1,
+    "viewport": 1280,
+    "documentWidth": 1280,
+    "summaries": 0,
+    "summaryOverflow": false,
+    "blankLinks": 0,
+    "jsonldCount": 4,
+    "invalidJsonld": 0,
+    "summaryText": [],
+    "path": "giants-sns-realtime-1gun",
+    "width": 1280,
+    "status": 200
+  },
+  {
+    "h1": 1,
+    "viewport": 390,
+    "documentWidth": 390,
+    "summaries": 1,
+    "summaryOverflow": false,
+    "blankLinks": 0,
+    "jsonldCount": 4,
+    "invalidJsonld": 0,
+    "summaryText": [
+      "年度別成績の要点\n\n2007〜2026年の掲載記録を比較しています。\n\n単年の最多勝利数は2013年の24勝です。\n単年の最多奪三振は2011年の241奪三振です。\n単年の最多登板数は2007・2013年の28登板です。\n\n比較対象はこのページの年度別表です。NPB・MLB、在籍球団、一軍・二軍の区分は各表の見出しと所属欄で確認できます。異なる表の記録は合算していません。"
+    ],
+    "path": "data/tanaka-masahiro",
+    "width": 390,
+    "status": 200
+  },
+  {
+    "h1": 1,
+    "viewport": 390,
+    "documentWidth": 390,
+    "summaries": 1,
+    "summaryOverflow": false,
+    "blankLinks": 0,
+    "jsonldCount": 3,
+    "invalidJsonld": 0,
+    "summaryText": [
+      "年俸推移の要点\n\n田中将大の2027年年俸は8000万円（推定）。2026年の1億円と比べ、2000万円減（20%減）です。\n\n掲載期間（2007〜2027年）で最高の推定年俸は2015年の26億6200万円です。\n\n2026年の一軍成績と年俸\n\n13登板、4勝4敗、投球回68と1/3回、49奪三振、防御率3.42。NPB公式の巨人在籍分の成績です（確認日: 2026-11-23）。成績と契約を比較する参考情報で、増減の理由を断定するものではありません。\n\n金額は報道に基づく推定値です。MY FAVORITE GIANTSの契約更改一覧とスポーツナビの契約更改情報で、対象年度・選手名・金額が一致したものを掲載しています。 報道日: 2026-11-20。"
+    ],
+    "path": "data/salary/tanaka-masahiro",
+    "width": 390,
+    "status": 200
+  },
+  {
+    "h1": 1,
+    "viewport": 390,
+    "documentWidth": 390,
+    "summaries": 1,
+    "summaryOverflow": false,
+    "blankLinks": 0,
+    "jsonldCount": 4,
+    "invalidJsonld": 0,
+    "summaryText": [
+      "年度別成績の要点\n\n1958〜1974年の掲載記録を比較しています。\n\n単年の最多本塁打は1968年の39本です。\n単年の最多安打は1963・1966年の163安打です。\n単年の最多打点は1968年の125打点です。\n\n比較対象はこのページの年度別表です。NPB・MLB、在籍球団、一軍・二軍の区分は各表の見出しと所属欄で確認できます。異なる表の記録は合算していません。"
+    ],
+    "path": "data/nagashima-shigeo",
+    "width": 390,
+    "status": 200
+  },
+  {
+    "h1": 1,
+    "viewport": 390,
+    "documentWidth": 390,
+    "summaries": 1,
+    "summaryOverflow": false,
+    "blankLinks": 0,
+    "jsonldCount": 3,
+    "invalidJsonld": 0,
+    "summaryText": [
+      "ランキングの上位\n\n2026年 交流戦（全日程終了）12球団順位表の掲載順位です。\n\n1位は西武 パ（勝率 .824）です。\n2位はソフトバンク パ（勝率 .778）です。\n2位は日本ハム パ（勝率 .778）です。\n\n順位の対象年度と集計範囲は表の見出しに記載しています。各選手・球団の内訳は下の表で確認できます。"
+    ],
+    "path": "data/interleague",
+    "width": 390,
+    "status": 200
+  },
+  {
+    "h1": 1,
+    "viewport": 390,
+    "documentWidth": 390,
+    "summaries": 0,
+    "summaryOverflow": false,
+    "blankLinks": 0,
+    "jsonldCount": 2,
+    "invalidJsonld": 0,
+    "summaryText": [],
+    "path": "data/draft",
+    "width": 390,
+    "status": 200
+  },
+  {
+    "h1": 1,
+    "viewport": 390,
+    "documentWidth": 390,
+    "summaries": 0,
+    "summaryOverflow": false,
+    "blankLinks": 0,
+    "jsonldCount": 4,
+    "invalidJsonld": 0,
+    "summaryText": [],
+    "path": "giants-sns-realtime-1gun",
+    "width": 390,
+    "status": 200
+  }
+]

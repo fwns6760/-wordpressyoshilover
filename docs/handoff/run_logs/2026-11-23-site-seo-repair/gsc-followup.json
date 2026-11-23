@@ -1,0 +1,268 @@
+{
+  "site": "https://yoshilover.com/",
+  "inspection": [
+    {
+      "url": "https://yoshilover.com/data/tanaka-masahiro",
+      "verdict": "PASS",
+      "coverageState": "送信して登録されました",
+      "robotsTxtState": "ALLOWED",
+      "indexingState": "INDEXING_ALLOWED",
+      "lastCrawlTime": "2026-11-22T04:59:20Z",
+      "pageFetchState": "SUCCESSFUL",
+      "googleCanonical": "https://yoshilover.com/data/tanaka-masahiro",
+      "userCanonical": "https://yoshilover.com/data/tanaka-masahiro",
+      "sitemap": [
+        "https://yoshilover.com/data-sitemap.xml",
+        "https://yoshilover.com/index.php?xml_sitemap=params=",
+        "https://yoshilover.com/page-sitemap.xml",
+        "https://yoshilover.com/sitemap.xml",
+        "https://yoshilover.com/sitemap.xml.gz"
+      ],
+      "crawledAs": "MOBILE"
+    },
+    {
+      "url": "https://yoshilover.com/data/akahoshi-yushi",
+      "verdict": "PASS",
+      "coverageState": "送信して登録されました",
+      "robotsTxtState": "ALLOWED",
+      "indexingState": "INDEXING_ALLOWED",
+      "lastCrawlTime": "2026-11-17T01:01:49Z",
+      "pageFetchState": "SUCCESSFUL",
+      "googleCanonical": "https://yoshilover.com/data/akahoshi-yushi",
+      "userCanonical": "https://yoshilover.com/data/akahoshi-yushi",
+      "referringUrls": [
+        "https://yoshilover.com/page-sitemap.xml"
+      ],
+      "crawledAs": "MOBILE"
+    },
+    {
+      "url": "https://yoshilover.com/data/salary/tanaka-masahiro",
+      "verdict": "NEUTRAL",
+      "coverageState": "クロール済み - インデックス未登録",
+      "robotsTxtState": "ALLOWED",
+      "indexingState": "INDEXING_ALLOWED",
+      "lastCrawlTime": "2026-08-15T18:08:43Z",
+      "pageFetchState": "SUCCESSFUL",
+      "googleCanonical": "https://yoshilover.com/data/salary/tanaka-masahiro",
+      "userCanonical": "https://yoshilover.com/data/salary/tanaka-masahiro",
+      "referringUrls": [
+        "https://yoshilover.com/data/salary"
+      ],
+      "crawledAs": "MOBILE"
+    },
+    {
+      "url": "https://yoshilover.com/data/salary/sakamoto-hayato",
+      "verdict": "NEUTRAL",
+      "coverageState": "クロール済み - インデックス未登録",
+      "robotsTxtState": "ALLOWED",
+      "indexingState": "INDEXING_ALLOWED",
+      "lastCrawlTime": "2026-08-02T20:41:46Z",
+      "pageFetchState": "SUCCESSFUL",
+      "googleCanonical": "https://yoshilover.com/data/salary/sakamoto-hayato",
+      "userCanonical": "https://yoshilover.com/data/salary/sakamoto-hayato",
+      "sitemap": [
+        "https://yoshilover.com/data-sitemap.xml",
+        "https://yoshilover.com/index.php?xml_sitemap=params=",
+        "https://yoshilover.com/page-sitemap2.xml",
+        "https://yoshilover.com/sitemap.xml"
+      ],
+      "referringUrls": [
+        "https://yoshilover.com/data/salary"
+      ],
+      "crawledAs": "MOBILE"
+    },
+    {
+      "url": "https://yoshilover.com/data/draft",
+      "verdict": "PASS",
+      "coverageState": "送信して登録されました",
+      "robotsTxtState": "ALLOWED",
+      "indexingState": "INDEXING_ALLOWED",
+      "lastCrawlTime": "2026-11-06T18:50:37Z",
+      "pageFetchState": "SUCCESSFUL",
+      "googleCanonical": "https://yoshilover.com/data/draft",
+      "userCanonical": "https://yoshilover.com/data/draft",
+      "sitemap": [
+        "https://yoshilover.com/data-sitemap.xml",
+        "https://yoshilover.com/index.php?xml_sitemap=params=",
+        "https://yoshilover.com/page-sitemap.xml",
+        "https://yoshilover.com/sitemap.xml",
+        "https://yoshilover.com/sitemap.xml.gz"
+      ],
+      "referringUrls": [
+        "https://yoshilover.com/page-sitemap.xml"
+      ],
+      "crawledAs": "MOBILE"
+    },
+    {
+      "url": "https://yoshilover.com/data/interleague",
+      "verdict": "PASS",
+      "coverageState": "送信して登録されました",
+      "robotsTxtState": "ALLOWED",
+      "indexingState": "INDEXING_ALLOWED",
+      "lastCrawlTime": "2026-10-19T13:23:02Z",
+      "pageFetchState": "SUCCESSFUL",
+      "googleCanonical": "https://yoshilover.com/data/interleague",
+      "userCanonical": "https://yoshilover.com/data/interleague",
+      "sitemap": [
+        "https://yoshilover.com/data-sitemap.xml",
+        "https://yoshilover.com/index.php?xml_sitemap=params=",
+        "https://yoshilover.com/page-sitemap.xml",
+        "https://yoshilover.com/sitemap.xml",
+        "https://yoshilover.com/sitemap.xml.gz"
+      ],
+      "referringUrls": [
+        "https://yoshilover.com/page/129"
+      ],
+      "crawledAs": "MOBILE"
+    }
+  ],
+  "sitemaps_before_status": 200,
+  "sitemaps_before": {
+    "sitemap": [
+      {
+        "path": "https://yoshilover.com/data-sitemap.xml",
+        "lastSubmitted": "2026-07-06T10:04:09.161Z",
+        "isPending": false,
+        "isSitemapsIndex": false,
+        "type": "sitemap",
+        "lastDownloaded": "2026-11-21T09:40:06.761Z",
+        "warnings": "0",
+        "errors": "0",
+        "contents": [
+          {
+            "type": "web",
+            "submitted": "1126",
+            "indexed": "0"
+          }
+        ]
+      },
+      {
+        "path": "https://yoshilover.com/page-sitemap.xml",
+        "lastSubmitted": "2026-06-28T04:19:41.255Z",
+        "isPending": false,
+        "isSitemapsIndex": false,
+        "type": "sitemap",
+        "lastDownloaded": "2026-11-22T19:53:19.393Z",
+        "warnings": "0",
+        "errors": "0",
+        "contents": [
+          {
+            "type": "web",
+            "submitted": "1000",
+            "indexed": "0"
+          }
+        ]
+      },
+      {
+        "path": "https://yoshilover.com/page-sitemap2.xml",
+        "lastSubmitted": "2026-06-22T13:55:11.232Z",
+        "isPending": false,
+        "isSitemapsIndex": false,
+        "type": "sitemap",
+        "lastDownloaded": "2026-11-23T02:49:45.819Z",
+        "warnings": "0",
+        "errors": "0",
+        "contents": [
+          {
+            "type": "web",
+            "submitted": "134",
+            "indexed": "0"
+          }
+        ]
+      },
+      {
+        "path": "https://yoshilover.com/sitemap.xml",
+        "lastSubmitted": "2026-06-22T13:54:54.111Z",
+        "isPending": false,
+        "isSitemapsIndex": true,
+        "lastDownloaded": "2026-11-22T16:07:44.490Z",
+        "warnings": "0",
+        "errors": "0",
+        "contents": [
+          {
+            "type": "web",
+            "submitted": "1134",
+            "indexed": "0"
+          }
+        ]
+      }
+    ]
+  },
+  "submitted": [
+    {
+      "url": "https://yoshilover.com/sitemap.xml",
+      "status": 204
+    }
+  ],
+  "sitemaps_after": {
+    "sitemap": [
+      {
+        "path": "https://yoshilover.com/sitemap.xml",
+        "lastSubmitted": "2026-11-23T03:35:02.232Z",
+        "isPending": true,
+        "isSitemapsIndex": true,
+        "lastDownloaded": "2026-11-22T16:07:44.490Z",
+        "warnings": "0",
+        "errors": "0",
+        "contents": [
+          {
+            "type": "web",
+            "submitted": "1134",
+            "indexed": "0"
+          }
+        ]
+      },
+      {
+        "path": "https://yoshilover.com/data-sitemap.xml",
+        "lastSubmitted": "2026-07-06T10:04:09.161Z",
+        "isPending": false,
+        "isSitemapsIndex": false,
+        "type": "sitemap",
+        "lastDownloaded": "2026-11-21T09:40:06.761Z",
+        "warnings": "0",
+        "errors": "0",
+        "contents": [
+          {
+            "type": "web",
+            "submitted": "1126",
+            "indexed": "0"
+          }
+        ]
+      },
+      {
+        "path": "https://yoshilover.com/page-sitemap.xml",
+        "lastSubmitted": "2026-06-28T04:19:41.255Z",
+        "isPending": false,
+        "isSitemapsIndex": false,
+        "type": "sitemap",
+        "lastDownloaded": "2026-11-22T19:53:19.393Z",
+        "warnings": "0",
+        "errors": "0",
+        "contents": [
+          {
+            "type": "web",
+            "submitted": "1000",
+            "indexed": "0"
+          }
+        ]
+      },
+      {
+        "path": "https://yoshilover.com/page-sitemap2.xml",
+        "lastSubmitted": "2026-06-22T13:55:11.232Z",
+        "isPending": false,
+        "isSitemapsIndex": false,
+        "type": "sitemap",
+        "lastDownloaded": "2026-11-23T02:49:45.819Z",
+        "warnings": "0",
+        "errors": "0",
+        "contents": [
+          {
+            "type": "web",
+            "submitted": "134",
+            "indexed": "0"
+          }
+        ]
+      }
+    ]
+  }
+}

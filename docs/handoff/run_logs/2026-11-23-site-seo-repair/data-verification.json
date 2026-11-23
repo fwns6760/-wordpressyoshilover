@@ -1,0 +1,207 @@
+{
+  "pitchers": [
+    {
+      "name": "田中将大",
+      "url": "https://yoshilover.com/data/tanaka-masahiro",
+      "official_match": true,
+      "innings": "68.1"
+    },
+    {
+      "name": "大勢",
+      "url": "https://yoshilover.com/data/taisei",
+      "official_match": true,
+      "innings": "29.1"
+    },
+    {
+      "name": "西舘勇陽",
+      "url": "https://yoshilover.com/data/nishidate-yuyo",
+      "official_match": true,
+      "innings": "57.0"
+    },
+    {
+      "name": "山﨑伊織",
+      "url": "https://yoshilover.com/data/yamazaki-iori",
+      "official_match": true,
+      "innings": "33.1"
+    },
+    {
+      "name": "戸郷翔征",
+      "url": "https://yoshilover.com/data/togo-shosei",
+      "official_match": true,
+      "innings": "80.0"
+    },
+    {
+      "name": "竹丸和幸",
+      "url": "https://yoshilover.com/data/takemaru-kazuyuki",
+      "official_match": true,
+      "innings": "126.2"
+    },
+    {
+      "name": "ウィットリー",
+      "url": "https://yoshilover.com/data/whitley",
+      "official_match": true,
+      "innings": "81.2"
+    },
+    {
+      "name": "ハワード",
+      "url": "https://yoshilover.com/data/howard",
+      "official_match": true,
+      "innings": "37.1"
+    },
+    {
+      "name": "田和廉",
+      "url": "https://yoshilover.com/data/tawa-ren",
+      "official_match": true,
+      "innings": "28.1"
+    },
+    {
+      "name": "赤星優志",
+      "url": "https://yoshilover.com/data/akahoshi-yushi",
+      "official_match": true,
+      "innings": "53.0"
+    },
+    {
+      "name": "山城京平",
+      "url": "https://yoshilover.com/data/yamashiro-kyohei",
+      "official_match": true,
+      "innings": "2.0"
+    },
+    {
+      "name": "中川皓太",
+      "url": "https://yoshilover.com/data/nakagawa-kota",
+      "official_match": true,
+      "innings": "38.2"
+    },
+    {
+      "name": "マタ",
+      "url": "https://yoshilover.com/data/mata",
+      "official_match": true,
+      "innings": "34.0"
+    },
+    {
+      "name": "則本昂大",
+      "url": "https://yoshilover.com/data/norimoto-takahiro",
+      "official_match": true,
+      "innings": "61.0"
+    },
+    {
+      "name": "田中瑛斗",
+      "url": "https://yoshilover.com/data/tanaka-akito",
+      "official_match": true,
+      "innings": "53.1"
+    },
+    {
+      "name": "又木鉄平",
+      "url": "https://yoshilover.com/data/matagi-teppei",
+      "official_match": true,
+      "innings": "15.0"
+    },
+    {
+      "name": "森田駿哉",
+      "url": "https://yoshilover.com/data/morita-shunya",
+      "official_match": true,
+      "innings": "40.0"
+    },
+    {
+      "name": "ルシアーノ",
+      "url": "https://yoshilover.com/data/luciano",
+      "official_match": true,
+      "innings": "12.0"
+    },
+    {
+      "name": "バルドナード",
+      "url": "https://yoshilover.com/data/baldonado",
+      "official_match": true,
+      "innings": "1.1"
+    },
+    {
+      "name": "高梨雄平",
+      "url": "https://yoshilover.com/data/takanashi-yuhei",
+      "official_match": true,
+      "innings": "10.0"
+    },
+    {
+      "name": "松浦慶斗",
+      "url": "https://yoshilover.com/data/matsuura-keito",
+      "official_match": null,
+      "reason": "No NPB first-team record; existing fallback unchanged"
+    },
+    {
+      "name": "北浦竜次",
+      "url": "https://yoshilover.com/data/kitaura-ryuji",
+      "official_match": true,
+      "innings": "12.1"
+    },
+    {
+      "name": "宮原駿介",
+      "url": "https://yoshilover.com/data/miyahara-shunsuke",
+      "official_match": true,
+      "innings": "4.1"
+    },
+    {
+      "name": "船迫大雅",
+      "url": "https://yoshilover.com/data/funasako-taiga",
+      "official_match": true,
+      "innings": "35.1"
+    },
+    {
+      "name": "横川凱",
+      "url": "https://yoshilover.com/data/yokokawa-gai",
+      "official_match": null,
+      "reason": "No NPB first-team record; existing fallback unchanged"
+    },
+    {
+      "name": "泉圭輔",
+      "url": "https://yoshilover.com/data/izumi-keisuke",
+      "official_match": true,
+      "innings": "14.2"
+    },
+    {
+      "name": "山田龍聖",
+      "url": "https://yoshilover.com/data/yamada-ryusei",
+      "official_match": true,
+      "innings": "3.0"
+    },
+    {
+      "name": "石川達也",
+      "url": "https://yoshilover.com/data/ishikawa-tatsuya",
+      "official_match": true,
+      "innings": "7.1"
+    },
+    {
+      "name": "平内龍太",
+      "url": "https://yoshilover.com/data/hirauchi-ryuta",
+      "official_match": true,
+      "innings": "8.2"
+    },
+    {
+      "name": "堀田賢慎",
+      "url": "https://yoshilover.com/data/hotta-kenshin",
+      "official_match": true,
+      "innings": "40.0"
+    },
+    {
+      "name": "マルティネス",
+      "url": "https://yoshilover.com/data/martinez",
+      "official_match": true,
+      "innings": "52.1"
+    },
+    {
+      "name": "井上温大",
+      "url": "https://yoshilover.com/data/inoue-haruhiro",
+      "official_match": true,
+      "innings": "147.0"
+    },
+    {
+      "name": "小笠原慎之介",
+      "url": "https://yoshilover.com/data/ogasawara-shinnosuke",
+      "official_match": true,
+      "innings": "66.1"
+    }
+  ],
+  "official_pitchers_verified": 31,
+  "salary_tables_unchanged": 131,
+  "salary_table_differences": [],
+  "title_differences": [],
+  "changed_pages": 134
+}

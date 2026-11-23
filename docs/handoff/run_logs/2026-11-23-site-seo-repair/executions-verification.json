@@ -1,0 +1,72 @@
+[
+  {
+    "name": "wp-frontend-deploy-tfq88",
+    "completed": {
+      "lastTransitionTime": "2026-11-23T02:56:42.529827Z",
+      "message": "Execution completed successfully in 9.35s.",
+      "status": "True",
+      "type": "Completed"
+    },
+    "succeededCount": 1,
+    "failedCount": 0,
+    "startTime": "2026-11-23T02:56:33.178103Z",
+    "completionTime": "2026-11-23T02:56:42.529827Z",
+    "image": "asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/wp-frontend-deploy@sha256:27c83f5422ce50c519261f9e6f3459b8a6c0969ccf746116e25ad6786727ac6f"
+  },
+  {
+    "name": "rotation-updater-p8wjr",
+    "completed": {
+      "lastTransitionTime": "2026-11-23T02:57:26.395274Z",
+      "message": "Execution completed successfully in 39.27s.",
+      "status": "True",
+      "type": "Completed"
+    },
+    "succeededCount": 1,
+    "failedCount": 0,
+    "startTime": "2026-11-23T02:56:47.120044Z",
+    "completionTime": "2026-11-23T02:57:26.395274Z",
+    "image": "asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/rotation-updater@sha256:d51a7879f71fdf01a924b55224ce537965b7aea9950b4f59920f5bd48d7b08eb"
+  },
+  {
+    "name": "rotation-updater-4x6tt",
+    "completed": {
+      "lastTransitionTime": "2026-11-23T03:00:46.003968Z",
+      "message": "Execution completed successfully in 26.94s.",
+      "status": "True",
+      "type": "Completed"
+    },
+    "succeededCount": 1,
+    "failedCount": 0,
+    "startTime": "2026-11-23T03:00:19.063142Z",
+    "completionTime": "2026-11-23T03:00:46.003968Z",
+    "image": "asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/rotation-updater@sha256:d51a7879f71fdf01a924b55224ce537965b7aea9950b4f59920f5bd48d7b08eb"
+  },
+  {
+    "name": "data-site-publisher-dvccw",
+    "completed": {
+      "lastTransitionTime": "2026-11-23T02:57:14.370863Z",
+      "message": "Execution completed successfully in 21.23s.",
+      "status": "True",
+      "type": "Completed"
+    },
+    "succeededCount": 1,
+    "failedCount": 0,
+    "startTime": "2026-11-23T02:56:53.140308Z",
+    "completionTime": "2026-11-23T02:57:14.370863Z",
+    "image": "asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/data-site-publisher@sha256:647cd969a4946583b05aed6a85f0d620bff0fb8390d3754e3ca79e7593e45342"
+  },
+  {
+    "name": "data-site-publisher-gdxpx",
+    "completed": {
+      "lastTransitionTime": "2026-11-23T03:01:21.942777Z",
+      "message": "Execution completed successfully in 1m6.91s.",
+      "status": "True",
+      "type": "Completed"
+    },
+    "succeededCount": 1,
+    "failedCount": 0,
+    "startTime": "2026-11-23T03:00:15.031846Z",
+    "completionTime": "2026-11-23T03:01:21.942777Z",
+    "image": "asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/data-site-publisher@sha256:647cd969a4946583b05aed6a85f0d620bff0fb8390d3754e3ca79e7593e45342"
+  }
+]

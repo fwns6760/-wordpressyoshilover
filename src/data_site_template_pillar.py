@@ -309,7 +309,7 @@ def _build_recent_digest_html(player: PillarPlayerInfo) -> str:
         er_total = 0
         k_total = 0
         for (_d, _o, _m, ip, _h, k, _bb, er) in rows:
-            outs += int(ip) * 3 + round((float(ip) - int(ip)) * 10)  # 0.1/0.2=1/3表記
+            outs += round(float(ip) * 3)  # insight ETL stores real innings, rounded to .333/.667
             er_total += int(er)
             k_total += int(k)
         if outs <= 0:
@@ -562,10 +562,11 @@ def _fmt_era(v: Optional[float]) -> str:
 
 
 def _fmt_ip(ip: float) -> str:
-    """投球回 表示 (NPB 0.1/0.2 形式)。 ip 内部は 1/3 表記の小数で持つ。"""
-    if ip <= 0:
+    """実数回を野球の回表記へ変換（0.667 → 0.2回）。"""
+    if ip < 0:
         return "-"
-    return f"{ip:.1f}"
+    outs = round(float(ip) * 3)
+    return f"{outs // 3}.{outs % 3}"
 
 
 def _build_pitching_season_html(player: PillarPlayerInfo) -> str:

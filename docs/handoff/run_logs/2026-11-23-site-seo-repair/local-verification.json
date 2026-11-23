@@ -1,0 +1,29 @@
+{
+  "source_checks": [
+    {
+      "root": "/home/fwns6/code/baseballwordpress/implementations/site-seo-repair-20261122/work",
+      "python_files": 10,
+      "compileall": true,
+      "AST": true,
+      "php_lint": true,
+      "diff_check": true
+    },
+    {
+      "root": "/home/fwns6/code/wordpressyoshilover",
+      "python_files": 10,
+      "compileall": true,
+      "AST": true,
+      "php_lint": true,
+      "diff_check": true
+    }
+  ],
+  "original_tests": {
+    "passed": 151,
+    "evidence": "tests.txt"
+  },
+  "main_sync_tests": {
+    "passed": 146,
+    "command": "DATA_SITE_ICHIGUN_OFFICIAL=0 python3 -m pytest -q tests/test_site_seo_repair.py tests/test_salary_auto_refresh.py tests/test_data_site_template_interleague.py tests/test_data_site_query.py tests/test_data_site_template_pillar.py tests/test_data_site_eeat.py"
+  },
+  "main_index_preserved": true
+}

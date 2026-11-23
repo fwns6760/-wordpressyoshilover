@@ -69,6 +69,15 @@ def _final_years(data: dict) -> list[dict]:
     return [y for y in (data.get("years") or []) if y.get("final")]
 
 
+def _live_complete(data: dict) -> bool:
+    live = data.get("live") or {}
+    rows = live.get("standings") or []
+    # 2015以降は各球団18試合。暦だけで終了扱いにしない。
+    return (int(live.get("year") or 0) >= 2015 and len(rows) == 12
+            and len({r.get("team") for r in rows}) == 12
+            and all(int(r.get("g") or 0) == 18 for r in rows))
+
+
 def _all_giants_entries(data: dict) -> list[dict]:
     """通算計算用: baked final + 当年 live (あれば)。"""
     out = list(_final_years(data))
@@ -159,8 +168,8 @@ def _summary_pills(data: dict) -> str:
     live = (data.get("live") or {}).get("giants")
     if live:
         pills += _stat_pill(
-            f"{live['year']}年（開催中）",
-            f"{live['w']}勝{live['l']}敗{live['d']}分・暫定{live['rank']}位", "#c5221f",
+            f"{live['year']}年（{'全日程終了' if _live_complete(data) else '開催中'}）",
+            f"{live['w']}勝{live['l']}敗{live['d']}分・{'' if _live_complete(data) else '暫定'}{live['rank']}位", "#c5221f",
         )
     return f'<div style="margin:0 0 14px;">{pills}</div>'
 
@@ -210,10 +219,10 @@ def _live_section(data: dict) -> str:
     vs_head = "".join(f"<th>{_esc(_TEAM_LABELS[k])}</th>" for k in _TEAM_ORDER)
     vs_cells = "".join(_vs_cell((giants.get("vs") or {}).get(k)) for k in _TEAM_ORDER)
     return (
-        f'<h2 id="il-now">{_esc(year)}年 交流戦（開催中）12球団順位表</h2>'
+        f'<h2 id="il-now">{_esc(year)}年 交流戦（{"全日程終了" if _live_complete(data) else "開催中"}）12球団順位表</h2>'
         '<p style="font-size:12px;color:#666;margin:0 0 8px;">'
         f"巨人は{giants['w']}勝{giants['l']}敗{giants['d']}分（勝率{_esc(giants['pct'])}）で"
-        f"暫定{giants['rank']}位。ホーム{_wdl_text(giants.get('home'))}・"
+        f"{'' if _live_complete(data) else '暫定'}{giants['rank']}位。ホーム{_wdl_text(giants.get('home'))}・"
         f"ビジター{_wdl_text(giants.get('visitor'))}。</p>"
         '<div class="ys-il__scroll"><table><thead><tr>'
         "<th>順位</th><th>チーム</th><th>試合</th><th>勝</th><th>敗</th><th>分</th><th>勝率</th>"
@@ -272,7 +281,7 @@ def _yearly_section(data: dict) -> str:
     live = (data.get("live") or {}).get("giants")
     rows = []
     if live and not any(int(y.get("year") or 0) == int(live["year"]) for y in years):
-        rows.append(_yearly_row({**live, "wareki": ""}, live=True))
+        rows.append(_yearly_row({**live, "wareki": ""}, live=not _live_complete(data)))
     rows += [_yearly_row(y) for y in years]
     totals = _totals(_all_giants_entries(data))
     total_row = (
@@ -388,7 +397,7 @@ def render_interleague_html(data: dict | None = None) -> str:
         f'<a href="{CLUSTER_URL}" style="color:#666;">巨人選手データ</a> › <span>交流戦成績</span></nav>'
     )
     span = _span_label(data)
-    live_phrase = "開催中シーズンの12球団順位表、" if data.get("live") else ""
+    live_phrase = (("全日程終了後" if _live_complete(data) else "開催中シーズン") + "の12球団順位表、") if data.get("live") else ""
     intro = (
         '<h1 id="top" style="font-size:21px;margin:0 0 4px;">巨人 交流戦 成績一覧（年度別・歴代）</h1>'
         '<p style="font-size:13px;color:#666;margin:0 0 12px;line-height:1.7;">'

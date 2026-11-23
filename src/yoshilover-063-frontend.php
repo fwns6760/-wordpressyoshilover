@@ -7547,3 +7547,141 @@ function yoshilover_063_flush_home_standings_cache( $post_id ) {
     }
 }
 add_action( 'save_post', 'yoshilover_063_flush_home_standings_cache' );
+
+/** Reader-facing summaries calculated only from the rendered, year-labelled data tables. */
+function yoshilover_063_reading_text( $html ) {
+    $html = preg_replace( '~<br\s*/?>~i', ' ', (string) $html );
+    return trim( preg_replace( '/[\p{Z}\s]+/u', ' ', html_entity_decode( strip_tags( $html ), ENT_QUOTES | ENT_HTML5, 'UTF-8' ) ) );
+}
+
+function yoshilover_063_reading_tables( $html ) {
+    $tables = array();
+    preg_match_all( '~<table\b[^>]*>(.*?)</table>~is', $html, $matches, PREG_OFFSET_CAPTURE );
+    foreach ( $matches[1] as $match ) {
+        preg_match_all( '~<tr\b[^>]*>(.*?)</tr>~is', $match[0], $trs );
+        $rows = array();
+        foreach ( $trs[1] as $tr ) {
+            preg_match_all( '~<t[hd]\b[^>]*>(.*?)</t[hd]>~is', $tr, $cells );
+            $rows[] = array_map( 'yoshilover_063_reading_text', $cells[1] );
+        }
+        if ( count( $rows ) < 2 ) { continue; }
+        $before = substr( $html, 0, $match[1] );
+        preg_match_all( '~<h[23]\b[^>]*>(.*?)</h[23]>~is', $before, $headings );
+        $tables[] = array( 'headers' => array_shift( $rows ), 'rows' => $rows,
+            'heading' => empty( $headings[1] ) ? '' : yoshilover_063_reading_text( end( $headings[1] ) ) );
+    }
+    return $tables;
+}
+
+function yoshilover_063_reading_number( $value ) {
+    $value = str_replace( ',', '', trim( (string) $value ) );
+    return preg_match( '/^\d+$/D', $value ) ? intval( $value ) : null;
+}
+
+function yoshilover_063_reading_summary( $html ) {
+    if ( strpos( $html, 'id="sl-summary"' ) !== false ) { return array(); }
+    foreach ( yoshilover_063_reading_tables( $html ) as $table ) {
+        $h = $table['headers'];
+        $year_col = array_search( '年度', $h, true );
+        if ( $year_col === false ) { $year_col = array_search( '年', $h, true ); }
+        if ( $year_col === false ) { continue; }
+        $years = array(); $duplicates = array();
+        foreach ( $table['rows'] as $row ) {
+            if ( count( $row ) !== count( $h ) || ! preg_match( '/^(\d{4})年?$/u', $row[$year_col], $m ) ) { continue; }
+            $year = intval( $m[1] );
+            if ( isset( $years[$year] ) ) { $duplicates[$year] = true; }
+            $years[$year] = $row;
+        }
+        // Multiple team stints cannot be summed safely when a season-total row may coexist.
+        foreach ( $duplicates as $year => $_ ) { unset( $years[$year] ); }
+        if ( count( $years ) < 2 ) { continue; }
+        ksort( $years );
+        $metrics = array(
+            array( '本塁打', '本塁打', '本' ), array( '安打', '安打', '安打' ), array( '打点', '打点', '打点' ),
+            array( '勝利', '勝利数', '勝' ), array( '勝', '勝利数', '勝' ),
+            array( '奪三振', '奪三振', '奪三振' ), array( '三振', '奪三振', '奪三振' ),
+            array( '登板', '登板数', '登板' )
+        );
+        // Strikeouts in a batting table count outs by the batter, not pitching strikeouts.
+        $pitching = in_array( '防御率', $h, true );
+        $batting = in_array( '打率', $h, true );
+        if ( ! $pitching && ! $batting ) { continue; }
+        $sentences = array(); $used = array();
+        foreach ( $metrics as $metric ) {
+            if ( $pitching && in_array( $metric[0], array( '本塁打', '安打', '打点' ), true ) ) { continue; }
+            if ( ! $pitching && in_array( $metric[0], array( '勝利', '勝', '奪三振', '三振', '登板' ), true ) ) { continue; }
+            $col = array_search( $metric[0], $h, true );
+            if ( $col === false || isset( $used[$metric[1]] ) ) { continue; }
+            $values = array();
+            foreach ( $years as $year => $row ) {
+                $value = yoshilover_063_reading_number( $row[$col] );
+                if ( $value !== null ) { $values[$year] = $value; }
+            }
+            if ( count( $values ) < 2 || max( $values ) <= 0 ) { continue; }
+            $max = max( $values ); $best = array_keys( $values, $max, true );
+            $when = implode( '・', array_slice( $best, 0, 3 ) ) . '年' . ( count( $best ) > 3 ? 'など' : '' );
+            $sentences[] = '単年の最多' . $metric[1] . 'は' . $when . 'の' . number_format( $max ) . $metric[2] . 'です。';
+            $used[$metric[1]] = true;
+            if ( count( $sentences ) === 3 ) { break; }
+        }
+        if ( $sentences ) {
+            return array( 'kind' => 'career', 'heading' => '年度別成績の要点',
+                'lead' => min( array_keys( $years ) ) . '〜' . max( array_keys( $years ) ) . '年の掲載記録を比較しています。',
+                'sentences' => $sentences,
+                'note' => '比較対象はこのページの年度別表です。NPB・MLB、在籍球団、一軍・二軍の区分は各表の見出しと所属欄で確認できます。異なる表の記録は合算していません。' );
+        }
+    }
+    foreach ( yoshilover_063_reading_tables( $html ) as $table ) {
+        $h = $table['headers']; $rank = array_search( '順位', $h, true ); $name = false;
+        foreach ( array( '選手', '投手', '打者', 'チーム', '球団' ) as $label ) {
+            $name = array_search( $label, $h, true ); if ( $name !== false ) { break; }
+        }
+        if ( $rank === false || $name === false || count( $h ) < 3 ) { continue; }
+        $lines = array();
+        foreach ( $table['rows'] as $row ) {
+            if ( count( $row ) !== count( $h ) || ! preg_match( '/^[1-3]$/D', $row[$rank] ) ) { continue; }
+            $detail = '';
+            foreach ( array( '回数', '勝敗', '勝率', '推定年俸' ) as $label ) {
+                $col = array_search( $label, $h, true );
+                if ( $col !== false ) { $detail = '（' . $label . ' ' . $row[$col] . '）'; break; }
+            }
+            $lines[] = $row[$rank] . '位は' . $row[$name] . $detail . 'です。';
+            if ( count( $lines ) === 3 ) { break; }
+        }
+        if ( count( $lines ) >= 2 && $table['heading'] !== '' ) {
+            return array( 'kind' => 'ranking', 'heading' => 'ランキングの上位',
+                'lead' => $table['heading'] . 'の掲載順位です。', 'sentences' => $lines,
+                'note' => '順位の対象年度と集計範囲は表の見出しに記載しています。各選手・球団の内訳は下の表で確認できます。' );
+        }
+    }
+    return array();
+}
+
+function yoshilover_063_add_reading_summary( $content ) {
+    if ( ! is_string( $content ) || strpos( $content, 'ys-reading-summary' ) !== false ) { return $content; }
+    if ( ! is_page() ) { return $content; }
+    $uri = trim( (string) get_page_uri( get_queried_object_id() ), '/' );
+    if ( $uri !== 'data' && strpos( $uri, 'data/' ) !== 0 ) { return $content; }
+    $summary = yoshilover_063_reading_summary( $content );
+    if ( ! $summary ) { return $content; }
+    $escape = function( $value ) { return htmlspecialchars( (string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ); };
+    $block = '<section class="ys-reading-summary" style="margin:16px 0;padding:16px;background:#fff8f1;border-left:4px solid #e25400;line-height:1.8;">'
+        . '<h2 style="margin:0 0 8px;font-size:18px;">' . $escape( $summary['heading'] ) . '</h2>'
+        . '<p>' . $escape( $summary['lead'] ) . '</p><ul>';
+    foreach ( $summary['sentences'] as $sentence ) { $block .= '<li>' . $escape( $sentence ) . '</li>'; }
+    $block .= '</ul><p style="font-size:13px;">' . $escape( $summary['note'] ) . '</p></section>';
+    // Insert after the original first paragraph, before the large tables and graphs.
+    if ( preg_match( '~<p\b[^>]*>.*?</p>~is', $content, $m, PREG_OFFSET_CAPTURE ) ) {
+        $end = $m[0][1] + strlen( $m[0][0] );
+        return substr( $content, 0, $end ) . $block . substr( $content, $end );
+    }
+    return $block . $content;
+}
+add_filter( 'the_content', 'yoshilover_063_add_reading_summary', 18 );
+
+/** The SNS pages retain SWELL's page title; their in-content hero is a section heading. */
+function yoshilover_063_sns_section_headings( $content ) {
+    if ( ! is_page( array( 'giants-sns-realtime-1gun', 'giants-sns-realtime-farm' ) ) ) { return $content; }
+    return preg_replace( '~<h1\b([^>]*)>(.*?)</h1>~is', '<h2$1>$2</h2>', $content );
+}
+add_filter( 'the_content', 'yoshilover_063_sns_section_headings', 19 );

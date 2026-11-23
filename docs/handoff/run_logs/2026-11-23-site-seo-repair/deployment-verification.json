@@ -1,0 +1,17 @@
+[
+  {
+    "job": "wp-frontend-deploy",
+    "image": "asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/wp-frontend-deploy@sha256:27c83f5422ce50c519261f9e6f3459b8a6c0969ccf746116e25ad6786727ac6f",
+    "only_image_changed": true
+  },
+  {
+    "job": "rotation-updater",
+    "image": "asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/rotation-updater@sha256:d51a7879f71fdf01a924b55224ce537965b7aea9950b4f59920f5bd48d7b08eb",
+    "only_image_changed": true
+  },
+  {
+    "job": "data-site-publisher",
+    "image": "asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/data-site-publisher@sha256:647cd969a4946583b05aed6a85f0d620bff0fb8390d3754e3ca79e7593e45342",
+    "only_image_changed": true
+  }
+]

@@ -1,0 +1,18 @@
+........................................................................ [ 47%]
+........................................................................ [ 95%]
+.......                                                                  [100%]
+=============================== warnings summary ===============================
+vendor/feedparser/encodings.py:29
+  /home/fwns6/code/baseballwordpress/implementations/site-seo-repair-20261122/work/vendor/feedparser/encodings.py:29: DeprecationWarning: 'cgi' is deprecated and slated for removal in Python 3.13
+    import cgi
+
+vendor/requests/__init__.py:102
+  /home/fwns6/code/baseballwordpress/implementations/site-seo-repair-20261122/work/src/../vendor/requests/__init__.py:102: RequestsDependencyWarning: urllib3 (1.26.18) or chardet (5.2.0)/charset_normalizer (2.0.12) doesn't match a supported version!
+    warnings.warn("urllib3 ({}) or chardet ({})/charset_normalizer ({}) doesn't match a supported "
+
+vendor/certifi/core.py:36
+  /home/fwns6/code/baseballwordpress/implementations/site-seo-repair-20261122/work/src/../vendor/certifi/core.py:36: DeprecationWarning: path is deprecated. Use files() instead. Refer to https://importlib-resources.readthedocs.io/en/latest/using.html#migrating-from-legacy for migration advice.
+    _CACERT_CTX = get_path("certifi", "cacert.pem")
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+151 passed, 3 warnings in 3.41s

@@ -134,6 +134,8 @@ class Blob:
 
 
 def setup_run(monkeypatch, tmp_path, blob):
+    from src import data_site_official_season
+    monkeypatch.setattr(data_site_official_season, "comparison_snapshot", lambda *args: None)
     path=tmp_path/'salary.json';path.write_text(json.dumps(baked()))
     monkeypatch.setattr(auto,'BASE_DATA',path)
     monkeypatch.setattr(auto,'state_blob',lambda client:blob)

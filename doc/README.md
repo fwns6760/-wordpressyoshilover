@@ -1,5 +1,11 @@
 # 102 ticket index and priority board
 
+## 2026-11-23 — 全登録ページのSEO修正を本番反映
+
+- **Codex / CLOSED / LIVE_DEPLOYED_VERIFIED / Issue #134**: 要点842ページ、年俸説明102ページ、投球回/公式成績33投手、交流戦終了・ドラフト年度・SNS見出しを修正。既知1,139 URLはHTTPエラー0、PC/スマホ12ケース成功。
+- 保存内容の変更134件、公開1,134固定ページのURL/公開日/status/meta/title保持。再実行年俸write0、正本同期後146 tests pass。3ジョブはimageのみ更新。サイトマップ再送信済み、年俸2ページのGoogle再クロール/登録は未確認。
+- 詳細: `doc/done/2026-11/2026-11-22-site-seo-repair.md`。
+
 ## 2026-11-22 — 新記事4本のトピクラ設定（夕方）
 
 - **Codex / CLOSED / LIVE_VERIFIED / Issue #135**: 菅野智之家系図・亀山努・迫田さおり・辻発彦を既存7一覧へ接続。12ページに20リンクを追加し、未設定4→0。

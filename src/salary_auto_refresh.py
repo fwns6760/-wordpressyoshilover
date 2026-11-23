@@ -130,6 +130,14 @@ def hydrate_data(baked, state):
         for year, entry in state["entries"].get(player["slug"], {}).items():
             by_year[year] = copy.deepcopy(entry)
         player["years"] = sorted(by_year.values(), key=lambda y: y["year"])
+        snapshot = state.get("season_comparison") or {}
+        if snapshot.get("year") == int(target) - 1:
+            name = normalize_name(player["name"])
+            kind = "pitching" if "投手" in str(player.get("position", "")) else "batting"
+            record = snapshot.get(kind, {}).get(name)
+            if record:
+                player["season_comparison"] = {"year": snapshot["year"], "kind": kind,
+                    "checked_on": snapshot["checked_on"], **record}
         if player.get("active") is not False:
             player["salary_target_year"] = target
             player["salary_update_status"] = (
@@ -236,7 +244,7 @@ def publish_salary_pages(base, auth, cluster_id, data):
             "failed": failed, "skipped_no_page": skipped, "index": index_status}
 
 
-def refresh_salary(base, auth, cluster_id, *, now=None, client=None, collector=collect_contracts, publisher=publish_salary_pages):
+def refresh_salary(base, auth, cluster_id, *, now=None, client=None, collector=collect_contracts, publisher=publish_salary_pages, stats_collector=None):
     now = now or datetime.now(JST)
     blob = state_blob(client)
     state, generation = load_state(blob)
@@ -247,6 +255,13 @@ def refresh_salary(base, auth, cluster_id, *, now=None, client=None, collector=c
     observed = collector(now.date())  # A source failure causes no state or WP writes.
     baked = canonical_salary_data(json.loads(BASE_DATA.read_text(encoding="utf-8")))
     updated, counts = merge_observations(baked, state, observed)
+    if stats_collector is None:
+        from src.data_site_official_season import comparison_snapshot
+        stats_collector = comparison_snapshot
+    snapshot = stats_collector(int(observed["target_year"]) - 1, now.date())
+    if snapshot:
+        updated["season_comparison"] = snapshot
+    # A temporary NPB outage retains the last successful snapshot and its actual check date.
     updated["lease"] = {"owner": uuid.uuid4().hex, "until": (now+timedelta(minutes=6)).isoformat()}
     generation = save_state(blob, updated, generation)  # CAS and persistence must succeed before WP writes.
     result = {"ok": False, "error": "publication_not_completed"}

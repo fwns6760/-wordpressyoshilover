@@ -1,0 +1,75 @@
+{
+  "total": 1139,
+  "http_errors": [],
+  "indexed_baseline": 106,
+  "summary_pages": 842,
+  "indexed_summary_pages": 66,
+  "salary_summary_pages": 102,
+  "duplicate_summaries": [],
+  "h1_counts": {
+    "1": 1139
+  },
+  "metadata_changes": {
+    "canonical": [
+      "https://yoshilover.com/data/ikezawa-yoshiyuki",
+      "https://yoshilover.com/data/salary/funasako-taiga",
+      "https://yoshilover.com/data/salary/kubo-yuya"
+    ],
+    "robots": [
+      "https://yoshilover.com/data/ikezawa-yoshiyuki",
+      "https://yoshilover.com/data/salary/funasako-taiga",
+      "https://yoshilover.com/data/salary/kubo-yuya"
+    ],
+    "x_robots": [
+      "https://yoshilover.com/data/ikezawa-yoshiyuki",
+      "https://yoshilover.com/data/salary/funasako-taiga",
+      "https://yoshilover.com/data/salary/kubo-yuya"
+    ],
+    "title": [
+      "https://yoshilover.com/data/ikezawa-yoshiyuki",
+      "https://yoshilover.com/data/salary/funasako-taiga",
+      "https://yoshilover.com/data/salary/kubo-yuya"
+    ],
+    "description": [
+      "https://yoshilover.com/data/akahoshi-yushi",
+      "https://yoshilover.com/data/draft",
+      "https://yoshilover.com/data/howard",
+      "https://yoshilover.com/data/ikezawa-yoshiyuki",
+      "https://yoshilover.com/data/kitaura-ryuji",
+      "https://yoshilover.com/data/martinez",
+      "https://yoshilover.com/data/miyahara-shunsuke",
+      "https://yoshilover.com/data/morita-shunya",
+      "https://yoshilover.com/data/nakagawa-kota",
+      "https://yoshilover.com/data/nishidate-yuyo",
+      "https://yoshilover.com/data/ogasawara-shinnosuke",
+      "https://yoshilover.com/data/salary/funasako-taiga",
+      "https://yoshilover.com/data/salary/kubo-yuya",
+      "https://yoshilover.com/data/salary/salary-value",
+      "https://yoshilover.com/data/taisei",
+      "https://yoshilover.com/data/takanashi-yuhei",
+      "https://yoshilover.com/data/takemaru-kazuyuki",
+      "https://yoshilover.com/data/tanaka-akito",
+      "https://yoshilover.com/data/tanaka-masahiro",
+      "https://yoshilover.com/data/tawa-ren",
+      "https://yoshilover.com/data/togo-shosei",
+      "https://yoshilover.com/data/whitley",
+      "https://yoshilover.com/data/yamashiro-kyohei",
+      "https://yoshilover.com/data/yamazaki-iori"
+    ],
+    "h1": [
+      "https://yoshilover.com/",
+      "https://yoshilover.com/data/farm",
+      "https://yoshilover.com/data/farm/autumn-education",
+      "https://yoshilover.com/data/farm/schedule",
+      "https://yoshilover.com/data/farm/spring-education",
+      "https://yoshilover.com/data/ikezawa-yoshiyuki",
+      "https://yoshilover.com/data/jersey-numbers",
+      "https://yoshilover.com/data/mlb",
+      "https://yoshilover.com/data/notable",
+      "https://yoshilover.com/data/salary/funasako-taiga",
+      "https://yoshilover.com/data/salary/kubo-yuya",
+      "https://yoshilover.com/giants-sns-realtime-1gun",
+      "https://yoshilover.com/giants-sns-realtime-farm"
+    ]
+  }
+}

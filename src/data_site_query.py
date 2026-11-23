@@ -868,7 +868,7 @@ class PitchingStatsSeason:
     wins: int = 0
     losses: int = 0
     saves: int = 0  # save_pitcher 出現回数 (pitching_logs に save column ない為、 games join で算出)
-    ip: float = 0.0  # 投球回 (NPB 表記 0.1 / 0.2 を 1/3 / 2/3 として加算)
+    ip: float = 0.0  # 実数回 (5回1/3 = 5.333...)。表示時のみ野球表記へ変換。
     k: int = 0
     bb: int = 0
     h_allowed: int = 0
@@ -2283,8 +2283,14 @@ def fetch_contribution_streak(player_canonical: str) -> StreakInfo:
 
 
 def fetch_pitching_stats_season(player_canonical: str) -> Optional[PitchingStatsSeason]:
-    """投手 season summary。 win/lose は result_mark で集計、 IP は NPB 0.1/0.2 形式
-    (小数 = 1/3 アウト) を正しく加算。 全 0 (= 出場 0) なら None."""
+    """投手 season summary。win/lose は result_mark、IP は ETL の実数回をアウトへ戻して加算。 全 0 (= 出場 0) なら None."""
+    if _ichigun_official_enabled():
+        from src.data_site_official_season import official_season_map, normalize_name
+        # Same season as the publisher's current-season dataset; never infer from a contract year.
+        from src.data_site_template_cluster import SEASON_LABEL
+        rec = official_season_map(int(SEASON_LABEL[:4]), 'p').get(normalize_name(player_canonical))
+        if rec:
+            return PitchingStatsSeason(**{k: v for k, v in rec.items() if k != 'era'})
     path = _ensure_insight_db_local()
     if not path:
         return None
@@ -2296,7 +2302,7 @@ def fetch_pitching_stats_season(player_canonical: str) -> Optional[PitchingStats
                 SELECT COUNT(DISTINCT game_id) as g,
                        SUM(CASE WHEN result_mark = '○' THEN 1 ELSE 0 END) as w,
                        SUM(CASE WHEN result_mark = '●' THEN 1 ELSE 0 END) as l,
-                       COALESCE(SUM(IP), 0) as ip_raw,
+                       COALESCE(SUM(ROUND(IP * 3)), 0) / 3.0 as ip_raw,
                        COALESCE(SUM(K), 0) as k,
                        COALESCE(SUM(BB), 0) as bb,
                        COALESCE(SUM(H_allowed), 0) as h,
@@ -2314,12 +2320,8 @@ def fetch_pitching_stats_season(player_canonical: str) -> Optional[PitchingStats
         return None
     if not row or not row[0]:
         return None
-    # IP NPB 形式 (例: 7.0 / 5.1 / 5.2) → 小数 = 1/3 アウトに換算
-    # SUM(IP) は文字列値の合算なので 注意。 sqlite REAL 加算は単純加算、
-    # 5.1 + 5.2 = 10.3 (正しくは 10.1 = 30.1 アウト)。 厳密 計算には game 単位で
-    # convert 必要。 ここでは簡易扱い (display 用、 game 単位 IP を直接 SUM)。
-    ip_raw = float(row[3] or 0.0)
-    ip_correct = _normalize_npb_ip_sum(ip_raw)
+    # ETL stores real innings (e.g. 5.333), not baseball notation 5.1.
+    ip_correct = float(row[3] or 0.0)
     return PitchingStatsSeason(
         games=int(row[0]),
         wins=int(row[1] or 0),
@@ -2334,20 +2336,6 @@ def fetch_pitching_stats_season(player_canonical: str) -> Optional[PitchingStats
         pitches=int(row[9] or 0),
     )
 
-
-def _normalize_npb_ip_sum(ip_sum_raw: float) -> float:
-    """SUM(IP) の小数部 (1=1/3、 2=2/3) を正しく繰り上げ。
-
-    例: 5.1 + 5.2 = 10.3 → 10.3 を whole=10、 frac=3 と解釈、 frac>=3 なら
-    whole += frac // 3、 frac = frac % 3。 結果 10 + 1 = 11.0 (= 33 アウト).
-    """
-    # 元 IP が complex sum (e.g. 7.0+5.1+5.2 = 17.3) で 小数 3 以上は繰り上げ
-    whole = int(ip_sum_raw)
-    frac_tenth = round((ip_sum_raw - whole) * 10)
-    if frac_tenth >= 3:
-        whole += frac_tenth // 3
-        frac_tenth = frac_tenth % 3
-    return float(whole) + frac_tenth / 10.0
 
 
 def fetch_recent_pitching_games(player_canonical: str, limit: Optional[int] = 5) -> list[PitchingGameRow]:
@@ -2403,8 +2391,7 @@ def fetch_recent_pitching_games(player_canonical: str, limit: Optional[int] = 5)
 def fetch_pitcher_opponent_split_stats(player_canonical: str) -> list[tuple]:
     """投手 vs 各球団 集計 (456 投手 split 横展開、 打者 fetch_opponent_split_stats の投手版)。
 
-    pitching_logs JOIN games で opponent GROUP BY、 IP は NPB 0.1/0.2 形式を
-    _normalize_npb_ip_sum で正規化して ERA を算出。 read-side のみ、 新 ETL 不要。
+    pitching_logs JOIN games で opponent GROUP BY、 IP は ETL の実数回を行ごとにアウトへ戻して ERA を算出。 read-side のみ、 新 ETL 不要。
     返り値: [(opponent, G, IP, K, ER, ERA), ...] (ERA は ip=0 で None)。
     """
     path = _ensure_insight_db_local()
@@ -2417,7 +2404,7 @@ def fetch_pitcher_opponent_split_stats(player_canonical: str) -> list[tuple]:
                 """
                 SELECT g.opponent,
                        COUNT(DISTINCT p.game_id) as g,
-                       COALESCE(SUM(p.IP), 0) as ip_raw,
+                       COALESCE(SUM(ROUND(p.IP * 3)), 0) / 3.0 as ip_raw,
                        COALESCE(SUM(p.K), 0) as k,
                        COALESCE(SUM(p.ER), 0) as er
                 FROM pitching_logs p
@@ -2435,7 +2422,7 @@ def fetch_pitcher_opponent_split_stats(player_canonical: str) -> list[tuple]:
         return []
     out: list[tuple] = []
     for r in rows:
-        ip = _normalize_npb_ip_sum(float(r[2] or 0.0))
+        ip = float(r[2] or 0.0)
         er = int(r[4] or 0)
         era = (er * 9.0 / ip) if ip > 0 else None
         out.append((str(r[0]), int(r[1] or 0), ip, int(r[3] or 0), er, era))
@@ -2468,7 +2455,7 @@ def _fetch_pitcher_game_rows(player_canonical: str) -> list[tuple]:
 def _bucket_pitcher_splits(rows: list[tuple], key_fn, order: list[str]) -> list[tuple]:
     """投手 rows を key_fn でバケットし、 order 順で (label, G, IP, K, ER, ERA) 化。
 
-    IP は raw SUM を _normalize_npb_ip_sum で正規化、 ERA を算出。 IP<=0 のバケットは省く。
+    IP は行ごとにアウトへ戻して合算し、実数回で ERA を算出。 IP<=0 のバケットは省く。
     """
     agg: dict[str, list] = {}
     for game_id, game_date, ip, k, er in rows:
@@ -2477,7 +2464,7 @@ def _bucket_pitcher_splits(rows: list[tuple], key_fn, order: list[str]) -> list[
             continue
         b = agg.setdefault(key, [set(), 0.0, 0, 0])
         b[0].add(game_id)
-        b[1] += float(ip or 0.0)
+        b[1] += round(float(ip or 0.0) * 3)
         b[2] += int(k or 0)
         b[3] += int(er or 0)
     out: list[tuple] = []
@@ -2485,7 +2472,7 @@ def _bucket_pitcher_splits(rows: list[tuple], key_fn, order: list[str]) -> list[
     for key in keys:
         if key not in agg:
             continue
-        ip = _normalize_npb_ip_sum(agg[key][1])
+        ip = agg[key][1] / 3.0
         if ip <= 0:
             continue
         er = agg[key][3]

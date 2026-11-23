@@ -115,8 +115,8 @@ class RecentDigestTests(unittest.TestCase):
 
         p = PillarPlayerInfo(name="戸郷翔征", slug="togo", position="投手", jersey_number="20")
         p.recent_pitching_games = [
-            ("07/05", "中日", "○", 6.1, 5, 8, 1, 1),
-            ("06/28", "広島", "-", 5.2, 4, 6, 2, 2),
+            ("07/05", "中日", "○", 6.333, 5, 8, 1, 1),
+            ("06/28", "広島", "-", 5.667, 4, 6, 2, 2),
         ]
         html = _build_recent_digest_html(p)
         self.assertIn("12回", html)  # 6回1/3 + 5回2/3 = 12回

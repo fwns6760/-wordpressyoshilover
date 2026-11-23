@@ -1,0 +1,20 @@
+{
+  "synced_paths": [
+    "src/data_site_query.py",
+    "src/data_site_template_pillar.py",
+    "src/data_site_template_salary.py",
+    "src/salary_auto_refresh.py",
+    "src/data_site_template_interleague.py",
+    "src/data_site_template_draft.py",
+    "src/yoshilover-063-frontend.php",
+    "tests/test_data_site_eeat.py",
+    "tests/test_salary_auto_refresh.py",
+    "src/data_site_official_season.py",
+    "tests/test_site_seo_repair.py",
+    "tests/fixtures/official_season/2026-b.html",
+    "tests/fixtures/official_season/2026-p.html"
+  ],
+  "main_staged_changes_preserved": true,
+  "main_preexisting_family_link_change_preserved": true,
+  "deployed_source_unchanged": true
+}

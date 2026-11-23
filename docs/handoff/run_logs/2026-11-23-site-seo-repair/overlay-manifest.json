@@ -1,0 +1,32 @@
+{
+  "publisher": {
+    "job": "data-site-publisher",
+    "base": "asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/data-site-publisher@sha256:e479f16a1ecd1b4ecdd2a53250e2a292451c26cde6d293e3df4ffed40d4a2757",
+    "tag": "asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/data-site-publisher:site-seo-repair-20261122",
+    "files": {
+      "src/data_site_query.py": "a750dca841d89377c2cf214e88a05ca16407d3b36555eb9dadd08847c3b87402",
+      "src/data_site_template_pillar.py": "105895fcd28d16aff0d6577065cd6c5a6275c0e549c031622d6979d4678b8558",
+      "src/data_site_official_season.py": "7c0788e2ed9131586306120968a80775d8919f190f5ce3b5e630150fa5c9cd46"
+    }
+  },
+  "rotation": {
+    "job": "rotation-updater",
+    "base": "asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/rotation-updater@sha256:4c1dc0227a03adc7770c62e55c87c377f283b84c8c65b05dec4f5d88e5bb3599",
+    "tag": "asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/rotation-updater:site-seo-repair-20261122",
+    "files": {
+      "src/salary_auto_refresh.py": "3fe47467a9f477412b5d870e4ab83792cf0f060d3b18a1a21eeddd5a95135d8f",
+      "src/data_site_template_salary.py": "d97d6b3bdeb24ecf9669e7664175658e5f3812a2d8ecd5603949783a67167764",
+      "src/data_site_official_season.py": "7c0788e2ed9131586306120968a80775d8919f190f5ce3b5e630150fa5c9cd46",
+      "src/data_site_template_interleague.py": "7e0a7ffa92b95aee5ce359216f48b2cf74cefe5fcd31286d720887a33b166a5e",
+      "src/data_site_template_draft.py": "e775d282cf39fe4d8b3e727ca55e734b2c2f329cbd11d5fe3ecce6fbfd66b0c9"
+    }
+  },
+  "frontend": {
+    "job": "wp-frontend-deploy",
+    "base": "asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/wp-frontend-deploy@sha256:4651df6a6a8e61133fb495f70037021f00a76b6be9e16bd46ec82d0a795482b9",
+    "tag": "asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/wp-frontend-deploy:site-seo-repair-20261122",
+    "files": {
+      "src/yoshilover-063-frontend.php": "56051eb492008995dd5ac6fb2373209959431a06c29f7685369b6901de90252d"
+    }
+  }
+}

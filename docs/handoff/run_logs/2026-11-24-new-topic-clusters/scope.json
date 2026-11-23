@@ -1,0 +1,42 @@
+{
+  "authorization": "新記事をトピクラにシテ。内部リンクも",
+  "date_jst": "2026-11-24",
+  "todayPublishedRecords": 5,
+  "articles": [
+    66542,
+    66548,
+    66554,
+    66524
+  ],
+  "ids": [
+    60527,
+    62065,
+    62068,
+    62131,
+    62133,
+    66517,
+    62130,
+    62671,
+    66542,
+    66548,
+    66554,
+    66524,
+    2027
+  ],
+  "immutable": [
+    "existing factual prose",
+    "title",
+    "slug",
+    "status",
+    "dates",
+    "meta",
+    "categories",
+    "tags",
+    "images",
+    "other records",
+    "redirects",
+    "scheduler",
+    "env",
+    "secrets"
+  ]
+}

@@ -1,0 +1,91 @@
+{
+  "success": true,
+  "newArticles": [
+    66542,
+    66548,
+    66554
+  ],
+  "repairedArticle": 66524,
+  "changedPages": 13,
+  "newInternalLinks": 18,
+  "repairedInternalLinks": 6,
+  "missingPillarBefore": 4,
+  "missingPillarAfter": 0,
+  "publicPages": 13,
+  "browserCases": 18,
+  "allPublishedRecords": 584,
+  "allClusterArticles": 562,
+  "oldUrlReferencesAfter": 0,
+  "temporaryGuard": 105,
+  "guardInactive": true,
+  "evidence": [
+    {
+      "file": "plan.json",
+      "sha256": "6e655754cc91c3588e85af8e057f5840f2936a75fa7f4938d87aa51f362239c0"
+    },
+    {
+      "file": "scope.json",
+      "sha256": "0f30e16113da97c1b2bb7caa3aafb0bd87a86d898e2bdb637321459476a4ab5b"
+    },
+    {
+      "file": "config.json",
+      "sha256": "747e39e85bb756efe5a8886b50f59a35eab052ef58766b94b9f2f93195d1ebc5"
+    },
+    {
+      "file": "content-proofs.json",
+      "sha256": "89ace4d2a456376ec98420552ca096044d334745f29713ede875453e8478bafa"
+    },
+    {
+      "file": "content-verification.json",
+      "sha256": "296d77735d399727813861964292250b8d15e52b703c0c259288be84539655dc"
+    },
+    {
+      "file": "public-after-http.json",
+      "sha256": "f59a898ef80fac01fe0a630fe954061636f3d9ea99c04505a2cbdb59504a0f0f"
+    },
+    {
+      "file": "public-after-checks.json",
+      "sha256": "7def3be2c8b1a35623ebab419130efb5823e8786baf0dcbfa2d3787ab9f5d16a"
+    },
+    {
+      "file": "ui-verification.json",
+      "sha256": "ea66c1e1fa2b7d2d02e9545dbe32f3c2126bba783c866bbcfff84d2a08c89a46"
+    },
+    {
+      "file": "preview-checks.json",
+      "sha256": "ea66c1e1fa2b7d2d02e9545dbe32f3c2126bba783c866bbcfff84d2a08c89a46"
+    },
+    {
+      "file": "article-schema-check.json",
+      "sha256": "ec566f3c4799dd4bbf56b9d8b774a9ad07ada31580a6bfda0738c400bf83bf37"
+    },
+    {
+      "file": "syntax-checks.json",
+      "sha256": "00a52e9419cb29f964039d538b34a8135c2cf1b902a85a0958826dc93f917c25"
+    },
+    {
+      "file": "record-differences.json",
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "file": "all-final-gaps.json",
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "file": "active-snippets-before.json",
+      "sha256": "7cad732f95633c5bcf353c956bda372a0820c526c3ea08c08fc46d608163c24c"
+    },
+    {
+      "file": "active-snippets-after.json",
+      "sha256": "7cad732f95633c5bcf353c956bda372a0820c526c3ea08c08fc46d608163c24c"
+    },
+    {
+      "file": "guard-final-state.json",
+      "sha256": "1b96d99acf0d2332b6868a74be7cfece3bbc7ef8daeb54e968e49b5be9077b7d"
+    },
+    {
+      "file": "apply-journal.json",
+      "sha256": "cd6145e6c0d4c06fa79d96390b0bdd0302e2d3f93efb8a98311287e1361c6578"
+    }
+  ]
+}

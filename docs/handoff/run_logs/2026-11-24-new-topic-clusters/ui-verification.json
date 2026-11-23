@@ -1,0 +1,168 @@
+{
+  "success": true,
+  "method": "Saved page HTML executed with third-party/theme scripts excluded; link destinations separately verified over HTTP.",
+  "results": [
+    {
+      "hub": 60527,
+      "article": 66542,
+      "width": 1280,
+      "singlePersonCard": true,
+      "articleLink": true,
+      "searchAndFilters": true,
+      "noOverflow": true
+    },
+    {
+      "hub": 62130,
+      "article": 66542,
+      "width": 1280,
+      "singlePersonCard": true,
+      "articleLink": true,
+      "searchAndFilters": true,
+      "noOverflow": true
+    },
+    {
+      "hub": 62671,
+      "article": 66548,
+      "width": 1280,
+      "singlePersonCard": true,
+      "articleLink": true,
+      "searchAndFilters": true,
+      "noOverflow": true
+    },
+    {
+      "hub": 62671,
+      "article": 66554,
+      "width": 1280,
+      "singlePersonCard": true,
+      "articleLink": true,
+      "searchAndFilters": true,
+      "noOverflow": true
+    },
+    {
+      "hub": 60527,
+      "article": 66524,
+      "width": 1280,
+      "singlePersonCard": true,
+      "articleLink": true,
+      "searchAndFilters": true,
+      "noOverflow": true
+    },
+    {
+      "hub": 62065,
+      "article": 66524,
+      "width": 1280,
+      "singlePersonCard": true,
+      "articleLink": true,
+      "searchAndFilters": true,
+      "noOverflow": true
+    },
+    {
+      "hub": 62068,
+      "article": 66524,
+      "width": 1280,
+      "singlePersonCard": true,
+      "articleLink": true,
+      "searchAndFilters": true,
+      "noOverflow": true
+    },
+    {
+      "hub": 62131,
+      "article": 66524,
+      "width": 1280,
+      "singlePersonCard": true,
+      "articleLink": true,
+      "searchAndFilters": true,
+      "noOverflow": true
+    },
+    {
+      "hub": 62133,
+      "article": 66524,
+      "width": 1280,
+      "singlePersonCard": true,
+      "articleLink": true,
+      "searchAndFilters": true,
+      "noOverflow": true
+    },
+    {
+      "hub": 60527,
+      "article": 66542,
+      "width": 390,
+      "singlePersonCard": true,
+      "articleLink": true,
+      "searchAndFilters": true,
+      "noOverflow": true
+    },
+    {
+      "hub": 62130,
+      "article": 66542,
+      "width": 390,
+      "singlePersonCard": true,
+      "articleLink": true,
+      "searchAndFilters": true,
+      "noOverflow": true
+    },
+    {
+      "hub": 62671,
+      "article": 66548,
+      "width": 390,
+      "singlePersonCard": true,
+      "articleLink": true,
+      "searchAndFilters": true,
+      "noOverflow": true
+    },
+    {
+      "hub": 62671,
+      "article": 66554,
+      "width": 390,
+      "singlePersonCard": true,
+      "articleLink": true,
+      "searchAndFilters": true,
+      "noOverflow": true
+    },
+    {
+      "hub": 60527,
+      "article": 66524,
+      "width": 390,
+      "singlePersonCard": true,
+      "articleLink": true,
+      "searchAndFilters": true,
+      "noOverflow": true
+    },
+    {
+      "hub": 62065,
+      "article": 66524,
+      "width": 390,
+      "singlePersonCard": true,
+      "articleLink": true,
+      "searchAndFilters": true,
+      "noOverflow": true
+    },
+    {
+      "hub": 62068,
+      "article": 66524,
+      "width": 390,
+      "singlePersonCard": true,
+      "articleLink": true,
+      "searchAndFilters": true,
+      "noOverflow": true
+    },
+    {
+      "hub": 62131,
+      "article": 66524,
+      "width": 390,
+      "singlePersonCard": true,
+      "articleLink": true,
+      "searchAndFilters": true,
+      "noOverflow": true
+    },
+    {
+      "hub": 62133,
+      "article": 66524,
+      "width": 390,
+      "singlePersonCard": true,
+      "articleLink": true,
+      "searchAndFilters": true,
+      "noOverflow": true
+    }
+  ]
+}

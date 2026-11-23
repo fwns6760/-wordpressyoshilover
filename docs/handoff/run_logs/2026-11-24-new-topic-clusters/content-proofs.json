@@ -1,0 +1,72 @@
+{
+  "success": true,
+  "proofs": [
+    {
+      "id": 60527,
+      "reversible": true,
+      "existingProseLinksImagesScriptsPreserved": true
+    },
+    {
+      "id": 62065,
+      "reversible": true,
+      "existingProseLinksImagesScriptsPreserved": true
+    },
+    {
+      "id": 62068,
+      "reversible": true,
+      "existingProseLinksImagesScriptsPreserved": true
+    },
+    {
+      "id": 62131,
+      "reversible": true,
+      "existingProseLinksImagesScriptsPreserved": true
+    },
+    {
+      "id": 62133,
+      "reversible": true,
+      "existingProseLinksImagesScriptsPreserved": true
+    },
+    {
+      "id": 66517,
+      "reversible": true,
+      "existingProseLinksImagesScriptsPreserved": true
+    },
+    {
+      "id": 62130,
+      "reversible": true,
+      "existingProseLinksImagesScriptsPreserved": true
+    },
+    {
+      "id": 62671,
+      "reversible": true,
+      "existingProseLinksImagesScriptsPreserved": true
+    },
+    {
+      "id": 66542,
+      "reversible": true,
+      "existingProseLinksImagesScriptsPreserved": true
+    },
+    {
+      "id": 66548,
+      "reversible": true,
+      "existingProseLinksImagesScriptsPreserved": true
+    },
+    {
+      "id": 66554,
+      "reversible": true,
+      "existingProseLinksImagesScriptsPreserved": true
+    },
+    {
+      "id": 66524,
+      "reversible": true,
+      "existingProseLinksImagesScriptsPreserved": true
+    },
+    {
+      "id": 2027,
+      "reversible": true,
+      "existingProseLinksImagesScriptsPreserved": true
+    }
+  ],
+  "newLinks": 18,
+  "repairedLinks": 6
+}

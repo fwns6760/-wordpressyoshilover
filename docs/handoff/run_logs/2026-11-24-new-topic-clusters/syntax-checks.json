@@ -1,0 +1,41 @@
+{
+  "success": true,
+  "checks": [
+    {
+      "file": "public-checks.py",
+      "ast": true
+    },
+    {
+      "file": "prepare.py",
+      "ast": true
+    },
+    {
+      "file": "verify-schema.py",
+      "ast": true
+    },
+    {
+      "file": "fetch-public.mjs",
+      "nodeSyntax": true
+    },
+    {
+      "file": "verify.mjs",
+      "nodeSyntax": true
+    },
+    {
+      "file": "apply.mjs",
+      "nodeSyntax": true
+    },
+    {
+      "file": "ui.mjs",
+      "nodeSyntax": true
+    },
+    {
+      "file": "fetch.mjs",
+      "nodeSyntax": true
+    },
+    {
+      "file": "guard.php",
+      "phpSyntax": true
+    }
+  ]
+}

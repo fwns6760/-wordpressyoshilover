@@ -1,0 +1,212 @@
+{
+  "articles": [
+    {
+      "id": 66542,
+      "name": "鍵谷陽平",
+      "kana": "かぎやようへい",
+      "aliases": [
+        "鍵谷 陽平"
+      ],
+      "topics": [
+        "marriage",
+        "children",
+        "parents"
+      ],
+      "label": "鍵谷陽平の妻・青谷優衣と子供、実家の家族",
+      "description": "妻の青谷優衣や子供、七飯町の実家と両親・兄弟について紹介しています。"
+    },
+    {
+      "id": 66548,
+      "name": "貴乃花",
+      "kana": "たかのはな",
+      "aliases": [
+        "貴乃花光司",
+        "たかのはなこうじ",
+        "花田光司"
+      ],
+      "topics": [
+        "marriage",
+        "children"
+      ],
+      "label": "貴乃花の再婚・現在の妻と家族",
+      "description": "再婚と現在の妻、結婚歴や子供について、公表された情報と報道を分けて紹介しています。"
+    },
+    {
+      "id": 66554,
+      "name": "長州力",
+      "kana": "ちょうしゅうりき",
+      "aliases": [
+        "長州 力",
+        "吉田光雄"
+      ],
+      "topics": [
+        "marriage",
+        "children"
+      ],
+      "label": "長州力の妻・娘と家族",
+      "description": "妻との結婚・再婚、3人の娘や娘婿など、長州力の家族について紹介しています。"
+    },
+    {
+      "id": 66524,
+      "name": "西本聖",
+      "kana": "にしもとたかし",
+      "aliases": [
+        "西本 聖"
+      ],
+      "topics": [
+        "marriage",
+        "children",
+        "parents"
+      ],
+      "label": "西本聖の結婚・妻と家族",
+      "description": "結婚と妻にまつわるエピソード、子供や実家の家族に関する情報を紹介しています。"
+    }
+  ],
+  "placements": [
+    {
+      "article": 66542,
+      "hub": 60527,
+      "category": "OB",
+      "position": "元投手"
+    },
+    {
+      "article": 66542,
+      "hub": 62130,
+      "category": "監督・コーチ",
+      "position": "2027年から投手コーチ補佐兼投手コーディネーター補佐"
+    },
+    {
+      "article": 66548,
+      "hub": 62671,
+      "category": "格闘技・武道",
+      "position": "大相撲・第65代横綱"
+    },
+    {
+      "article": 66554,
+      "hub": 62671,
+      "category": "格闘技・武道",
+      "position": "元プロレスラー"
+    },
+    {
+      "article": 66524,
+      "hub": 60527,
+      "category": "OB",
+      "existing": true
+    },
+    {
+      "article": 66524,
+      "hub": 62065,
+      "category": "監督・コーチ",
+      "existing": true
+    },
+    {
+      "article": 66524,
+      "hub": 62068,
+      "category": "OB",
+      "existing": true
+    },
+    {
+      "article": 66524,
+      "hub": 62131,
+      "category": "OB",
+      "existing": true
+    },
+    {
+      "article": 66524,
+      "hub": 62133,
+      "category": "監督・コーチ",
+      "existing": true
+    }
+  ],
+  "peers": [
+    {
+      "source": 66542,
+      "target": 2027,
+      "context": "巨人でプレーした投手の家族については、",
+      "anchor": "高梨雄平の結婚・妻と子供の記事"
+    },
+    {
+      "source": 2027,
+      "target": 66542,
+      "context": "巨人でプレーした投手の家族については、",
+      "anchor": "鍵谷陽平の妻・青谷優衣と子供の記事"
+    },
+    {
+      "source": 66548,
+      "target": 66554,
+      "context": "スポーツ界の結婚・再婚と家族の話題では、",
+      "anchor": "長州力の妻との再婚・娘と家族の記事"
+    },
+    {
+      "source": 66554,
+      "target": 66548,
+      "context": "スポーツ界の結婚・再婚と家族の話題では、",
+      "anchor": "貴乃花の再婚・現在の妻と家族の記事"
+    },
+    {
+      "source": 66524,
+      "target": 66517,
+      "context": "同じ巨人OBの家族については、",
+      "anchor": "定岡正二の結婚・実家と兄弟の記事"
+    }
+  ],
+  "hubLabels": {
+    "60527": "巨人の選手・OBの結婚・家族まとめ",
+    "62130": "日本ハムの選手・OB・コーチの結婚・家族まとめ",
+    "62671": "アスリートの結婚・家族まとめ",
+    "62065": "阪神の選手・監督・コーチの結婚・家族まとめ",
+    "62068": "中日の選手・OBの結婚・家族まとめ",
+    "62131": "オリックス・近鉄OBの結婚・家族まとめ",
+    "62133": "ロッテの選手・OB・コーチの結婚・家族まとめ"
+  },
+  "repairs": [
+    {
+      "source": 60527,
+      "target": 66524,
+      "old": "https://prosports.yoshilover.com/enatsutakashi/"
+    },
+    {
+      "source": 62065,
+      "target": 66524,
+      "old": "https://prosports.yoshilover.com/enatsutakashi/"
+    },
+    {
+      "source": 62068,
+      "target": 66524,
+      "old": "https://prosports.yoshilover.com/enatsutakashi/"
+    },
+    {
+      "source": 62131,
+      "target": 66524,
+      "old": "https://prosports.yoshilover.com/enatsutakashi/"
+    },
+    {
+      "source": 62133,
+      "target": 66524,
+      "old": "https://prosports.yoshilover.com/enatsutakashi/"
+    },
+    {
+      "source": 66517,
+      "target": 66524,
+      "old": "https://prosports.yoshilover.com/enatsutakashi/"
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://www.fighters.co.jp/news/detail/202400593561.html",
+      "reason": "鍵谷陽平の引退と巨人・日本ハムの所属歴。"
+    },
+    {
+      "url": "https://pacificleague.com/news/2026/11/10056825",
+      "reason": "2026年11月8日の新任コーチ発表報道。日本ハムは監督・コーチ欄、2027年からと明記。"
+    },
+    {
+      "url": "https://www.sumo.or.jp/Yokozuna/profile/65/",
+      "reason": "貴乃花は第65代横綱、読みと本名。"
+    },
+    {
+      "url": "https://lostones.jp/archive/manage/77/",
+      "reason": "所属事務所の長州力プロフィール。元プロレスラーとして分類。"
+    }
+  ]
+}

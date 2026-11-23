@@ -1,0 +1,29 @@
+{
+  "success": true,
+  "checks": [
+    {
+      "id": 66542,
+      "subject": "鍵谷陽平",
+      "correctArticleAbout": true,
+      "visibleAndSchemaBreadcrumbHub": "https://prosports.yoshilover.com/fighters-tsuma-kazoku/"
+    },
+    {
+      "id": 66548,
+      "subject": "貴乃花",
+      "correctArticleAbout": true,
+      "visibleAndSchemaBreadcrumbHub": "https://prosports.yoshilover.com/athlete-family/"
+    },
+    {
+      "id": 66554,
+      "subject": "長州力",
+      "correctArticleAbout": true,
+      "visibleAndSchemaBreadcrumbHub": "https://prosports.yoshilover.com/athlete-family/"
+    },
+    {
+      "id": 66524,
+      "subject": "西本聖",
+      "correctArticleAbout": true,
+      "visibleAndSchemaBreadcrumbHub": "https://prosports.yoshilover.com/hanshin-tsuma-kazoku/"
+    }
+  ]
+}

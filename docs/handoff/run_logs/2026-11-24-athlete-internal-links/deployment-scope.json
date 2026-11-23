@@ -1,0 +1,13 @@
+{
+  "job": "prosports-weekly-seo-check",
+  "originalImage": "asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/prosports-weekly-seo-check:weekly-20261106-t90",
+  "newImage": "asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/prosports-weekly-seo-check:hub-coverage-20261124",
+  "sourceBeforeSha256": "a2648b83aa878652cd99aae49a05e63a2582ff3f5eb16f09375b45aa510f19a9",
+  "sourceAfterSha256": "71a623ac53b0da383726c41b1423293706f72c4a8c05e3abce6dc73192dbf9ac",
+  "changedFiles": [
+    "/app/src/prosports_weekly_seo_check.py"
+  ],
+  "imageOnly": true,
+  "manualExecution": false,
+  "mailSent": false
+}

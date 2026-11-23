@@ -1,0 +1,62 @@
+{
+  "success": true,
+  "method": "Four representative articles, desktop/mobile; saved public HTML and site CSS, scripts/images excluded. All links separately checked on 24 public pages.",
+  "results": [
+    {
+      "id": 65784,
+      "width": 1280,
+      "linksVisible": true,
+      "anchorsCorrect": true,
+      "addedBlocksWithinViewport": true
+    },
+    {
+      "id": 66184,
+      "width": 1280,
+      "linksVisible": true,
+      "anchorsCorrect": true,
+      "addedBlocksWithinViewport": true
+    },
+    {
+      "id": 62614,
+      "width": 1280,
+      "linksVisible": true,
+      "anchorsCorrect": true,
+      "addedBlocksWithinViewport": true
+    },
+    {
+      "id": 65754,
+      "width": 1280,
+      "linksVisible": true,
+      "anchorsCorrect": true,
+      "addedBlocksWithinViewport": true
+    },
+    {
+      "id": 65784,
+      "width": 390,
+      "linksVisible": true,
+      "anchorsCorrect": true,
+      "addedBlocksWithinViewport": true
+    },
+    {
+      "id": 66184,
+      "width": 390,
+      "linksVisible": true,
+      "anchorsCorrect": true,
+      "addedBlocksWithinViewport": true
+    },
+    {
+      "id": 62614,
+      "width": 390,
+      "linksVisible": true,
+      "anchorsCorrect": true,
+      "addedBlocksWithinViewport": true
+    },
+    {
+      "id": 65754,
+      "width": 390,
+      "linksVisible": true,
+      "anchorsCorrect": true,
+      "addedBlocksWithinViewport": true
+    }
+  ]
+}

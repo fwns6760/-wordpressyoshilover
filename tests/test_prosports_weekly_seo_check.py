@@ -22,6 +22,27 @@ def test_page_key_strips_fragment_and_decodes():
     assert page_key(f"{S}%E3%81%82/#index_id0") == f"{S}あ/"
 
 
+def test_hub_coverage_includes_articles_listed_only_on_celebrity_page(monkeypatch):
+    from types import SimpleNamespace
+    from src import prosports_weekly_seo_check as check
+
+    slugs = "akikiyohara yufunatsuki yamaseshinnosuke nomurasachiyo tairaairi ishikawarika kotobukirui santosanna itanotomomi kozonoyome nabetanimako adachikana".split()
+    article_urls = {f"{S}{slug}/" for slug in slugs}
+    page_html = "<main>" + "".join(f'<a href="{url}">家族の記事</a>' for url in sorted(article_urls)) + "</main>"
+    fetched = []
+
+    def get(url, **kwargs):
+        fetched.append(url)
+        # This hub is a native WordPress page; its public HTML is still crawlable.
+        return SimpleNamespace(text=page_html if url == f"{S}athlete-celebrities/" else "<main></main>")
+
+    monkeypatch.setattr(check.requests, "get", get)
+    monkeypatch.setattr(check.time, "sleep", lambda _: None)
+    linked = check._hub_linked_urls()
+    assert article_urls <= linked
+    assert fetched.count(f"{S}athlete-celebrities/") == 1
+
+
 def test_cohort_uses_only_posts_in_age_band():
     posts = [_post(1, 10), _post(2, 20), _post(3, 30), _post(4, 50)]
     impr = {f"{S}p2/": 100.0, f"{S}p3/": 300.0, f"{S}p4/": 9999.0}

@@ -1,0 +1,443 @@
+{
+  "pillar_pages": [
+    {
+      "id": 62671,
+      "title": "アスリートの結婚と家族｜格闘技・冬季競技・その他のスポーツ",
+      "url": "https://prosports.yoshilover.com/athlete-family/",
+      "intent": "競技や家族の話題から人物記事を探す",
+      "scope": "既存のアスリート一覧",
+      "excluded": "個別人物の詳細・記事本文の複製",
+      "action": "既存一覧を維持"
+    }
+  ],
+  "cluster_articles": [
+    {
+      "id": 817,
+      "title": "荒川静香の旦那は勤務先｜名前・年齢・馴れ初めと子供は何人何歳・学校？長女の新体操・実家・父・兄弟まで",
+      "url": "https://prosports.yoshilover.com/arakawashizuka/",
+      "intent": "各人物の結婚・子供・実家の家族について調べる",
+      "pillar_difference": "個別人物の詳細を扱う",
+      "cannibalization": "既存URLを使用。新規作成・複製・統合なし。"
+    },
+    {
+      "id": 940,
+      "title": "吉田沙保里の旦那や年齢？結婚しない理由？子供の噂の理由",
+      "url": "https://prosports.yoshilover.com/yoshidasayuri/",
+      "intent": "各人物の結婚・子供・実家の家族について調べる",
+      "pillar_difference": "個別人物の詳細を扱う",
+      "cannibalization": "既存URLを使用。新規作成・複製・統合なし。"
+    },
+    {
+      "id": 965,
+      "title": "浅尾美和の旦那の現在職業は美容師？可児市の美容院・住まい・子供の野球・実家や家族・両親・弟・美紀",
+      "url": "https://prosports.yoshilover.com/asaomiwa/",
+      "intent": "各人物の結婚・子供・実家の家族について調べる",
+      "pillar_difference": "個別人物の詳細を扱う",
+      "cannibalization": "既存URLを使用。新規作成・複製・統合なし。"
+    },
+    {
+      "id": 51031,
+      "title": "田中理恵の旦那は誰？結婚相手は森翔太・太陽光発電社長？職業・顔・結婚歴と子供何歳・学校・娘手術なぜ",
+      "url": "https://prosports.yoshilover.com/tanakarietaisou/",
+      "intent": "各人物の結婚・子供・実家の家族について調べる",
+      "pillar_difference": "個別人物の詳細を扱う",
+      "cannibalization": "既存URLを使用。新規作成・複製・統合なし。"
+    },
+    {
+      "id": 55807,
+      "title": "羽生結弦の家族構成と実家！父親は教師？母親の名前・姉さや（saya hanyu）やマンション",
+      "url": "https://prosports.yoshilover.com/hanyusfamily-2/",
+      "intent": "各人物の結婚・子供・実家の家族について調べる",
+      "pillar_difference": "個別人物の詳細を扱う",
+      "cannibalization": "既存URLを使用。新規作成・複製・統合なし。"
+    },
+    {
+      "id": 62614,
+      "title": "山本キッド（KID）の嫁・ゆいさんの年齢やインスタ、現在？子供は何人で現在どうしている？",
+      "url": "https://prosports.yoshilover.com/yamamotokid/",
+      "intent": "各人物の結婚・子供・実家の家族について調べる",
+      "pillar_difference": "個別人物の詳細を扱う",
+      "cannibalization": "既存URLを使用。新規作成・複製・統合なし。"
+    },
+    {
+      "id": 62829,
+      "title": "後藤希友は結婚してる？兄弟・出身中学・血液型を公式情報で確認",
+      "url": "https://prosports.yoshilover.com/gotomiu/",
+      "intent": "各人物の結婚・子供・実家の家族について調べる",
+      "pillar_difference": "個別人物の詳細を扱う",
+      "cannibalization": "既存URLを使用。新規作成・複製・統合なし。"
+    },
+    {
+      "id": 63988,
+      "title": "上野由岐子は結婚相手？子供・指輪・彼女・ジェンダーの噂と実家の家族（父親・母親・兄弟）",
+      "url": "https://prosports.yoshilover.com/uenoyukiko/",
+      "intent": "各人物の結婚・子供・実家の家族について調べる",
+      "pillar_difference": "個別人物の詳細を扱う",
+      "cannibalization": "既存URLを使用。新規作成・複製・統合なし。"
+    },
+    {
+      "id": 64293,
+      "title": "畠山愛理の現在の住まい？実家・両親・父親・母・兄弟と宗教も",
+      "url": "https://prosports.yoshilover.com/hatakeyamaeri/",
+      "intent": "各人物の結婚・子供・実家の家族について調べる",
+      "pillar_difference": "個別人物の詳細を扱う",
+      "cannibalization": "既存URLを使用。新規作成・複製・統合なし。"
+    },
+    {
+      "id": 64716,
+      "title": "須藤元気の妻（嫁）は誰？再婚相手・彼女・子供は何人・国籍・ソロモン流の放送回まで解説",
+      "url": "https://prosports.yoshilover.com/sudogenki/",
+      "intent": "各人物の結婚・子供・実家の家族について調べる",
+      "pillar_difference": "個別人物の詳細を扱う",
+      "cannibalization": "既存URLを使用。新規作成・複製・統合なし。"
+    },
+    {
+      "id": 64843,
+      "title": "朝倉未来の実家どこ？豊橋の場所と家族構成｜父親の名前・年齢・職業・現在・顔、母親の年齢・裁判、兄弟は何人、祖父",
+      "url": "https://prosports.yoshilover.com/asakuramikuru/",
+      "intent": "各人物の結婚・子供・実家の家族について調べる",
+      "pillar_difference": "個別人物の詳細を扱う",
+      "cannibalization": "既存URLを使用。新規作成・複製・統合なし。"
+    },
+    {
+      "id": 65386,
+      "title": "鍵山優真の結婚相手は？家族構成と母親、父の脳出血・車椅子・現在、兄弟、祖母の苗字",
+      "url": "https://prosports.yoshilover.com/kagiyamayuuma/",
+      "intent": "各人物の結婚・子供・実家の家族について調べる",
+      "pillar_difference": "個別人物の詳細を扱う",
+      "cannibalization": "既存URLを使用。新規作成・複製・統合なし。"
+    },
+    {
+      "id": 65754,
+      "title": "山本聖子はハーフ？なぜモテる？子供5人と連れ子の年齢、ダルビッシュ有との馴れ初め",
+      "url": "https://prosports.yoshilover.com/yamamotoseiko/",
+      "intent": "各人物の結婚・子供・実家の家族について調べる",
+      "pillar_difference": "個別人物の詳細を扱う",
+      "cannibalization": "既存URLを使用。新規作成・複製・統合なし。"
+    },
+    {
+      "id": 65784,
+      "title": "浅田真央の父親は元ホスト？職業・店・現在と年齢、母親が亡くなった死因の肝硬変はなぜ・若い頃、兄と実家",
+      "url": "https://prosports.yoshilover.com/asadamao/",
+      "intent": "各人物の結婚・子供・実家の家族について調べる",
+      "pillar_difference": "個別人物の詳細を扱う",
+      "cannibalization": "既存URLを使用。新規作成・複製・統合なし。"
+    },
+    {
+      "id": 66168,
+      "title": "安藤美姫の実家は金持ち？両親と母親クレーマー説、父親が亡くなった事故",
+      "url": "https://prosports.yoshilover.com/andomiki/",
+      "intent": "各人物の結婚・子供・実家の家族について調べる",
+      "pillar_difference": "個別人物の詳細を扱う",
+      "cannibalization": "既存URLを使用。新規作成・複製・統合なし。"
+    },
+    {
+      "id": 66184,
+      "title": "水谷隼の嫁の出身・旧姓・馴れ初め・年齢｜結婚はいつ？相手と子供何人、娘の名前も",
+      "url": "https://prosports.yoshilover.com/mizutanijyun/",
+      "intent": "各人物の結婚・子供・実家の家族について調べる",
+      "pillar_difference": "個別人物の詳細を扱う",
+      "cannibalization": "既存URLを使用。新規作成・複製・統合なし。"
+    },
+    {
+      "id": 66319,
+      "title": "石川佳純の結婚相手は誰？婚約者は？旦那の職業・写真・実家は",
+      "url": "https://prosports.yoshilover.com/ishikawakasumi/",
+      "intent": "各人物の結婚・子供・実家の家族について調べる",
+      "pillar_difference": "個別人物の詳細を扱う",
+      "cannibalization": "既存URLを使用。新規作成・複製・統合なし。"
+    },
+    {
+      "id": 66328,
+      "title": "川合俊一の妻・中野みゆきとの馴れ初めと現在｜子供はいない？何人？実家も",
+      "url": "https://prosports.yoshilover.com/kawaisyunichi/",
+      "intent": "各人物の結婚・子供・実家の家族について調べる",
+      "pillar_difference": "個別人物の詳細を扱う",
+      "cannibalization": "既存URLを使用。新規作成・複製・統合なし。"
+    },
+    {
+      "id": 66345,
+      "title": "福原愛の実家は金持ち？父親・福原武彦と絶縁、母親の現在と住まい・国籍、兄・秀行",
+      "url": "https://prosports.yoshilover.com/fukuharaai/",
+      "intent": "各人物の結婚・子供・実家の家族について調べる",
+      "pillar_difference": "個別人物の詳細を扱う",
+      "cannibalization": "既存URLを使用。新規作成・複製・統合なし。"
+    },
+    {
+      "id": 66402,
+      "title": "高橋成美の実家は松戸で金持ち？ハーフの噂、父親の仕事は外交官？母親・兄弟と家族構成",
+      "url": "https://prosports.yoshilover.com/takahashinarumi/",
+      "intent": "各人物の結婚・子供・実家の家族について調べる",
+      "pillar_difference": "個別人物の詳細を扱う",
+      "cannibalization": "既存URLを使用。新規作成・複製・統合なし。"
+    },
+    {
+      "id": 66418,
+      "title": "竹下佳江の旦那との馴れ初めは？再婚・元夫の噂と実家の家族、住まい",
+      "url": "https://prosports.yoshilover.com/takeshitayoshie/",
+      "intent": "各人物の結婚・子供・実家の家族について調べる",
+      "pillar_difference": "個別人物の詳細を扱う",
+      "cannibalization": "既存URLを使用。新規作成・複製・統合なし。"
+    },
+    {
+      "id": 66425,
+      "title": "登坂絵莉の旦那の職業と年齢は？子供、実家の家族と父親",
+      "url": "https://prosports.yoshilover.com/tousakaeri/",
+      "intent": "各人物の結婚・子供・実家の家族について調べる",
+      "pillar_difference": "個別人物の詳細を扱う",
+      "cannibalization": "既存URLを使用。新規作成・複製・統合なし。"
+    },
+    {
+      "id": 66477,
+      "title": "迫田さおりの旦那（夫）は？結婚相手の写真や子供、兄弟・父親も",
+      "url": "https://prosports.yoshilover.com/sakodasaori/",
+      "intent": "各人物の結婚・子供・実家の家族について調べる",
+      "pillar_difference": "個別人物の詳細を扱う",
+      "cannibalization": "既存URLを使用。新規作成・複製・統合なし。"
+    }
+  ],
+  "internal_links": {
+    "hubPlacements": "対象記事は全件既存掲載あり",
+    "returns": "既存の戻りリンクを維持",
+    "related_links": [
+      {
+        "source": 55807,
+        "target": 65386,
+        "group": "figure",
+        "context": "フィギュアスケート選手の家族については、",
+        "anchor": "鍵山優真の父親・母親と家族構成"
+      },
+      {
+        "source": 65386,
+        "target": 66402,
+        "group": "figure",
+        "context": "フィギュアスケート選手の家族については、",
+        "anchor": "高橋成美の実家・両親と家族構成"
+      },
+      {
+        "source": 66402,
+        "target": 65386,
+        "group": "figure",
+        "context": "フィギュアスケート選手の家族については、",
+        "anchor": "鍵山優真の父親・母親と家族構成"
+      },
+      {
+        "source": 65784,
+        "target": 66402,
+        "group": "figure",
+        "context": "フィギュアスケート選手の家族については、",
+        "anchor": "高橋成美の実家・両親と家族構成"
+      },
+      {
+        "source": 65784,
+        "target": 66168,
+        "group": "figure",
+        "context": "フィギュアスケート選手の家族については、",
+        "anchor": "安藤美姫の実家・父親と母親"
+      },
+      {
+        "source": 66168,
+        "target": 817,
+        "group": "figure",
+        "context": "フィギュアスケート選手の家族については、",
+        "anchor": "荒川静香の結婚・子供と実家の家族"
+      },
+      {
+        "source": 817,
+        "target": 66168,
+        "group": "figure",
+        "context": "フィギュアスケート選手の家族については、",
+        "anchor": "安藤美姫の実家・父親と母親"
+      },
+      {
+        "source": 66184,
+        "target": 66319,
+        "group": "table-tennis",
+        "context": "卓球選手の結婚や家族については、",
+        "anchor": "石川佳純の結婚の公表状況と実家"
+      },
+      {
+        "source": 66184,
+        "target": 66345,
+        "group": "table-tennis",
+        "context": "卓球選手の結婚や家族については、",
+        "anchor": "福原愛の父親・母親と実家の家族"
+      },
+      {
+        "source": 66319,
+        "target": 66345,
+        "group": "table-tennis",
+        "context": "卓球選手の結婚や家族については、",
+        "anchor": "福原愛の父親・母親と実家の家族"
+      },
+      {
+        "source": 66345,
+        "target": 66184,
+        "group": "table-tennis",
+        "context": "卓球選手の結婚や家族については、",
+        "anchor": "水谷隼の妻との馴れ初めと子供"
+      },
+      {
+        "source": 66328,
+        "target": 66418,
+        "group": "volleyball",
+        "context": "バレーボール選手の結婚や家族については、",
+        "anchor": "竹下佳江の夫・子供と実家の家族"
+      },
+      {
+        "source": 66418,
+        "target": 66477,
+        "group": "volleyball",
+        "context": "バレーボール選手の結婚や家族については、",
+        "anchor": "迫田さおりの結婚の公表状況と家族"
+      },
+      {
+        "source": 66328,
+        "target": 66477,
+        "group": "volleyball",
+        "context": "バレーボール選手の結婚や家族については、",
+        "anchor": "迫田さおりの結婚の公表状況と家族"
+      },
+      {
+        "source": 66477,
+        "target": 66328,
+        "group": "volleyball",
+        "context": "バレーボール選手の結婚や家族については、",
+        "anchor": "川合俊一の妻と実家の家族"
+      },
+      {
+        "source": 965,
+        "target": 66328,
+        "group": "volleyball",
+        "context": "バレーボール選手の結婚や家族については、",
+        "anchor": "川合俊一の妻と実家の家族"
+      },
+      {
+        "source": 62829,
+        "target": 63988,
+        "group": "softball",
+        "context": "ソフトボール選手の結婚や家族については、",
+        "anchor": "上野由岐子の結婚観と両親・妹"
+      },
+      {
+        "source": 63988,
+        "target": 62829,
+        "group": "softball",
+        "context": "ソフトボール選手の結婚や家族については、",
+        "anchor": "後藤希友の結婚の公表状況と兄弟"
+      },
+      {
+        "source": 940,
+        "target": 66425,
+        "group": "wrestling",
+        "context": "レスリング選手の結婚や家族については、",
+        "anchor": "登坂絵莉の夫・子供と実家の家族"
+      },
+      {
+        "source": 66425,
+        "target": 940,
+        "group": "wrestling",
+        "context": "レスリング選手の結婚や家族については、",
+        "anchor": "吉田沙保里の結婚の公表状況と子供の噂"
+      },
+      {
+        "source": 940,
+        "target": 65754,
+        "group": "wrestling",
+        "context": "レスリング選手の結婚や家族については、",
+        "anchor": "山本聖子の結婚・子供と家族"
+      },
+      {
+        "source": 65754,
+        "target": 940,
+        "group": "wrestling",
+        "context": "レスリング選手の結婚や家族については、",
+        "anchor": "吉田沙保里の結婚の公表状況と子供の噂"
+      },
+      {
+        "source": 65754,
+        "target": 66425,
+        "group": "wrestling",
+        "context": "レスリング選手の結婚や家族については、",
+        "anchor": "登坂絵莉の夫・子供と実家の家族"
+      },
+      {
+        "source": 62614,
+        "target": 64716,
+        "group": "mma",
+        "context": "総合格闘技で活動した選手の家族については、",
+        "anchor": "須藤元気の結婚歴と子供の公表情報"
+      },
+      {
+        "source": 64716,
+        "target": 62614,
+        "group": "mma",
+        "context": "総合格闘技で活動した選手の家族については、",
+        "anchor": "山本KID徳郁の結婚・子供と家族"
+      },
+      {
+        "source": 62614,
+        "target": 64843,
+        "group": "mma",
+        "context": "総合格闘技で活動した選手の家族については、",
+        "anchor": "朝倉未来の実家・両親と兄弟"
+      },
+      {
+        "source": 64843,
+        "target": 62614,
+        "group": "mma",
+        "context": "総合格闘技で活動した選手の家族については、",
+        "anchor": "山本KID徳郁の結婚・子供と家族"
+      },
+      {
+        "source": 64716,
+        "target": 64843,
+        "group": "mma",
+        "context": "総合格闘技で活動した選手の家族については、",
+        "anchor": "朝倉未来の実家・両親と兄弟"
+      },
+      {
+        "source": 64843,
+        "target": 64716,
+        "group": "mma",
+        "context": "総合格闘技で活動した選手の家族については、",
+        "anchor": "須藤元気の結婚歴と子供の公表情報"
+      },
+      {
+        "source": 51031,
+        "target": 64293,
+        "group": "gymnastics",
+        "context": "体操・新体操の選手の家族については、",
+        "anchor": "畠山愛理の実家・両親と兄弟"
+      },
+      {
+        "source": 64293,
+        "target": 51031,
+        "group": "gymnastics",
+        "context": "体操・新体操の選手の家族については、",
+        "anchor": "田中理恵の結婚・夫と子供"
+      },
+      {
+        "source": 62614,
+        "target": 65754,
+        "group": "family",
+        "context": "妹の聖子さんの家族については、",
+        "anchor": "山本聖子の結婚・子供と家族"
+      },
+      {
+        "source": 65754,
+        "target": 62614,
+        "group": "family",
+        "context": "兄の山本KID徳郁さんの家族については、",
+        "anchor": "山本KID徳郁の結婚・子供と家族"
+      }
+    ]
+  },
+  "priority": [
+    "14記事の実際の掲載と戻りリンクを公開HTMLで確認",
+    "競技内の不足リンクと山本兄妹の家族リンクを追加",
+    "週次監査の芸能人一覧の対象漏れを修正",
+    "保存・公開リンク・表示・保護項目を検証"
+  ],
+  "classification": "既存記事の内部リンク整備と監査の誤検知修正"
+}

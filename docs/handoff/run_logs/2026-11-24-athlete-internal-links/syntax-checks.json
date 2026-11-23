@@ -1,0 +1,17 @@
+{
+  "success": true,
+  "files": [
+    "public-checks.py",
+    "original-test_prosports_weekly_seo_check.py",
+    "prepare.py",
+    "original-prosports_weekly_seo_check.py",
+    "fetch-public.mjs",
+    "verify.mjs",
+    "apply.mjs",
+    "fetch-reported.mjs",
+    "ui.mjs",
+    "fetch.mjs",
+    "guard.php"
+  ],
+  "auditTestsPassed": 12
+}

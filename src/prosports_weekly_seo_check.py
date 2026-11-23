@@ -54,8 +54,9 @@ LOG = logging.getLogger("prosports_weekly_seo_check")
 
 SITE_URL = os.environ.get("GSC_SITE_URL", "https://prosports.yoshilover.com/").strip() or "https://prosports.yoshilover.com/"
 UA = {"User-Agent": "prosports-weekly-seo-check/1.0"}
-# hub = topic cluster の親ページ。slug は 2026-11-05 時点の実在一覧 (astoral-family は牧秀悟の記事なので含めない)。
-HUB_SLUGS = ["athlete-family", "athlete-homes", "baseball-family", "soccerkazokutsuma"] + [
+# hub = topic cluster の親ページ。固定ページの芸能人・モデル一覧も含める。
+# astoral-family は牧秀悟の記事なので含めない。
+HUB_SLUGS = ["athlete-family", "athlete-celebrities", "athlete-homes", "baseball-family", "soccerkazokutsuma"] + [
     f"{t}-tsuma-kazoku"
     for t in ("baystars", "buffaloes", "carp", "dragons", "eagles", "fighters", "giants-geneki", "hanshin", "hawks", "lions", "marines", "swallows")
 ]

@@ -1,0 +1,108 @@
+{
+  "success": true,
+  "changedArticles": 23,
+  "newInternalLinks": 33,
+  "reported14AlreadyLinked": 14,
+  "reported14Missing": 0,
+  "falsePositivesBefore": 12,
+  "falsePositivesAfter": 0,
+  "publicPages": 24,
+  "browserCases": 8,
+  "allPublishedRecordsChecked": 584,
+  "nonTargetsUnchanged": 561,
+  "guard": {
+    "id": 106,
+    "active": false
+  },
+  "nextScheduledRunObserved": false,
+  "evidence": [
+    {
+      "file": "plan.json",
+      "sha256": "63a46aa824ea5204e7d68825639e5b193f004bcffd223ebc1538d1e4a69de88f"
+    },
+    {
+      "file": "config.json",
+      "sha256": "5ebf319fc75b354b24b5402a363f978d3ea3254c709531104edf7c9965fea741"
+    },
+    {
+      "file": "scope.json",
+      "sha256": "940da9b779aba3b4c52322081895c655c090f84219471d2a4bb07feef012bed8"
+    },
+    {
+      "file": "content-proofs.json",
+      "sha256": "269a7d4f24b369f1b706405dddaecfebfe2940fb70a701dba74fe397514f075a"
+    },
+    {
+      "file": "content-verification.json",
+      "sha256": "1d6d87c44d989540c2266d1f3e14a2a312cd8276ff42c0b375169e2a539edebf"
+    },
+    {
+      "file": "public-after-http.json",
+      "sha256": "fd9925eadefc590c7cd9af9e088bac3c4625e2cb6c37b3483b44b28f515dd496"
+    },
+    {
+      "file": "public-after-checks.json",
+      "sha256": "34b744caff63a2bf434de10cb0f52c6132c9bf43c51406e7a4048c01535e3fe4"
+    },
+    {
+      "file": "ui-verification.json",
+      "sha256": "00f4f41c9dfeb55ad41d6f7ba3084c58419f34d87eae358c1603fcc04dfbb53a"
+    },
+    {
+      "file": "preview-checks.json",
+      "sha256": "00f4f41c9dfeb55ad41d6f7ba3084c58419f34d87eae358c1603fcc04dfbb53a"
+    },
+    {
+      "file": "syntax-checks.json",
+      "sha256": "858e9885fa2262d9cbb1485f56bb3c95b6499c8b0b8631d0359fa171f2c88898"
+    },
+    {
+      "file": "test-verification.json",
+      "sha256": "b610ca80119da3c3673d0a4385b157dfbcc38708e1d2758d3cddde36c7a8fd4c"
+    },
+    {
+      "file": "reported14-verification.json",
+      "sha256": "30b91c21a02cc8438123db119b5452c4a0e3f781e401e59ab1cdf52b42ef259d"
+    },
+    {
+      "file": "weekly-live-comparison.json",
+      "sha256": "483bf6d57517a50ebbca4fd19172606efc0550a4e7c2c6d18b01a91a47361f17"
+    },
+    {
+      "file": "build-result.json",
+      "sha256": "873684bdf77ee00c4340b61b5d3250379865b44d175f65fbb75f363184155a59"
+    },
+    {
+      "file": "deployment-scope.json",
+      "sha256": "c2653ce8fe584ccfa9168acbcad907875e70ae63b6e539180e3102c014afeea5"
+    },
+    {
+      "file": "deployment-verification.json",
+      "sha256": "2e23d4c8128e478ebb87bea2790513b8ad065d4aa96992a68e201b0b7d8c08f7"
+    },
+    {
+      "file": "record-differences.json",
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "file": "all-final-gaps.json",
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "file": "active-snippets-before.json",
+      "sha256": "7cad732f95633c5bcf353c956bda372a0820c526c3ea08c08fc46d608163c24c"
+    },
+    {
+      "file": "active-snippets-after.json",
+      "sha256": "7cad732f95633c5bcf353c956bda372a0820c526c3ea08c08fc46d608163c24c"
+    },
+    {
+      "file": "guard-final-state.json",
+      "sha256": "e2619267641532a9e806992a1c18a34a6cd06963cc460a81cb80bbabcbfc6320"
+    },
+    {
+      "file": "apply-journal.json",
+      "sha256": "dcdd6eb459922153b74ebddbd8cac6ae8a00a04d31e404967843fe8be9617bc7"
+    }
+  ]
+}

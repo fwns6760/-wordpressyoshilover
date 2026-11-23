@@ -1,0 +1,22 @@
+{
+  "success": true,
+  "hubPagesFetched": 17,
+  "reportedArticles": 14,
+  "oldCheckerMissingReported": [
+    "https://prosports.yoshilover.com/adachikana/",
+    "https://prosports.yoshilover.com/akikiyohara/",
+    "https://prosports.yoshilover.com/ishikawarika/",
+    "https://prosports.yoshilover.com/itanotomomi/",
+    "https://prosports.yoshilover.com/kotobukirui/",
+    "https://prosports.yoshilover.com/kozonoyome/",
+    "https://prosports.yoshilover.com/nabetanimako/",
+    "https://prosports.yoshilover.com/nomurasachiyo/",
+    "https://prosports.yoshilover.com/santosanna/",
+    "https://prosports.yoshilover.com/tairaairi/",
+    "https://prosports.yoshilover.com/yamaseshinnosuke/",
+    "https://prosports.yoshilover.com/yufunatsuki/"
+  ],
+  "fixedCheckerMissingReported": [],
+  "allListedArticleUrls": 610,
+  "mailSent": false
+}

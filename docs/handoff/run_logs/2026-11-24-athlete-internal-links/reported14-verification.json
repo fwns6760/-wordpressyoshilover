@@ -1,0 +1,202 @@
+{
+  "success": true,
+  "checked": 14,
+  "alreadyLinked": 14,
+  "missing": 0,
+  "checks": [
+    {
+      "id": 544,
+      "url": "https://prosports.yoshilover.com/akikiyohara/",
+      "alreadyLinked": true,
+      "hubs": [
+        {
+          "id": 64935,
+          "url": "https://prosports.yoshilover.com/athlete-celebrities/",
+          "anchor": "亜希",
+          "returnLink": true
+        }
+      ]
+    },
+    {
+      "id": 802,
+      "url": "https://prosports.yoshilover.com/nabetanimako/",
+      "alreadyLinked": true,
+      "hubs": [
+        {
+          "id": 64935,
+          "url": "https://prosports.yoshilover.com/athlete-celebrities/",
+          "anchor": "鍋谷真子の経歴・家族の記事へ →",
+          "returnLink": true
+        }
+      ]
+    },
+    {
+      "id": 2000,
+      "url": "https://prosports.yoshilover.com/adachikana/",
+      "alreadyLinked": true,
+      "hubs": [
+        {
+          "id": 64935,
+          "url": "https://prosports.yoshilover.com/athlete-celebrities/",
+          "anchor": "足立佳奈の経歴・家族の記事へ →",
+          "returnLink": true
+        }
+      ]
+    },
+    {
+      "id": 7225,
+      "url": "https://prosports.yoshilover.com/kozonoyome/",
+      "alreadyLinked": true,
+      "hubs": [
+        {
+          "id": 64935,
+          "url": "https://prosports.yoshilover.com/athlete-celebrities/",
+          "anchor": "渡辺リサの経歴・家族の記事へ →",
+          "returnLink": true
+        }
+      ]
+    },
+    {
+      "id": 64894,
+      "url": "https://prosports.yoshilover.com/itanotomomi/",
+      "alreadyLinked": true,
+      "hubs": [
+        {
+          "id": 64935,
+          "url": "https://prosports.yoshilover.com/athlete-celebrities/",
+          "anchor": "板野友美の実家・父親と母親の記事へ →",
+          "returnLink": true
+        }
+      ]
+    },
+    {
+      "id": 65004,
+      "url": "https://prosports.yoshilover.com/santosanna/",
+      "alreadyLinked": true,
+      "hubs": [
+        {
+          "id": 64935,
+          "url": "https://prosports.yoshilover.com/athlete-celebrities/",
+          "anchor": "サントスアンナの結婚・両親と歌手時代の記事へ →",
+          "returnLink": true
+        }
+      ]
+    },
+    {
+      "id": 65018,
+      "url": "https://prosports.yoshilover.com/kotobukirui/",
+      "alreadyLinked": true,
+      "hubs": [
+        {
+          "id": 64935,
+          "url": "https://prosports.yoshilover.com/athlete-celebrities/",
+          "anchor": "寿るいの結婚・子供とモデル時代の記事へ →",
+          "returnLink": true
+        }
+      ]
+    },
+    {
+      "id": 65088,
+      "url": "https://prosports.yoshilover.com/ishikawarika/",
+      "alreadyLinked": true,
+      "hubs": [
+        {
+          "id": 64935,
+          "url": "https://prosports.yoshilover.com/athlete-celebrities/",
+          "anchor": "石川梨華の結婚・実家と家族の記事へ →",
+          "returnLink": true
+        }
+      ]
+    },
+    {
+      "id": 65113,
+      "url": "https://prosports.yoshilover.com/tairaairi/",
+      "alreadyLinked": true,
+      "hubs": [
+        {
+          "id": 64935,
+          "url": "https://prosports.yoshilover.com/athlete-celebrities/",
+          "anchor": "平愛梨",
+          "returnLink": true
+        }
+      ]
+    },
+    {
+      "id": 65141,
+      "url": "https://prosports.yoshilover.com/nomurasachiyo/",
+      "alreadyLinked": true,
+      "hubs": [
+        {
+          "id": 64935,
+          "url": "https://prosports.yoshilover.com/athlete-celebrities/",
+          "anchor": "野村沙知代",
+          "returnLink": true
+        }
+      ]
+    },
+    {
+      "id": 65884,
+      "url": "https://prosports.yoshilover.com/yamaseshinnosuke/",
+      "alreadyLinked": true,
+      "hubs": [
+        {
+          "id": 64935,
+          "url": "https://prosports.yoshilover.com/athlete-celebrities/",
+          "anchor": "山根千佳",
+          "returnLink": true
+        }
+      ]
+    },
+    {
+      "id": 65919,
+      "url": "https://prosports.yoshilover.com/yufunatsuki/",
+      "alreadyLinked": true,
+      "hubs": [
+        {
+          "id": 64935,
+          "url": "https://prosports.yoshilover.com/athlete-celebrities/",
+          "anchor": "由布菜月",
+          "returnLink": true
+        }
+      ]
+    },
+    {
+      "id": 66505,
+      "url": "https://prosports.yoshilover.com/kanemurayoshiaki/",
+      "alreadyLinked": true,
+      "hubs": [
+        {
+          "id": 62068,
+          "url": "https://prosports.yoshilover.com/dragons-tsuma-kazoku/",
+          "anchor": "金村義明の妻・息子と実家の家族",
+          "returnLink": true
+        },
+        {
+          "id": 62131,
+          "url": "https://prosports.yoshilover.com/buffaloes-tsuma-kazoku/",
+          "anchor": "金村義明の妻・息子と実家の家族",
+          "returnLink": true
+        },
+        {
+          "id": 62134,
+          "url": "https://prosports.yoshilover.com/lions-tsuma-kazoku/",
+          "anchor": "金村義明の妻・息子と実家の家族",
+          "returnLink": true
+        }
+      ]
+    },
+    {
+      "id": 66510,
+      "url": "https://prosports.yoshilover.com/kakunakakatsuya/",
+      "alreadyLinked": true,
+      "hubs": [
+        {
+          "id": 62133,
+          "url": "https://prosports.yoshilover.com/marines-tsuma-kazoku/",
+          "anchor": "角中勝也の妻・子供と両親",
+          "returnLink": true
+        }
+      ]
+    }
+  ]
+}

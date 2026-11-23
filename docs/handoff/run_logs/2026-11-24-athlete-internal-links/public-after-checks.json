@@ -1,0 +1,173 @@
+{
+  "success": true,
+  "phase": "after",
+  "publicPages": 24,
+  "linkChecks": [
+    {
+      "source": 817,
+      "target": 66168,
+      "anchor": "安藤美姫の実家・父親と母親"
+    },
+    {
+      "source": 940,
+      "target": 66425,
+      "anchor": "登坂絵莉の夫・子供と実家の家族"
+    },
+    {
+      "source": 940,
+      "target": 65754,
+      "anchor": "山本聖子の結婚・子供と家族"
+    },
+    {
+      "source": 965,
+      "target": 66328,
+      "anchor": "川合俊一の妻と実家の家族"
+    },
+    {
+      "source": 51031,
+      "target": 64293,
+      "anchor": "畠山愛理の実家・両親と兄弟"
+    },
+    {
+      "source": 55807,
+      "target": 65386,
+      "anchor": "鍵山優真の父親・母親と家族構成"
+    },
+    {
+      "source": 62614,
+      "target": 64716,
+      "anchor": "須藤元気の結婚歴と子供の公表情報"
+    },
+    {
+      "source": 62614,
+      "target": 64843,
+      "anchor": "朝倉未来の実家・両親と兄弟"
+    },
+    {
+      "source": 62614,
+      "target": 65754,
+      "anchor": "山本聖子の結婚・子供と家族"
+    },
+    {
+      "source": 62829,
+      "target": 63988,
+      "anchor": "上野由岐子の結婚観と両親・妹"
+    },
+    {
+      "source": 63988,
+      "target": 62829,
+      "anchor": "後藤希友の結婚の公表状況と兄弟"
+    },
+    {
+      "source": 64293,
+      "target": 51031,
+      "anchor": "田中理恵の結婚・夫と子供"
+    },
+    {
+      "source": 64716,
+      "target": 62614,
+      "anchor": "山本KID徳郁の結婚・子供と家族"
+    },
+    {
+      "source": 64716,
+      "target": 64843,
+      "anchor": "朝倉未来の実家・両親と兄弟"
+    },
+    {
+      "source": 64843,
+      "target": 62614,
+      "anchor": "山本KID徳郁の結婚・子供と家族"
+    },
+    {
+      "source": 64843,
+      "target": 64716,
+      "anchor": "須藤元気の結婚歴と子供の公表情報"
+    },
+    {
+      "source": 65386,
+      "target": 66402,
+      "anchor": "高橋成美の実家・両親と家族構成"
+    },
+    {
+      "source": 65754,
+      "target": 940,
+      "anchor": "吉田沙保里の結婚の公表状況と子供の噂"
+    },
+    {
+      "source": 65754,
+      "target": 66425,
+      "anchor": "登坂絵莉の夫・子供と実家の家族"
+    },
+    {
+      "source": 65754,
+      "target": 62614,
+      "anchor": "山本KID徳郁の結婚・子供と家族"
+    },
+    {
+      "source": 65784,
+      "target": 66402,
+      "anchor": "高橋成美の実家・両親と家族構成"
+    },
+    {
+      "source": 65784,
+      "target": 66168,
+      "anchor": "安藤美姫の実家・父親と母親"
+    },
+    {
+      "source": 66168,
+      "target": 817,
+      "anchor": "荒川静香の結婚・子供と実家の家族"
+    },
+    {
+      "source": 66184,
+      "target": 66319,
+      "anchor": "石川佳純の結婚の公表状況と実家"
+    },
+    {
+      "source": 66184,
+      "target": 66345,
+      "anchor": "福原愛の父親・母親と実家の家族"
+    },
+    {
+      "source": 66319,
+      "target": 66345,
+      "anchor": "福原愛の父親・母親と実家の家族"
+    },
+    {
+      "source": 66328,
+      "target": 66418,
+      "anchor": "竹下佳江の夫・子供と実家の家族"
+    },
+    {
+      "source": 66328,
+      "target": 66477,
+      "anchor": "迫田さおりの結婚の公表状況と家族"
+    },
+    {
+      "source": 66345,
+      "target": 66184,
+      "anchor": "水谷隼の妻との馴れ初めと子供"
+    },
+    {
+      "source": 66402,
+      "target": 65386,
+      "anchor": "鍵山優真の父親・母親と家族構成"
+    },
+    {
+      "source": 66418,
+      "target": 66477,
+      "anchor": "迫田さおりの結婚の公表状況と家族"
+    },
+    {
+      "source": 66425,
+      "target": 940,
+      "anchor": "吉田沙保里の結婚の公表状況と子供の噂"
+    },
+    {
+      "source": 66477,
+      "target": 66328,
+      "anchor": "川合俊一の妻と実家の家族"
+    }
+  ],
+  "metadataAndSchemaPreserved": true
+}

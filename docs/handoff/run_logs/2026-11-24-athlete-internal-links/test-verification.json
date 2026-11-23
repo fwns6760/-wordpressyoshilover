@@ -1,0 +1,7 @@
+{
+  "success": true,
+  "command": "python3 -m pytest tests/test_prosports_weekly_seo_check.py -q",
+  "passed": 12,
+  "pythonASTAndCompileall": true,
+  "browserScriptSyntax": true
+}

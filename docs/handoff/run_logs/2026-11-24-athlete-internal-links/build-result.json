@@ -1,0 +1,7 @@
+{
+  "id": "ba23d430-8fff-42b7-93fe-f092455688ea",
+  "status": "SUCCESS",
+  "image": "asia-northeast1-docker.pkg.dev/baseballsite/yoshilover/prosports-weekly-seo-check@sha256:9499069acba04d709b4a9c091a6f13a72fae312bd4fd32098ad236716370c00f",
+  "baseSourceHashVerified": true,
+  "codeOnlyPatch": true
+}
